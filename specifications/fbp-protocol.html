@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>FBP Network Protocol</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffffff">
+    <style type="text/css">
+      body {
+        color: black !important;
+        background-color: hsla(  0, 98%, 100%, .8) !important;
+      }
+      article {
+        max-width: 48em;
+        margin-left: auto;
+        margin-right: auto;
+        font-size: 14pt;
+      }
+      article h1, article h2 {
+        font-family: sans-serif;
+        margin-bottom: 0px;
+        padding-bottom: 0px;
+      }
+      article aside {
+        border-left: 4px #2f4f4f solid;
+        margin-top: 1em;
+        padding-left: 1em;
+        font-size: smaller;
+        font-style: italic;
+      }
+      a {
+        color: #2f4f4f;
+      }
+      a:hover, a:visited {
+        color: #708090;
+      }
+      .properties li {
+        padding-bottom: 5px;
+      } 
+      .property.name {
+        font-family: monospace;
+        font-weight: 700;
+      }
+      .property.name::after {
+        content: ': ';
+        font-weight: 500;
+      }
+      .property.optional.type::after {
+        content: ' (optional)';
+        font-weight: 500;
+        color: hsla(210, 40%, 70%, 1);
+      }
+      .property.description {
+        display: block;
+      }
+      .property.example {
+        font-family: monospace;
+        background-color: hsla(210, 70%, 90%, 1);
+      }
+      .property.example::before {
+        content: 'Example: ';
+        background-color: white;
+      }
+      .enum.name {
+        font-family: monospace;
+        font-weight: 700;
+      }
+      .message.name a {
+        text-decoration: none;
+      }
+      .capability.messages {
+        margin: 0px;
+      } 
+      .capability.messages li {
+        display: inline;
+      }
+      .capability.messages li::after {
+        content: ', '
+      }
+      .capability.messages.header {
+        margin: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <article>
+      <h1>FBP Network Protocol</h1>
+      <aside>
+        Last updated 2024-03-16 21:16:31 +0100
+      </aside>
+      <p>The Flow-Based Programming network protocol (<em>FBP protocol</em>) has been designed primarily for flow-based programming interfaces like the <a href="https://flowhub.io">Flowhub</a> to communicate with various FBP runtimes. However, it can also be utilized for communication between different runtimes, for example server-to-server or server-to-microcontroller.</p>
+
+<h2 id="implementations">Implementations</h2>
+
+<p>Clients</p>
+
+<ul>
+  <li><a href="https://github.com/noflo/noflo-ui">noflo-ui</a> is an open source visual IDE, which powers <a href="http://flowhub.io">Flowhub</a></li>
+  <li><a href="https://github.com/flowbased/fbp-spec">fbp-spec</a> is a data-driven testing tool for FBP components/graphs.</li>
+  <li><a href="https://github.com/flowbased/fbp-protocol-client">fbp-protocol-client</a> is a low-level JavaScript client library supporting all the common FBP protocol transports</li>
+  <li><a href="https://github.com/flowbased/fbp-client">fbp-client</a> is a higher-level JavaScript client library supporting all the common FBP protocol transports</li>
+</ul>
+
+<p>Runtimes</p>
+
+<ul>
+  <li><a href="https://github.com/noflo/noflo-runtime-base">noflo-runtime-base</a> is a transport-independent implementation of the protocol for <a href="http://noflojs.org">NoFlo</a>, client-side and server-side JavaScript programming. WebSocket, WebRTC and iFrame implementations exists.</li>
+  <li><a href="https://github.com/jonnor/microflo">microflo</a> is a WebSocket implementation of the protocol in JS/C++, for microcontrollers and embedded systems</li>
+  <li><a href="http://www.elixirfbp.org/">Elixir FBP</a> is a WebSocket implementation in Elixir, for programming with systems in Elixir runnin on the Erlang VM.</li>
+  <li><a href="https://github.com/jonnor/imgflo">imgflo</a> is a WebSocket implementation in C, for image processing</li>
+  <li><a href="https://github.com/jonnor/javafbp-runtime">javafbp-runtime</a> is a Websocket implementation in Java for <a href="https://github.com/jpaulm/javafbp">JavaFBP</a>, for JRE and Android development</li>
+  <li><a href="https://github.com/jonnor/sndflo">sndflo</a> is a WebSocket implementation for the SuperCollider audio programming environment</li>
+  <li><a href="https://github.com/the-grid/msgflo">MsgFlo</a> is a Websocket implementation in Node.js for heterogenous distributed systems communicating via message queues</li>
+  <li><a href="https://github.com/PermaData/rill">rill</a> is a Python FBP runtime implementation, with support for the protocol over WebSocket.</li>
+</ul>
+
+<p>Some <a href="https://github.com/flowbased/protocol-examples">examples</a> have also been created, to help implementors.</p>
+
+<h2 id="test-suite">Test suite</h2>
+
+<p>The <a href="https://github.com/flowbased/fbp-protocol">fbp-protocol</a> tool provides a set of tests for FBP protocol implementations.</p>
+
+<h2 id="basics">Basics</h2>
+
+<p>The FBP protocol is a message-based protocol that can be handled using various different transport mechanisms. The messages are designed to be independent, and not to form a request-response cycle in order to allow highly asynchronous operations and situations where multiple protocol clients talk with the same runtime.</p>
+
+<p>There are currently three transports utilized commonly:</p>
+
+<ul>
+  <li><a href="http://en.wikipedia.org/wiki/Web_Messaging">Web Messaging</a> (<code class="language-plaintext highlighter-rouge">postMessage</code>) for communication between different web pages or WebWorkers running inside the same browser instance</li>
+  <li><a href="http://en.wikipedia.org/wiki/WebSocket">WebSocket</a> for communicating between a browser and a server, or between two server instances</li>
+  <li><a href="http://en.wikipedia.org/wiki/WebRTC">WebRTC</a> for peer-to-peer communications between a runtime and a client</li>
+</ul>
+
+<p>Different transports can be utilized as needed. It could be interesting to implement the FBP protocol using <a href="http://en.wikipedia.org/wiki/MQ_Telemetry_Transport">MQTT</a>, for instance.</p>
+
+<h3 id="message-structure">Message structure</h3>
+
+<p>There are three types of messages in FBP Protocol:</p>
+
+<ol>
+  <li>Requests sent by client to runtime</li>
+  <li>Responses sent by runtime to client</li>
+  <li>Events sent by runtime to client unrelated to any request</li>
+</ol>
+
+<p>This document describes all messages as the data structures that are passed. The way these are encoded depends on the transport being used. For example, with WebSockets all messages are encoded as stringified JSON.</p>
+
+<p>All messages consist of three parts:</p>
+
+<ul>
+  <li>Sub-protocol identifier (<code class="language-plaintext highlighter-rouge">graph</code>, <code class="language-plaintext highlighter-rouge">component</code>, or <code class="language-plaintext highlighter-rouge">network</code>)</li>
+  <li>Topic (for example, <code class="language-plaintext highlighter-rouge">addnode</code>)</li>
+  <li>Message payload (typically a data structure specific to the sub-protocol and topic)</li>
+</ul>
+
+<p>Additionally requests made by clients include a unique <code class="language-plaintext highlighter-rouge">requestId</code> and optionally a <code class="language-plaintext highlighter-rouge">secret</code>. Responses sent by runtime include a <code class="language-plaintext highlighter-rouge">responseTo</code> referring to a request ID. Runtimes may also send messages on events that happen on the runtime without referring to a request ID.</p>
+
+<p>The keys listed in specific messages are for the message <code class="language-plaintext highlighter-rouge">payload</code>.</p>
+
+<p>An example message sent by a client:</p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"command"</span><span class="p">:</span><span class="w"> </span><span class="s2">"addnode"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"payload"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"component"</span><span class="p">:</span><span class="w"> </span><span class="s2">"canvas/Draw"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"graph"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hello-canvas-example"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"draw"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Draw onto canvas element"</span><span class="w">
+    </span><span class="p">}</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="nl">"secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fbp rocks"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"requestId: "</span><span class="mi">10259710</span><span class="err">-bc</span><span class="mi">70-4</span><span class="err">d</span><span class="mi">2</span><span class="err">c-b</span><span class="mi">0</span><span class="err">b</span><span class="mi">3</span><span class="err">-e</span><span class="mi">78075</span><span class="err">d</span><span class="mi">9</span><span class="err">b</span><span class="mi">960</span><span class="s2">"
+}
+</span></code></pre></div></div>
+
+<p>Response to this could look like:</p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"graph"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"command"</span><span class="p">:</span><span class="w"> </span><span class="s2">"addnode"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"payload"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"component"</span><span class="p">:</span><span class="w"> </span><span class="s2">"canvas/Draw"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"graph"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hello-canvas-example"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"draw"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"metadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Draw onto canvas element"</span><span class="w">
+    </span><span class="p">}</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="s2">"responseTo: "</span><span class="mi">10259710</span><span class="err">-bc</span><span class="mi">70-4</span><span class="err">d</span><span class="mi">2</span><span class="err">c-b</span><span class="mi">0</span><span class="err">b</span><span class="mi">3</span><span class="err">-e</span><span class="mi">78075</span><span class="err">d</span><span class="mi">9</span><span class="err">b</span><span class="mi">960</span><span class="s2">"
+}
+</span></code></pre></div></div>
+
+<h3 id="sub-protocols">Sub-protocols</h3>
+
+<p>The FBP protocol is divided into sub-protocols for each of the major resources that can be manipulated:</p>
+
+<ul>
+  <li><a href="#runtime-protocol"><code class="language-plaintext highlighter-rouge">runtime</code></a>: communications about runtime capabilities and its exported ports</li>
+  <li><a href="#graph-protocol"><code class="language-plaintext highlighter-rouge">graph</code></a>: communications about graph changes</li>
+  <li><a href="#component-protocol"><code class="language-plaintext highlighter-rouge">component</code></a>: communications about available components and changes to them</li>
+  <li><a href="#network-protocol"><code class="language-plaintext highlighter-rouge">network</code></a>: communications related to running a FBP graph</li>
+  <li><a href="#trace-protocol"><code class="language-plaintext highlighter-rouge">trace</code></a>: communications related to tracing a FBP network</li>
+</ul>
+
+<h3 id="capabilities">Capabilities</h3>
+
+<p>Not all runtimes implementation supports all features of the protocol. Also, a runtime may restrict <em>access</em> to features, either to all clients based on configuration, or based on the <em>secret</em> provided in the messages. To support this a set of <strong>capabilities</strong> are defined, which are reported by the runtime in the <a href="#runtime-runtime">runtime:runtime</a> message.</p>
+
+<p>When receiving a message, the runtime should check for the associated capability. If the capability is not supported, or the client does not have access to the capability, the runtime should respond with an <code class="language-plaintext highlighter-rouge">error</code> reply on the relevant <code class="language-plaintext highlighter-rouge">protocol</code>.</p>
+
+<p>A few commands do not require any capabilities: the runtime info request/response (<a href="#runtime-getruntime">runtime:getruntime</a> and <a href="#runtime-runtime">runtime:runtime</a>), and the error responses (<a href="#runtime-error">runtime:error</a>, <a href="#graph-error">graph:error</a>, <a href="#network-error">network:error</a>, <a href="#component-error">component:error</a>).</p>
+
+<section class="capabilities">
+<h4 class="capability name">protocol:network</h4>
+<p>can control and introspect its running networks using the Network protocol. DEPRECATED. Instead the individual network:... capabilities should be used. Implies capabilities network:status, network:data, network:control. Does not imply capability network:persist.</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#network-start">network:start</a></li>
+<li><a href="#network-getstatus">network:getstatus</a></li>
+<li><a href="#network-stop">network:stop</a></li>
+<li><a href="#network-debug">network:debug</a></li>
+<li><a href="#network-edges">network:edges</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#network-stopped">network:stopped</a></li>
+<li><a href="#network-started">network:started</a></li>
+<li><a href="#network-status">network:status</a></li>
+<li><a href="#network-output">network:output</a></li>
+<li><a href="#network-error">network:error</a></li>
+<li><a href="#network-processerror">network:processerror</a></li>
+<li><a href="#network-icon">network:icon</a></li>
+<li><a href="#network-connect">network:connect</a></li>
+<li><a href="#network-begingroup">network:begingroup</a></li>
+<li><a href="#network-data">network:data</a></li>
+<li><a href="#network-endgroup">network:endgroup</a></li>
+<li><a href="#network-disconnect">network:disconnect</a></li>
+<li><a href="#network-edges">network:edges</a></li>
+</ul>
+<h4 class="capability name">network:persist</h4>
+<p>can *flash* a running graph setup to the runtime, making it persistent across restarts</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#network-persist">network:persist</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#network-persist">network:persist</a></li>
+<li><a href="#network-error">network:error</a></li>
+</ul>
+<h4 class="capability name">network:status</h4>
+<p>can get and follow changes to network status</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#network-getstatus">network:getstatus</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#network-status">network:status</a></li>
+<li><a href="#network-started">network:started</a></li>
+<li><a href="#network-stopped">network:stopped</a></li>
+<li><a href="#network-error">network:error</a></li>
+</ul>
+<h4 class="capability name">network:data</h4>
+<p>can listen to data flowing through the network and processes</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#network-edges">network:edges</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#network-edges">network:edges</a></li>
+<li><a href="#network-output">network:output</a></li>
+<li><a href="#network-error">network:error</a></li>
+<li><a href="#network-data">network:data</a></li>
+<li><a href="#network-begingroup">network:begingroup</a></li>
+<li><a href="#network-endgroup">network:endgroup</a></li>
+<li><a href="#network-connect">network:connect</a></li>
+<li><a href="#network-disconnect">network:disconnect</a></li>
+<li><a href="#network-icon">network:icon</a></li>
+<li><a href="#network-processerror">network:processerror</a></li>
+<li><a href="#network-error">network:error</a></li>
+</ul>
+<h4 class="capability name">network:control</h4>
+<p>can start and stop networks</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#network-start">network:start</a></li>
+<li><a href="#network-stop">network:stop</a></li>
+<li><a href="#network-getstatus">network:getstatus</a></li>
+<li><a href="#network-debug">network:debug</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#network-started">network:started</a></li>
+<li><a href="#network-stopped">network:stopped</a></li>
+<li><a href="#network-status">network:status</a></li>
+<li><a href="#network-error">network:error</a></li>
+</ul>
+<h4 class="capability name">protocol:component</h4>
+<p>can list components of the runtime using the component:list message.</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#component-list">component:list</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#component-component">component:component</a></li>
+<li><a href="#component-componentsready">component:componentsready</a></li>
+<li><a href="#component-error">component:error</a></li>
+</ul>
+<h4 class="capability name">component:getsource</h4>
+<p>read and send component source code back to client</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#component-getsource">component:getsource</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#component-source">component:source</a></li>
+<li><a href="#component-error">component:error</a></li>
+</ul>
+<h4 class="capability name">component:setsource</h4>
+<p>runtime is able to compile and run custom components sent as source code strings</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#component-source">component:source</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#component-component">component:component</a></li>
+<li><a href="#component-error">component:error</a></li>
+</ul>
+<h4 class="capability name">protocol:runtime</h4>
+<p>can expose ports of main graph and transmit packet information to/from them</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#runtime-packet">runtime:packet</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#runtime-ports">runtime:ports</a></li>
+<li><a href="#runtime-packetsent">runtime:packetsent</a></li>
+<li><a href="#runtime-packet">runtime:packet</a></li>
+<li><a href="#runtime-error">runtime:error</a></li>
+</ul>
+<h4 class="capability name">graph:readonly</h4>
+<p>read and follow changes to runtime graphs (but not modify)</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#graph-clear">graph:clear</a></li>
+<li><a href="#graph-addnode">graph:addnode</a></li>
+<li><a href="#graph-removenode">graph:removenode</a></li>
+<li><a href="#graph-renamenode">graph:renamenode</a></li>
+<li><a href="#graph-changenode">graph:changenode</a></li>
+<li><a href="#graph-addedge">graph:addedge</a></li>
+<li><a href="#graph-removeedge">graph:removeedge</a></li>
+<li><a href="#graph-changeedge">graph:changeedge</a></li>
+<li><a href="#graph-addinitial">graph:addinitial</a></li>
+<li><a href="#graph-removeinitial">graph:removeinitial</a></li>
+<li><a href="#graph-addinport">graph:addinport</a></li>
+<li><a href="#graph-removeinport">graph:removeinport</a></li>
+<li><a href="#graph-renameinport">graph:renameinport</a></li>
+<li><a href="#graph-addoutport">graph:addoutport</a></li>
+<li><a href="#graph-removeoutport">graph:removeoutport</a></li>
+<li><a href="#graph-renameoutport">graph:renameoutport</a></li>
+<li><a href="#graph-addgroup">graph:addgroup</a></li>
+<li><a href="#graph-removegroup">graph:removegroup</a></li>
+<li><a href="#graph-renamegroup">graph:renamegroup</a></li>
+<li><a href="#graph-changegroup">graph:changegroup</a></li>
+</ul>
+<h4 class="capability name">protocol:graph</h4>
+<p>read &amp; modify runtime graphs using the Graph protocol.</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#graph-clear">graph:clear</a></li>
+<li><a href="#graph-addnode">graph:addnode</a></li>
+<li><a href="#graph-removenode">graph:removenode</a></li>
+<li><a href="#graph-renamenode">graph:renamenode</a></li>
+<li><a href="#graph-changenode">graph:changenode</a></li>
+<li><a href="#graph-addedge">graph:addedge</a></li>
+<li><a href="#graph-removeedge">graph:removeedge</a></li>
+<li><a href="#graph-changeedge">graph:changeedge</a></li>
+<li><a href="#graph-addinitial">graph:addinitial</a></li>
+<li><a href="#graph-removeinitial">graph:removeinitial</a></li>
+<li><a href="#graph-addinport">graph:addinport</a></li>
+<li><a href="#graph-removeinport">graph:removeinport</a></li>
+<li><a href="#graph-renameinport">graph:renameinport</a></li>
+<li><a href="#graph-addoutport">graph:addoutport</a></li>
+<li><a href="#graph-removeoutport">graph:removeoutport</a></li>
+<li><a href="#graph-renameoutport">graph:renameoutport</a></li>
+<li><a href="#graph-addgroup">graph:addgroup</a></li>
+<li><a href="#graph-removegroup">graph:removegroup</a></li>
+<li><a href="#graph-renamegroup">graph:renamegroup</a></li>
+<li><a href="#graph-changegroup">graph:changegroup</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#graph-clear">graph:clear</a></li>
+<li><a href="#graph-addnode">graph:addnode</a></li>
+<li><a href="#graph-removenode">graph:removenode</a></li>
+<li><a href="#graph-renamenode">graph:renamenode</a></li>
+<li><a href="#graph-changenode">graph:changenode</a></li>
+<li><a href="#graph-addedge">graph:addedge</a></li>
+<li><a href="#graph-removeedge">graph:removeedge</a></li>
+<li><a href="#graph-changeedge">graph:changeedge</a></li>
+<li><a href="#graph-addinitial">graph:addinitial</a></li>
+<li><a href="#graph-removeinitial">graph:removeinitial</a></li>
+<li><a href="#graph-addinport">graph:addinport</a></li>
+<li><a href="#graph-removeinport">graph:removeinport</a></li>
+<li><a href="#graph-renameinport">graph:renameinport</a></li>
+<li><a href="#graph-addoutport">graph:addoutport</a></li>
+<li><a href="#graph-removeoutport">graph:removeoutport</a></li>
+<li><a href="#graph-renameoutport">graph:renameoutport</a></li>
+<li><a href="#graph-addgroup">graph:addgroup</a></li>
+<li><a href="#graph-removegroup">graph:removegroup</a></li>
+<li><a href="#graph-renamegroup">graph:renamegroup</a></li>
+<li><a href="#graph-changegroup">graph:changegroup</a></li>
+<li><a href="#graph-error">graph:error</a></li>
+</ul>
+<h4 class="capability name">protocol:trace</h4>
+<p>runtime is able to record and send over flowtraces, used for retroactive debugging.</p>
+<h5 class="capability messages header">input messages</h5>
+<ul class="capability messages">
+<li><a href="#trace-start">trace:start</a></li>
+<li><a href="#trace-stop">trace:stop</a></li>
+<li><a href="#trace-clear">trace:clear</a></li>
+<li><a href="#trace-dump">trace:dump</a></li>
+</ul>
+<h5 class="capability messages header">output messages</h5>
+<ul class="capability messages">
+<li><a href="#trace-start">trace:start</a></li>
+<li><a href="#trace-stop">trace:stop</a></li>
+<li><a href="#trace-clear">trace:clear</a></li>
+<li><a href="#trace-dump">trace:dump</a></li>
+<li><a href="#trace-error">trace:error</a></li>
+</ul>
+</section>
+
+<h2 class="protocol name" id="runtime-protocol">Runtime protocol</h2>
+<p class="protocol description">When a client connects to a FBP procotol it may choose to discover the capabilities and other information about the runtime.</p>
+<h3 id="runtime-getruntime" class="message name"><a href="#runtime-getruntime">getruntime</a></h3>
+<p>Request the information about the runtime. When receiving this message the runtime should response with a runtime message. If the runtime is currently running a graph and it is able to speak the full Runtime protocol, it should follow up with a ports message.</p>
+<ul class="message properties">
+<li><label class="property name">secret</label><label class="property type">string</label><label class="property description">access token to authorize the client. Provided also in payload for compatibility with older runtimes</label></li>
+</ul>
+<h3 id="runtime-packet" class="message name"><a href="#runtime-packet">packet</a></h3>
+<p>Runtimes that can be used as remote subgraphs (i.e. ones that have reported supporting the protocol:runtime capability) need to be able to receive and transmit information packets at their exposed ports.
+These packets can be send from the client to the runtimes input ports, or from runtimes output ports to the client.</p>
+<ul class="message properties">
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">event</label><label class="property type">string</label><label class="property description">packet event (one of: connect, begingroup, data, endgroup, disconnect)</label></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">The basic datatype sent</label><code class="property example">"array"</code></li>
+<li><label class="property name">schema</label><label class="property type">string</label><label class="property description">Link to JSON schema describing the format of the data</label><code class="property example">"https://example.net/schemas/person.json"</code></li>
+<li><label class="property name">payload</label><label class="property type">any</label><label class="property description">payload for the packet. Used only with begingroup (for group names) and data packets</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="runtime-error" class="message name"><a href="#runtime-error">error</a></h3>
+<p>Error response to a command on runtime protocol</p>
+<ul class="message properties">
+<li><label class="property name">message</label><label class="property type">string</label><label class="property description">Error message describing what went wrong</label></li>
+</ul>
+<h3 id="runtime-ports" class="message name"><a href="#runtime-ports">ports</a></h3>
+<p>Message sent by the runtime to signal its available ports. The runtime is responsible for sending the up-to-date list of available ports back to client whenever it changes.</p>
+<ul class="message properties">
+<li><label class="property name">inPorts</label><label class="property type">array</label><label class="property description">list of input ports of the runtime</label></li>Each item contains:
+<ul class="properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">port datatype</label><code class="property example">"boolean"</code></li>
+<li><label class="property optional name">schema</label><label class="property optional type">string</label><label class="property optional description">Link to JSON schema for data on this port</label><code class="property optional example">"https://example.net/schemas/person.json"</code></li>
+<li><label class="property optional name">required</label><label class="property optional type">boolean</label><label class="property optional description">whether the port needs to be connected for the component to work</label><code class="property optional example">true</code></li>
+<li><label class="property optional name">addressable</label><label class="property optional type">boolean</label><label class="property optional description">whether the port is an ArrayPort</label><code class="property optional example">false</code></li>
+<li><label class="property optional name">description</label><label class="property optional type">string</label><label class="property optional description">textual description of the port</label></li>
+<li><label class="property optional name">values</label><label class="property optional type">array</label><label class="property optional description">list of values accepted for the port</label></li>
+<li><label class="property optional name">default</label><label class="property optional type">any</label><label class="property optional description">default value for the port</label></li>
+</ul>
+<li><label class="property name">outPorts</label><label class="property type">array</label><label class="property description">list of output ports of the runtime</label></li>Each item contains:
+<ul class="properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">port datatype</label><code class="property example">"boolean"</code></li>
+<li><label class="property optional name">schema</label><label class="property optional type">string</label><label class="property optional description">Link to JSON schema for data on this port</label><code class="property optional example">"https://example.net/schemas/person.json"</code></li>
+<li><label class="property optional name">required</label><label class="property optional type">boolean</label><label class="property optional description">whether the port needs to be connected for the component to work</label><code class="property optional example">true</code></li>
+<li><label class="property optional name">addressable</label><label class="property optional type">boolean</label><label class="property optional description">whether the port is an ArrayPort</label><code class="property optional example">false</code></li>
+<li><label class="property optional name">description</label><label class="property optional type">string</label><label class="property optional description">textual description of the port</label></li>
+<li><label class="property optional name">values</label><label class="property optional type">array</label><label class="property optional description">list of values accepted for the port</label></li>
+<li><label class="property optional name">default</label><label class="property optional type">any</label><label class="property optional description">default value for the port</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="runtime-runtime" class="message name"><a href="#runtime-runtime">runtime</a></h3>
+<p>Response from the runtime to the getruntime request.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">unique runtime ID. Must be a UUID, version 4</label><code class="property example">"f18a4924-9d4f-414d-a37c-cd24b39bba10"</code></li>
+<li><label class="property name">label</label><label class="property type">string</label><label class="property description">Human-readable description of the runtime</label></li>
+<li><label class="property name">version</label><label class="property type">string</label><label class="property description">version of the runtime protocol that the runtime supports</label><code class="property example">"0.6"</code></li>
+<li><label class="property name">allCapabilities</label><label class="property type">array</label><label class="property description"><a href="#capabilities">capability strings</a> for things the runtime is able to do. May include things not permitted for this client.</label></li>
+<li><label class="property name">capabilities</label><label class="property type">array</label><label class="property description"><a href="#capabilities">capability strings</a> for things the runtime is able to do for this client.</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label><code class="property example">"service-main"</code></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">type of the runtime</label><code class="property example">"microflo"</code></li>
+<li><label class="property name">namespace</label><label class="property type">string</label><label class="property description">Library namespace of the project running on the runtime, if any. Must match that of components belonging to the (top-level) of project.</label><code class="property example">"my-project-foo"</code></li>
+<li><label class="property name">repository</label><label class="property type">string</label><label class="property description">Source-code repository URL of the project running on the runtime, if any</label><code class="property example">"https://github.com/flowbased/fbp-protocol.git"</code></li>
+<li><label class="property name">repositoryVersion</label><label class="property type">string</label><label class="property description">Unique version identifier of the source code of the project, if known. The version should be available in @repository.</label><code class="property example">"0.6.3-8-g90edcfc"</code></li>
+</ul>
+<h3 id="runtime-packetsent" class="message name"><a href="#runtime-packetsent">packetsent</a></h3>
+<p>Confirmation that a packet has been sent</p>
+<ul class="message properties">
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">event</label><label class="property type">string</label><label class="property description">packet event (one of: connect, begingroup, data, endgroup, disconnect)</label></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">The basic datatype sent</label><code class="property example">"array"</code></li>
+<li><label class="property name">schema</label><label class="property type">string</label><label class="property description">Link to JSON schema describing the format of the data</label><code class="property example">"https://example.net/schemas/person.json"</code></li>
+<li><label class="property name">payload</label><label class="property type">any</label><label class="property description">payload for the packet. Used only with begingroup (for group names) and data packets</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h2 class="protocol name" id="graph-protocol">Graph protocol</h2>
+<p class="protocol description">This protocol is utilized for communicating about graph changes in both directions.</p>
+<h3 id="graph-clear" class="message name"><a href="#graph-clear">clear</a></h3>
+<p>Initialize an empty graph.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">identifier for the graph being created. Used for all subsequent messages related to the graph instance</label></li>
+<li><label class="property name">name</label><label class="property type">string</label><label class="property description">Human-readable label for the graph</label></li>
+<li><label class="property name">library</label><label class="property type">string</label><label class="property description">Component library identifier</label></li>
+<li><label class="property name">main</label><label class="property type">boolean</label><label class="property description">Identifies the graph as a main graph of a project that should not be registered as a component
+Graphs registered in this way should also be available for use as subgraphs in other graphs. Therefore a graph registration and later changes to it may cause component messages of the Component protocol to be sent back to the client informing of possible changes in the ports of the subgraph component.</label></li>
+<li><label class="property name">icon</label><label class="property type">string</label><label class="property description">Icon to use for the graph when used as a component</label></li>
+<li><label class="property name">description</label><label class="property type">string</label><label class="property description">Description to use for the graph when used as a component</label></li>
+</ul>
+<h3 id="graph-addnode" class="message name"><a href="#graph-addnode">addnode</a></h3>
+<p>Add node to a graph.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">identifier for the node</label></li>
+<li><label class="property name">component</label><label class="property type">string</label><label class="property description">component name used for the node</label></li>
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">structure of key-value pairs for node metadata</label></li>
+<ul class="properties">
+<li><label class="property name">x</label><label class="property type">integer</label><label class="property description">X coordinate of a graph entity</label></li>
+<li><label class="property name">y</label><label class="property type">integer</label><label class="property description">Y coordinate of a graph entity</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-removenode" class="message name"><a href="#graph-removenode">removenode</a></h3>
+<p>Remove a node from a graph.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">identifier for the node</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-renamenode" class="message name"><a href="#graph-renamenode">renamenode</a></h3>
+<p>Change the ID of a node in the graph</p>
+<ul class="message properties">
+<li><label class="property name">from</label><label class="property type">string</label><label class="property description">original identifier for the node</label></li>
+<li><label class="property name">to</label><label class="property type">string</label><label class="property description">new identifier for the node</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-changenode" class="message name"><a href="#graph-changenode">changenode</a></h3>
+<p>Change the metadata associated to a node in the graph</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">identifier for the node</label></li>
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">structure of key-value pairs for node metadata</label></li>
+<ul class="properties">
+<li><label class="property name">x</label><label class="property type">integer</label><label class="property description">X coordinate of a graph entity</label></li>
+<li><label class="property name">y</label><label class="property type">integer</label><label class="property description">Y coordinate of a graph entity</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-addedge" class="message name"><a href="#graph-addedge">addedge</a></h3>
+<p>Add an edge to the graph</p>
+<ul class="message properties">
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">Structure of key-value pairs for edge metadata</label></li>
+<ul class="properties">
+<li><label class="property name">route</label><label class="property type">integer</label><label class="property description">Route identifier of a graph entity</label></li>
+<li><label class="property name">schema</label><label class="property type">string</label><label class="property description">JSON schema associated with a graph entity</label></li>
+<li><label class="property name">secure</label><label class="property type">boolean</label><label class="property description">Whether graph entity data should be treated as secure</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-removeedge" class="message name"><a href="#graph-removeedge">removeedge</a></h3>
+<p>Remove an edge from the graph</p>
+<ul class="message properties">
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-changeedge" class="message name"><a href="#graph-changeedge">changeedge</a></h3>
+<p>Change an edge's metadata</p>
+<ul class="message properties">
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">struct of key-value pairs for edge metadata</label></li>
+<ul class="properties">
+<li><label class="property name">route</label><label class="property type">integer</label><label class="property description">Route identifier of a graph entity</label></li>
+<li><label class="property name">schema</label><label class="property type">string</label><label class="property description">JSON schema associated with a graph entity</label></li>
+<li><label class="property name">secure</label><label class="property type">boolean</label><label class="property description">Whether graph entity data should be treated as secure</label></li>
+</ul>
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-addinitial" class="message name"><a href="#graph-addinitial">addinitial</a></h3>
+<p>Add an IIP to the graph</p>
+<ul class="message properties">
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">structure of key-value pairs for IIP metadata</label></li>
+<ul class="properties">
+<li><label class="property name">route</label><label class="property type">integer</label><label class="property description">Route identifier of a graph entity</label></li>
+<li><label class="property name">schema</label><label class="property type">string</label><label class="property description">JSON schema associated with a graph entity</label></li>
+<li><label class="property name">secure</label><label class="property type">boolean</label><label class="property description">Whether graph entity data should be treated as secure</label></li>
+</ul>
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source data for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">data</label><label class="property type">object,array,string,number,integer,boolean,null</label><label class="property description">IIP value in its actual data type</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node/port for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-removeinitial" class="message name"><a href="#graph-removeinitial">removeinitial</a></h3>
+<p>Remove an IIP from the graph</p>
+<ul class="message properties">
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">IIP data</label></li>
+<ul class="properties">
+<li><label class="property name">data</label><label class="property type">object,array,string,number,integer,boolean,null</label><label class="property description">IIP value in its actual data type</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node/port for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-addinport" class="message name"><a href="#graph-addinport">addinport</a></h3>
+<p>Add an exported inport to the graph.</p>
+<ul class="message properties">
+<li><label class="property name">public</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">structure of key-value pairs for node metadata</label></li>
+<ul class="properties">
+<li><label class="property name">x</label><label class="property type">integer</label><label class="property description">X coordinate of a graph entity</label></li>
+<li><label class="property name">y</label><label class="property type">integer</label><label class="property description">Y coordinate of a graph entity</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-removeinport" class="message name"><a href="#graph-removeinport">removeinport</a></h3>
+<p>Remove an exported port from the graph</p>
+<ul class="message properties">
+<li><label class="property name">public</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-renameinport" class="message name"><a href="#graph-renameinport">renameinport</a></h3>
+<p>Rename an exported port in the graph</p>
+<ul class="message properties">
+<li><label class="property name">from</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">to</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-addoutport" class="message name"><a href="#graph-addoutport">addoutport</a></h3>
+<p>Add an exported outport to the graph.</p>
+<ul class="message properties">
+<li><label class="property name">public</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">structure of key-value pairs for port metadata</label></li>
+<ul class="properties">
+<li><label class="property name">x</label><label class="property type">integer</label><label class="property description">X coordinate of a graph entity</label></li>
+<li><label class="property name">y</label><label class="property type">integer</label><label class="property description">Y coordinate of a graph entity</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-removeoutport" class="message name"><a href="#graph-removeoutport">removeoutport</a></h3>
+<p>Remove an exported port from the graph</p>
+<ul class="message properties">
+<li><label class="property name">public</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-renameoutport" class="message name"><a href="#graph-renameoutport">renameoutport</a></h3>
+<p>Rename an exported port in the graph</p>
+<ul class="message properties">
+<li><label class="property name">from</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">to</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-addgroup" class="message name"><a href="#graph-addgroup">addgroup</a></h3>
+<p>Add a group to the graph</p>
+<ul class="message properties">
+<li><label class="property name">name</label><label class="property type">string</label><label class="property description">the group name</label></li>
+<li><label class="property name">nodes</label><label class="property type">array</label><label class="property description">an array of node ids part of the group</label></li>
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">structure of key-value pairs for group metadata</label></li>
+<ul class="properties">
+<li><label class="property name">description</label><label class="property type">string</label><label class="property description">Longer textual description of the group</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-removegroup" class="message name"><a href="#graph-removegroup">removegroup</a></h3>
+<p>Remove a group from the graph</p>
+<ul class="message properties">
+<li><label class="property name">name</label><label class="property type">string</label><label class="property description">the group name</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-renamegroup" class="message name"><a href="#graph-renamegroup">renamegroup</a></h3>
+<p>Rename a group in the graph.</p>
+<ul class="message properties">
+<li><label class="property name">from</label><label class="property type">string</label><label class="property description">original group name</label></li>
+<li><label class="property name">to</label><label class="property type">string</label><label class="property description">new group name</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="graph-changegroup" class="message name"><a href="#graph-changegroup">changegroup</a></h3>
+<p>Change a group's metadata</p>
+<ul class="message properties">
+<li><label class="property name">name</label><label class="property type">string</label><label class="property description">the group name</label></li>
+<li><label class="property name">metadata</label><label class="property type">object</label><label class="property description">structure of key-value pairs for group metadata</label></li>
+<ul class="properties">
+<li><label class="property name">description</label><label class="property type">string</label><label class="property description">Longer textual description of the group</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h2 class="protocol name" id="component-protocol">Component protocol</h2>
+<p class="protocol description">Protocol for handling the component registry.</p>
+<h3 id="component-list" class="message name"><a href="#component-list">list</a></h3>
+<p>Request a list of currently available components. Will be responded with a set of `component` messages.</p>
+<h3 id="component-getsource" class="message name"><a href="#component-getsource">getsource</a></h3>
+<p>Request for the source code of a given component. Will be responded with a `source` message.</p>
+<ul class="message properties">
+<li><label class="property name">name</label><label class="property type">string</label><label class="property description">Name of the component to for which to get source code. Should contain the library prefix</label><code class="property example">"my-project/SomeComponent"</code></li>
+</ul>
+<h3 id="component-source" class="message name"><a href="#component-source">source</a></h3>
+<p>Source code for a component. In cases where a runtime receives a `source` message, it should do whatever operations are needed for making that component available for graphs, including possible compilation.</p>
+<ul class="message properties">
+<li><label class="property name">name</label><label class="property type">string</label><label class="property description">Name of the component. Must not contain library prefix</label><code class="property example">"MyComponent"</code></li>
+<li><label class="property name">language</label><label class="property type">string</label><label class="property description">The programming language used for the component code</label><code class="property example">"c++"</code></li>
+<li><label class="property name">library</label><label class="property type">string</label><label class="property description">Component library identifier</label><code class="property example">"components-common"</code></li>
+<li><label class="property name">code</label><label class="property type">string</label><label class="property description">Component source code</label></li>
+<li><label class="property name">tests</label><label class="property type">string</label><label class="property description">unit tests for the component</label></li>
+</ul>
+<h3 id="component-error" class="message name"><a href="#component-error">error</a></h3>
+<p>Error response to a command on component protocol</p>
+<ul class="message properties">
+<li><label class="property name">message</label><label class="property type">string</label><label class="property description">Error message describing what went wrong</label></li>
+</ul>
+<h3 id="component-component" class="message name"><a href="#component-component">component</a></h3>
+<p>Transmit the metadata about a component instance.</p>
+<ul class="message properties">
+<li><label class="property name">name</label><label class="property type">string</label><label class="property description">component name in format that can be used in graphs. Should contain the component library prefix.</label><code class="property example">"my-project/MyComponent"</code></li>
+<li><label class="property name">description</label><label class="property type">string</label><label class="property description">textual description on what the component does</label></li>
+<li><label class="property name">icon</label><label class="property type">string</label><label class="property description">Visual icon for the component, matching icon names in <a href="http://fortawesome.github.io/Font-Awesome/icons/">Font Awesome</a></label></li>
+<li><label class="property name">subgraph</label><label class="property type">boolean</label><label class="property description">boolean telling whether the component is a subgraph</label></li>
+<li><label class="property name">inPorts</label><label class="property type">array</label><label class="property description">list of input ports of the component</label></li>Each item contains:
+<ul class="properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">port datatype</label><code class="property example">"boolean"</code></li>
+<li><label class="property optional name">schema</label><label class="property optional type">string</label><label class="property optional description">Link to JSON schema for data on this port</label><code class="property optional example">"https://example.net/schemas/person.json"</code></li>
+<li><label class="property optional name">required</label><label class="property optional type">boolean</label><label class="property optional description">whether the port needs to be connected for the component to work</label><code class="property optional example">true</code></li>
+<li><label class="property optional name">addressable</label><label class="property optional type">boolean</label><label class="property optional description">whether the port is an ArrayPort</label><code class="property optional example">false</code></li>
+<li><label class="property optional name">description</label><label class="property optional type">string</label><label class="property optional description">textual description of the port</label></li>
+<li><label class="property optional name">values</label><label class="property optional type">array</label><label class="property optional description">list of values accepted for the port</label></li>
+<li><label class="property optional name">default</label><label class="property optional type">any</label><label class="property optional description">default value for the port</label></li>
+</ul>
+<li><label class="property name">outPorts</label><label class="property type">array</label><label class="property description">list of output ports of the component</label></li>Each item contains:
+<ul class="properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">port datatype</label><code class="property example">"boolean"</code></li>
+<li><label class="property optional name">schema</label><label class="property optional type">string</label><label class="property optional description">Link to JSON schema for data on this port</label><code class="property optional example">"https://example.net/schemas/person.json"</code></li>
+<li><label class="property optional name">required</label><label class="property optional type">boolean</label><label class="property optional description">whether the port needs to be connected for the component to work</label><code class="property optional example">true</code></li>
+<li><label class="property optional name">addressable</label><label class="property optional type">boolean</label><label class="property optional description">whether the port is an ArrayPort</label><code class="property optional example">false</code></li>
+<li><label class="property optional name">description</label><label class="property optional type">string</label><label class="property optional description">textual description of the port</label></li>
+<li><label class="property optional name">values</label><label class="property optional type">array</label><label class="property optional description">list of values accepted for the port</label></li>
+<li><label class="property optional name">default</label><label class="property optional type">any</label><label class="property optional description">default value for the port</label></li>
+</ul>
+</ul>
+<h3 id="component-componentsready" class="message name"><a href="#component-componentsready">componentsready</a></h3>
+<p>Indication that a component listing has finished</p>
+<h2 class="protocol name" id="network-protocol">Network protocol</h2>
+<p class="protocol description">Protocol for starting and stopping FBP networks, and finding out about their state.</p>
+<h3 id="network-start" class="message name"><a href="#network-start">start</a></h3>
+<p>Start execution of a FBP network based on a given graph.</p>
+<ul class="message properties">
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="network-getstatus" class="message name"><a href="#network-getstatus">getstatus</a></h3>
+<p>Get the current status of the runtime. The runtime should respond with a status message.</p>
+<ul class="message properties">
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="network-stop" class="message name"><a href="#network-stop">stop</a></h3>
+<p>Stop execution of a FBP network based on a given graph.</p>
+<ul class="message properties">
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="network-persist" class="message name"><a href="#network-persist">persist</a></h3>
+<p>Tells the runtime to persist the current state of graphs and components so that they are available between restarts. Requires the network:persist capability.</p>
+<h3 id="network-debug" class="message name"><a href="#network-debug">debug</a></h3>
+<p>Set a network into debug mode</p>
+<ul class="message properties">
+<li><label class="property name">enable</label><label class="property type">boolean</label><label class="property description">tells whether to put the network in debug mode</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="network-edges" class="message name"><a href="#network-edges">edges</a></h3>
+<p>List of edges user has selected for inspection in a user interface or debugger, sent from runtime to UI.</p>
+<ul class="message properties">
+<li><label class="property name">edges</label><label class="property type">array</label><label class="property description">list of selected edges</label></li>Each item contains:
+<ul class="properties">
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="network-stopped" class="message name"><a href="#network-stopped">stopped</a></h3>
+<p>Inform that a given network has stopped.</p>
+<ul class="message properties">
+<li><label class="property name">time</label><label class="property type">string</label><label class="property description">time when the network was stopped</label></li>
+<li><label class="property name">uptime</label><label class="property type">number</label><label class="property description">time the network was running, in seconds</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">running</label><label class="property type">boolean</label><label class="property description">whether or not network is currently running</label></li>
+<li><label class="property name">started</label><label class="property type">boolean</label><label class="property description">whether or not network has been started</label></li>
+<li><label class="property name">debug</label><label class="property type">boolean</label><label class="property description">whether or not network is in debug mode</label></li>
+</ul>
+<h3 id="network-started" class="message name"><a href="#network-started">started</a></h3>
+<p>Inform that a given network has been started.</p>
+<ul class="message properties">
+<li><label class="property name">time</label><label class="property type">string</label><label class="property description">time when the network was started</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">started</label><label class="property type">boolean</label><label class="property description">whether or not network has started running</label></li>
+<li><label class="property name">running</label><label class="property type">boolean</label><label class="property description">whether or not network is currently running</label></li>
+<li><label class="property name">debug</label><label class="property type">boolean</label><label class="property description">whether or not network is in debug mode</label></li>
+</ul>
+<h3 id="network-status" class="message name"><a href="#network-status">status</a></h3>
+<p>Response to a getstatus message.</p>
+<ul class="message properties">
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">uptime</label><label class="property type">number</label><label class="property description">time the network has been running, in seconds</label></li>
+<li><label class="property name">started</label><label class="property type">boolean</label><label class="property description">whether or not network has started running</label></li>
+<li><label class="property name">running</label><label class="property type">boolean</label><label class="property description">boolean tells whether the network is running or not</label></li>
+<li><label class="property name">debug</label><label class="property type">boolean</label><label class="property description">whether or not network is in debug mode</label></li>
+</ul>
+<h3 id="network-output" class="message name"><a href="#network-output">output</a></h3>
+<p>An output message from a running network, roughly similar to STDOUT output of a Unix process, or a line of console.log in JavaScript. Output can also be used for passing images from the runtime to the UI.'</p>
+<ul class="message properties">
+<li><label class="property name">message</label><label class="property type">string</label><label class="property description">contents of the output line</label></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">type of output, either message or previewurl (one of: message, previewurl)</label></li>
+<li><label class="property name">url</label><label class="property type">string</label><label class="property description">URL for an image generated by the runtime</label></li>
+</ul>
+<h3 id="network-error" class="message name"><a href="#network-error">error</a></h3>
+<p>An error from a running network, roughly similar to STDERR output of a Unix process, or a line of console.error in JavaScript.'</p>
+<ul class="message properties">
+<li><label class="property name">message</label><label class="property type">string</label><label class="property description">contents of the error message</label></li>
+<li><label class="property name">stack</label><label class="property type">string</label><label class="property description">stack trace</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="network-processerror" class="message name"><a href="#network-processerror">processerror</a></h3>
+<p>When in debug mode, a network can signal an error happening inside a process.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">error</label><label class="property type">string</label><label class="property description">error from the component</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="network-icon" class="message name"><a href="#network-icon">icon</a></h3>
+<p>Icon of a component instance has changed.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">icon</label><label class="property type">string</label><label class="property description">new icon for the component instance</label></li>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="network-connect" class="message name"><a href="#network-connect">connect</a></h3>
+<p>Beginning of transmission on an edge.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">textual edge identifier, usually in form of a FBP language line</label></li>
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">subgraph</label><label class="property type">array</label><label class="property description">Subgraph identifier for the event. An array of node IDs.</label></li>
+</ul>
+<h3 id="network-begingroup" class="message name"><a href="#network-begingroup">begingroup</a></h3>
+<p>Beginning of a group (bracket IP) on an edge.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">textual edge identifier, usually in form of a FBP language line</label></li>
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">subgraph</label><label class="property type">array</label><label class="property description">Subgraph identifier for the event. An array of node IDs.</label></li>
+</ul>
+<h3 id="network-data" class="message name"><a href="#network-data">data</a></h3>
+<p>Data transmission on an edge.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">textual edge identifier, usually in form of a FBP language line</label></li>
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">subgraph</label><label class="property type">array</label><label class="property description">Subgraph identifier for the event. An array of node IDs.</label></li>
+</ul>
+<h3 id="network-endgroup" class="message name"><a href="#network-endgroup">endgroup</a></h3>
+<p>Ending of a group (bracket IP) on an edge.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">textual edge identifier, usually in form of a FBP language line</label></li>
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">subgraph</label><label class="property type">array</label><label class="property description">Subgraph identifier for the event. An array of node IDs.</label></li>
+</ul>
+<h3 id="network-disconnect" class="message name"><a href="#network-disconnect">disconnect</a></h3>
+<p>End of transmission on an edge.</p>
+<ul class="message properties">
+<li><label class="property name">id</label><label class="property type">string</label><label class="property description">textual edge identifier, usually in form of a FBP language line</label></li>
+<li><label class="property name">src</label><label class="property type">object</label><label class="property description">source node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">tgt</label><label class="property type">object</label><label class="property description">target node for the edge</label></li>
+<ul class="properties">
+<li><label class="property name">node</label><label class="property type">string</label><label class="property description">Node identifier in a graph</label><code class="property example">"Repeat"</code></li>
+<li><label class="property name">port</label><label class="property type">string</label><label class="property description">Port identifier in a component or process</label><code class="property example">"in"</code></li>
+<li><label class="property name">index</label><label class="property type">string,number</label><label class="property description">connection index, for addressable ports</label></li>
+</ul>
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">subgraph</label><label class="property type">array</label><label class="property description">Subgraph identifier for the event. An array of node IDs.</label></li>
+</ul>
+<h2 class="protocol name" id="trace-protocol">Trace protocol</h2>
+<p class="protocol description">This protocol is utilized for triggering and transmitting [Flowtrace](https://github.com/flowbased/flowtrace)s</p>
+<h3 id="trace-start" class="message name"><a href="#trace-start">start</a></h3>
+<p>Tracing was started</p>
+<ul class="message properties">
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">buffersize</label><label class="property type">integer</label><label class="property description">Size of tracing buffer to keep. In bytes</label></li>
+</ul>
+<h3 id="trace-stop" class="message name"><a href="#trace-stop">stop</a></h3>
+<p>Tracing was stopped</p>
+<ul class="message properties">
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="trace-dump" class="message name"><a href="#trace-dump">dump</a></h3>
+<p>undefined</p>
+<ul class="message properties">
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+<li><label class="property name">type</label><label class="property type">string</label><label class="property description">String describing type of trace. (one of: flowtrace.json)</label></li>
+<li><label class="property name">flowtrace</label><label class="property type">string</label><label class="property description">A Flowtrace file of `type`</label></li>
+</ul>
+<h3 id="trace-clear" class="message name"><a href="#trace-clear">clear</a></h3>
+<p>Tracing buffer was cleared</p>
+<ul class="message properties">
+<li><label class="property name">graph</label><label class="property type">string</label><label class="property description">Graph identifier the message targets</label></li>
+</ul>
+<h3 id="trace-error" class="message name"><a href="#trace-error">error</a></h3>
+<p>Error response to a command on trace protocol</p>
+<ul class="message properties">
+<li><label class="property name">message</label><label class="property type">string</label><label class="property description">Error message describing what went wrong</label></li>
+</ul>
+<h3 id="runtime-discovery">Runtime discovery</h3>
+
+<p>FBP runtimes may advertise their services using <a href="https://tools.ietf.org/html/rfc6763">DNS Service Discovery</a> via Multicast DNS (mDNS, also known as Bonjour). In this case the runtime must provide <a href="https://en.wikipedia.org/wiki/SRV_record">Service (SRV) Records</a> and <a href="https://en.wikipedia.org/wiki/TXT_record">Text (TXT) Records</a> describing the FBP protocol interfaces it provides. The service identifiers are:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">_fbp-ws._tcp</code> for FBP Protocol interfaces via WebSocket transport</li>
+</ul>
+
+<p>If the runtime is using DNS Service Discovery, it must also provide the following parameters in the TXT record:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">txtvers</code>: version of the DNS-SD record. Currently needs to be <code class="language-plaintext highlighter-rouge">1</code></li>
+  <li><code class="language-plaintext highlighter-rouge">id</code>: unique identifier (UUID) of the runtime instance</li>
+  <li><code class="language-plaintext highlighter-rouge">type</code>: the type of the runtime, for example <code class="language-plaintext highlighter-rouge">noflo-nodejs</code></li>
+</ul>
+
+<p>Additionally, the TXT record can contain:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">label</code>: human-readable label for the runtime instance</li>
+</ul>
+
+<h2 id="changes">Changes</h2>
+
+<ul>
+  <li>2019-10-09:
+    <ul>
+      <li>Documented how runtimes can advertise themselves using mDNS</li>
+    </ul>
+  </li>
+  <li>2018-08-18: <strong>Version 0.8</strong>
+    <ul>
+      <li>Moved <code class="language-plaintext highlighter-rouge">secret</code> from payload to message top-level</li>
+      <li>Introduced <code class="language-plaintext highlighter-rouge">requestId</code> and <code class="language-plaintext highlighter-rouge">responseTo</code> top-level keys for identifying requests and the response packets to them</li>
+    </ul>
+  </li>
+  <li>2018-03-27:
+    <ul>
+      <li>Added schema for <code class="language-plaintext highlighter-rouge">network:edges</code> output message</li>
+      <li>Modified <code class="language-plaintext highlighter-rouge">subgraph</code> key of <code class="language-plaintext highlighter-rouge">network:data</code> and other network packet events to be an array as specified in the text</li>
+    </ul>
+  </li>
+  <li>2018-03-26:
+    <ul>
+      <li>Fixed documentation for <code class="language-plaintext highlighter-rouge">component:setsource</code> to use <code class="language-plaintext highlighter-rouge">component:source</code> input, and <code class="language-plaintext highlighter-rouge">component:component</code> output</li>
+      <li>Added schema for <code class="language-plaintext highlighter-rouge">trace:error</code> message</li>
+      <li>Added <code class="language-plaintext highlighter-rouge">:error</code> output to all capabilities where user can perform actions that may fail</li>
+    </ul>
+  </li>
+  <li>2018-03-23:
+    <ul>
+      <li>Added optional <code class="language-plaintext highlighter-rouge">graph</code> key to <code class="language-plaintext highlighter-rouge">network:error</code> payloads</li>
+    </ul>
+  </li>
+  <li>2018-03-22: <strong>Version 0.7</strong>
+    <ul>
+      <li>Added <code class="language-plaintext highlighter-rouge">network:debug</code> and <code class="language-plaintext highlighter-rouge">network:getstatus</code> to the <code class="language-plaintext highlighter-rouge">network:control</code> permission</li>
+    </ul>
+  </li>
+  <li>2018-03-21:
+    <ul>
+      <li>Fixed signature of <code class="language-plaintext highlighter-rouge">runtime:packet.payload</code>, <code class="language-plaintext highlighter-rouge">runtime:packetsent.payload</code>, and port definition <code class="language-plaintext highlighter-rouge">default</code> to accept any payload type</li>
+      <li>Added <code class="language-plaintext highlighter-rouge">values</code> and <code class="language-plaintext highlighter-rouge">default</code> keys for port definitions</li>
+      <li>Added schema for <code class="language-plaintext highlighter-rouge">component:componentsready</code> output message</li>
+      <li>Added schema for <code class="language-plaintext highlighter-rouge">graph:clear</code> output message</li>
+      <li>Added <code class="language-plaintext highlighter-rouge">packetsent</code> response for <code class="language-plaintext highlighter-rouge">runtime:packet</code> input message</li>
+    </ul>
+  </li>
+  <li>2017-09-17:
+    <ul>
+      <li>Added <code class="language-plaintext highlighter-rouge">schema</code> support for ports and packets</li>
+      <li>Documented known metadata keys for various graph entities</li>
+    </ul>
+  </li>
+  <li>2017-04-09: <strong>Version 0.6</strong>
+    <ul>
+      <li>Version 0.6. No breaking changes over 0.5.</li>
+      <li>Added additional capabilities <code class="language-plaintext highlighter-rouge">graph:readonly</code>, <code class="language-plaintext highlighter-rouge">network:control</code>, <code class="language-plaintext highlighter-rouge">network:data</code>, <code class="language-plaintext highlighter-rouge">network:status</code>. Especially useful for read-only access.</li>
+      <li>Deprecated the <code class="language-plaintext highlighter-rouge">protocol:network</code> capability in favor of the new fine-gained <code class="language-plaintext highlighter-rouge">network:*</code> capabilities.</li>
+      <li>Each capability now defines the set of messages contained in it. Available as <code class="language-plaintext highlighter-rouge">inputs</code> and <code class="language-plaintext highlighter-rouge">outputs</code> in the schema <code class="language-plaintext highlighter-rouge">/shared/capabilities</code>.</li>
+    </ul>
+  </li>
+  <li>2017-05-04:
+    <ul>
+      <li>Fixed protocol errors (<code class="language-plaintext highlighter-rouge">graph:error</code>, <code class="language-plaintext highlighter-rouge">component:error</code> and <code class="language-plaintext highlighter-rouge">runtime:error</code>) to have mandatory <code class="language-plaintext highlighter-rouge">message</code> string payload.</li>
+      <li>Fixed missing <code class="language-plaintext highlighter-rouge">required</code> markers in some JSON schemas for <code class="language-plaintext highlighter-rouge">graph</code> protocol. Affected messages:
+<code class="language-plaintext highlighter-rouge">graph:renamegroup</code>, <code class="language-plaintext highlighter-rouge">graph:renameinport</code>, <code class="language-plaintext highlighter-rouge">graph:removeinport</code>, <code class="language-plaintext highlighter-rouge">graph:addinitial</code>, <code class="language-plaintext highlighter-rouge">graph:changeedge</code></li>
+      <li>More readable HTML output, including property value types and examples</li>
+    </ul>
+  </li>
+  <li>2017-05-03:
+    <ul>
+      <li>Added more optional metadata to <code class="language-plaintext highlighter-rouge">runtime:runtime</code> message: <code class="language-plaintext highlighter-rouge">repository</code>, <code class="language-plaintext highlighter-rouge">repositoryVersion</code> and <code class="language-plaintext highlighter-rouge">namespace</code></li>
+    </ul>
+  </li>
+  <li>2017-02-20:
+    <ul>
+      <li>Fixed payload definition of <code class="language-plaintext highlighter-rouge">network:edges</code> missing mandatory <code class="language-plaintext highlighter-rouge">graph</code> key</li>
+    </ul>
+  </li>
+  <li>2016-07-01:
+    <ul>
+      <li><code class="language-plaintext highlighter-rouge">network:error</code> payload may now contain an optional <code class="language-plaintext highlighter-rouge">stacktrace</code></li>
+    </ul>
+  </li>
+  <li>2016-06-23:
+    <ul>
+      <li>Trace subprotocol also available in machine-readable format</li>
+    </ul>
+  </li>
+  <li>2016-06-17:
+    <ul>
+      <li>Protocol definition available as machine-readable JSON <a href="https://github.com/flowbased/fbp-protocol/tree/master/schema/yaml">schemas</a>.</li>
+      <li>The human-readable HTML documentation is generated from this defintion.</li>
+      <li>The npm package <code class="language-plaintext highlighter-rouge">fbp-protocol</code> contains the schemas as YAML, JSON and .js modules.</li>
+    </ul>
+  </li>
+  <li>2015-11-20:
+    <ul>
+      <li>Initial <code class="language-plaintext highlighter-rouge">trace</code> subprotocol, for <a href="https://github.com/flowbased/flowtrace">Flowtrace</a> support</li>
+    </ul>
+  </li>
+  <li>2015-03-27:
+    <ul>
+      <li>Documented <code class="language-plaintext highlighter-rouge">network</code> <code class="language-plaintext highlighter-rouge">persist</code> and <code class="language-plaintext highlighter-rouge">component</code> <code class="language-plaintext highlighter-rouge">componentsready</code> messages</li>
+    </ul>
+  </li>
+  <li>2015-03-26: <strong>Version 0.5</strong>
+    <ul>
+      <li>All messages sent to runtime should include the <code class="language-plaintext highlighter-rouge">secret</code> in payload</li>
+      <li>Runtime description message includes an <code class="language-plaintext highlighter-rouge">allCapabilities</code> array describing capabilities of the runtime, including ones not available to current user</li>
+    </ul>
+  </li>
+  <li>2014-10-23
+    <ul>
+      <li>added clarifications to network running state in <code class="language-plaintext highlighter-rouge">status</code>, <code class="language-plaintext highlighter-rouge">started</code>, and <code class="language-plaintext highlighter-rouge">stopped</code> messages</li>
+    </ul>
+  </li>
+  <li>2014-09-26
+    <ul>
+      <li>Add <code class="language-plaintext highlighter-rouge">secret</code> as payload to <code class="language-plaintext highlighter-rouge">getruntime</code> to support <a href="https://github.com/noflo/noflo-ui/issues/278">access levels</a></li>
+    </ul>
+  </li>
+  <li>2014-08-05:
+    <ul>
+      <li>Add get, list, graph, graphsdone commands to the graph protocol</li>
+      <li>Add list, network commands to the network protocol</li>
+    </ul>
+  </li>
+  <li>2014-07-15:
+    <ul>
+      <li>Add changenode, changeedge, addgroup, removegroup, renamegroup,
+changegroup commands to the graph protocol</li>
+    </ul>
+  </li>
+  <li>2014-03-13: <strong>Version 0.4</strong>
+    <ul>
+      <li>Capability discovery support</li>
+      <li>Network exported port messaging for remote subgraphs</li>
+    </ul>
+  </li>
+  <li>2014-02-18: <strong>Version 0.3</strong>
+    <ul>
+      <li>Support for exported graph ports</li>
+    </ul>
+  </li>
+  <li>2014-01-09: <strong>Version 0.2</strong>
+    <ul>
+      <li>Multi-graph support via the <code class="language-plaintext highlighter-rouge">graph</code> key in payload</li>
+      <li>Harmonization with <a href="http://noflojs.org/documentation/json/">JSON format</a> by renaming <code class="language-plaintext highlighter-rouge">from</code>/<code class="language-plaintext highlighter-rouge">to</code> in edges to <code class="language-plaintext highlighter-rouge">src</code>/<code class="language-plaintext highlighter-rouge">tgt</code></li>
+      <li>Network <code class="language-plaintext highlighter-rouge">edges</code> message</li>
+    </ul>
+  </li>
+</ul>
+
+
+    </article>
+  </body>
+</html>
