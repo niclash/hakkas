@@ -204,6 +204,7 @@ enum pal_err loop_listen(Loop *loop, const LoopListenerConfig *cfg, LoopListener
 	l->max_conns = cfg->max_conns;
 	l->out_cap = cfg->out_cap;
 	l->on_accept = cfg->on_accept;
+	l->on_closed = cfg->on_closed;
 	l->ctx = cfg->ctx;
 	loop->listeners[loop->listener_count++] = l;
 	log_info("listening on %s port %u", cfg->host, (unsigned)l->port);
@@ -227,6 +228,8 @@ void loop_listener_close(LoopListener *l)
 		}
 	}
 	pal_socket_close(l->sock);
+	if (l->on_closed != NULL)
+		l->on_closed(l->ctx, l);
 	free(l);
 }
 
@@ -296,6 +299,19 @@ bool loop_add_tick(Loop *loop, loop_tick_fn fn, void *ctx)
 		return false;
 	loop->ticks[loop->tick_count++] = (LoopTick){fn, ctx, 0};
 	return true;
+}
+
+bool loop_remove_tick(Loop *loop, loop_tick_fn fn, void *ctx)
+{
+	for (size_t i = 0; i < loop->tick_count; i++) {
+		if (loop->ticks[i].fn == fn && loop->ticks[i].ctx == ctx) {
+			memmove(&loop->ticks[i], &loop->ticks[i + 1],
+				(loop->tick_count - i - 1) * sizeof(LoopTick));
+			loop->tick_count--;
+			return true;
+		}
+	}
+	return false;
 }
 
 static uint64_t min_u64(uint64_t a, uint64_t b)

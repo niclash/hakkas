@@ -19,6 +19,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c
   ${HAKKAS_SOURCE_ROOT}/engine/loop.c
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
+  ${HAKKAS_SOURCE_ROOT}/engine/web_server.c
   ${HAKKAS_SOURCE_ROOT}/graphs/block.c
   ${HAKKAS_SOURCE_ROOT}/graphs/deadlines.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph.c
@@ -29,6 +30,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
   ${HAKKAS_SOURCE_ROOT}/graphs/runtime.c
   ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c
+  ${HAKKAS_SOURCE_ROOT}/protocol/http.c
   ${HAKKAS_SOURCE_ROOT}/system/base64.c
   ${HAKKAS_SOURCE_ROOT}/system/config.c
   ${HAKKAS_SOURCE_ROOT}/system/config_file.c

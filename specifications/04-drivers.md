@@ -80,7 +80,7 @@ Nothing here has been worked on yet; this is a proposal to start from. The devic
 The user can then type `http://<hostname>.local:<port>/` instead of an IP address.
 
 **HTTP + WebSocket server** — two options:
-1. A small, portable HTTP/1.1 `GET` server plus an RFC 6455 WebSocket layer, written once against the PAL socket primitives and used by **both** build trees. It integrates directly into the single-threaded engine loop (`01-architecture-overview.md` §3.2.1). **Recommended**: the same code runs on desktop and device, and no cross-thread handoff is needed.
+1. A small, portable HTTP/1.1 `GET` server plus an RFC 6455 WebSocket layer, written once against the PAL socket primitives and used by **both** build trees. It integrates directly into the single-threaded engine loop (`01-architecture-overview.md` §3.2.1). **Recommended**: the same code runs on desktop and device, and no cross-thread handoff is needed. The HTTP server is built this way (plan task 13, `05-app-lifecycle-persistence.md` §3); its buffer sizes and connection count are per-build overrides to size for the MCU.
 2. Zephyr's built-in HTTP server (`CONFIG_HTTP_SERVER`, with static/gzip resources and WebSocket upgrade support). Less code to write, but it runs on its own thread(s), so every received frame would have to be handed into the engine queue, and the POSIX build would need a different server. Keep it as a fallback if code size or schedule demands.
 
 **TLS**: optional, via Zephyr's mbedTLS-backed TLS sockets (`02-wire-protocol.md` §2.5 item 9); off by default.

@@ -7,12 +7,13 @@
  * Naming: functions are prefixed pal_, the status enum PAL_ / pal_err.
  *
  * Implemented so far: initialization, the monotonic millisecond clock, the
- * cryptographic random source, storage (01 §0.1), non-blocking TCP sockets
- * with a poll call, and the cross-context enqueue with the loop's wakeup and
- * stop request (01 §0.2, plan task 12). Still to come: the IO-provider
- * interface (task 22). There is no timer API (decided, plan task 8, 01 §0):
- * timers are deadlines kept by the core (graphs/deadlines.h), and pal_poll's
- * timeout is the only timing primitive the PAL provides (besides the clock).
+ * cryptographic random source, storage with streaming reads (01 §0.1),
+ * non-blocking TCP sockets with a poll call, and the cross-context enqueue
+ * with the loop's wakeup and stop request (01 §0.2, plan task 12). Still to
+ * come: the IO-provider interface (task 22). There is no timer API (decided,
+ * plan task 8, 01 §0): timers are deadlines kept by the core
+ * (graphs/deadlines.h), and pal_poll's timeout is the only timing primitive
+ * the PAL provides (besides the clock).
  * The event loop built on these is portable core code (engine/loop.h). The
  * console log sink is not declared here: each port registers its own with
  * log_add_sink (POSIX: platform/posix/log_stderr.h).
@@ -205,6 +206,33 @@ enum pal_err pal_storage_list(const char *dir, pal_storage_list_fn fn, void *ctx
  * error, the number deleted until then). PAL_ERR_NOT_FOUND if dir does not
  * exist. */
 enum pal_err pal_storage_remove_tmp(const char *dir, size_t *removed);
+
+/*
+ * Streaming reads (decided, plan task 13): a file too large for one buffer
+ * (a web asset, 05 §3) is read in chunks through an open file. The handle is
+ * an int on both ports (POSIX: a file descriptor; Zephyr: an index into a
+ * small fixed table of fs_file_t, so no heap either); a port bounds how many
+ * files are open at once, and an open beyond that is PAL_ERR_UNAVAILABLE.
+ * Read-only: every write goes through pal_storage_write.
+ */
+
+typedef int pal_file;
+
+#define PAL_FILE_NONE (-1)
+
+/* Opens the regular file at path for reading; *size (if not NULL) receives
+ * its size. PAL_ERR_NOT_FOUND if there is none, PAL_ERR_INVALID if path is a
+ * directory or another kind of entry, PAL_ERR_UNAVAILABLE when out of
+ * descriptors or file slots. Never blocks on a special file (POSIX:
+ * O_NONBLOCK on open). Close it with pal_file_close. */
+enum pal_err pal_file_open(const char *path, pal_file *out, uint64_t *size);
+
+/* Reads the next at most cap (> 0) bytes into buf, sequentially from the
+ * start; *len receives the count, 0 at the end of the file. */
+enum pal_err pal_file_read(pal_file f, void *buf, size_t cap, size_t *len);
+
+/* Closes the file. PAL_FILE_NONE is ignored. */
+void pal_file_close(pal_file f);
 
 /* ---- Sockets (01 §0.2, 02 §0) -------------------------------------------- */
 

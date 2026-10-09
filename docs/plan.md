@@ -61,17 +61,30 @@ for a decision.
   `src/engine/loop.h` with pluggable listeners/connections, bounded outgoing buffers and tick
   hooks for other deadlines (01 §3.2.1); POSIX `SIGINT`/`SIGTERM` handlers
   (`platform/posix/signals.h`).
-- [ ] **13. HTTP static server** (05 §3): GET only, SPA fallback, `.gz` variants. Build it on
+- [x] **13. HTTP static server** (05 §3): GET only, SPA fallback, `.gz` variants. Build it on
   the loop (`engine/loop.h`): `loop_listen` with an `on_accept` that sets a `LoopConnHandler`;
   stream files through `on_drained`/`loop_conn_space`, pause reading with
   `loop_conn_pause_read` while a response is pending, `loop_conn_close` after the response;
   choose the listener's `out_cap` and a request-header limit, and an idle timeout via a tick
-  hook (`loop_add_tick`) if one is wanted.
+  hook (`loop_add_tick`) if one is wanted. Done: the incremental HTTP/1.1 request-head parser
+  `src/protocol/http.h` (8 KiB / 32 fields, header lookup, token lists, keep-alive,
+  `Accept-Encoding`), the web server `src/engine/web_server.h` (GET and HEAD, secure path
+  mapping, SPA fallback for extension-less paths, `.gz` variants, keep-alive, timeouts via a
+  tick hook), the PAL streaming read `pal_file_open`/`read`/`close` (01 §0.1); the loop gained
+  `loop_remove_tick`, `loop_now_ms` and a listener `on_closed` callback. Decisions: 05 §3.
 - [ ] **14. WebSocket layer** (RFC 6455): upgrade, Origin check, connection and frame-size
   limits (02 §0). On the loop: `max_connections` is counted with `loop_listener_conn_count`
   (refuse the upgrade with 503 above it; set the listener's hard `max_conns` somewhat higher
   so the 503 can be sent); choose `out_cap` (a full outgoing buffer closes the connection,
-  01 §3.2.1).
+  01 §3.2.1). Parse the upgrade request with `src/protocol/http.h` (task 13): read into
+  `http_request_space`/`http_request_commit`; on `HTTP_PARSE_COMPLETE` the fields are there
+  (`http_request_header`, `http_request_header_count` for exactly one `Sec-WebSocket-Key`,
+  `http_request_header_has_token` for `Connection: Upgrade` / `Upgrade: websocket`), and the
+  bytes after the head (`http_request_leftover`) are already WebSocket frames. A parse error's
+  status is `http_parse_status`; the web server's error-and-close path (discard the buffered
+  input before `loop_conn_close`, `engine/web_server.c`) avoids a reset. The head buffer can
+  be freed after the upgrade (`http_request_init` takes the caller's buffer). The web server
+  uses one of the loop's 4 tick hooks.
 - [ ] **15. Crypto primitives**: SHA-256, HMAC-SHA256, PBKDF2, base64/base64url, constant-time
   compare, via mbedTLS (decided, 01 §6).
 - [ ] **16. Authorization**: users file, SCRAM handshake, sessions, roles/capabilities, rate
@@ -91,7 +104,10 @@ for a decision.
   Loop wiring (05 §1.4 steps 2, 8, 9): `loop_init` over the runtime before the IO provider
   starts, `posix_stop_signals_install`, `loop_listen` on `cfg.host` for `port` and `port + 1`
   (a failure refuses startup), `loop_run`, then `loop_deinit` and
-  `posix_stop_signals_restore`.
+  `posix_stop_signals_restore`. The web server (task 13) is `web_server_open_config(&loop,
+  &cfg, &srv)` in step 8 (a failure refuses startup); after `loop_run` returns,
+  `web_server_close(srv)` (safe after the loop's shutdown closed its listener), then
+  `loop_deinit`.
 - [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
 

@@ -143,6 +143,10 @@ typedef struct {
 	uint32_t max_conns;
 	size_t out_cap; /* outgoing buffer per connection, bytes (> 0) */
 	loop_accept_fn on_accept;
+	/* Optional: the listener is closed (loop_listener_close, or the loop's
+	 * shutdown in loop_run and loop_deinit), after its connections; l is
+	 * freed after it returns. Lets its owner forget it (plan task 13). */
+	void (*on_closed)(void *ctx, LoopListener *l);
 	void *ctx;
 } LoopListenerConfig;
 
@@ -178,6 +182,7 @@ struct LoopListener {
 	uint32_t max_conns;
 	size_t out_cap;
 	loop_accept_fn on_accept;
+	void (*on_closed)(void *ctx, LoopListener *l);
 	void *ctx;
 	uint32_t conn_count; /* its open connections */
 	uint64_t paused_until;
@@ -243,6 +248,17 @@ static inline uint32_t loop_listener_conn_count(const LoopListener *l)
 
 /* Adds a tick hook. False if LOOP_TICKS_MAX are registered. */
 bool loop_add_tick(Loop *loop, loop_tick_fn fn, void *ctx);
+
+/* Removes the tick hook added with fn and ctx. False if there is none. Not
+ * from inside a tick hook. */
+bool loop_remove_tick(Loop *loop, loop_tick_fn fn, void *ctx);
+
+/* The current iteration's engine time (pal_uptime_ms read at its start and
+ * after the poll), for callbacks. */
+static inline uint64_t loop_now_ms(const Loop *loop)
+{
+	return loop->now_ms;
+}
 
 /* One iteration (see above). */
 void loop_run_once(Loop *loop);

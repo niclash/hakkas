@@ -1,6 +1,7 @@
 /*
  * POSIX PAL storage (01 §0.1, 05 §2.3): plain files in a directory tree,
- * written atomically through <path>.tmp, fsync and rename.
+ * written atomically through <path>.tmp, fsync and rename; streaming reads
+ * through a file descriptor (pal_file_*).
  *
  * Every system call that can be interrupted is retried on EINTR; reads and
  * writes loop over partial transfers. Files are created with mode 0600: the
@@ -44,6 +45,10 @@ static enum pal_err from_errno(int err)
 	case EINVAL:
 	case EXDEV:
 		return PAL_ERR_INVALID;
+	case EMFILE:
+	case ENFILE:
+	case ENOMEM:
+		return PAL_ERR_UNAVAILABLE;
 	default:
 		return PAL_ERR_IO;
 	}
@@ -435,4 +440,51 @@ enum pal_err pal_storage_remove_tmp(const char *dir, size_t *removed)
 	if (removed != NULL)
 		*removed = count;
 	return err;
+}
+
+/* ---- Streaming reads ---------------------------------------------------------- */
+
+enum pal_err pal_file_open(const char *path, pal_file *out, uint64_t *size)
+{
+	*out = PAL_FILE_NONE;
+	enum pal_err err = check_path(path, 0);
+	if (err != PAL_OK)
+		return err;
+	/* O_NONBLOCK: opening a FIFO must not wait for a writer; it does not
+	 * affect reading a regular file. */
+	int fd = open_retry(path, O_RDONLY | O_NONBLOCK, 0);
+	if (fd < 0)
+		return from_errno(errno);
+	struct stat st;
+	if (fstat(fd, &st) != 0) {
+		err = from_errno(errno);
+		close_quietly(fd);
+		return err;
+	}
+	if (!S_ISREG(st.st_mode)) {
+		close_quietly(fd);
+		return PAL_ERR_INVALID;
+	}
+	if (size != NULL)
+		*size = (uint64_t)st.st_size;
+	*out = fd;
+	return PAL_OK;
+}
+
+enum pal_err pal_file_read(pal_file f, void *buf, size_t cap, size_t *len)
+{
+	*len = 0;
+	if (f < 0 || buf == NULL || cap == 0)
+		return PAL_ERR_INVALID;
+	ssize_t n = read_full(f, buf, cap);
+	if (n < 0)
+		return from_errno(errno);
+	*len = (size_t)n;
+	return PAL_OK;
+}
+
+void pal_file_close(pal_file f)
+{
+	if (f >= 0)
+		close_quietly(f);
 }
