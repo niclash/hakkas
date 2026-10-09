@@ -178,6 +178,43 @@ static void test_overflow_drops_timer_and_io(void)
 	work_queue_clear(&q);
 }
 
+/* The drop hook sees each dropped entry, value still held, oldest first. */
+static int dropped;
+static uint32_t dropped_gen[2];
+
+static void on_drop(void *ctx, const WorkEntry *e)
+{
+	CHECK(ctx == &q);
+	if (dropped == 0) {
+		CHECK(e->type == WORK_TIMER_EXPIRY);
+		dropped_gen[0] = e->as.timer.timer_gen;
+	} else if (dropped == 1) {
+		CHECK(e->type == WORK_INPUT_UPDATE);
+		CHECK_STREQ(e->as.input.value.as.s, "kept until the hook ran");
+		dropped_gen[1] = e->as.input.source_gen;
+	}
+	dropped++;
+}
+
+static void test_drop_hook(void)
+{
+	work_queue_init(&q);
+	CHECK(q.on_drop == NULL);
+	work_queue_set_drop_hook(&q, on_drop, &q);
+	dropped = 0;
+	work_queue_push_timer(&q, handle(1, 1), 7);
+	work_queue_push_input(&q, handle(2, 0), 0, 9, str("kept until the hook ran"));
+	for (uint32_t i = 0; i < CAP; i++)
+		work_queue_push_io(&q, i, linkable_from_bool(true));
+	CHECK(dropped == 2);
+	CHECK(dropped_gen[0] == 7 && dropped_gen[1] == 9);
+	CHECK(work_queue_drops(&q) == 2);
+	work_queue_clear(&q); /* a clear is no drop */
+	CHECK(dropped == 2);
+	work_queue_init(&q);
+	CHECK(q.on_drop == NULL);
+}
+
 static void test_value_ownership(void)
 {
 	/* A copied value stays valid after the queue's reference is released. */
@@ -297,6 +334,7 @@ int main(void)
 	RUN(test_wrap_around);
 	RUN(test_overflow_drops_oldest);
 	RUN(test_overflow_drops_timer_and_io);
+	RUN(test_drop_hook);
 	RUN(test_value_ownership);
 	RUN(test_clear_releases);
 	RUN(test_report_drops);

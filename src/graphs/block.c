@@ -96,10 +96,60 @@ void block_output_set(Block *b, uint32_t output, Linkable value)
 		propagate(b, output, block_change_threshold(b));
 }
 
-static void run_compute(Block *b, Reason reason, int changed_input)
+/* ---- Timers (01 §3.2 item 7, 03 §2) ----------------------------------------- */
+
+void block_timer_arm(Block *b, uint64_t due_ms)
+{
+	b->timer_gen++;
+	/* Room for every timer block is reserved when it is created
+	 * (graph_create_block), so this cannot fail. */
+	(void)deadline_heap_set(&b->graph->rt->timers, &b->timer, due_ms);
+}
+
+void block_timer_cancel(Block *b)
+{
+	b->timer_gen++;
+	deadline_heap_remove(&b->graph->rt->timers, &b->timer);
+}
+
+/* Arm a started periodic block's timer one period from now, or cancel it if
+ * the period is 0. */
+static void periodic_arm(Block *b)
+{
+	if (b->period_ms > 0)
+		block_timer_arm(b, b->graph->rt->now_ms + b->period_ms);
+	else
+		block_timer_cancel(b);
+}
+
+/* Re-arm (delay >= 0) or cancel (delay < 0) a TIMER_SCHEDULED block's one-shot
+ * timer from compute's return value, relative to now (01 §2.3). */
+static void scheduled_rearm(Block *b, int64_t delay)
+{
+	if (delay < 0) {
+		block_timer_cancel(b);
+		return;
+	}
+	uint64_t now = b->graph->rt->now_ms;
+	uint64_t d = (uint64_t)delay;
+	block_timer_arm(b, d > UINT64_MAX - now ? UINT64_MAX : now + d);
+}
+
+void block_set_period(Block *b, uint32_t period_ms)
+{
+	if (b->type == NULL || b->type->timer != TIMER_PERIODIC)
+		return;
+	b->period_ms = period_ms;
+	if (b->started)
+		periodic_arm(b);
+}
+
+/* ---- Compute step (03 §2) ----------------------------------------------------- */
+
+static int64_t run_compute(Block *b, Reason reason, int changed_input)
 {
 	if (b->type == NULL || b->type->compute == NULL)
-		return;
+		return -1;
 	BlockCtx ctx = {
 		.inputs = b->in_values,
 		.outputs = b->out_values,
@@ -109,18 +159,20 @@ static void run_compute(Block *b, Reason reason, int changed_input)
 		.changed_input = changed_input,
 		.error = &b->error,
 	};
-	/* The return value re-arms a TIMER_SCHEDULED type's timer; timers
-	 * arrive with plan task 8. */
-	(void)b->type->compute(&ctx);
+	return b->type->compute(&ctx);
 }
 
-/* The compute step (03 §2): compute, then output_set every output. force
- * pushes every output regardless of the threshold (start). */
+/* The compute step (03 §2): compute, re-arm or cancel a TIMER_SCHEDULED type's
+ * timer from its return value (after every compute of a started block, for
+ * any reason), then output_set every output. force pushes every output
+ * regardless of the threshold (start). */
 static void compute_step(Block *b, Reason reason, int changed_input, bool force)
 {
 	if (!b->started)
 		return;
-	run_compute(b, reason, changed_input);
+	int64_t delay = run_compute(b, reason, changed_input);
+	if (b->type != NULL && b->type->timer == TIMER_SCHEDULED)
+		scheduled_rearm(b, delay);
 	double threshold = block_change_threshold(b);
 	for (uint32_t i = 0; i < b->output_count; i++) {
 		if (force)
@@ -156,9 +208,14 @@ void block_start(Block *b)
 	if (b->started)
 		return;
 	b->started = true;
-	/* Arming a TIMER_PERIODIC type's timer: plan task 8. The START push
-	 * also makes "the first value after start always propagates" (01 §3.3)
-	 * hold: every output is pushed here, whatever its last_propagated. */
+	/* 03 §2 start: the periodic timer is armed before the START compute;
+	 * its first tick is one period after the start. A scheduled type arms
+	 * from START's return value (compute_step). */
+	if (b->type != NULL && b->type->timer == TIMER_PERIODIC)
+		periodic_arm(b);
+	/* The START push also makes "the first value after start always
+	 * propagates" (01 §3.3) hold: every output is pushed here, whatever
+	 * its last_propagated. */
 	compute_step(b, REASON_START, -1, true);
 }
 
@@ -166,9 +223,18 @@ void block_stop(Block *b)
 {
 	if (!b->started)
 		return;
-	b->timer_gen++; /* cancels the timer: a pending expiry is stale */
-	run_compute(b, REASON_STOP, -1);
+	/* A stopped block has no armed timer; a queued expiry goes stale.
+	 * STOP's return value is ignored (decided, plan task 8). */
+	block_timer_cancel(b);
+	(void)run_compute(b, REASON_STOP, -1);
 	b->started = false;
+}
+
+void block_timer_expired(Block *b)
+{
+	/* A periodic timer re-armed itself when it fired (runtime.c); a
+	 * scheduled one is re-armed by this compute step. */
+	compute_step(b, REASON_TIMER, -1, false);
 }
 
 Linkable block_input_default(const Block *b, uint32_t input)

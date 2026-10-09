@@ -73,7 +73,7 @@ target_compile_definitions(hakkas_core PUBLIC HAKKAS_QUEUE_CAPACITY=${HAKKAS_QUE
 if(HAKKAS_BUILD_POSIX_RUNTIME OR HAKKAS_BUILD_TESTS)
   add_library(hakkas_pal_posix STATIC ${HAKKAS_POSIX_PAL_SOURCES})
   target_link_libraries(hakkas_pal_posix PUBLIC hakkas_core PRIVATE hakkas_compile_options)
-  # The POSIX PAL targets Linux (timerfd, getrandom, 01 §0), so it may use GNU
+  # The POSIX PAL targets Linux (getrandom, 01 §0), so it may use GNU
   # extensions; the definition stays private to the PAL sources.
   target_compile_definitions(hakkas_pal_posix PRIVATE _GNU_SOURCE)
 endif()

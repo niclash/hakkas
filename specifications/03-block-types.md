@@ -10,12 +10,12 @@ Port descriptors carry `name`, `description`, `type` (`"bool"`/`"number"`/`"stri
 
 `01-architecture-overview.md` §2.3 defines the generic block runtime this entire library is built on: one shared implementation of the `Block` contract, driven by a per-type data record (`BlockTypeDef`: inputs, outputs, `compute_on_input`, timer mode, a `compute` function, an optional per-instance state size, and a default change threshold). This section specifies exactly when that generic runtime calls `compute` and what it does with the result. A block's "started" state is its graph's started state (`01-architecture-overview.md` §2.2).
 
-**Compute step** (shared by every trigger): if the block is started, call `compute(ctx)` with `ctx.reason` set to the trigger; then for each output, apply `output_set` (`01-architecture-overview.md` §3.2), which pushes the output downstream only if it changed by more than the block's change threshold (`01-architecture-overview.md` §3.3). For a `TIMER_SCHEDULED` type, re-arm (or cancel, if negative) the block's one-shot timer with `compute`'s return value.
+**Compute step** (shared by every trigger): if the block is started, call `compute(ctx)` with `ctx.reason` set to the trigger; then for each output, apply `output_set` (`01-architecture-overview.md` §3.2), which pushes the output downstream only if it changed by more than the block's change threshold (`01-architecture-overview.md` §3.3). For a `TIMER_SCHEDULED` type, re-arm (or cancel, if negative) the block's one-shot timer with `compute`'s return value, relative to the current engine time — after every compute step, whatever its reason.
 
 | Event | Behavior |
 |---|---|
 | `update(input, value)` | Store the value in the input, then fire that input's live-value subscriptions (`02-wire-protocol.md` §4.2). Then, if the type has `compute_on_input`, run the compute step with `reason = INPUT` and `changed_input` set. Otherwise the value is only used at the next timer-driven compute. |
-| timer expiry | Run the compute step with `reason = TIMER`. A `TIMER_PERIODIC` timer re-arms itself at its period; a `TIMER_SCHEDULED` timer is re-armed from `compute`'s return value. |
+| timer expiry | Run the compute step with `reason = TIMER`. A `TIMER_PERIODIC` timer re-arms itself at its period, drift-free (`01-architecture-overview.md` §3.2, timer decisions); a `TIMER_SCHEDULED` timer is re-armed from `compute`'s return value. |
 | `start()` (graph started, or block added to a started graph) | Arm the periodic timer if `TIMER_PERIODIC`. Run the compute step once with `reason = START` and push **every** output downstream unconditionally, bypassing the change threshold. |
 | `stop()` (graph stopped) | Cancel the block's timer. Run `compute` once with `reason = STOP`, so a stateful type can clean up, but **do not propagate** its outputs — a stopped graph propagates nothing. Then mark it stopped. |
 | `destroy()` (block removed) | As `stop()`, then disconnect every output link. Each downstream input reverts to its default (`01-architecture-overview.md` §2.2). Queued entries addressed to this block become stale and are discarded. |
@@ -31,6 +31,11 @@ Decisions (plan task 6), refining the table above:
 - `connect` delivers `last_propagated` only in a started graph, where every output has been pushed by `start`, so the delivered value is always one that was actually propagated. In a stopped graph the input keeps its value (its default, since it had no source) until the graph starts and the upstream block pushes.
 - A value delivered by a structural operation (initial, severing, `connect`) runs the target's `update` at once, the same code as a queued input update (`01-architecture-overview.md` §2.2, implementation decisions); in a stopped graph `update` only stores the value and fires the live-value subscriptions.
 - A port descriptor without a default (unset) uses `default_value(type)` (§1).
+
+Decisions (plan task 8), on timers (`01-architecture-overview.md` §3.2 item 7 and timer decisions):
+- `start()` arms a periodic timer before the `START` compute, its first tick one period after the start; a scheduled type's timer is armed from the `START` compute's return value.
+- `stop()` cancels the timer before the `STOP` compute and ignores its return value, so a stopped graph has no armed timer; `destroy()` cancels it as well. A queued expiry of a cancelled or re-armed timer is discarded.
+- A timer expiry that arrives while the loop is late runs one compute step; a periodic block's missed ticks are skipped.
 
 ## 3. Built-in block types
 
@@ -95,7 +100,15 @@ A scheduled block (`compute_on_input = true`, `TIMER_SCHEDULED`, per-instance st
 - **Input changes** (`reason = INPUT`) take effect at the start of the next cycle and never glitch the current one. The one exception is an inert block: if the latched `period <= 0`, the block is idle (`out = false`, no timer armed), and a change to a valid period starts a fresh cycle immediately.
 - `milliseconds <= 0` (or a non-number) makes the block idle: `out = false`, no timer.
 - `start()` begins a fresh cycle at once. `stop()` cancels the timer. Per the general rules, `out` is not propagated while stopped.
-- Timer resolution is whatever the PAL timer provides (typically 1 ms). The block computes each transition from the cycle start time rather than from the time the previous timer actually fired, so timer latency doesn't accumulate into drift.
+- Timer resolution is the engine clock's, 1 ms. The block computes each transition from the cycle start time rather than from the time the previous timer actually fired, so timer latency doesn't accumulate into drift.
+
+Decisions (plan task 8, `src/blocktypes/timing.c`):
+- **Whole milliseconds**: the latched `period` is `to_f64(milliseconds)` rounded to the nearest ms, at least 1 ms (a positive period below 0.5 ms runs at 1 ms) and at most 2^53 ms; `on_time` is `period × clamp(duty-cycle) / 100` rounded to the nearest ms.
+- **"Non-number"** is defined through the converters (`01-architecture-overview.md` §2.1): `milliseconds` whose `to_f64` is NaN or ±Infinity makes the block idle, like a value `<= 0`. Text that is not a number and an unset value convert to `0` and are idle by the `<= 0` rule; numeric text such as `"300"` is a valid period. A NaN `duty-cycle` clamps to `0`.
+- **Late timers**: when the timer fires late, `out` takes the waveform's value at the current time. Whole cycles that ended meanwhile are skipped, not replayed (their edges are not emitted), and the next cycle starts on the original grid (cycle start + k × period), latching the inputs current then.
+- **Input changes while running** don't touch the cycle; the compute only applies a transition that is already due and re-arms the timer for the next one (every compute re-arms a scheduled timer, §2). While idle, any input change re-latches, and a valid period starts a fresh cycle at once.
+- **100 % ↔ 0 %**: no special case — the change is latched at the next cycle start like any other, so a 100 % cycle runs to its end and the next cycle is all `false` (or the reverse).
+- **Stop and restart**: `stop()` leaves `out` as it was (not propagated); nothing of the interrupted cycle survives, and `start()` begins a fresh cycle at the restart time.
 
 ## 4. IO block types
 

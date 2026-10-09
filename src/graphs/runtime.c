@@ -1,6 +1,7 @@
 #include "graphs/runtime.h"
 
 #include <math.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,10 +10,14 @@
 /* Initial size of the slot table; it doubles when full. */
 #define SLOTS_INITIAL 16
 
+static void on_drop(void *ctx, const WorkEntry *e);
+
 void runtime_init(Runtime *rt)
 {
 	memset(rt, 0, sizeof(*rt));
 	work_queue_init(&rt->queue);
+	work_queue_set_drop_hook(&rt->queue, on_drop, rt);
+	deadline_heap_init(&rt->timers);
 	rt->free_head = RUNTIME_NO_SLOT;
 	rt->change_threshold = RUNTIME_DEFAULT_CHANGE_THRESHOLD;
 }
@@ -20,6 +25,8 @@ void runtime_init(Runtime *rt)
 void runtime_deinit(Runtime *rt)
 {
 	work_queue_clear(&rt->queue);
+	deadline_heap_deinit(&rt->timers);
+	rt->timer_blocks = 0;
 	free(rt->slots);
 	rt->slots = NULL;
 	rt->slot_used = 0;
@@ -108,10 +115,15 @@ static void dispatch(Runtime *rt, WorkEntry *e)
 		block_update(b, i, v);
 		break;
 	}
-	case WORK_TIMER_EXPIRY:
-		/* Nothing produces timer expiries yet: plan task 8 adds timers
-		 * and dispatches them here (03 §2 "timer expiry"). */
+	case WORK_TIMER_EXPIRY: {
+		/* Stale if the block was destroyed or its timer was re-armed or
+		 * cancelled (stop included) since the expiry was queued. */
+		Block *b = runtime_block(rt, e->as.timer.block);
+		if (b == NULL || b->timer_gen != e->as.timer.timer_gen)
+			break;
+		block_timer_expired(b);
 		break;
+	}
 	case WORK_IO_EVENT:
 		/* Nothing produces IO events yet: plan task 22 routes them
 		 * through the channel binding table to io/ blocks (03 §4). */
@@ -131,4 +143,76 @@ size_t runtime_drain(Runtime *rt, size_t max_entries)
 		dispatch(rt, &e);
 	}
 	return n;
+}
+
+/* ---- Timers (01 §3.2 item 7) ----------------------------------------------- */
+
+static Block *timer_block(Deadline *d)
+{
+	return (Block *)(void *)((char *)d - offsetof(Block, timer));
+}
+
+/* The next tick of a periodic timer that was due at due: due + period, or, if
+ * that is not after now (the loop fell behind by a period or more), the first
+ * tick of the same grid after now; the missed ticks are skipped. */
+static uint64_t periodic_next(uint64_t due, uint32_t period, uint64_t now)
+{
+	uint64_t next = due + period;
+	if (next <= now)
+		next += ((now - next) / period + 1) * period;
+	return next;
+}
+
+size_t runtime_fire_timers(Runtime *rt, uint64_t now_ms)
+{
+	runtime_set_now(rt, now_ms);
+	size_t n = 0;
+	Deadline *d;
+	/* A re-armed periodic timer is due after now_ms, and a dropped expiry
+	 * re-arms one ms later (on_drop), so each block fires once here. */
+	while ((d = deadline_heap_pop_due(&rt->timers, now_ms)) != NULL) {
+		Block *b = timer_block(d);
+		work_queue_push_timer(&rt->queue, b->handle, b->timer_gen);
+		n++;
+		/* The periodic timer's own continuation keeps the generation:
+		 * its queued expiry stays valid (01 §3.2). */
+		if (b->type->timer == TIMER_PERIODIC && b->period_ms > 0) {
+			uint64_t next = periodic_next(d->due_ms, b->period_ms, now_ms);
+			(void)deadline_heap_set(&rt->timers, d, next);
+		}
+	}
+	return n;
+}
+
+uint64_t runtime_timer_timeout_ms(const Runtime *rt, uint64_t now_ms)
+{
+	const Deadline *d = deadline_heap_peek(&rt->timers);
+	if (d == NULL)
+		return RUNTIME_NO_TIMEOUT;
+	return d->due_ms <= now_ms ? 0 : d->due_ms - now_ms;
+}
+
+bool runtime_next_deadline(const Runtime *rt, uint64_t *due_ms)
+{
+	const Deadline *d = deadline_heap_peek(&rt->timers);
+	if (d == NULL)
+		return false;
+	*due_ms = d->due_ms;
+	return true;
+}
+
+/* A timer expiry dropped on queue overflow (01 §3.2 item 9) would leave a
+ * scheduled block's one-shot timer disarmed for good, so if it is still the
+ * block's current expiry, the timer is re-armed to fire again 1 ms from now
+ * (decided, plan task 8). A periodic timer was re-armed when it fired: only
+ * that one tick is lost, as a skipped tick. */
+static void on_drop(void *ctx, const WorkEntry *e)
+{
+	Runtime *rt = ctx;
+	if (e->type != WORK_TIMER_EXPIRY)
+		return;
+	Block *b = runtime_block(rt, e->as.timer.block);
+	if (b == NULL || b->timer_gen != e->as.timer.timer_gen || deadline_armed(&b->timer))
+		return;
+	(void)deadline_heap_set(&rt->timers, &b->timer, rt->now_ms + 1);
 }

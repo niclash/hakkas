@@ -51,7 +51,11 @@
  * Graph identity (id, name, description, icon) and lifecycle times are
  * fields here but are managed by the Graphs registry (graphs/graphs.h).
  *
- * Not yet here: timers (task 8), opaque node/edge metadata and placeholder blocks for
+ * Timers (plan task 8): a block of a timer type has one timer, armed and
+ * cancelled by its lifecycle and compute step (03 §2) and fired by the
+ * runtime (graphs/runtime.h "Timers").
+ *
+ * Not yet here: opaque node/edge metadata and placeholder blocks for
  * unknown types (task 10, 05 §2.2), composite instances (task 21), IO
  * (task 22). A placeholder will be a block whose type is NULL: the runtime
  * already treats a NULL type as a block with no ports and no compute.
@@ -178,7 +182,14 @@ struct Block {
 	BlockMetadata metadata;
 	bool started; /* mirrors the graph's started state (03 §2) */
 	bool error;   /* the error flag (01 §2.1) */
-	uint32_t timer_gen; /* bumped on stop and destroy (01 §3.2); timers: task 8 */
+	/* The block's one timer (TIMER_PERIODIC / TIMER_SCHEDULED types), a
+	 * deadline in the runtime's heap (graphs/runtime.h "Timers"). */
+	Deadline timer;
+	uint32_t period_ms; /* TIMER_PERIODIC: the period, type->period_ms until set */
+	/* Incremented whenever the timer is armed or cancelled (stop and
+	 * destroy included), so a queued expiry of an older timer is stale
+	 * (01 §3.2). A periodic timer's own continuation keeps it. */
+	uint32_t timer_gen;
 };
 
 /* A graph-level port's direction: an inport maps to an inner block's input,
@@ -442,6 +453,13 @@ bool block_value_changed(const Linkable *last, const Linkable *next, double thre
  * last_propagated and queue an input update for every link. A stopped block
  * only stores. */
 void block_output_set(Block *b, uint32_t output, Linkable value);
+
+/* Set the period of a TIMER_PERIODIC block, overriding type->period_ms (01
+ * §2.3; e.g. PID's sample_ms input, 03 §6.1, plan task 23). If the block is
+ * started, its timer restarts from now: the next tick is period_ms after the
+ * runtime's current time, and a queued expiry of the old timer is discarded;
+ * 0 leaves no timer armed. Ignored for other timer modes. */
+void block_set_period(Block *b, uint32_t period_ms);
 
 /* Attach / detach a live-value watch on input i (see InputWatch).
  * block_watch_input calls w->on_value once with the current value. */

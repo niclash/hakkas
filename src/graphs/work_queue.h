@@ -50,12 +50,16 @@
  *
  * Overflow: pushing onto a full queue drops the oldest entry (releasing its
  * value) to make room and counts it. The queue only counts and never reads a
- * clock; work_queue_report_drops logs the rate-limited warning.
+ * clock; work_queue_report_drops logs the rate-limited warning. An optional
+ * drop hook sees each dropped entry first: the runtime uses it so that a
+ * dropped timer expiry re-arms its timer instead of losing it (decided, plan
+ * task 8, 01 §3.2).
  *
- * Threading: engine-thread only, no locking (01 §3.2). Timer callbacks and IO
- * workers never push here directly: they use the PAL's cross-context enqueue
- * (01 §0, plan tasks 8 and 12), whose handoff is drained into this queue on the
- * engine thread.
+ * Threading: engine-thread only, no locking (01 §3.2). Timers live in the core
+ * and are fired by the engine loop itself (graphs/deadlines.h), so they push
+ * here directly. IO workers never do: they use the PAL's cross-context
+ * enqueue (01 §0, plan tasks 12 and 22), whose handoff is drained into this
+ * queue on the engine thread.
  */
 #ifndef HAKKAS_GRAPHS_WORK_QUEUE_H
 #define HAKKAS_GRAPHS_WORK_QUEUE_H
@@ -121,6 +125,10 @@ typedef struct {
 	} as;
 } WorkEntry;
 
+/* Called with each entry dropped on overflow, before it is released; it may
+ * read the entry but must not push onto or pop from the queue. */
+typedef void (*work_queue_drop_fn)(void *ctx, const WorkEntry *e);
+
 typedef struct {
 	WorkEntry entries[HAKKAS_QUEUE_CAPACITY];
 	uint32_t head; /* index of the oldest entry */
@@ -129,11 +137,17 @@ typedef struct {
 	uint64_t drops_reported; /* drops already reported by work_queue_report_drops */
 	uint64_t last_report_ms;
 	bool reported;		 /* whether a report was ever logged */
+	/* The drop hook (work_queue_set_drop_hook), NULL when none. */
+	work_queue_drop_fn on_drop;
+	void *drop_ctx;
 } WorkQueue;
 
 /* Make q an empty queue with no drops. Call once on a fresh queue: entries
  * already in q are not released (use work_queue_clear for that). */
 void work_queue_init(WorkQueue *q);
+
+/* Set the drop hook (NULL to remove it); work_queue_init clears it. */
+void work_queue_set_drop_hook(WorkQueue *q, work_queue_drop_fn fn, void *ctx);
 
 /* Release every queued entry's value and empty the queue (shutdown). The drop
  * counters are kept. */

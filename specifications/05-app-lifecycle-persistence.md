@@ -138,7 +138,7 @@ Four severity levels, `fine < info < warn < error`, with a single verbosity thre
 
 - **Line format**: `<level> <file>:<line>: <message>` — the level name as in `log.level`, the source file's base name, no timestamp (`01-architecture-overview.md` §3.4 has no wall clock yet; a sink may add its own). A line is formatted into a fixed 256-byte buffer, so it holds at most 255 characters; a longer line is cut there with its last three characters replaced by `...`. No heap allocation per log call.
 - **Sinks**: the portable core only formats; each line goes, with its level, to every registered sink (up to 4). The platform registers its console (stderr on POSIX, the Zephyr console later); the protocol layer registers the mirror when `log.mirror` is on and uses the level to choose `network:output` or `network:error`. With no sink registered, output is discarded.
-- **Engine thread only**: logging is not locked (`01-architecture-overview.md` §3.2). Timer callbacks, IO workers and ISRs never log; they enqueue work and the engine-side handler logs. A log call made from inside a sink is dropped.
+- **Engine thread only**: logging is not locked (`01-architecture-overview.md` §3.2). IO workers and ISRs never log; they enqueue work and the engine-side handler logs. (Timers fire on the engine thread, `01-architecture-overview.md` §3.2 item 7.) A log call made from inside a sink is dropped.
 
 ## 5. Testing
 

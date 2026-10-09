@@ -35,8 +35,10 @@ for a decision.
 - [x] **7. Graphs registry + event notification** (`src/graphs/`): graph create/delete/
   rename, ports (inports/outports), `GraphNotify` subscriber fan-out, invalid-command
   refusals with the exact messages of 02 §3.4.1, uptime accounting (01 §2.2, §4).
-- [ ] **8. Timers + `timing/Interval`**: PAL timer start/cancel (POSIX `timerfd`), timer-expiry
-  queue entries, `TIMER_PERIODIC`/`TIMER_SCHEDULED` handling, the Interval block (03 §3.1).
+- [x] **8. Timers + `timing/Interval`**: timers as core deadlines in a min-heap, fired by the
+  engine loop (no PAL timer: the loop's poll timeout is the only timing primitive, 01 §3.2
+  item 7), timer-expiry queue entries, `TIMER_PERIODIC`/`TIMER_SCHEDULED` handling, the
+  Interval block (03 §3.1).
 
 ## Phase 2 — Persistence and configuration
 
@@ -51,7 +53,8 @@ for a decision.
 ## Phase 3 — Network and protocol
 
 - [ ] **12. PAL sockets + event loop** (POSIX `poll`): the single loop of 01 §3.2.1 —
-  sockets, timers, queue drain.
+  sockets, firing due timers (`runtime_fire_timers`, poll timeout from
+  `runtime_timer_timeout_ms`), queue drain.
 - [ ] **13. HTTP static server** (05 §3): GET only, SPA fallback, `.gz` variants.
 - [ ] **14. WebSocket layer** (RFC 6455): upgrade, Origin check, connection and frame-size
   limits (02 §0).

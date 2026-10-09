@@ -13,8 +13,10 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/blocktypes/block_types.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
   ${HAKKAS_SOURCE_ROOT}/graphs/block.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/deadlines.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph_ports.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graphs.c

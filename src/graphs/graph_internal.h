@@ -46,8 +46,9 @@ void graph_ports_free(Graph *g);
  * updates from the drain loop and the direct deliveries of graph.c. */
 void block_update(Block *b, uint32_t input, Linkable value);
 
-/* start(): mark started, compute with REASON_START, push every output
- * unconditionally. No-op if started. */
+/* start(): mark started, arm a TIMER_PERIODIC type's timer, compute with
+ * REASON_START (whose return value arms a TIMER_SCHEDULED type's timer), push
+ * every output unconditionally. No-op if started. */
 void block_start(Block *b);
 
 /* stop(): cancel the timer, compute with REASON_STOP without propagating,
@@ -57,6 +58,16 @@ void block_stop(Block *b);
 /* A new reference to input i's port default (01 §2.1: the descriptor's
  * default, or default_value(type) if it has none). */
 Linkable block_input_default(const Block *b, uint32_t input);
+
+/* Arm b's timer for due_ms, replacing any armed one (01 §3.2 item 7). */
+void block_timer_arm(Block *b, uint64_t due_ms);
+
+/* Cancel b's timer, armed or not: a queued expiry goes stale. */
+void block_timer_cancel(Block *b);
+
+/* A live timer expiry for b, from the drain loop: the compute step with
+ * REASON_TIMER (03 §2). */
+void block_timer_expired(Block *b);
 
 /* Detach every watch of every input, calling on_detach. */
 void block_detach_watches(Block *b);

@@ -38,6 +38,21 @@ static bool threshold_valid_or_absent(double t)
 	return isnan(t) || t >= 0;
 }
 
+/* Whether blocks of type have a timer (01 §2.3). */
+static bool has_timer(const BlockTypeDef *type)
+{
+	return type != NULL && type->timer != TIMER_NONE;
+}
+
+/* Disarm b's timer and give back its room in the timer heap; b is about to
+ * be freed. */
+static void block_release_timer(Block *b)
+{
+	block_timer_cancel(b);
+	if (has_timer(b->type))
+		b->graph->rt->timer_blocks--;
+}
+
 /* ---- Graph ----------------------------------------------------------------- */
 
 Graph *graph_create(Runtime *rt)
@@ -76,6 +91,7 @@ void graph_destroy(Graph *g)
 	for (uint32_t i = 0; i < g->block_count; i++) {
 		Block *b = g->blocks[i];
 		block_detach_watches(b);
+		block_release_timer(b);
 		runtime_slot_free(g->rt, b->handle);
 		block_free(b);
 	}
@@ -187,6 +203,8 @@ static Block *block_alloc(Graph *g, const char *name, const BlockTypeDef *type,
 	b->metadata = *md;
 	b->input_count = type->input_count;
 	b->output_count = type->output_count;
+	b->timer = deadline_none();
+	b->period_ms = type->period_ms;
 	b->name = graph_str_dup(name);
 	size_t nvalues = (size_t)b->input_count + b->output_count;
 	if (nvalues > 0)
@@ -247,12 +265,15 @@ enum graph_status graph_create_block(Graph *g, const char *name, const BlockType
 	BlockMetadata m = md != NULL ? *md : block_metadata_default();
 	if (type == NULL || !threshold_valid_or_absent(m.change_threshold))
 		return GRAPH_ERR_INVALID_ARGUMENT;
-	if (!blocks_reserve(g) || !runtime_slot_reserve(g->rt))
+	if (!blocks_reserve(g) || !runtime_slot_reserve(g->rt) ||
+	    (has_timer(type) && !deadline_heap_reserve(&g->rt->timers, g->rt->timer_blocks + 1)))
 		return GRAPH_ERR_NO_MEMORY;
 	Block *b = block_alloc(g, name, type, &m);
 	if (b == NULL)
 		return GRAPH_ERR_NO_MEMORY;
 
+	if (has_timer(type))
+		g->rt->timer_blocks++; /* its deadline's room in the heap */
 	b->handle = runtime_slot_alloc(g->rt, b);
 	g->blocks[g->block_count++] = b;
 	if (g->started)
@@ -305,7 +326,7 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 	/* 03 §2 destroy: as stop() first, so the block computes no more and
 	 * reverting one of its own inputs (a self-loop) cannot run it. */
 	block_stop(b);
-	b->timer_gen++;
+	block_release_timer(b); /* queued expiries for b go stale */
 
 	/* Inbound edges and initials. A self-loop is removed here, so the
 	 * outbound pass below only sees links to other blocks. */

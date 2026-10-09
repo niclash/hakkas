@@ -6,6 +6,9 @@
  *  - the block slot table that resolves a BlockHandle to a live block;
  *  - the engine-wide default change threshold (01 §3.3);
  *  - the current engine time handed to compute (01 §3.4);
+ *  - the timer service: one deadline per block of a timer type, in a
+ *    deadline heap (graphs/deadlines.h), fired by the engine loop
+ *    (runtime_fire_timers) into timer-expiry queue entries (01 §3.2 item 7);
  *  - the observer that hears every applied structural change of every graph
  *    (01 §4), set by the Graphs registry (plan task 7).
  *
@@ -24,6 +27,19 @@
  * Time: the runtime never reads a clock. The engine loop (plan task 12) calls
  * runtime_set_now with pal_uptime_ms() before draining; tests set it directly.
  *
+ * Timers (decided, plan task 8, 01 §3.2 item 7): each block of a
+ * TIMER_PERIODIC or TIMER_SCHEDULED type has one timer, a Deadline in the
+ * runtime's heap. No PAL timer is involved: each loop iteration the engine
+ * loop calls runtime_fire_timers with the current time, which queues a timer
+ * expiry for every block whose deadline has passed, and it waits for sockets
+ * at most runtime_timer_timeout_ms. Arming or cancelling a block's timer
+ * increments its timer generation, so a queued expiry of a superseded or
+ * cancelled timer is discarded when drained. A periodic timer continues
+ * drift-free when it fires: the next deadline is the previous one plus the
+ * period, and if the loop fell behind by a period or more, the missed ticks
+ * are skipped (the next deadline is the first one of the same grid after
+ * now). A scheduled timer is one-shot; the compute it causes re-arms it.
+ *
  * Threading: engine-thread only (01 §3.2), no locking.
  */
 #ifndef HAKKAS_GRAPHS_RUNTIME_H
@@ -33,6 +49,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "graphs/deadlines.h"
 #include "graphs/work_queue.h"
 
 /* The engine-wide change threshold until configured (05 §1.1). */
@@ -63,15 +80,18 @@ typedef struct Runtime {
 	uint32_t free_head; /* first free slot below slot_used, or RUNTIME_NO_SLOT */
 	double change_threshold; /* engine-wide default (01 §3.3) */
 	uint64_t now_ms;	 /* engine uptime handed to compute (01 §3.4) */
+	DeadlineHeap timers;	 /* the armed block timers */
+	uint32_t timer_blocks;	 /* blocks of a timer type: the room reserved in timers */
 	graph_event_fn on_event;
 	void *event_ctx;
 } Runtime;
 
-/* Make rt an empty runtime: empty queue, no blocks, the default threshold,
- * time 0, no observer. */
+/* Make rt an empty runtime: empty queue, no blocks, no timers, the default
+ * threshold, time 0, no observer. rt must not move afterwards (the queue's drop
+ * hook refers to it). */
 void runtime_init(Runtime *rt);
 
-/* Release the queue's entries and the slot table. Every graph created on rt
+/* Release the queue's entries, the timer heap and the slot table. Every graph created on rt
  * must have been destroyed (graph_destroy) first. */
 void runtime_deinit(Runtime *rt);
 
@@ -108,9 +128,30 @@ Block *runtime_block(const Runtime *rt, BlockHandle h);
  * SIZE_MAX to drain until empty.
  *
  * Dispatch: an input update whose block handle or input source generation is
- * stale is discarded; otherwise the block's update runs (03 §2). Timer
- * expiries and IO events are discarded: no producer exists yet; plan task 8
- * dispatches timer expiries and plan task 22 IO events. */
+ * stale is discarded; otherwise the block's update runs (03 §2). A timer
+ * expiry whose block handle or timer generation is stale is discarded;
+ * otherwise the block's compute step runs with REASON_TIMER (03 §2). IO
+ * events are discarded: no producer exists yet (plan task 22). */
 size_t runtime_drain(Runtime *rt, size_t max_entries);
+
+/* runtime_timer_timeout_ms when no timer is armed. */
+#define RUNTIME_NO_TIMEOUT UINT64_MAX
+
+/* Set the engine time to now_ms (as runtime_set_now), then queue a timer
+ * expiry for every block whose timer is due (deadline <= now_ms), earliest
+ * deadline first, equal deadlines in arming order. A block gets at most one
+ * expiry per call. A periodic timer is re-armed at once, drift-free, skipping
+ * missed ticks (see "Timers" above); a scheduled one is disarmed until its
+ * next compute re-arms it. Returns the number of expiries queued; the caller
+ * drains them (runtime_drain). */
+size_t runtime_fire_timers(Runtime *rt, uint64_t now_ms);
+
+/* The time from now_ms until the earliest armed timer is due: 0 if one is
+ * due already, RUNTIME_NO_TIMEOUT if none is armed. The engine loop's upper
+ * bound for waiting on sockets (01 §3.2.1). */
+uint64_t runtime_timer_timeout_ms(const Runtime *rt, uint64_t now_ms);
+
+/* The earliest armed timer's deadline in *due_ms; false if none is armed. */
+bool runtime_next_deadline(const Runtime *rt, uint64_t *due_ms);
 
 #endif

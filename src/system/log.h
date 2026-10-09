@@ -23,7 +23,7 @@
  * (02 §3.3). With no sink registered, lines are discarded.
  *
  * Threading: the engine is single-threaded (01 §3.2) and logging is engine-
- * thread only; there is no locking. Timer callbacks, IO workers and ISRs must
+ * thread only; there is no locking. IO workers and ISRs must
  * not log: they only enqueue work, and the engine-side handler logs. A log
  * call made from inside a sink (re-entrant) is dropped.
  *

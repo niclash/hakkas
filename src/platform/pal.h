@@ -8,11 +8,14 @@
  *
  * Implemented so far: initialization, the monotonic millisecond clock, the
  * cryptographic random source and storage (01 §0.1). Still to come, each in
- * its own section below: timers (start/cancel, plan task 8), sockets and the
- * poll-driven event loop (task 12), cross-context enqueue onto the engine
- * queue (task 12), and the IO-provider interface (task 22). The console log
- * sink is not declared here: each port registers its own with log_add_sink
- * (POSIX: platform/posix/log_stderr.h).
+ * its own section below: sockets and the poll-driven event loop (task 12),
+ * cross-context enqueue onto the engine queue for IO workers (task 12), and
+ * the IO-provider interface (task 22). There is no timer API (decided, plan
+ * task 8, 01 §0): timers are deadlines kept by the core (graphs/deadlines.h),
+ * and the event loop's socket-poll timeout is the only timing primitive the
+ * PAL provides (besides the clock). The console log sink is not declared
+ * here: each port registers its own with log_add_sink (POSIX:
+ * platform/posix/log_stderr.h).
  *
  * Threading: every function here is engine-thread only (01 §3.2), except the
  * cross-context enqueue still to come.
@@ -185,7 +188,7 @@ enum pal_err pal_storage_list(const char *dir, pal_storage_list_fn fn, void *ctx
  * exist. */
 enum pal_err pal_storage_remove_tmp(const char *dir, size_t *removed);
 
-/* ---- Timers (plan task 8), sockets and event loop, cross-context enqueue
+/* ---- Sockets and event loop with its poll timeout, cross-context enqueue
  * (task 12), IO provider (task 22): to come. ------------------------------ */
 
 #endif

@@ -10,6 +10,12 @@ void work_queue_init(WorkQueue *q)
 	memset(q, 0, sizeof(*q));
 }
 
+void work_queue_set_drop_hook(WorkQueue *q, work_queue_drop_fn fn, void *ctx)
+{
+	q->on_drop = fn;
+	q->drop_ctx = ctx;
+}
+
 void work_queue_entry_clear(WorkEntry *e)
 {
 	switch (e->type) {
@@ -55,6 +61,8 @@ static WorkEntry *push_slot(WorkQueue *q)
 	if (q->len == HAKKAS_QUEUE_CAPACITY) {
 		WorkEntry oldest;
 		work_queue_pop(q, &oldest);
+		if (q->on_drop != NULL)
+			q->on_drop(q->drop_ctx, &oldest);
 		work_queue_entry_clear(&oldest);
 		q->drops++;
 	}

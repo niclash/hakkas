@@ -83,5 +83,7 @@ enum block_types_err block_types_register_builtins(void)
 	enum block_types_err err = register_all(math_block_types, math_block_types_count);
 	if (err == BLOCK_TYPES_OK)
 		err = register_all(process_block_types, process_block_types_count);
+	if (err == BLOCK_TYPES_OK)
+		err = register_all(timing_block_types, timing_block_types_count);
 	return err;
 }

@@ -1,5 +1,6 @@
 /*
- * Block type registry and built-in stateless types (03 §3). Every compute
+ * Block type registry and built-in stateless types (03 §3); timing/Interval's
+ * descriptor (its behavior: tests/test_timers.c). Every compute
  * function is called directly through its registered BlockTypeDef with a
  * hand-built BlockCtx, the way the generic runtime (plan task 6) will call it.
  */
@@ -174,10 +175,10 @@ static void test_builtins(void)
 {
 	block_types_reset();
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
-	CHECK(block_types_count() == EXPECTED_COUNT);
+	CHECK(block_types_count() == EXPECTED_COUNT + 1);
 	/* Registering them twice is refused. */
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_ERR_EXISTS);
-	CHECK(block_types_count() == EXPECTED_COUNT);
+	CHECK(block_types_count() == EXPECTED_COUNT + 1);
 
 	for (size_t k = 0; k < EXPECTED_COUNT; k++) {
 		const struct expected_type *e = &table[k];
@@ -215,7 +216,33 @@ static void test_builtins(void)
 		if (t->output_count >= 1)
 			check_port(&t->outputs[0], "out", e->out_type);
 	}
-	CHECK(block_types_get("timing/Interval") == NULL); /* plan task 8 */
+
+	/* timing/Interval (03 §3.1), after the stateless types. */
+	const BlockTypeDef *t = block_types_get("timing/Interval");
+	CHECK(t != NULL && block_types_at(EXPECTED_COUNT) == t);
+	if (t != NULL) {
+		CHECK_STREQ(t->icon, "timer");
+		CHECK_STREQ(t->description, "periodic pulse generator: PWM or edge generator");
+		CHECK(t->compute_on_input);
+		CHECK(t->timer == TIMER_SCHEDULED);
+		CHECK(t->compute != NULL);
+		CHECK(t->state_size > 0);
+		CHECK(isnan(t->change_threshold));
+		CHECK(!t->subgraph && t->composite == NULL);
+		CHECK(t->input_count == 2 && t->output_count == 1);
+		if (t->input_count == 2 && t->output_count == 1) {
+			CHECK_STREQ(t->inputs[0].name, "milliseconds");
+			CHECK_STREQ(t->inputs[0].type, "number");
+			CHECK(t->inputs[0].default_value.type == LINKABLE_F64 &&
+			      t->inputs[0].default_value.as.f64 == 1000.0);
+			CHECK_STREQ(t->inputs[1].name, "duty-cycle");
+			CHECK_STREQ(t->inputs[1].type, "number");
+			CHECK(t->inputs[1].default_value.type == LINKABLE_F64 &&
+			      t->inputs[1].default_value.as.f64 == 50.0);
+			check_port(&t->outputs[0], "out", "bool");
+			CHECK(!t->inputs[0].addressable && !t->inputs[1].addressable);
+		}
+	}
 	block_types_reset();
 }
 
