@@ -14,7 +14,7 @@ Read `specifications/` before designing or changing anything, in this order: `00
 
 - **Portable core**: no Zephyr or POSIX headers outside `src/platform/<port>/` (`posix/`, later `zephyr/`). Everything else talks only to the PAL (`01` §0), so the full system, including simulated IO, runs on a desktop.
 - **The engine is the single source of truth** (`02` §1.1): the UI never updates its own view. Commands go to the engine, which applies or refuses each one and broadcasts the resulting events to every subscribed client, including the sender. Events describe the state that was applied, not the request.
-- **Single-threaded engine with one global FIFO work queue** (`01` §3.2). Timer callbacks and IO workers only enqueue; they never touch block state.
+- **Single-threaded engine with one global FIFO work queue** (`01` §3.2). Timers are core deadlines fired from the engine loop (no PAL timers); IO workers only enqueue and never touch block state.
 - **No fan-in**: an input has at most one source, an edge or an initial. A severed input reverts to its port's default (`01` §2.2).
 - **Only changes propagate**, filtered by the change threshold (`01` §3.3).
 - **One generic block runtime** driven by `BlockTypeDef` data records, not one implementation per block type (`01` §2.3).
