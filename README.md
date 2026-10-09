@@ -14,6 +14,7 @@ src/<module>/         portable core: graphs, blocktypes, protocol, system, app, 
 src/platform/pal.h    the PAL interface (portable)
 src/platform/<port>/  PAL implementations; the only place OS/RTOS headers may appear
 tests/                unit tests (CTest)
+third_party/          vendored libraries, pinned and unmodified (cjson/: cJSON, 01 §6)
 ```
 
 Add new core sources to `HAKKAS_CORE_SOURCES` in `cmake/HakkasSources.cmake`, and POSIX PAL
@@ -21,6 +22,11 @@ sources to `HAKKAS_POSIX_PAL_SOURCES` (the `hakkas_pal_posix` library, which tes
 with `hakkas_add_test(<name> LIBS hakkas_pal_posix)`). The
 `portable_core` test fails if any file outside `src/platform/<port>/` includes a POSIX or Zephyr
 header.
+
+Vendored libraries live in `third_party/<library>/`, copied unmodified from a pinned release,
+with a `README.md` recording the version, checksums and how to update. Those that are part of the
+core are listed in `HAKKAS_THIRD_PARTY_SOURCES` (with `HAKKAS_THIRD_PARTY_INCLUDE_DIRS` and
+`HAKKAS_THIRD_PARTY_DEFINITIONS`); nothing is fetched at build time.
 
 ## Building
 
@@ -62,7 +68,8 @@ default 1024).
 `add_subdirectory()` or `FetchContent` this repository and link `hakkas::core`. As a
 subproject, only the core library is built by default. A port with its own build integration,
 such as the future Zephyr module, can instead include `cmake/HakkasSources.cmake` and compile
-`HAKKAS_CORE_SOURCES` with its own toolchain and flags.
+`HAKKAS_CORE_SOURCES` and `HAKKAS_THIRD_PARTY_SOURCES` (with the matching include directories
+and definitions) with its own toolchain and flags.
 
 ## CLion
 

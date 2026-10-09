@@ -19,8 +19,8 @@ project(hakkas VERSION 0.1.0 LANGUAGES C)
 #   tests       - unit tests (CTest)
 # When included from another project via add_subdirectory()/FetchContent, only
 # hakkas_core is built by default. Platform ports such as a future Zephyr
-# module compile ${HAKKAS_CORE_SOURCES} from cmake/HakkasSources.cmake under
-# their own toolchain.
+# module compile ${HAKKAS_CORE_SOURCES} and ${HAKKAS_THIRD_PARTY_SOURCES} from
+# cmake/HakkasSources.cmake under their own toolchain.
 
 include(cmake/HakkasSources.cmake)
 include(cmake/HakkasVersion.cmake)
@@ -45,9 +45,13 @@ include(cmake/HakkasCompileOptions.cmake)
 
 # The core is C17 without compiler extensions or platform headers, so it builds
 # unchanged under any hosted C toolchain.
-add_library(hakkas_core STATIC ${HAKKAS_CORE_SOURCES})
+# Vendored libraries (third_party/) are part of it; they compile cleanly under
+# the project's warning flags, so they get the same flags (and sanitizers).
+add_library(hakkas_core STATIC ${HAKKAS_CORE_SOURCES} ${HAKKAS_THIRD_PARTY_SOURCES})
 add_library(hakkas::core ALIAS hakkas_core)
-target_include_directories(hakkas_core PUBLIC ${HAKKAS_SOURCE_ROOT} ${HAKKAS_GENERATED_DIR})
+target_include_directories(hakkas_core PUBLIC ${HAKKAS_SOURCE_ROOT} ${HAKKAS_GENERATED_DIR}
+  ${HAKKAS_THIRD_PARTY_INCLUDE_DIRS})
+target_compile_definitions(hakkas_core PUBLIC ${HAKKAS_THIRD_PARTY_DEFINITIONS})
 target_compile_features(hakkas_core PUBLIC c_std_17)
 set_target_properties(hakkas_core PROPERTIES C_EXTENSIONS OFF)
 target_link_libraries(hakkas_core PRIVATE hakkas_compile_options)

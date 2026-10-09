@@ -42,10 +42,12 @@ for a decision.
 
 ## Phase 2 — Persistence and configuration
 
-- [ ] **9. JSON library integration**: vendor a pinned cJSON release into `third_party/cjson/`
+- [x] **9. JSON library integration**: vendor a pinned cJSON release into `third_party/cjson/`
   (decided, 01 §6) and add it to the core build.
 - [ ] **10. Graph file load/save** (`src/app/`): 05 §2.1–§2.3 format, file-name encoding,
-  placeholder blocks for unknown types, round-trip tests.
+  placeholder blocks for unknown types, round-trip tests. cJSON does not print every double
+  exactly: write f64 values via `linkable_stringify` + `cJSON_CreateRaw`, and decide how a
+  non-finite initial is stored (`third_party/cjson/README.md`, "Numbers").
 - [ ] **11. Configuration file + POSIX CLI** (`src/system/`, `src/platform/posix/`): `hakkas.json`
   keys and defaults (05 §1.1), command tree `list types`, `describe type|topology`,
   `run process|daemon` (05 §1.2).
