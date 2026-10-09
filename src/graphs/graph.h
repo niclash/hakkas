@@ -55,10 +55,29 @@
  * cancelled by its lifecycle and compute step (03 §2) and fired by the
  * runtime (graphs/runtime.h "Timers").
  *
- * Not yet here: opaque node/edge metadata and placeholder blocks for
- * unknown types (task 10, 05 §2.2), composite instances (task 21), IO
- * (task 22). A placeholder will be a block whose type is NULL: the runtime
- * already treats a NULL type as a block with no ports and no compute.
+ * Opaque metadata (decided, plan task 10, 01 §2.2): node metadata keys other
+ * than x, y and change_threshold (BlockMetadata.extra) and an edge's metadata
+ * (Input.edge_metadata, on the destination input, which has at most one edge)
+ * are kept as compact JSON object text, never interpreted here. Converting
+ * them from and to JSON, and merging a changenode patch, is
+ * graphs/graph_json.h.
+ *
+ * Placeholder blocks (05 §2.2): a block loaded from a graph file whose type
+ * is not registered. Its type is NULL, so it has no ports and no compute and
+ * takes part in no dataflow; it keeps its component name (block_component).
+ * The connections and graph ports of the file that reference a placeholder
+ * cannot be live links, so the graph keeps them as retained entries
+ * (RetainedConnection, RetainedPort): they refer to their blocks (so they
+ * follow a rename), are written back on save, appear in no event and in no
+ * graph:connect snapshot, and are dropped, silently, with either of their
+ * blocks. They keep the file free of fan-in and duplicate port names: a
+ * retained connection into a real block's input is refused if the input
+ * already has a source, and a later live edge or initial to that input
+ * (graph_connect, graph_add_initial), or a live graph port taking a retained
+ * port's name (graph_add_port, graph_rename_port), replaces the retained
+ * entry, which is dropped silently.
+ *
+ * Not yet here: composite instances (task 21), IO (task 22).
  */
 #ifndef HAKKAS_GRAPHS_GRAPH_H
 #define HAKKAS_GRAPHS_GRAPH_H
@@ -130,11 +149,13 @@ typedef struct {
 	Block *src_block;    /* INPUT_SOURCE_EDGE: the upstream block */
 	uint32_t src_output; /* INPUT_SOURCE_EDGE: its output index */
 	Linkable initial;    /* INPUT_SOURCE_INITIAL: the literal (owned); unset otherwise */
+	/* INPUT_SOURCE_EDGE: the edge's opaque metadata (02 §3.4 addedge,
+	 * changeedge) as compact JSON object text, owned; NULL if it has none.
+	 * Kept here since an input has at most one edge. */
+	char *edge_metadata;
 	/* Incremented on every source change (edge or initial added, replaced or
 	 * removed, upstream block removed); queued updates sent under an older
-	 * value are discarded (01 §3.2). Edge metadata (02 §3.4 changeedge),
-	 * stored opaquely, will live here too, since an input has at most one
-	 * edge (plan task 10). */
+	 * value are discarded (01 §3.2). */
 	uint32_t source_gen;
 	InputWatch *watches;
 } Input;
@@ -155,23 +176,31 @@ typedef struct {
 } Output;
 
 /* Node metadata (05 §2.1). change_threshold is the instance override of
- * 01 §3.3, NAN when absent. Other, opaque metadata keys are kept from plan
- * task 10 on (with the JSON library). */
+ * 01 §3.3, NAN when absent. extra holds every other metadata key, opaque, as
+ * compact JSON object text ("{...}"), or NULL if there are none. A block owns
+ * its metadata's extra; a BlockMetadata passed to graph_create_block is only
+ * read (the block takes a copy). graphs/graph_json.h converts metadata from
+ * and to JSON. */
 typedef struct {
 	double x, y;
 	double change_threshold;
+	char *extra;
 } BlockMetadata;
 
 static inline BlockMetadata block_metadata_default(void)
 {
-	return (BlockMetadata){BLOCK_DEFAULT_POSITION, BLOCK_DEFAULT_POSITION, (double)NAN};
+	return (BlockMetadata){BLOCK_DEFAULT_POSITION, BLOCK_DEFAULT_POSITION, (double)NAN, NULL};
 }
+
+/* Free md->extra (when the caller owns it) and set it NULL. */
+void block_metadata_release(BlockMetadata *md);
 
 struct Block {
 	Graph *graph;
 	BlockHandle handle;
 	char *name; /* the instance name, owned, unique in the graph */
-	const BlockTypeDef *type; /* NULL only for a placeholder (task 10) */
+	const BlockTypeDef *type; /* NULL only for a placeholder (05 §2.2) */
+	char *component;	  /* a placeholder's component name, owned; else NULL */
 	uint32_t input_count;
 	uint32_t output_count;
 	Linkable *in_values;  /* input_count current input values (BlockCtx.inputs) */
@@ -207,6 +236,27 @@ typedef struct {
 	uint32_t port; /* input index (inport) or output index (outport) of block */
 } GraphPort;
 
+/* A connection of a graph file that references a placeholder block (05
+ * §2.2), retained as loaded so that saving writes it back unchanged: an edge
+ * (src set) or an initial (src NULL, data set). At least one of its blocks is
+ * a placeholder; the other one's port was checked when it was loaded. */
+typedef struct {
+	Block *src;	/* edge: the source block; NULL for an initial */
+	char *src_port; /* edge: the source port name, owned; NULL for an initial */
+	Linkable data;	/* initial: the literal as loaded (a JSON string stays a
+			 * string, unparsed); unset for an edge */
+	Block *tgt;
+	char *tgt_port; /* owned */
+	char *metadata; /* edge: its metadata as compact JSON object text, owned, or NULL */
+} RetainedConnection;
+
+/* A graph port of a graph file mapped to a placeholder block (05 §2.2). */
+typedef struct {
+	char *name;  /* the public name, owned */
+	Block *block; /* the placeholder */
+	char *port;  /* the inner port name, owned */
+} RetainedPort;
+
 struct Graph {
 	Runtime *rt;
 	Block **blocks; /* in creation order */
@@ -223,6 +273,13 @@ struct Graph {
 	GraphPort *ports[2];
 	uint32_t port_count[2];
 	uint32_t port_cap[2];
+	/* Retained entries of placeholder blocks (05 §2.2), in load order. */
+	RetainedConnection *retained;
+	uint32_t retained_count;
+	uint32_t retained_cap;
+	RetainedPort *retained_ports[2];
+	uint32_t retained_port_count[2];
+	uint32_t retained_port_cap[2];
 	/* Lifecycle times (engine uptime, ms; 01 §3.4), kept by the Graphs
 	 * registry: the start of the current or most recent run (0 if never
 	 * started), and the duration of the most recent completed run. */
@@ -239,6 +296,7 @@ enum graph_event_type {
 	GRAPH_EVENT_BLOCK_CHANGED, /* metadata changed; block->metadata is the result */
 	GRAPH_EVENT_EDGE_ADDED,
 	GRAPH_EVENT_EDGE_REMOVED,
+	GRAPH_EVENT_EDGE_CHANGED, /* metadata replaced; the target input's edge_metadata */
 	GRAPH_EVENT_INITIAL_ADDED,
 	GRAPH_EVENT_INITIAL_REMOVED,
 	GRAPH_EVENT_INPORT_ADDED,
@@ -302,12 +360,19 @@ Block *graph_find_block_n(const Graph *g, const char *name, size_t len);
 Block *graph_find_block(const Graph *g, const char *name);
 
 /* Create a block of type named name (02 §3.4 addnode), with metadata md
- * (NULL: block_metadata_default()); it is started at once if g is started.
- * Refused: INVALID_ID, NODE_EXISTS, INVALID_ARGUMENT (NULL type, or a
- * metadata change_threshold that is negative), NO_MEMORY. On success *out (if
- * not NULL) is the block. Reports BLOCK_ADDED. */
+ * (NULL: block_metadata_default(); md->extra is copied); it is started at once
+ * if g is started. Refused: INVALID_ID, NODE_EXISTS, INVALID_ARGUMENT (NULL
+ * type, or a metadata change_threshold that is negative), NO_MEMORY. On
+ * success *out (if not NULL) is the block. Reports BLOCK_ADDED. */
 enum graph_status graph_create_block(Graph *g, const char *name, const BlockTypeDef *type,
 				     const BlockMetadata *md, Block **out);
+
+/* Create a placeholder block (05 §2.2) for the unregistered type component:
+ * as graph_create_block, but with no type, ports or compute. Refused:
+ * INVALID_ID, NODE_EXISTS, INVALID_ARGUMENT (component NULL, or a bad
+ * change_threshold), NO_MEMORY. Reports BLOCK_ADDED. */
+enum graph_status graph_create_placeholder(Graph *g, const char *name, const char *component,
+					   const BlockMetadata *md, Block **out);
 
 /* Remove a block (02 §3.4 removenode; 03 §2 destroy): stop it if started,
  * then sever every inbound edge and initial and every outbound link; each
@@ -337,22 +402,33 @@ typedef struct {
 	double x, y;
 	enum threshold_change threshold;
 	double change_threshold;
+	/* set_extra: replace the opaque keys with extra (JSON object text, or
+	 * NULL for none), which is copied. graph_json_to_change
+	 * (graphs/graph_json.h) computes it from a changenode patch. */
+	bool set_extra;
+	char *extra;
 } BlockChange;
 
 /* Merge chg into the block's metadata. Refused: INVALID_ID, UNKNOWN_NODE,
- * INVALID_ARGUMENT (THRESHOLD_SET with NaN or a negative value). Reports
- * BLOCK_CHANGED. A new threshold applies from the next output_set on. */
+ * INVALID_ARGUMENT (THRESHOLD_SET with NaN or a negative value), NO_MEMORY.
+ * Reports BLOCK_CHANGED. A new threshold applies from the next output_set
+ * on. */
 enum graph_status graph_change_block(Graph *g, const char *name, const BlockChange *chg);
 
+/* Free chg->extra (when the caller owns it) and set it NULL. */
+void block_change_release(BlockChange *chg);
+
 /* Connect src.src_port (an output) to tgt.tgt_port (an input) (02 §3.4
- * addedge). If g is started, the input then receives the output's
+ * addedge), with the edge's opaque metadata (JSON object text, copied; NULL
+ * for none). If g is started, the input then receives the output's
  * last_propagated value at once (03 §2 connect); in a stopped graph it keeps
  * its value. Refused: INVALID_ID, UNKNOWN_NODE, UNKNOWN_PORT,
  * INVALID_EDGE_DIRECTION (src_port is an input of src, or tgt_port an output
  * of tgt), INPUT_CONNECTED (the input has an edge or an initial), NO_MEMORY.
- * Reports EDGE_ADDED. */
+ * Reports EDGE_ADDED. A retained connection into the input is dropped (see
+ * "Placeholder blocks" above). */
 enum graph_status graph_connect(Graph *g, const char *src, const char *src_port, const char *tgt,
-				const char *tgt_port);
+				const char *tgt_port, const char *metadata);
 
 /* Remove the edge src.src_port → tgt.tgt_port (02 §3.4 removeedge); the input
  * reverts to its port default, which propagates, and queued values from the
@@ -362,12 +438,20 @@ enum graph_status graph_connect(Graph *g, const char *src, const char *src_port,
 enum graph_status graph_disconnect(Graph *g, const char *src, const char *src_port,
 				   const char *tgt, const char *tgt_port);
 
+/* Replace the metadata of the edge src.src_port → tgt.tgt_port (02 §3.4
+ * changeedge) with metadata (JSON object text, copied; NULL for none). No
+ * value moves. Refused as graph_disconnect (NO_SUCH_CONNECTION included), and
+ * NO_MEMORY. Reports EDGE_CHANGED. */
+enum graph_status graph_change_edge(Graph *g, const char *src, const char *src_port,
+				    const char *tgt, const char *tgt_port, const char *metadata);
+
 /* Wire the literal value to node.port (02 §3.4 addinitial), replacing an
  * initial already there. The value is delivered at once and propagates if g is
  * started; a stopped graph only stores it. Refused: INVALID_ID, UNKNOWN_NODE,
  * UNKNOWN_PORT, INVALID_EDGE_DIRECTION (port is an output), INPUT_CONNECTED
  * (the input has an edge), INVALID_ARGUMENT (value NULL). The graph takes its
- * own reference to value. Reports INITIAL_ADDED. */
+ * own reference to value. Reports INITIAL_ADDED. A retained connection into
+ * the input is dropped (see "Placeholder blocks" above). */
 enum graph_status graph_add_initial(Graph *g, const char *node, const char *port,
 				    const Linkable *value);
 
@@ -409,6 +493,34 @@ enum graph_status graph_remove_port(Graph *g, enum graph_port_dir dir, const cha
 enum graph_status graph_rename_port(Graph *g, enum graph_port_dir dir, const char *from,
 				    const char *to);
 
+/* ---- Retained entries of placeholder blocks (05 §2.2) ---------------- */
+
+/* Keep a copy of c (its strings and data copied) at the end of g's retained
+ * connections, reporting nothing. The end that is a real block is checked as
+ * addedge / addinitial check it, so a file entry is skipped exactly as the
+ * wire command would be refused (05 §2.2): its port must exist with the right
+ * direction (UNKNOWN_PORT, INVALID_EDGE_DIRECTION, source before target), and
+ * the target input must have no source, live or retained (INPUT_CONNECTED;
+ * no fan-in, 01 §2.2; a placeholder's input is identified by its port name).
+ * Also refused: INVALID_ARGUMENT (tgt or a needed port name NULL, src and
+ * data both or neither set, no placeholder among the blocks, or a block not
+ * in g), NO_MEMORY. */
+enum graph_status graph_retain_connection(Graph *g, const RetainedConnection *c);
+
+/* Whether a retained connection feeds input port of b. A loader checks it
+ * before a live edge or initial to b.port, which is then a fan-in. */
+bool graph_input_retained(const Graph *g, const Block *b, const char *port);
+
+/* Whether a retained graph port of direction dir is called name. */
+bool graph_port_retained(const Graph *g, enum graph_port_dir dir, const char *name);
+
+/* Keep a graph port called name in direction dir, mapped to port of the
+ * placeholder block (names copied), reporting nothing. Refused: INVALID_ID
+ * (name), PORT_EXISTS (a live or retained port of dir has that name),
+ * INVALID_ARGUMENT (port NULL, or block is no placeholder of g), NO_MEMORY. */
+enum graph_status graph_retain_port(Graph *g, enum graph_port_dir dir, const char *name,
+				    Block *block, const char *port);
+
 /* The port called name in direction dir, or NULL. */
 const GraphPort *graph_find_port(const Graph *g, enum graph_port_dir dir, const char *name);
 
@@ -421,6 +533,19 @@ const char *graph_port_inner_name(enum graph_port_dir dir, const GraphPort *p);
 bool port_ref_split(const char *ref, size_t *block_len, const char **port);
 
 /* ---- Block -------------------------------------------------------------- */
+
+/* Whether b is a placeholder for an unregistered type (05 §2.2). */
+static inline bool block_is_placeholder(const Block *b)
+{
+	return b->type == NULL;
+}
+
+/* The block's component name: its type's name, or a placeholder's original
+ * component. */
+static inline const char *block_component(const Block *b)
+{
+	return b->type != NULL ? b->type->name : b->component;
+}
 
 /* The index of the input / output called name, or -1. */
 int32_t block_input_index(const Block *b, const char *name);

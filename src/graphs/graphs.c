@@ -547,13 +547,13 @@ enum graph_status graphs_change_node(Graphs *gs, const char *graph, const char *
 
 enum graph_status graphs_add_edge(Graphs *gs, const char *graph, const char *src,
 				  const char *src_port, const char *tgt, const char *tgt_port,
-				  GraphsMessage *msg)
+				  const char *metadata, GraphsMessage *msg)
 {
 	GraphRefusal ctx = {.graph = graph};
 	Graph *g;
 	enum graph_status st = lookup_with(gs, graph, 2, (const char *const[]){src, tgt}, &g);
 	if (st == GRAPH_OK) {
-		st = graph_connect(g, src, src_port, tgt, tgt_port);
+		st = graph_connect(g, src, src_port, tgt, tgt_port, metadata);
 		endpoint_refusal(g, st, src, src_port, tgt, tgt_port, &ctx);
 	}
 	return finish(st, &ctx, msg);
@@ -568,6 +568,20 @@ enum graph_status graphs_remove_edge(Graphs *gs, const char *graph, const char *
 	enum graph_status st = lookup_with(gs, graph, 2, (const char *const[]){src, tgt}, &g);
 	if (st == GRAPH_OK) {
 		st = graph_disconnect(g, src, src_port, tgt, tgt_port);
+		endpoint_refusal(g, st, src, src_port, tgt, tgt_port, &ctx);
+	}
+	return finish(st, &ctx, msg);
+}
+
+enum graph_status graphs_change_edge(Graphs *gs, const char *graph, const char *src,
+				     const char *src_port, const char *tgt, const char *tgt_port,
+				     const char *metadata, GraphsMessage *msg)
+{
+	GraphRefusal ctx = {.graph = graph};
+	Graph *g;
+	enum graph_status st = lookup_with(gs, graph, 2, (const char *const[]){src, tgt}, &g);
+	if (st == GRAPH_OK) {
+		st = graph_change_edge(g, src, src_port, tgt, tgt_port, metadata);
 		endpoint_refusal(g, st, src, src_port, tgt, tgt_port, &ctx);
 	}
 	return finish(st, &ctx, msg);

@@ -187,8 +187,9 @@ enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
  * remove it, report GRAPH_DELETED (the graph is still readable during that
  * callback) and destroy it, its blocks going without events. name must equal
  * the graph's current name. Refused: INVALID_ID, UNKNOWN_GRAPH,
- * NAME_MISMATCH. Removing the persisted graph file is the caller's part
- * (graph persistence, plan task 10; 05 §2.3). */
+ * NAME_MISMATCH. This deletes the graph in memory only: the protocol layer
+ * calls graph_files_delete (app/graph_files.h), which also removes the
+ * persisted file (02 §3.2, 05 §2.3). */
 enum graph_status graphs_delete_graph(Graphs *gs, const char *id, const char *name,
 				      GraphsMessage *msg);
 
@@ -239,13 +240,23 @@ enum graph_status graphs_rename_node(Graphs *gs, const char *graph, const char *
 enum graph_status graphs_change_node(Graphs *gs, const char *graph, const char *node,
 				     const BlockChange *chg, GraphsMessage *msg);
 
+/* addedge: metadata is the edge's opaque metadata as JSON object text
+ * (graphs/graph_json.h), copied; NULL for none. */
 enum graph_status graphs_add_edge(Graphs *gs, const char *graph, const char *src,
 				  const char *src_port, const char *tgt, const char *tgt_port,
-				  GraphsMessage *msg);
+				  const char *metadata, GraphsMessage *msg);
 
 enum graph_status graphs_remove_edge(Graphs *gs, const char *graph, const char *src,
 				     const char *src_port, const char *tgt, const char *tgt_port,
 				     GraphsMessage *msg);
+
+/* changeedge: replace the edge's metadata with metadata (JSON object text,
+ * copied; NULL for none). Refused like removeedge ("No such connection" for
+ * an edge that does not exist). Reports EDGE_CHANGED, a graph-specific event
+ * (02 §3.4: every subscriber of the graph). */
+enum graph_status graphs_change_edge(Graphs *gs, const char *graph, const char *src,
+				     const char *src_port, const char *tgt, const char *tgt_port,
+				     const char *metadata, GraphsMessage *msg);
 
 /* addinitial: value is the literal, already parsed for the port (02 §3.4
  * "Initial value encoding"); the graph takes its own reference. */

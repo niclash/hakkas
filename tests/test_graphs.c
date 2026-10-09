@@ -77,6 +77,13 @@ static void describe(char *log, size_t size, const GraphEvent *ev)
 		       block_output_port(ev->src_block, ev->src_output)->name, b->name,
 		       in_name(b, ev->input));
 		break;
+	case GRAPH_EVENT_EDGE_CHANGED: {
+		const char *md = b->inputs[ev->input].edge_metadata;
+		append(log, size, "%s:changeedge %s.%s>%s.%s %s;", id, ev->src_block->name,
+		       block_output_port(ev->src_block, ev->src_output)->name, b->name,
+		       in_name(b, ev->input), md != NULL ? md : "-");
+		break;
+	}
 	case GRAPH_EVENT_INITIAL_ADDED:
 	case GRAPH_EVENT_INITIAL_REMOVED:
 		append(log, size, "%s:%cinit %s>%s.%s;", id,
@@ -298,7 +305,7 @@ static void test_delete_graph(void)
 	new_graph("g3");
 	add("g2", "A");
 	add("g2", "B");
-	CHECK(graphs_add_edge(&gs, "g2", "A", "out", "B", "in1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_edge(&gs, "g2", "A", "out", "B", "in1", NULL, NULL) == GRAPH_OK);
 	REFUSED(graphs_delete_graph(&gs, "", "g1", &m_), GRAPH_ERR_INVALID_ID, "Invalid id");
 	REFUSED(graphs_delete_graph(&gs, "nope", "g1", &m_), GRAPH_ERR_UNKNOWN_GRAPH,
 		"Unknown graph: nope");
@@ -480,7 +487,7 @@ static void test_ports_follow_block(void)
 	add("g1", "A");
 	add("g1", "B");
 	add("g1", "C");
-	CHECK(graphs_add_edge(&gs, "g1", "A", "out", "B", "in1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_edge(&gs, "g1", "A", "out", "B", "in1", NULL, NULL) == GRAPH_OK);
 	Linkable seven = linkable_from_f64(7);
 	CHECK(graphs_add_initial(&gs, "g1", "B", "in2", &seven, NULL) == GRAPH_OK);
 	CHECK(graphs_add_port(&gs, "g1", GRAPH_INPORT, "i1", "B", "in1", NULL) == GRAPH_OK);
@@ -566,6 +573,69 @@ static void test_scoping(void)
 	add("g1", "D");
 	CHECK_STREQ(s1.log, "");
 	CHECK_STREQ(s2.log, "g1:+node B(50,50,nan);g1:+node D(50,50,nan);");
+	teardown();
+}
+
+/* changeedge (02 §3.4): replaces the edge's metadata and is reported to every
+ * subscriber of the graph; an edge that does not exist is refused. */
+static void test_change_edge(void)
+{
+	setup();
+	Sink s1, s2;
+	sink_init(&s1);
+	sink_init(&s2);
+	graphs_subscribe(&gs, &s1.sub);
+	graphs_subscribe(&gs, &s2.sub);
+	new_graph("g1");
+	new_graph("g2");
+	CHECK(graphs_subscriber_scope(&s1.sub, "g1"));
+	CHECK(graphs_subscriber_scope(&s2.sub, "g2"));
+	add("g1", "A");
+	add("g1", "B");
+	CHECK(graphs_add_edge(&gs, "g1", "A", "out", "B", "in1", "{\"route\":3}", NULL) ==
+	      GRAPH_OK);
+	Block *b = graph_find_block(graphs_find(&gs, "g1"), "B");
+	CHECK_STREQ(b->inputs[0].edge_metadata, "{\"route\":3}");
+	clear();
+	s1.log[0] = s2.log[0] = '\0';
+
+	GraphsMessage m;
+	CHECK(graphs_change_edge(&gs, "g1", "A", "out", "B", "in1", "{\"route\":5,\"x\":true}",
+				 &m) == GRAPH_OK);
+	CHECK_STREQ(m.text, "");
+	const char *ev = "g1:changeedge A.out>B.in1 {\"route\":5,\"x\":true};";
+	CHECK_STREQ(all.log, ev);
+	CHECK_STREQ(s1.log, ev);
+	CHECK_STREQ(s2.log, ""); /* scoped to another graph */
+	/* NULL removes the metadata; the edge stays. */
+	clear();
+	CHECK(graphs_change_edge(&gs, "g1", "A", "out", "B", "in1", NULL, NULL) == GRAPH_OK);
+	CHECK_STREQ(all.log, "g1:changeedge A.out>B.in1 -;");
+	CHECK(b->inputs[0].source == INPUT_SOURCE_EDGE && b->inputs[0].edge_metadata == NULL);
+
+	/* Refusals: the same checks as removeedge. */
+	REFUSED(graphs_change_edge(&gs, "g1", "B", "out", "A", "in1", "{}", &m_),
+		GRAPH_ERR_NO_SUCH_CONNECTION, "No such connection");
+	REFUSED(graphs_change_edge(&gs, "g1", "A", "out", "B", "in2", "{}", &m_),
+		GRAPH_ERR_NO_SUCH_CONNECTION, "No such connection");
+	REFUSED(graphs_change_edge(&gs, "g1", "A", "in1", "B", "in1", "{}", &m_),
+		GRAPH_ERR_NO_SUCH_CONNECTION, "No such connection");
+	REFUSED(graphs_change_edge(&gs, "g1", "X", "out", "B", "in1", "{}", &m_),
+		GRAPH_ERR_UNKNOWN_NODE, "Unknown node: X");
+	REFUSED(graphs_change_edge(&gs, "g1", "A", "out", "B", "nope", "{}", &m_),
+		GRAPH_ERR_UNKNOWN_PORT, "Unknown port: B.nope");
+	REFUSED(graphs_change_edge(&gs, "nope", "A", "out", "B", "in1", "{}", &m_),
+		GRAPH_ERR_UNKNOWN_GRAPH, "Unknown graph: nope");
+	REFUSED(graphs_change_edge(&gs, "g1", "", "out", "B", "in1", "{}", &m_),
+		GRAPH_ERR_INVALID_ID, "Invalid id");
+
+	/* Removing the edge drops its metadata; a new edge starts with none. */
+	CHECK(graphs_change_edge(&gs, "g1", "A", "out", "B", "in1", "{\"a\":1}", NULL) ==
+	      GRAPH_OK);
+	CHECK(graphs_remove_edge(&gs, "g1", "A", "out", "B", "in1", NULL) == GRAPH_OK);
+	CHECK(b->inputs[0].edge_metadata == NULL);
+	CHECK(graphs_add_edge(&gs, "g1", "A", "out", "B", "in1", NULL, NULL) == GRAPH_OK);
+	CHECK(b->inputs[0].edge_metadata == NULL);
 	teardown();
 }
 
@@ -705,7 +775,7 @@ static void test_command_refusals(void)
 	add("g1", "A");
 	add("g1", "B");
 	add("g1", "C");
-	CHECK(graphs_add_edge(&gs, "g1", "A", "out", "B", "in1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_edge(&gs, "g1", "A", "out", "B", "in1", NULL, NULL) == GRAPH_OK);
 	Linkable v = linkable_from_f64(3);
 	CHECK(graphs_add_initial(&gs, "g1", "B", "in2", &v, NULL) == GRAPH_OK);
 	BlockChange chg = {.set_x = true, .x = 1};
@@ -714,8 +784,8 @@ static void test_command_refusals(void)
 	/* Ids before the graph, the graph before nodes. */
 	REFUSED(graphs_add_node(&gs, "nope", "", "math/Add2", NULL, &m_), GRAPH_ERR_INVALID_ID,
 		"Invalid id");
-	REFUSED(graphs_add_edge(&gs, "nope", "A", "out", "", "in1", &m_), GRAPH_ERR_INVALID_ID,
-		"Invalid id");
+	REFUSED(graphs_add_edge(&gs, "nope", "A", "out", "", "in1", NULL, &m_),
+		GRAPH_ERR_INVALID_ID, "Invalid id");
 	REFUSED(graphs_rename_node(&gs, "nope", "A", NULL, &m_), GRAPH_ERR_INVALID_ID,
 		"Invalid id");
 	REFUSED(graphs_add_node(&gs, "nope", "X", "math/Add2", NULL, &m_),
@@ -726,7 +796,7 @@ static void test_command_refusals(void)
 		"Unknown graph: nope");
 	REFUSED(graphs_change_node(&gs, "nope", "A", &chg, &m_), GRAPH_ERR_UNKNOWN_GRAPH,
 		"Unknown graph: nope");
-	REFUSED(graphs_add_edge(&gs, "nope", "A", "out", "C", "in1", &m_),
+	REFUSED(graphs_add_edge(&gs, "nope", "A", "out", "C", "in1", NULL, &m_),
 		GRAPH_ERR_UNKNOWN_GRAPH, "Unknown graph: nope");
 	REFUSED(graphs_remove_edge(&gs, "nope", "A", "out", "B", "in1", &m_),
 		GRAPH_ERR_UNKNOWN_GRAPH, "Unknown graph: nope");
@@ -756,26 +826,26 @@ static void test_command_refusals(void)
 		"Invalid argument");
 
 	/* Edges: the failing endpoint is named. */
-	REFUSED(graphs_add_edge(&gs, "g1", "X", "out", "Y", "in1", &m_), GRAPH_ERR_UNKNOWN_NODE,
-		"Unknown node: X");
-	REFUSED(graphs_add_edge(&gs, "g1", "A", "out", "Y", "in1", &m_), GRAPH_ERR_UNKNOWN_NODE,
-		"Unknown node: Y");
-	REFUSED(graphs_add_edge(&gs, "g1", "A", "nope", "Y", "in1", &m_), GRAPH_ERR_UNKNOWN_PORT,
-		"Unknown port: A.nope");
-	REFUSED(graphs_add_edge(&gs, "g1", "A", "out", "C", "nope", &m_), GRAPH_ERR_UNKNOWN_PORT,
-		"Unknown port: C.nope");
-	/* Source and target the same node: the source port is the unknown one. */
-	REFUSED(graphs_add_edge(&gs, "g1", "C", "nope", "C", "nope2", &m_),
+	REFUSED(graphs_add_edge(&gs, "g1", "X", "out", "Y", "in1", NULL, &m_),
+		GRAPH_ERR_UNKNOWN_NODE, "Unknown node: X");
+	REFUSED(graphs_add_edge(&gs, "g1", "A", "out", "Y", "in1", NULL, &m_),
+		GRAPH_ERR_UNKNOWN_NODE, "Unknown node: Y");
+	REFUSED(graphs_add_edge(&gs, "g1", "A", "nope", "Y", "in1", NULL, &m_),
+		GRAPH_ERR_UNKNOWN_PORT, "Unknown port: A.nope");
+	REFUSED(graphs_add_edge(&gs, "g1", "A", "out", "C", "nope", NULL, &m_),
 		GRAPH_ERR_UNKNOWN_PORT, "Unknown port: C.nope");
-	REFUSED(graphs_add_edge(&gs, "g1", "C", "out", "C", "nope2", &m_),
+	/* Source and target the same node: the source port is the unknown one. */
+	REFUSED(graphs_add_edge(&gs, "g1", "C", "nope", "C", "nope2", NULL, &m_),
+		GRAPH_ERR_UNKNOWN_PORT, "Unknown port: C.nope");
+	REFUSED(graphs_add_edge(&gs, "g1", "C", "out", "C", "nope2", NULL, &m_),
 		GRAPH_ERR_UNKNOWN_PORT, "Unknown port: C.nope2");
-	REFUSED(graphs_add_edge(&gs, "g1", "A", "in1", "C", "in1", &m_),
+	REFUSED(graphs_add_edge(&gs, "g1", "A", "in1", "C", "in1", NULL, &m_),
 		GRAPH_ERR_INVALID_EDGE_DIRECTION, "Invalid edge direction");
-	REFUSED(graphs_add_edge(&gs, "g1", "A", "out", "C", "out", &m_),
+	REFUSED(graphs_add_edge(&gs, "g1", "A", "out", "C", "out", NULL, &m_),
 		GRAPH_ERR_INVALID_EDGE_DIRECTION, "Invalid edge direction");
-	REFUSED(graphs_add_edge(&gs, "g1", "C", "out", "B", "in1", &m_),
+	REFUSED(graphs_add_edge(&gs, "g1", "C", "out", "B", "in1", NULL, &m_),
 		GRAPH_ERR_INPUT_CONNECTED, "Input already connected: B.in1");
-	REFUSED(graphs_add_edge(&gs, "g1", "C", "out", "B", "in2", &m_),
+	REFUSED(graphs_add_edge(&gs, "g1", "C", "out", "B", "in2", NULL, &m_),
 		GRAPH_ERR_INPUT_CONNECTED, "Input already connected: B.in2");
 	REFUSED(graphs_remove_edge(&gs, "g1", "C", "out", "B", "in1", &m_),
 		GRAPH_ERR_NO_SUCH_CONNECTION, "No such connection");
@@ -823,6 +893,7 @@ int main(void)
 	RUN(test_ports);
 	RUN(test_ports_follow_block);
 	RUN(test_scoping);
+	RUN(test_change_edge);
 	RUN(test_applied_state);
 	RUN(test_subscribers_during_notification);
 	RUN(test_refusal_message_render);

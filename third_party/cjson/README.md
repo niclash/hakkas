@@ -82,8 +82,11 @@ Checked by `tests/test_json.c`:
   `linkable_stringify`'s f64 form (shortest `%.15g`/`%.16g`/`%.17g` that reads back exactly) and
   insert it with `cJSON_CreateRaw`. Small integral values such as canvas coordinates are printed
   exactly by cJSON either way. `linkable_stringify` prints non-finite values as `NaN`/`Infinity`,
-  which are not JSON, so the task that writes numbers (plan task 10) must decide how a non-finite
-  initial is stored.
+  which are not JSON. Implemented in plan task 10 (`src/graphs/graph_json.h`): every tree the
+  core writes is printed by `graph_json_print`, which turns each number into such raw text
+  first (±Infinity, from a parsed `1e999`, as `1e999`/`-1e999`); a non-finite initial value is
+  stored as the string `"NaN"`, `"Infinity"` or `"-Infinity"` (05 §2.1), which a `"number"` port
+  parses back.
 
 ## Updating
 

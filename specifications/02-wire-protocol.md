@@ -200,6 +200,8 @@ Every command below requires an authenticated connection and the capability list
 | `edges` | `{"graph":String,"edges":[{"src":{"node":String,"port":String},"tgt":{"node":String,"port":String}}, ...]}` | Registers live link-value subscriptions — §4.2. Replies to the requester only by echoing the payload back as `network:edges`. |
 | other | — | generic error |
 
+`persist` (decided, plan task 10): an invalid or unknown graph id is a refusal like any other (`"Invalid id"`, `"Unknown graph: <id>"`), sent to the requester only (§3.4.1); only a failed save is broadcast as the `network:error` above, with `"graph"` set. The file is written in the canonical form of `05-app-lifecycle-persistence.md` §2.1.
+
 **Timestamps**: until a wall clock exists (`01-architecture-overview.md` §3.4), every `time` field is the engine uptime at the event, rendered as an ISO8601 UTC timestamp counted from the epoch — e.g. a graph started 90 s after boot reports `"1970-01-01T00:01:30Z"`. Clients must not interpret it as a calendar date. Once a wall clock is available, real UTC timestamps are sent in the same format.
 
 **`network:started`**: `{"protocol":"network","command":"started","payload":{"graph":"<id>","time":"<ISO8601>","started":true,"running":true,"debug":false}}`.
@@ -234,6 +236,12 @@ Every command below requires an authenticated connection and the capability list
 | other | — | generic error |
 
 Edge metadata is purely for the user interface (routing, colors). The engine stores it opaquely, persists it, and replays it in the `graph:connect` snapshot, but never interprets it.
+
+Metadata decisions (plan task 10; the model side, `src/graphs/graph_json.h`, without wire code until plan task 18):
+- **Node metadata**: `x`/`y` must be finite numbers and `change_threshold` a number `>= 0` (`+Infinity` included, `01-architecture-overview.md` §3.3); every other key is opaque and kept as-is, in its order, after `x`, `y`, `change_threshold` in events, snapshots and files.
+- **`changenode` merge**: each key of the request's `metadata` is merged into the node's metadata, keys not named are kept. `null` removes a key (like JSON Merge Patch, RFC 7396): `"change_threshold": null` removes the instance override, `"x": null`/`"y": null` reset the position to `50`, and an opaque key set to `null` is deleted. Any other value replaces the key in place (an object value as a whole, not merged recursively) or adds it at the end. A request with an invalid `x`, `y` or `change_threshold` is refused as a whole.
+- **Edge metadata** (`addedge`, `changeedge`): an object, or absent/`null` for none; `changeedge` replaces it entirely (an empty object is kept as `{}`, `null` removes it) and its event carries the resulting metadata. The `graph:changeedge` broadcast is graph-specific (§4.1); a `changeedge` for an edge that does not exist is `"No such connection"` (§3.4.1), checked like `removeedge`. Removing an edge drops its metadata.
+- **Placeholder blocks** (`05-app-lifecycle-persistence.md` §2.2) appear like any block: `graph:addnode` (events and snapshot) carries the placeholder's original `component`, and the block can be moved, renamed, changed and removed. It has no ports, so an edge, initial or graph port naming one of its ports is refused as `"Unknown port: <node>.<port>"`. The connections and graph ports of the file that reference it are not sent on the wire (they are not live); they are kept for the file only (`01-architecture-overview.md` §2.2).
 
 Graph-level inports/outports define the external ports a graph has when it is used as a group/composite block type (`01-architecture-overview.md` §2.2, `03-block-types.md` §5). They have no dataflow effect in a top-level graph.
 

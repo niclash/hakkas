@@ -75,6 +75,7 @@ enum graph_status graph_add_port(Graph *g, enum graph_port_dir dir, const char *
 	if (copy == NULL)
 		return GRAPH_ERR_NO_MEMORY;
 
+	graph_retained_remove_port(g, dir, name); /* the live port takes its place */
 	GraphPort *p = &g->ports[dir][g->port_count[dir]++];
 	*p = (GraphPort){copy, b, (uint32_t)index};
 	graph_emit(g, (GraphEvent){.type = added_event[dir], .port = p});
@@ -116,6 +117,7 @@ enum graph_status graph_rename_port(Graph *g, enum graph_port_dir dir, const cha
 	char *name = graph_str_dup(to);
 	if (name == NULL)
 		return GRAPH_ERR_NO_MEMORY;
+	graph_retained_remove_port(g, dir, to); /* the live port takes its place */
 	GraphPort *p = &g->ports[dir][i];
 	char *old = p->name;
 	p->name = name;

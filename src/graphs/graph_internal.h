@@ -38,6 +38,21 @@ void graph_ports_remove_block(Graph *g, const Block *b);
 /* Free every port of g, reporting nothing. Part of graph_destroy. */
 void graph_ports_free(Graph *g);
 
+/* ---- graph_retained.c: retained entries of placeholders (05 §2.2) ------- */
+
+/* Drop every retained connection and port that refers to b, reporting
+ * nothing. Part of graph_remove_block. */
+void graph_retained_remove_block(Graph *g, const Block *b);
+
+/* A live source attached to input port of b, or a live graph port called
+ * name, takes the place of a retained entry (graphs/graph.h): drop it,
+ * reporting nothing. No-op if there is none. */
+void graph_retained_remove_input(Graph *g, const Block *b, const char *port);
+void graph_retained_remove_port(Graph *g, enum graph_port_dir dir, const char *name);
+
+/* Free every retained entry of g. Part of graph_destroy. */
+void graph_retained_free(Graph *g);
+
 /* ---- block.c: the generic block runtime (03 §2) ------------------------ */
 
 /* update(input, value): store value (taking ownership) in input i, fire the

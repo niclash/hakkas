@@ -44,7 +44,7 @@ for a decision.
 
 - [x] **9. JSON library integration**: vendor a pinned cJSON release into `third_party/cjson/`
   (decided, 01 §6) and add it to the core build.
-- [ ] **10. Graph file load/save** (`src/app/`): 05 §2.1–§2.3 format, file-name encoding,
+- [x] **10. Graph file load/save** (`src/app/`): 05 §2.1–§2.3 format, file-name encoding,
   placeholder blocks for unknown types, round-trip tests. cJSON does not print every double
   exactly: write f64 values via `linkable_stringify` + `cJSON_CreateRaw`, and decide how a
   non-finite initial is stored (`third_party/cjson/README.md`, "Numbers").

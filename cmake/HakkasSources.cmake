@@ -11,6 +11,8 @@ set(HAKKAS_SOURCE_ROOT ${CMAKE_CURRENT_LIST_DIR}/../src)
 cmake_path(NORMAL_PATH HAKKAS_SOURCE_ROOT)
 
 set(HAKKAS_CORE_SOURCES
+  ${HAKKAS_SOURCE_ROOT}/app/file_names.c
+  ${HAKKAS_SOURCE_ROOT}/app/graph_files.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/block_types.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
@@ -19,7 +21,9 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/graphs/block.c
   ${HAKKAS_SOURCE_ROOT}/graphs/deadlines.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/graph_json.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph_ports.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/graph_retained.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graphs.c
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
   ${HAKKAS_SOURCE_ROOT}/graphs/runtime.c

@@ -32,6 +32,29 @@ char *graph_str_dup(const char *s)
 	return copy;
 }
 
+/* A heap copy of s, or NULL for NULL; *ok is false if memory runs out. */
+static char *str_dup_opt(const char *s, bool *ok)
+{
+	if (s == NULL)
+		return NULL;
+	char *copy = graph_str_dup(s);
+	if (copy == NULL)
+		*ok = false;
+	return copy;
+}
+
+void block_metadata_release(BlockMetadata *md)
+{
+	free(md->extra);
+	md->extra = NULL;
+}
+
+void block_change_release(BlockChange *chg)
+{
+	free(chg->extra);
+	chg->extra = NULL;
+}
+
 /* A threshold is NaN (no override) or a non-negative number (01 §3.3). */
 static bool threshold_valid_or_absent(double t)
 {
@@ -68,6 +91,7 @@ static void block_free(Block *b)
 	for (uint32_t i = 0; i < b->input_count; i++) {
 		linkable_clear(&b->in_values[i]);
 		linkable_clear(&b->inputs[i].initial);
+		free(b->inputs[i].edge_metadata);
 	}
 	for (uint32_t i = 0; i < b->output_count; i++) {
 		linkable_clear(&b->out_values[i]);
@@ -79,6 +103,8 @@ static void block_free(Block *b)
 	free(b->outputs);
 	free(b->state);
 	free(b->name);
+	free(b->component);
+	block_metadata_release(&b->metadata);
 	free(b);
 }
 
@@ -97,6 +123,7 @@ void graph_destroy(Graph *g)
 	}
 	free(g->blocks);
 	graph_ports_free(g);
+	graph_retained_free(g);
 	free(g->id);
 	free(g->name);
 	free(g->description);
@@ -192,19 +219,24 @@ static enum graph_status find_output(const Block *b, const char *name,
 
 /* ---- Blocks ---------------------------------------------------------------- */
 
+/* A new block of type, or a placeholder for component if type is NULL. */
 static Block *block_alloc(Graph *g, const char *name, const BlockTypeDef *type,
-			  const BlockMetadata *md)
+			  const char *component, const BlockMetadata *md)
 {
 	Block *b = calloc(1, sizeof(*b));
 	if (b == NULL)
 		return NULL;
+	bool ok = true;
+	size_t state_size = type != NULL ? type->state_size : 0;
 	b->graph = g;
 	b->type = type;
 	b->metadata = *md;
-	b->input_count = type->input_count;
-	b->output_count = type->output_count;
+	b->metadata.extra = str_dup_opt(md->extra, &ok);
+	b->component = type == NULL ? str_dup_opt(component, &ok) : NULL;
+	b->input_count = type != NULL ? type->input_count : 0;
+	b->output_count = type != NULL ? type->output_count : 0;
 	b->timer = deadline_none();
-	b->period_ms = type->period_ms;
+	b->period_ms = type != NULL ? type->period_ms : 0;
 	b->name = graph_str_dup(name);
 	size_t nvalues = (size_t)b->input_count + b->output_count;
 	if (nvalues > 0)
@@ -213,12 +245,11 @@ static Block *block_alloc(Graph *g, const char *name, const BlockTypeDef *type,
 		b->inputs = calloc(b->input_count, sizeof(Input));
 	if (b->output_count > 0)
 		b->outputs = calloc(b->output_count, sizeof(Output));
-	if (type->state_size > 0)
-		b->state = calloc(1, type->state_size);
-	if (b->name == NULL || (nvalues > 0 && b->in_values == NULL) ||
+	if (state_size > 0)
+		b->state = calloc(1, state_size);
+	if (!ok || b->name == NULL || (nvalues > 0 && b->in_values == NULL) ||
 	    (b->input_count > 0 && b->inputs == NULL) ||
-	    (b->output_count > 0 && b->outputs == NULL) ||
-	    (type->state_size > 0 && b->state == NULL)) {
+	    (b->output_count > 0 && b->outputs == NULL) || (state_size > 0 && b->state == NULL)) {
 		b->input_count = 0; /* nothing to clear yet */
 		b->output_count = 0;
 		block_free(b);
@@ -229,7 +260,7 @@ static Block *block_alloc(Graph *g, const char *name, const BlockTypeDef *type,
 	for (uint32_t i = 0; i < b->input_count; i++)
 		b->in_values[i] = block_input_default(b, i);
 	for (uint32_t i = 0; i < b->output_count; i++) {
-		const PortDescriptor *p = &type->outputs[i];
+		const PortDescriptor *p = &b->type->outputs[i];
 		b->out_values[i] = p->default_value.type == LINKABLE_UNSET
 					   ? linkable_default_value(p->type)
 					   : linkable_copy(&p->default_value);
@@ -253,8 +284,9 @@ static bool blocks_reserve(Graph *g)
 	return true;
 }
 
-enum graph_status graph_create_block(Graph *g, const char *name, const BlockTypeDef *type,
-				     const BlockMetadata *md, Block **out)
+/* graph_create_block (type set) and graph_create_placeholder (type NULL). */
+static enum graph_status create_block(Graph *g, const char *name, const BlockTypeDef *type,
+				      const char *component, const BlockMetadata *md, Block **out)
 {
 	if (out != NULL)
 		*out = NULL;
@@ -263,12 +295,12 @@ enum graph_status graph_create_block(Graph *g, const char *name, const BlockType
 	if (graph_find_block(g, name) != NULL)
 		return GRAPH_ERR_NODE_EXISTS;
 	BlockMetadata m = md != NULL ? *md : block_metadata_default();
-	if (type == NULL || !threshold_valid_or_absent(m.change_threshold))
+	if ((type == NULL && component == NULL) || !threshold_valid_or_absent(m.change_threshold))
 		return GRAPH_ERR_INVALID_ARGUMENT;
 	if (!blocks_reserve(g) || !runtime_slot_reserve(g->rt) ||
 	    (has_timer(type) && !deadline_heap_reserve(&g->rt->timers, g->rt->timer_blocks + 1)))
 		return GRAPH_ERR_NO_MEMORY;
-	Block *b = block_alloc(g, name, type, &m);
+	Block *b = block_alloc(g, name, type, component, &m);
 	if (b == NULL)
 		return GRAPH_ERR_NO_MEMORY;
 
@@ -282,6 +314,18 @@ enum graph_status graph_create_block(Graph *g, const char *name, const BlockType
 	if (out != NULL)
 		*out = b;
 	return GRAPH_OK;
+}
+
+enum graph_status graph_create_block(Graph *g, const char *name, const BlockTypeDef *type,
+				     const BlockMetadata *md, Block **out)
+{
+	return create_block(g, name, type, NULL, md, out); /* a NULL type is refused */
+}
+
+enum graph_status graph_create_placeholder(Graph *g, const char *name, const char *component,
+					   const BlockMetadata *md, Block **out)
+{
+	return create_block(g, name, NULL, component, md, out);
 }
 
 static void output_unlink(Output *o, const Block *dst, uint32_t input)
@@ -304,6 +348,8 @@ static void input_clear_source(Block *b, uint32_t i)
 	in->src_block = NULL;
 	in->src_output = 0;
 	linkable_clear(&in->initial);
+	free(in->edge_metadata);
+	in->edge_metadata = NULL;
 	in->source_gen++;
 }
 
@@ -372,6 +418,7 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 
 	/* Graph ports mapped to the block go before it (decided, 02 §3.4). */
 	graph_ports_remove_block(g, b);
+	graph_retained_remove_block(g, b); /* no events (05 §2.2) */
 	block_detach_watches(b);
 	memmove(&g->blocks[index], &g->blocks[index + 1],
 		(g->block_count - (uint32_t)index - 1) * sizeof(g->blocks[0]));
@@ -413,6 +460,14 @@ enum graph_status graph_change_block(Graph *g, const char *name, const BlockChan
 	if (chg->threshold == THRESHOLD_SET &&
 	    (isnan(chg->change_threshold) || chg->change_threshold < 0))
 		return GRAPH_ERR_INVALID_ARGUMENT;
+	bool ok = true;
+	char *extra = chg->set_extra ? str_dup_opt(chg->extra, &ok) : NULL;
+	if (!ok)
+		return GRAPH_ERR_NO_MEMORY;
+	if (chg->set_extra) {
+		free(b->metadata.extra);
+		b->metadata.extra = extra;
+	}
 	if (chg->set_x)
 		b->metadata.x = chg->x;
 	if (chg->set_y)
@@ -443,7 +498,7 @@ static bool links_reserve(Output *o)
 }
 
 enum graph_status graph_connect(Graph *g, const char *src, const char *src_port, const char *tgt,
-				const char *tgt_port)
+				const char *tgt_port, const char *metadata)
 {
 	if (!graph_id_valid(src) || !graph_id_valid(tgt))
 		return GRAPH_ERR_INVALID_ID;
@@ -464,11 +519,17 @@ enum graph_status graph_connect(Graph *g, const char *src, const char *src_port,
 	if (tb->inputs[in].source != INPUT_SOURCE_NONE)
 		return GRAPH_ERR_INPUT_CONNECTED; /* no fan-in (01 §2.2) */
 	Output *o = &sb->outputs[out];
-	if (!links_reserve(o))
+	bool ok = true;
+	char *md = str_dup_opt(metadata, &ok);
+	if (!ok || !links_reserve(o)) {
+		free(md);
 		return GRAPH_ERR_NO_MEMORY;
+	}
 
+	graph_retained_remove_input(g, tb, tgt_port); /* the live edge takes its place */
 	o->links[o->link_count++] = (Link){tb, in};
 	Input *dst = &tb->inputs[in];
+	dst->edge_metadata = md;
 	dst->source = INPUT_SOURCE_EDGE;
 	dst->src_block = sb;
 	dst->src_output = out;
@@ -486,8 +547,11 @@ enum graph_status graph_connect(Graph *g, const char *src, const char *src_port,
 	return GRAPH_OK;
 }
 
-enum graph_status graph_disconnect(Graph *g, const char *src, const char *src_port,
-				   const char *tgt, const char *tgt_port)
+/* Resolve the existing edge src.src_port → tgt.tgt_port for removeedge and
+ * changeedge: GRAPH_OK with *sbp, *out, *tbp, *in, else the refusal. */
+static enum graph_status find_edge(Graph *g, const char *src, const char *src_port,
+				   const char *tgt, const char *tgt_port, Block **sbp,
+				   uint32_t *outp, Block **tbp, uint32_t *inp)
 {
 	if (!graph_id_valid(src) || !graph_id_valid(tgt))
 		return GRAPH_ERR_INVALID_ID;
@@ -508,6 +572,21 @@ enum graph_status graph_disconnect(Graph *g, const char *src, const char *src_po
 	const Input *dst = &tb->inputs[in];
 	if (dst->source != INPUT_SOURCE_EDGE || dst->src_block != sb || dst->src_output != out)
 		return GRAPH_ERR_NO_SUCH_CONNECTION;
+	*sbp = sb;
+	*outp = out;
+	*tbp = tb;
+	*inp = in;
+	return GRAPH_OK;
+}
+
+enum graph_status graph_disconnect(Graph *g, const char *src, const char *src_port,
+				   const char *tgt, const char *tgt_port)
+{
+	Block *sb, *tb;
+	uint32_t out, in;
+	enum graph_status st = find_edge(g, src, src_port, tgt, tgt_port, &sb, &out, &tb, &in);
+	if (st != GRAPH_OK)
+		return st;
 
 	output_unlink(&sb->outputs[out], tb, in);
 	input_clear_source(tb, in);
@@ -517,6 +596,29 @@ enum graph_status graph_disconnect(Graph *g, const char *src, const char *src_po
 				   .src_block = sb,
 				   .src_output = out});
 	input_revert(tb, in);
+	return GRAPH_OK;
+}
+
+enum graph_status graph_change_edge(Graph *g, const char *src, const char *src_port,
+				    const char *tgt, const char *tgt_port, const char *metadata)
+{
+	Block *sb, *tb;
+	uint32_t out, in;
+	enum graph_status st = find_edge(g, src, src_port, tgt, tgt_port, &sb, &out, &tb, &in);
+	if (st != GRAPH_OK)
+		return st;
+	bool ok = true;
+	char *md = str_dup_opt(metadata, &ok);
+	if (!ok)
+		return GRAPH_ERR_NO_MEMORY;
+	Input *dst = &tb->inputs[in];
+	free(dst->edge_metadata);
+	dst->edge_metadata = md;
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_CHANGED,
+				   .block = tb,
+				   .input = in,
+				   .src_block = sb,
+				   .src_output = out});
 	return GRAPH_OK;
 }
 
@@ -539,6 +641,7 @@ enum graph_status graph_add_initial(Graph *g, const char *node, const char *port
 		return GRAPH_ERR_INVALID_ARGUMENT;
 
 	/* Adding or replacing: either way a source change (01 §3.2). */
+	graph_retained_remove_input(g, b, port); /* the live initial takes its place */
 	linkable_assign(&in->initial, value);
 	in->source = INPUT_SOURCE_INITIAL;
 	in->source_gen++;

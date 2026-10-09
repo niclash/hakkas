@@ -193,7 +193,7 @@ static Block *add(const char *name, const char *type_name)
 
 static void wire(const char *src, const char *src_port, const char *tgt, const char *tgt_port)
 {
-	CHECK(graph_connect(gr, src, src_port, tgt, tgt_port) == GRAPH_OK);
+	CHECK(graph_connect(gr, src, src_port, tgt, tgt_port, NULL) == GRAPH_OK);
 }
 
 static void initial(const char *node, const char *port, double v)
@@ -753,9 +753,9 @@ static void test_fan_in_refused(void)
 	initial("C", "in2", 1);
 	clear_logs();
 
-	CHECK(graph_connect(gr, "B", "out", "C", "in1") == GRAPH_ERR_INPUT_CONNECTED);
-	CHECK(graph_connect(gr, "A", "out", "C", "in1") == GRAPH_ERR_INPUT_CONNECTED);
-	CHECK(graph_connect(gr, "B", "out", "C", "in2") == GRAPH_ERR_INPUT_CONNECTED);
+	CHECK(graph_connect(gr, "B", "out", "C", "in1", NULL) == GRAPH_ERR_INPUT_CONNECTED);
+	CHECK(graph_connect(gr, "A", "out", "C", "in1", NULL) == GRAPH_ERR_INPUT_CONNECTED);
+	CHECK(graph_connect(gr, "B", "out", "C", "in2", NULL) == GRAPH_ERR_INPUT_CONNECTED);
 	Linkable v = linkable_from_f64(9);
 	CHECK(graph_add_initial(gr, "C", "in1", &v) == GRAPH_ERR_INPUT_CONNECTED);
 	CHECK(c->inputs[0].src_block == a && c->inputs[1].source == INPUT_SOURCE_INITIAL);
@@ -1038,15 +1038,18 @@ static void fingerprint(char *buf, size_t size)
 	append(buf, size, "started=%d q=%zu;", gr->started, queued());
 	for (uint32_t k = 0; k < gr->block_count; k++) {
 		const Block *b = gr->blocks[k];
-		append(buf, size, "%s[%s x=%g y=%g t=%g h=%u/%u]", b->name, b->type->name,
+		append(buf, size, "%s[%s x=%g y=%g t=%g %s h=%u/%u]", b->name, block_component(b),
 		       b->metadata.x, b->metadata.y, b->metadata.change_threshold,
-		       (unsigned)b->handle.slot, (unsigned)b->handle.gen);
+		       b->metadata.extra ? b->metadata.extra : "-", (unsigned)b->handle.slot,
+		       (unsigned)b->handle.gen);
 		for (uint32_t i = 0; i < b->input_count; i++) {
 			const Input *in = &b->inputs[i];
 			append(buf, size, " in%u=%s src=%d:%s.%u init=%s gen=%u", (unsigned)i,
 			       text(&b->in_values[i]), (int)in->source,
 			       in->src_block ? in->src_block->name : "-", (unsigned)in->src_output,
 			       text(&in->initial), (unsigned)in->source_gen);
+			if (in->edge_metadata != NULL)
+				append(buf, size, " md=%s", in->edge_metadata);
 		}
 		for (uint32_t o = 0; o < b->output_count; o++) {
 			const Output *out = &b->outputs[o];
@@ -1104,8 +1107,8 @@ static void test_refusals(void)
 	REFUSED(graph_rename_block(gr, "A", long_id), GRAPH_ERR_INVALID_ID);
 	REFUSED(graph_rename_block(gr, long_id, "Z"), GRAPH_ERR_INVALID_ID);
 	REFUSED(graph_change_block(gr, "", &ok_chg), GRAPH_ERR_INVALID_ID);
-	REFUSED(graph_connect(gr, "", "out", "C", "in1"), GRAPH_ERR_INVALID_ID);
-	REFUSED(graph_connect(gr, "A", "out", long_id, "in1"), GRAPH_ERR_INVALID_ID);
+	REFUSED(graph_connect(gr, "", "out", "C", "in1", NULL), GRAPH_ERR_INVALID_ID);
+	REFUSED(graph_connect(gr, "A", "out", long_id, "in1", NULL), GRAPH_ERR_INVALID_ID);
 	REFUSED(graph_disconnect(gr, "A", "out", "", "in1"), GRAPH_ERR_INVALID_ID);
 	REFUSED(graph_add_initial(gr, "", "in1", &v), GRAPH_ERR_INVALID_ID);
 	REFUSED(graph_remove_initial(gr, long_id, "in2"), GRAPH_ERR_INVALID_ID);
@@ -1123,32 +1126,32 @@ static void test_refusals(void)
 	REFUSED(graph_remove_block(gr, "X"), GRAPH_ERR_UNKNOWN_NODE);
 	REFUSED(graph_rename_block(gr, "X", "Y"), GRAPH_ERR_UNKNOWN_NODE);
 	REFUSED(graph_change_block(gr, "X", &ok_chg), GRAPH_ERR_UNKNOWN_NODE);
-	REFUSED(graph_connect(gr, "X", "out", "C", "in1"), GRAPH_ERR_UNKNOWN_NODE);
-	REFUSED(graph_connect(gr, "A", "out", "X", "in1"), GRAPH_ERR_UNKNOWN_NODE);
+	REFUSED(graph_connect(gr, "X", "out", "C", "in1", NULL), GRAPH_ERR_UNKNOWN_NODE);
+	REFUSED(graph_connect(gr, "A", "out", "X", "in1", NULL), GRAPH_ERR_UNKNOWN_NODE);
 	REFUSED(graph_disconnect(gr, "X", "out", "B", "in1"), GRAPH_ERR_UNKNOWN_NODE);
 	REFUSED(graph_disconnect(gr, "A", "out", "X", "in1"), GRAPH_ERR_UNKNOWN_NODE);
 	REFUSED(graph_add_initial(gr, "X", "in1", &v), GRAPH_ERR_UNKNOWN_NODE);
 	REFUSED(graph_remove_initial(gr, "X", "in2"), GRAPH_ERR_UNKNOWN_NODE);
 	/* The source is checked before the target. */
-	REFUSED(graph_connect(gr, "X", "nope", "Y", "in1"), GRAPH_ERR_UNKNOWN_NODE);
-	REFUSED(graph_connect(gr, "A", "nope", "Y", "in1"), GRAPH_ERR_UNKNOWN_PORT);
+	REFUSED(graph_connect(gr, "X", "nope", "Y", "in1", NULL), GRAPH_ERR_UNKNOWN_NODE);
+	REFUSED(graph_connect(gr, "A", "nope", "Y", "in1", NULL), GRAPH_ERR_UNKNOWN_PORT);
 
 	/* Unknown port. */
-	REFUSED(graph_connect(gr, "A", "nope", "C", "in1"), GRAPH_ERR_UNKNOWN_PORT);
-	REFUSED(graph_connect(gr, "A", "out", "C", "nope"), GRAPH_ERR_UNKNOWN_PORT);
+	REFUSED(graph_connect(gr, "A", "nope", "C", "in1", NULL), GRAPH_ERR_UNKNOWN_PORT);
+	REFUSED(graph_connect(gr, "A", "out", "C", "nope", NULL), GRAPH_ERR_UNKNOWN_PORT);
 	REFUSED(graph_disconnect(gr, "A", "nope", "B", "in1"), GRAPH_ERR_UNKNOWN_PORT);
 	REFUSED(graph_disconnect(gr, "A", "out", "B", "nope"), GRAPH_ERR_UNKNOWN_PORT);
 	REFUSED(graph_add_initial(gr, "C", "nope", &v), GRAPH_ERR_UNKNOWN_PORT);
 	REFUSED(graph_remove_initial(gr, "B", "nope"), GRAPH_ERR_UNKNOWN_PORT);
 
 	/* Invalid edge direction. */
-	REFUSED(graph_connect(gr, "A", "in1", "C", "in1"), GRAPH_ERR_INVALID_EDGE_DIRECTION);
-	REFUSED(graph_connect(gr, "A", "out", "C", "out"), GRAPH_ERR_INVALID_EDGE_DIRECTION);
+	REFUSED(graph_connect(gr, "A", "in1", "C", "in1", NULL), GRAPH_ERR_INVALID_EDGE_DIRECTION);
+	REFUSED(graph_connect(gr, "A", "out", "C", "out", NULL), GRAPH_ERR_INVALID_EDGE_DIRECTION);
 	REFUSED(graph_add_initial(gr, "C", "out", &v), GRAPH_ERR_INVALID_EDGE_DIRECTION);
 
 	/* Input already connected (no fan-in). */
-	REFUSED(graph_connect(gr, "C", "out", "B", "in1"), GRAPH_ERR_INPUT_CONNECTED);
-	REFUSED(graph_connect(gr, "C", "out", "B", "in2"), GRAPH_ERR_INPUT_CONNECTED);
+	REFUSED(graph_connect(gr, "C", "out", "B", "in1", NULL), GRAPH_ERR_INPUT_CONNECTED);
+	REFUSED(graph_connect(gr, "C", "out", "B", "in2", NULL), GRAPH_ERR_INPUT_CONNECTED);
 	REFUSED(graph_add_initial(gr, "B", "in1", &v), GRAPH_ERR_INPUT_CONNECTED);
 
 	/* No such connection. */
@@ -1202,6 +1205,66 @@ static void test_string_values(void)
 	teardown();
 }
 
+/* Placeholder blocks (05 §2.2) and opaque metadata (01 §2.2): a placeholder
+ * has no ports and takes part in no dataflow; metadata text is copied. */
+static void test_placeholder_and_metadata(void)
+{
+	setup();
+	char extra[] = "{\"label\":\"a\"}";
+	BlockMetadata md = block_metadata_default();
+	md.x = 3;
+	md.extra = extra; /* only read: the block takes a copy */
+	Block *p = NULL;
+	CHECK(graph_create_placeholder(gr, "P", "vendor/Gizmo", &md, &p) == GRAPH_OK);
+	CHECK_STREQ(events, "+node P;");
+	CHECK(p != NULL && block_is_placeholder(p) && p->input_count == 0 && p->output_count == 0);
+	CHECK_STREQ(block_component(p), "vendor/Gizmo");
+	CHECK(p->metadata.x == 3 && p->metadata.extra != extra);
+	CHECK_STREQ(p->metadata.extra, extra);
+	Block *a = add("A", "math/Add2");
+	CHECK_STREQ(block_component(a), "math/Add2");
+	CHECK(a->metadata.extra == NULL);
+
+	/* No ports: every edge or initial is refused like an unknown port. */
+	Linkable v = linkable_from_f64(1);
+	CHECK(graph_connect(gr, "A", "out", "P", "x", NULL) == GRAPH_ERR_UNKNOWN_PORT);
+	CHECK(graph_connect(gr, "P", "y", "A", "in1", NULL) == GRAPH_ERR_UNKNOWN_PORT);
+	CHECK(graph_add_initial(gr, "P", "x", &v) == GRAPH_ERR_UNKNOWN_PORT);
+	/* Start, stop and changing metadata work as for any block. */
+	graph_start(gr);
+	runtime_drain(&rt, 100);
+	CHECK(p->started);
+	BlockChange chg = {.set_extra = true, .extra = (char *)"{\"b\":2}"};
+	CHECK(graph_change_block(gr, "P", &chg) == GRAPH_OK);
+	CHECK_STREQ(p->metadata.extra, "{\"b\":2}");
+	chg = (BlockChange){.set_extra = true, .extra = NULL};
+	CHECK(graph_change_block(gr, "P", &chg) == GRAPH_OK);
+	CHECK(p->metadata.extra == NULL);
+	graph_stop(gr);
+
+	/* Refusals as for graph_create_block. */
+	REFUSED(graph_create_placeholder(gr, "P", "x/Y", NULL, NULL), GRAPH_ERR_NODE_EXISTS);
+	REFUSED(graph_create_placeholder(gr, "", "x/Y", NULL, NULL), GRAPH_ERR_INVALID_ID);
+	REFUSED(graph_create_placeholder(gr, "Q", NULL, NULL, NULL), GRAPH_ERR_INVALID_ARGUMENT);
+
+	/* Edge metadata lives on the destination input, and goes with the
+	 * edge. */
+	Block *b = add("B", "math/Add2");
+	CHECK(graph_connect(gr, "A", "out", "B", "in1", "{\"route\":1}") == GRAPH_OK);
+	CHECK_STREQ(b->inputs[0].edge_metadata, "{\"route\":1}");
+	clear_logs();
+	CHECK(graph_change_edge(gr, "A", "out", "B", "in1", "{\"route\":2}") == GRAPH_OK);
+	CHECK_STREQ(events, "other;"); /* EDGE_CHANGED */
+	CHECK_STREQ(b->inputs[0].edge_metadata, "{\"route\":2}");
+	REFUSED(graph_change_edge(gr, "A", "out", "B", "in2", "{}"), GRAPH_ERR_NO_SUCH_CONNECTION);
+	CHECK(graph_disconnect(gr, "A", "out", "B", "in1") == GRAPH_OK);
+	CHECK(b->inputs[0].edge_metadata == NULL);
+	CHECK(graph_connect(gr, "A", "out", "B", "in1", "{\"route\":3}") == GRAPH_OK);
+	/* Freed with the block (asan checks). */
+	CHECK(graph_remove_block(gr, "P") == GRAPH_OK);
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -1232,6 +1295,7 @@ int main(void)
 	RUN(test_port_ref_split);
 	RUN(test_refusals);
 	RUN(test_string_values);
+	RUN(test_placeholder_and_metadata);
 	block_types_reset();
 	return test_result();
 }
