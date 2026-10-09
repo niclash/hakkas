@@ -12,8 +12,10 @@ cmake_path(NORMAL_PATH HAKKAS_SOURCE_ROOT)
 set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
+  ${HAKKAS_SOURCE_ROOT}/system/log.c
 )
 
 set(HAKKAS_POSIX_SOURCES
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/log_stderr.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/main.c
 )

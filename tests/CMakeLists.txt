@@ -8,6 +8,7 @@ endfunction()
 
 hakkas_add_test(test_version)
 hakkas_add_test(test_linkable)
+hakkas_add_test(test_log)
 
 # CLAUDE.md "Portable core": no platform headers outside src/platform/<port>/.
 add_test(NAME portable_core

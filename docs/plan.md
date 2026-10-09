@@ -17,7 +17,7 @@ for a decision.
   per port type (01 §2.1, 02 §3.4 "Initial value encoding"). NaN/±Inf/out-of-range → integer
   conversion: pick the cheapest well-defined behavior and record it in 01 §2.1 (open question
   8 explicitly delegates this). Metric arithmetic rules stay out (open question 9).
-- [ ] **2. Logging** (`src/system/`): four levels, threshold, file/line tagging, a sink hook
+- [x] **2. Logging** (`src/system/`): four levels, threshold, file/line tagging, a sink hook
   for later remote mirroring (05 §4).
 - [ ] **3. PAL interface + POSIX clock/random/storage** (`src/platform/pal.h`,
   `src/platform/posix/`): monotonic ms clock, cryptographic random bytes, storage
