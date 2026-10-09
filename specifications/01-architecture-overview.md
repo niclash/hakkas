@@ -35,9 +35,20 @@ to_u64(v):  f64→(uint64_t)v; i64→(uint64_t)v; metric→(uint64_t)v.value; bo
 to_bool(v): bool→v; f64→v!=0.0; metric→v.value!=0.0; i64→v!=0; string→(v=="true") [exact match only]; unset→false
 default_value(typename): "bool"→false; "number"→0.0; "string"→""; else→0.0
 ```
-Stringifying a value for display/wire transport uses each type's natural string representation; a value with no natural string form renders as `"<not stringable>"`.
+**String parsing** ("parse as f64 / i64 / u64" above) is strict: the whole string must match, with no surrounding whitespace and no trailing characters, otherwise the result is the `0` of the table (so `"12abc"`, `" 12"` and `""` all give `0`).
+- f64: `[+-]? (digits [. digits*] | . digits) [(e|E) [+-]? digits]`, or exactly `NaN`, `Infinity`, `+Infinity`, `-Infinity`. Hexadecimal and the C library's `inf`/`nan` spellings are not accepted. Decimal text beyond the double range gives ±Infinity.
+- i64: `[+-]? digits`, within the `int64_t` range; u64: `[+]? digits`, within the `uint64_t` range. Integer parsing does not go through f64: `"12.5"` and `"1e3"` are not integers and give `0`, as does an out-of-range integer string.
 
-The table above follows the value model's natural behavior; it doesn't define behavior for converting NaN, ±Infinity, or out-of-range doubles to integers. These inputs are rare and the exact result is deferred (`00-README.md`, open question 8): pick the most runtime-efficient behavior that is still well-defined in C (a plain C cast of such a value is undefined behavior and must not be used).
+**Double → integer** (NaN, ±Infinity, out-of-range — decided, `00-README.md` open question 8): `to_i64`/`to_u64` of a double (an f64, a `Metric` magnitude) **saturate**. NaN → `0`; a value at or beyond the target type's upper bound → `INT64_MAX`/`UINT64_MAX` (+Infinity included); below the lower bound → `INT64_MIN`/`0` (−Infinity and every negative value ≤ −1 for `to_u64`); everything else truncates toward zero as the C cast does. This costs a NaN test and two comparisons, is well-defined C (a plain cast of such a value is undefined behavior), and matches what common FPUs' conversion instructions do. Note the asymmetry it leaves: `to_u64` of the f64 `-1.0` is `0`, while `to_u64` of the i64 `-1` is the modular C cast, `UINT64_MAX`.
+
+**Stringifying** a value for display/wire transport uses each type's natural string representation; a value with no natural string form — "unset" — renders as `"<not stringable>"`. The forms:
+- string: as-is; i64: decimal; bool: `"true"`/`"false"` (so `to_bool` reads it back);
+- f64: the shortest of C's `"%.15g"`, `"%.16g"`, `"%.17g"` that parses back to the identical double, so every finite double round-trips through text while common values stay short (`0.1`, `5`, `1e+20`); non-finite values are `NaN`, `Infinity`, `-Infinity` (JavaScript's spellings, also accepted by the f64 parser);
+- `Metric`: `"<value as f64> <unit>"`, the form a `"number"` port parses back into a `Metric` (`02-wire-protocol.md` §3.4).
+
+Number text is always in the C locale (`.` decimal point).
+
+Until unit tables exist (open question 9), a `Metric` parsed from text keeps its unit string verbatim and gets the category **unclassified**, an extra category value besides the list above.
 
 There is no "error" behavior in value computation — as in electronics, every operation has well-defined limits and a well-defined result when they are exceeded (e.g. IEEE-754 `±Infinity`/`NaN` for division by zero). Blocks never reject a value.
 

@@ -12,7 +12,7 @@ for a decision.
 
 ## Phase 1 — Engine core (no networking)
 
-- [ ] **1. `Linkable` value type** (`src/graphs/`): the tagged value, `Metric` struct, the
+- [x] **1. `Linkable` value type** (`src/graphs/`): the tagged value, `Metric` struct, the
   converters `to_f64`/`to_i64`/`to_u64`/`to_bool`/`default_value`, stringify, string parsing
   per port type (01 §2.1, 02 §3.4 "Initial value encoding"). NaN/±Inf/out-of-range → integer
   conversion: pick the cheapest well-defined behavior and record it in 01 §2.1 (open question
