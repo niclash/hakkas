@@ -10,6 +10,9 @@ set(HAKKAS_SOURCE_ROOT ${CMAKE_CURRENT_LIST_DIR}/../src)
 cmake_path(NORMAL_PATH HAKKAS_SOURCE_ROOT)
 
 set(HAKKAS_CORE_SOURCES
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/block_types.c
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
   ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c

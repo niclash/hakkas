@@ -52,6 +52,15 @@ target_compile_features(hakkas_core PUBLIC c_std_17)
 set_target_properties(hakkas_core PROPERTIES C_EXTENSIONS OFF)
 target_link_libraries(hakkas_core PRIVATE hakkas_compile_options)
 
+# The core uses <math.h> (fmod, copysign, ...). Where libm is a separate
+# library (glibc), link it; toolchains with the math functions in libc
+# (Zephyr's picolibc/newlib builds, macOS) have none and need nothing.
+find_library(HAKKAS_MATH_LIBRARY m)
+mark_as_advanced(HAKKAS_MATH_LIBRARY)
+if(HAKKAS_MATH_LIBRARY)
+  target_link_libraries(hakkas_core PUBLIC ${HAKKAS_MATH_LIBRARY})
+endif()
+
 # Work queue capacity in entries (01 §3.2 item 9). Public: the capacity sizes
 # the WorkQueue struct, so every user of the core must see the same value.
 set(HAKKAS_QUEUE_CAPACITY 1024 CACHE STRING "Work queue capacity in entries (01 §3.2)")

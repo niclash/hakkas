@@ -26,7 +26,7 @@ for a decision.
 - [x] **4. Work queue** (`src/graphs/`): fixed-capacity ring buffer of typed entries,
   block handles (slot + generation), per-input source generation, drop-oldest with a drop
   counter (01 §3.2). Capacity: fixed, default 1024 entries, overridable per build (decided).
-- [ ] **5. Block type registry + built-in math/process types** (`src/blocktypes/`):
+- [x] **5. Block type registry + built-in math/process types** (`src/blocktypes/`):
   `BlockTypeDef`, registry lookup, every stateless type in 03 §3 table (not `timing/`, not
   `io/`), with compute-function unit tests.
 - [ ] **6. Generic block runtime + Graph model** (`src/graphs/`): blocks, inputs/outputs,

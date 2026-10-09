@@ -229,6 +229,36 @@ static void test_default_value(void)
 	CHECK(v.type == LINKABLE_F64 && v.as.f64 == 0.0);
 }
 
+/* Static values (port defaults of static BlockTypeDefs) own nothing: copying
+ * and clearing them is safe. */
+static void test_static_initializers(void)
+{
+	static const Linkable vals[] = {
+		LINKABLE_I64_INIT(-3),
+		LINKABLE_F64_INIT(2.5),
+		LINKABLE_BOOL_INIT(true),
+		LINKABLE_EMPTY_STRING_INIT,
+	};
+	CHECK(linkable_to_i64(&vals[0]) == -3);
+	CHECK(linkable_to_f64(&vals[1]) == 2.5);
+	CHECK(linkable_to_bool(&vals[2]));
+	CHECK(vals[3].type == LINKABLE_STRING && vals[3].as.s == linkable_empty_string);
+	CHECK(linkable_strlen(vals[3].as.s) == 0);
+	for (int k = 0; k < 2; k++) {
+		for (size_t j = 0; j < sizeof(vals) / sizeof(vals[0]); j++) {
+			Linkable c = linkable_copy(&vals[j]);
+			CHECK(c.type == vals[j].type);
+			linkable_clear(&c);
+		}
+	}
+	Linkable d = linkable_default_value("string");
+	CHECK(d.as.s == linkable_empty_string);
+	Linkable e = {0};
+	CHECK(linkable_from_string(&e, "", 0));
+	CHECK(e.as.s == linkable_empty_string);
+	linkable_clear(&e);
+}
+
 static void test_parse_f64_grammar(void)
 {
 	struct {
@@ -454,6 +484,7 @@ int main(void)
 	RUN(test_to_bool);
 	RUN(test_double_to_integer_edge_cases);
 	RUN(test_default_value);
+	RUN(test_static_initializers);
 	RUN(test_parse_f64_grammar);
 	RUN(test_parse_integers);
 	RUN(test_stringify);

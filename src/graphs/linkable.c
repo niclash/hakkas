@@ -12,7 +12,7 @@ struct lk_str {
 };
 
 /* The empty string is static: retain/release ignore it. */
-static const char empty_str[1] = "";
+const char linkable_empty_string[1] = "";
 
 static struct lk_str *str_header(const char *s)
 {
@@ -22,7 +22,7 @@ static struct lk_str *str_header(const char *s)
 static const char *str_new(const char *s, size_t len)
 {
 	if (len == 0)
-		return empty_str;
+		return linkable_empty_string;
 	if (len > SIZE_MAX - sizeof(struct lk_str) - 1)
 		return NULL;
 	struct lk_str *h = malloc(sizeof(*h) + len + 1);
@@ -38,13 +38,13 @@ static const char *str_new(const char *s, size_t len)
 
 static void str_retain(const char *s)
 {
-	if (s != empty_str)
+	if (s != linkable_empty_string)
 		str_header(s)->refs++;
 }
 
 static void str_release(const char *s)
 {
-	if (s == empty_str)
+	if (s == linkable_empty_string)
 		return;
 	struct lk_str *h = str_header(s);
 	if (--h->refs == 0)
@@ -53,7 +53,7 @@ static void str_release(const char *s)
 
 size_t linkable_strlen(const char *s)
 {
-	return s == empty_str ? 0 : str_header(s)->len;
+	return s == linkable_empty_string ? 0 : str_header(s)->len;
 }
 
 Linkable linkable_from_i64(int64_t v)
@@ -351,7 +351,7 @@ Linkable linkable_default_value(const char *type_name)
 	if (type_name != NULL && strcmp(type_name, "bool") == 0)
 		return linkable_from_bool(false);
 	if (type_name != NULL && strcmp(type_name, "string") == 0)
-		return (Linkable){.type = LINKABLE_STRING, .as.s = empty_str};
+		return (Linkable){.type = LINKABLE_STRING, .as.s = linkable_empty_string};
 	return linkable_from_f64(0.0);
 }
 

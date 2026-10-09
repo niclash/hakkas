@@ -86,6 +86,20 @@ typedef struct {
 	} as;
 } Linkable;
 
+/* The static empty string. Every empty string value points here; it is never
+ * counted or freed. */
+extern const char linkable_empty_string[1];
+
+/* Initializers for static const values, e.g. port defaults in a static
+ * BlockTypeDef (graphs/block_type.h). Such values own nothing, so copying them
+ * with linkable_copy is safe and linkable_clear is never needed. Only scalars
+ * and the empty string can be static; any other string must be created with
+ * linkable_from_string. */
+#define LINKABLE_I64_INIT(v) {.type = LINKABLE_I64, .as.i64 = (v)}
+#define LINKABLE_F64_INIT(v) {.type = LINKABLE_F64, .as.f64 = (v)}
+#define LINKABLE_BOOL_INIT(v) {.type = LINKABLE_BOOL, .as.b = (v)}
+#define LINKABLE_EMPTY_STRING_INIT {.type = LINKABLE_STRING, .as.s = linkable_empty_string}
+
 /* Enough for any linkable_stringify of an f64, i64 or bool, including the NUL. */
 #define LINKABLE_NUMBER_TEXT_MAX 32
 

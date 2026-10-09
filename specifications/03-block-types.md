@@ -37,8 +37,8 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `math/Mult2` | close | `out = in1*in2` | `to_f64(in1)*to_f64(in2)` |
 | `math/Divide` | divide | `out = in1/in2` | `to_f64(in1)/to_f64(in2)` (IEEE-754 semantics for `in2==0`: `±Infinity`/`NaN`, since the value type is a double) |
 | `math/Subtract` | remove | `out = in1-in2` | `to_f64(in1)-to_f64(in2)` |
-| `math/Modulo` | percent | `out = in1 MOD in2` | `to_f64(in1) mod to_f64(in2)` (floored/Euclidean modulo) |
-| `math/Remainder` | percent | `out = in1 REMAINDER in2` | `to_f64(in1) % to_f64(in2)` (truncating remainder) |
+| `math/Modulo` | percent | `out = in1 MOD in2` | `to_f64(in1) mod to_f64(in2)` (floored modulo, see below) |
+| `math/Remainder` | percent | `out = in1 REMAINDER in2` | `to_f64(in1) % to_f64(in2)` (truncating remainder, C `fmod`) |
 | `math/And2` | logic | `out = in1 AND in2` | `to_i64(in1) & to_i64(in2)` (bitwise) |
 | `math/Or2` | logic | `out = in1 OR in2` | `to_i64(in1) \| to_i64(in2)` |
 | `math/Xor` | logic | `out = in1 XOR in2` | `to_i64(in1) ^ to_i64(in2)` |
@@ -57,7 +57,16 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `io/AnalogInput` | analog-input | logical analog input bound to a physical channel | see §4 |
 | `io/AnalogOutput` | analog-output | logical analog output bound to a physical channel | see §4 |
 
-**Metric inputs**: the formulas above show the plain-number computation. When inputs carry `Metric` values, the arithmetic and comparison blocks also apply the unit rules in `01-architecture-overview.md` §2.1 (category preserved for same-category addition, error flag on mismatch, dimensional multiplication). These rules are provisional.
+**Results and edge cases** (decided, plan task 5):
+- The arithmetic blocks and `process/Linear` output an f64; the comparisons a bool; the bitwise blocks (`And2`, `Or2`, `Xor`, `And4`, `Or4`) an **i64**, so all 64 bits of the result survive (an f64 would round values beyond 2^53). Their port type is still `"number"`.
+- `math/Modulo` is the **floored** modulo `a − b·floor(a/b)`, computed exactly from `fmod`: a non-zero result has the sign of the divisor (`-7 mod 3 = 2`, `7 mod -3 = -2`), a zero result is `+0` for a positive divisor and `-0` for a negative one. NaN when either operand is NaN, the divisor is `±0`, or the dividend is infinite. With an infinite divisor the result is the dividend if it has the divisor's sign (or is zero), else the divisor (`-5 mod Infinity = Infinity`). This is exactly Python's float `%`; like it, a tiny result of the sign opposite to the divisor can round up to the divisor itself.
+- `math/Remainder` is C's `fmod` (`a − b·trunc(a/b)`): the result has the sign of the dividend (`-7 % 3 = -1`). NaN when either operand is NaN, the divisor is `±0`, or the dividend is infinite; the dividend itself for an infinite divisor.
+- Comparisons follow IEEE-754: with a NaN operand every comparison is `false` except `NotEqual`, which is `true`; `0 == -0`.
+- `process/Linear` multiplies, rounds, then adds (no fused multiply-add), so every target gives the same result.
+- Port descriptions: `inN` → `"Operand N"`, `out` → `"Result"`; for `process/Linear`, `in` → `"Input value"`, `k` → `"Gain"`, `m` → `"Offset"`, `out` → `"k*in+m"`. `addressable` is `false`. An output's default (its value before the first compute) is `0`, or `false` for a bool output.
+- Every compute ignores `reason` (`START`, `INPUT` and `STOP` compute the same result; the runtime decides what propagates, §2).
+
+**Metric inputs**: the formulas above show the plain-number computation. When inputs carry `Metric` values, the arithmetic and comparison blocks also apply the unit rules in `01-architecture-overview.md` §2.1 (category preserved for same-category addition, error flag on mismatch, dimensional multiplication). These rules are provisional, and not implemented yet (`00-README.md`, open question 9): a `Metric` input converts to its magnitude via `to_f64`/`to_i64`, the result is a plain number, and the error flag is never set.
 
 The `timing/` family is expected to grow: `timing/Interval` covers periodic pulses, and other timing behaviors (one-shot/monostable, delay-on/delay-off, debounce, …) will be separate block types rather than modes of one block.
 

@@ -14,6 +14,7 @@ hakkas_add_test(test_linkable)
 hakkas_add_test(test_log)
 hakkas_add_test(test_pal_posix LIBS hakkas_pal_posix)
 hakkas_add_test(test_work_queue)
+hakkas_add_test(test_block_types)
 
 # The same work queue tests with a tiny capacity, so wrap-around and overflow
 # run in a few pushes and the capacity override is exercised. The capacity
@@ -25,6 +26,9 @@ target_compile_features(test_work_queue_small PRIVATE c_std_17)
 set_target_properties(test_work_queue_small PROPERTIES C_EXTENSIONS OFF)
 target_compile_definitions(test_work_queue_small PRIVATE HAKKAS_QUEUE_CAPACITY=4)
 target_link_libraries(test_work_queue_small PRIVATE hakkas_compile_options)
+if(HAKKAS_MATH_LIBRARY)
+  target_link_libraries(test_work_queue_small PRIVATE ${HAKKAS_MATH_LIBRARY})
+endif()
 add_test(NAME test_work_queue_small COMMAND test_work_queue_small)
 
 # CLAUDE.md "Portable core": no platform headers outside src/platform/<port>/.
