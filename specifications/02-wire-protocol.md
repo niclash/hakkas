@@ -169,8 +169,8 @@ Every command below requires an authenticated connection and the capability list
 | command | request payload | behavior |
 |---|---|---|
 | `getruntime` | `{}` | **Allowed before login.** Before login: sends only the `runtime:runtime` push (§3.2.1) with `"capabilities":[]`, so a client can discover the runtime and see that it must log in. After login: sends `runtime:runtime` with the session's capabilities; one `component:component` per registered block type; one `component:componentsready` with the count; and triggers a `network:status` broadcast for every existing graph. |
-| `new_graph` | `{"id"?,"name"?,"description"?,"icon"?}` all optional (`id`→fresh UUID if absent, `name`→`"<<new graph>>"`, others→`""`) | Creates the graph (stopped, empty); acknowledgement arrives via the `runtime:new_graph` broadcast (§3.2.2) to every subscriber. Not persisted until `network:persist`. |
-| `delete_graph` | `{"id","name"}` both required | Stops and deletes the graph **and removes its persisted file** (`05-app-lifecycle-persistence.md` §2.3); acknowledgement arrives via the `runtime:delete_graph` broadcast (§3.2.3). `name` must match the graph's current name (a guard against deleting the wrong graph). |
+| `new_graph` | `{"id"?,"name"?,"description"?,"icon"?}` all optional (`id`→fresh random UUID v4, lowercase, if absent, `name`→`"<<new graph>>"`, others→`""`) | Creates the graph (stopped, empty); acknowledgement arrives via the `runtime:new_graph` broadcast (§3.2.2) to every subscriber. Not persisted until `network:persist`. |
+| `delete_graph` | `{"id","name"}` both required | Stops and deletes the graph **and removes its persisted file** (`05-app-lifecycle-persistence.md` §2.3); acknowledgement arrives via the `runtime:delete_graph` broadcast (§3.2.3). `name` must match the graph's current name (a guard against deleting the wrong graph). A started graph is stopped first, and its `network:stopped` is broadcast before the `runtime:delete_graph` (§1.1, compound effects). |
 | other | — | generic error |
 
 **`runtime:runtime` push** (§3.2.1):
@@ -193,8 +193,8 @@ Every command below requires an authenticated connection and the capability list
 
 | command | request payload | behavior |
 |---|---|---|
-| `start` | `{"graph":String}` | Starts the graph (`01-architecture-overview.md` §2.2). Acknowledgement arrives via the `network:started` broadcast (filtered to subscribers of that graph, §4). Starting an already-started graph re-sends `network:started` without restarting. |
-| `stop` | `{"graph":String}` | Stops the graph: events stop propagating, timers are cancelled, structure and input values are kept → `network:stopped` broadcast. Stopping an already-stopped graph re-sends `network:stopped`. |
+| `start` | `{"graph":String}` | Starts the graph (`01-architecture-overview.md` §2.2). Acknowledgement arrives via the `network:started` broadcast (filtered to subscribers of that graph, §4). Starting an already-started graph re-sends `network:started` without restarting; its `time` stays the start of the running run. |
+| `stop` | `{"graph":String}` | Stops the graph: events stop propagating, timers are cancelled, structure and input values are kept → `network:stopped` broadcast. Stopping an already-stopped graph re-sends `network:stopped`, with the `time` and `uptime` of the most recent run (epoch and `0` if it never ran). |
 | `getstatus` | `{"graph":String}` | → `network:status` broadcast to every authenticated connection (not only the requester). |
 | `persist` | `{"graph":String}` | Serializes the graph, including its current started/stopped state, and writes it atomically to storage (`05-app-lifecycle-persistence.md` §2). No wire reply on success; failure broadcasts `network:error` with message `"Unable to save graph: <name> (<id>)"`. |
 | `edges` | `{"graph":String,"edges":[{"src":{"node":String,"port":String},"tgt":{"node":String,"port":String}}, ...]}` | Registers live link-value subscriptions — §4.2. Replies to the requester only by echoing the payload back as `network:edges`. |
@@ -215,7 +215,7 @@ Every command below requires an authenticated connection and the capability list
 |---|---|---|
 | `list` | `{}` | Triggers a `network:status` broadcast for every graph in the system. |
 | `connect` | `{"id":String}` | Scopes this connection's event subscription to this graph id and sends the full graph snapshot to the requester — §4.1.1. |
-| `rename` | `{"id","from","to"}` | Changes the graph's **name** (the `id` never changes, so the persisted file keeps its name) and broadcasts a `graph:rename` event `{"id","from","to"}` to subscribers. |
+| `rename` | `{"id","from","to"}` | Changes the graph's **name** (the `id` never changes, so the persisted file keeps its name) and broadcasts a `graph:rename` event `{"id","from","to"}` to subscribers. The event's `from` is the name the graph actually had; the request's `from` is not checked. Any string is a valid name. |
 | `addnode` | `{"id","graph","component","metadata"?:{"x","y","change_threshold"?}}` (`id`/`graph`/`component` required) | Creates the block (started immediately if the graph is started). `graph:addnode` broadcast `{"graph","component","id","metadata":{"x","y"[,"change_threshold"]}}`. Missing `x`/`y` default to `50`. |
 | `removenode` | `{"id","graph"}` | Removes the block; every input it fed reverts to its default (`01-architecture-overview.md` §2.2). Broadcasts `graph:removeedge`/`graph:removeinitial` for each attached connection first, then `graph:removenode` `{"id","graph"}`. |
 | `renamenode` | `{"from","to","graph"}` | `graph:renamenode` broadcast `{"graph","from","to"}`. Links are unaffected. |
@@ -237,6 +237,8 @@ Edge metadata is purely for the user interface (routing, colors). The engine sto
 
 Graph-level inports/outports define the external ports a graph has when it is used as a group/composite block type (`01-architecture-overview.md` §2.2, `03-block-types.md` §5). They have no dataflow effect in a top-level graph.
 
+Graph ports (decided, plan task 7): inports and outports are separate namespaces (an inport and an outport may share a public name). Several ports may map to the same inner port. A port follows its node: `renamenode` changes the node every port mapped to it refers to, and needs no port event (the `graph:renamenode` implies it). `removenode` removes every port mapped to the node, broadcasting a `graph:removeinport`/`graph:removeoutport` for each (inports, then outports, each in creation order) after the removed edges and initials and before the `graph:removenode`.
+
 **Initial value encoding**: the `data` of an initial is accepted as a JSON string, number, or boolean. A string is parsed according to the target port's declared type (`"number"`: as a number, or as a `Metric` if it has the form `"<number> <unit>"`; `"bool"`: `to_bool`; `"string"`: as-is). Details (`01-architecture-overview.md` §2.1): a `"number"` string that is wholly a number becomes an f64 (never an i64 — `"number"` ports default to `0.0`, and JSON numbers are doubles too); otherwise it is split on its first space, and if the part before is a number and the rest (the unit, kept verbatim) is non-empty, it becomes a `Metric` with category unclassified; any other text gives `0.0`, the same as `to_f64` of that string. A port type other than `"bool"`/`"string"` parses like `"number"`, matching `default_value`. The `graph:addinitial` event carries `data` as a string, matching what the existing frontend sends. The persisted file stores it as a native JSON value (`05-app-lifecycle-persistence.md` §2).
 
 #### 3.4.1 Invalid commands
@@ -257,8 +259,11 @@ There is no error behavior *in the dataflow* (`01-architecture-overview.md` §2.
 | `delete_graph` whose `name` doesn't match | `"Graph name mismatch: <id>"` |
 | `new_graph` with an `id` that already exists | `"Graph exists: <id>"` |
 | graph or node id that is empty or longer than 64 bytes | `"Invalid id"` |
+| `removeinport`/`removeoutport`/`rename*port` naming a public name that doesn't exist | `"Unknown port: <name>"` |
 
 Order and edge cases (decided, plan task 6): every node id in the command is checked first (`Invalid id`), then each endpoint in turn, source before target, node before port; the first failure is reported. An `addinitial` whose `tgt` names an output is `"Invalid edge direction"` (the literal's target is not an input). A `removeedge`/`removeinitial` naming a port that exists but has the wrong direction is `"No such connection"` (no such connection can exist); a name that is no port of the node is `"Unknown port"`. `renamenode` to the node's own name is `"Node exists"`.
+
+Further decisions (plan task 7): the graph id is checked first, together with the node ids (`Invalid id`), and the graph is looked up (`Unknown graph`) before any node. A graph port's public name is an id too (1–64 bytes, else `"Invalid id"`). `addinport` naming a port that is not an input of the node — an output included — is `"Unknown port: <node>.<port>"`, likewise `addoutport` with a non-output. `addnode` checks `"Node exists"` before `"Unknown component"`. `rename*port` to the port's own name is `"Port exists"`.
 
 #### 3.4.2 Groups — user-defined block types
 
@@ -305,7 +310,7 @@ Build out further only if a real tracing/debugging feature is wanted later.
 
 ### 4.1 Connection lifecycle and graph-event scoping
 
-A connection starts receiving event delivery (graph-change broadcasts, log/output mirroring) once it has logged in (§2.5 item 6). By default it receives events for every graph in the system. Issuing `graph:connect {"id":X}` scopes graph-specific events to graph `X` only: added/renamed/changed/removed block; added/removed connection; added/removed/renamed in/outport; added/removed initial; groups; started; stopped. System-wide events always reach every authenticated connection regardless of which graph it's scoped to: errors, `runtime:new_graph`, `runtime:delete_graph`, `network:status`, `component:component`. Issuing `graph:connect` again with a different id re-scopes the same connection.
+A connection starts receiving event delivery (graph-change broadcasts, log/output mirroring) once it has logged in (§2.5 item 6). By default it receives events for every graph in the system. Issuing `graph:connect {"id":X}` scopes graph-specific events to graph `X` only: added/renamed/changed/removed block; added/removed connection; added/removed/renamed in/outport; added/removed initial; groups; started; stopped. System-wide events always reach every authenticated connection regardless of which graph it's scoped to: errors, `runtime:new_graph`, `runtime:delete_graph`, `network:status`, `component:component`. Issuing `graph:connect` again with a different id re-scopes the same connection. `graph:rename` is graph-specific (decided, plan task 7): it reaches the subscribers of that graph; others learn the new name from the next `network:status`.
 
 ### 4.1.1 `graph:connect` reply
 

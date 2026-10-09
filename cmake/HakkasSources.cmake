@@ -16,6 +16,8 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
   ${HAKKAS_SOURCE_ROOT}/graphs/block.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/graph_ports.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/graphs.c
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
   ${HAKKAS_SOURCE_ROOT}/graphs/runtime.c
   ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c

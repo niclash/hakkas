@@ -1,0 +1,269 @@
+/*
+ * The Graphs registry and event notification (01 §2.2 Graphs, 01 §4).
+ *
+ * Graphs owns every graph of the engine, by id, in creation order (the order
+ * graph:list and the status broadcasts use), and the list of subscribers
+ * that every applied structural or lifecycle change is reported to.
+ *
+ * Naming: functions are prefixed graphs_. The per-graph model and its
+ * structural operations are graphs/graph.h.
+ *
+ * Commands (02 §3.2–§3.4): the graphs_ command functions take the wire-level
+ * arguments (graph id, node and port names, already parsed from JSON by the
+ * protocol layer, plan task 18) and either apply the command, reporting its
+ * events, or refuse it as a whole with no change and no event, returning the
+ * status and, if msg is not NULL, the exact 02 §3.4.1 message. Checks run in
+ * this order, the first failure wins: every id in the command (graph id and
+ * node ids, and a graph port's public name) is valid (Invalid id), the graph
+ * exists (Unknown graph), then the graph operation's own checks
+ * (graphs/graph.h).
+ *
+ * Events (01 §4, 02 §1.1): every applied change is reported synchronously,
+ * after the mutation is complete, in applied order, to every subscriber
+ * whose scope admits it: graph-specific events (blocks, edges, initials,
+ * ports, graph renamed/started/stopped) go to subscribers with no scope or
+ * scoped to that graph; system-wide events (graph created/deleted, status,
+ * errors) go to every subscriber (02 §4.1). Events are GraphEvents
+ * (graphs/graph.h); turning them into wire messages is the protocol layer's
+ * job, and so is withholding them from connections that are not
+ * authenticated (02 §2.5 item 6).
+ *
+ * Time (decided, plan task 7): uptime is computed, not counted — the engine
+ * time of the Runtime (runtime_set_now, set by the engine loop from
+ * pal_uptime_ms before it dispatches commands or drains) minus the run's
+ * start time. There is no per-second uptime timer (01 §2.2).
+ *
+ * Threading: engine-thread only (01 §3.2), no locking.
+ */
+#ifndef HAKKAS_GRAPHS_GRAPHS_H
+#define HAKKAS_GRAPHS_GRAPHS_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "graphs/graph.h"
+#include "platform/pal.h"
+
+/* The name of a graph created without one (02 §3.2 new_graph). */
+#define GRAPHS_DEFAULT_NAME "<<new graph>>"
+
+/* A UUID in its 36-character text form plus the NUL. */
+#define GRAPHS_UUID_SIZE 37
+
+/* Room for any refusal message. A message naming a node or port longer than
+ * fits is cut (it is still NUL-terminated). */
+#define GRAPHS_MESSAGE_MAX 192
+
+/* Resolves a block type name (block_types_get, blocktypes/block_types.h; the
+ * registry gets it as a function so that graphs/ does not depend on
+ * blocktypes/, 01 §2.3). */
+typedef const BlockTypeDef *(*graphs_type_resolver)(const char *name);
+
+/* The random source for UUIDs: pal_random_bytes (platform/pal.h). The engine
+ * passes it to graphs_init, so the core itself links no PAL symbol and tests
+ * can pass a fake. */
+typedef enum pal_err (*graphs_random_fn)(void *buf, size_t len);
+
+/*
+ * A subscriber (01 §4): one per connection, embedded by its owner. fn is
+ * called with ctx for every event in scope. The other fields are private.
+ *
+ * Callbacks may subscribe, unsubscribe (any subscriber, themselves included)
+ * and re-scope, but must not change a graph or emit an event (no graphs_
+ * command, no graph_ operation). A subscriber added during a notification
+ * does not get the event being delivered; one removed during it gets
+ * nothing more; a re-scope applies from the next delivery on.
+ */
+typedef struct GraphsSubscriber GraphsSubscriber;
+struct GraphsSubscriber {
+	graph_event_fn fn;
+	void *ctx;
+	char scope[GRAPH_ID_MAX + 1]; /* "" = every graph */
+	uint64_t since;		      /* the event sequence number when added */
+	GraphsSubscriber *next;
+};
+
+typedef struct Graphs {
+	Runtime *rt;
+	graphs_type_resolver resolve_type;
+	graphs_random_fn random_bytes;
+	Graph **graphs; /* in creation order */
+	uint32_t count;
+	uint32_t cap;
+	GraphsSubscriber *subscribers; /* in subscription order */
+	GraphsSubscriber *cursor;      /* the next subscriber of the delivery in progress */
+	uint64_t seq;		       /* events delivered so far */
+} Graphs;
+
+/* Make gs an empty registry on rt, and make it rt's observer (so it hears
+ * every structural change of the graphs on rt). resolve_type resolves
+ * addnode's component name (block_types_get); random_bytes is the random
+ * source for UUIDs (pal_random_bytes). */
+void graphs_init(Graphs *gs, Runtime *rt, graphs_type_resolver resolve_type,
+		 graphs_random_fn random_bytes);
+
+/* Destroy every graph (reporting nothing, 01 §2.2), drop every subscriber
+ * and detach from the runtime. The runtime itself is left to the caller. */
+void graphs_deinit(Graphs *gs);
+
+/* ---- Lookup and iteration ------------------------------------------------- */
+
+/* The graph with this id, or NULL (also for a NULL id). */
+Graph *graphs_find(const Graphs *gs, const char *id);
+
+static inline uint32_t graphs_count(const Graphs *gs)
+{
+	return gs->count;
+}
+
+/* The i-th graph in creation order (i < graphs_count). */
+static inline Graph *graphs_at(const Graphs *gs, uint32_t i)
+{
+	return gs->graphs[i];
+}
+
+/* The uptime of g's current run in ms (01 §2.2): the runtime's now minus its
+ * start, 0 when stopped. */
+uint64_t graphs_uptime_ms(const Graph *g);
+
+/* ---- Subscribers (01 §4, 02 §4.1) ----------------------------------------- */
+
+/* Make s a subscriber with callback fn and ctx and no scope (every graph). */
+void graphs_subscriber_init(GraphsSubscriber *s, graph_event_fn fn, void *ctx);
+
+/* Add s (at the end of the delivery order). s must not be subscribed. */
+void graphs_subscribe(Graphs *gs, GraphsSubscriber *s);
+
+/* Remove s; nothing happens if it is not subscribed. */
+void graphs_unsubscribe(Graphs *gs, GraphsSubscriber *s);
+
+/* Scope s's graph-specific events to the graph graph_id (graph:connect), or
+ * to every graph for NULL. False, with no change, for an invalid id. The id
+ * need not name an existing graph; the protocol layer refuses graph:connect
+ * to an unknown graph before scoping. */
+bool graphs_subscriber_scope(GraphsSubscriber *s, const char *graph_id);
+
+/* ---- Refusal messages (02 §3.4.1) ----------------------------------------- */
+
+/* What a refusal is about. Fields a status does not use may be NULL. */
+typedef struct {
+	const char *graph; /* UNKNOWN_GRAPH, GRAPH_EXISTS, NAME_MISMATCH */
+	const char *node;  /* UNKNOWN_NODE, NODE_EXISTS; UNKNOWN_PORT and
+			    * INPUT_CONNECTED: the port's node, NULL for an
+			    * unknown graph port */
+	const char *port;  /* UNKNOWN_PORT, INPUT_CONNECTED */
+	const char *name;  /* UNKNOWN_COMPONENT, PORT_EXISTS */
+} GraphRefusal;
+
+typedef struct {
+	char text[GRAPHS_MESSAGE_MAX];
+} GraphsMessage;
+
+/* Render the exact 02 §3.4.1 message for st into buf (size bytes, always
+ * NUL-terminated if size > 0): "Unknown graph: <graph>", "Unknown node:
+ * <node>", "Unknown port: <node>.<port>" (or "Unknown port: <port>" for a
+ * graph port, node NULL), "Node exists: <node>", "Unknown component:
+ * <name>", "Invalid edge direction", "Input already connected:
+ * <node>.<port>", "No such connection", "Port exists: <name>", "Graph name
+ * mismatch: <graph>", "Graph exists: <graph>", "Invalid id". The statuses
+ * that are no wire refusal render "Invalid argument", "Out of memory" and
+ * "Random source unavailable"; GRAPH_OK renders "". Returns the length the
+ * full message has (as snprintf). */
+size_t graph_refusal_message(enum graph_status st, const GraphRefusal *ctx, char *buf,
+			     size_t size);
+
+/* ---- Runtime commands (02 §3.2) ------------------------------------------ */
+
+/* new_graph: create a stopped, empty graph. id NULL: a fresh random UUID v4;
+ * name NULL: GRAPHS_DEFAULT_NAME; description, icon NULL: "". Refused:
+ * INVALID_ID, GRAPH_EXISTS, UNAVAILABLE (random source failed), NO_MEMORY.
+ * Reports GRAPH_CREATED. On success *out (if not NULL) is the graph. */
+enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
+				   const char *description, const char *icon, Graph **out,
+				   GraphsMessage *msg);
+
+/* delete_graph: stop the graph if started (reporting GRAPH_STOPPED), then
+ * remove it, report GRAPH_DELETED (the graph is still readable during that
+ * callback) and destroy it, its blocks going without events. name must equal
+ * the graph's current name. Refused: INVALID_ID, UNKNOWN_GRAPH,
+ * NAME_MISMATCH. Removing the persisted graph file is the caller's part
+ * (graph persistence, plan task 10; 05 §2.3). */
+enum graph_status graphs_delete_graph(Graphs *gs, const char *id, const char *name,
+				      GraphsMessage *msg);
+
+/* ---- Network commands (02 §3.3) ------------------------------------------- */
+
+/* start: start the graph if stopped, recording the runtime's now as the
+ * run's start; report GRAPH_STARTED either way (a started graph is not
+ * restarted and keeps its start time). Refused: INVALID_ID, UNKNOWN_GRAPH. */
+enum graph_status graphs_start(Graphs *gs, const char *id, GraphsMessage *msg);
+
+/* stop: stop the graph if started, recording the run's duration; report
+ * GRAPH_STOPPED either way, with the start and duration of the most recent
+ * run (0 and 0 if it never ran). Refused: INVALID_ID, UNKNOWN_GRAPH. */
+enum graph_status graphs_stop(Graphs *gs, const char *id, GraphsMessage *msg);
+
+/* getstatus: report GRAPH_STATUS for the graph. Refused: INVALID_ID,
+ * UNKNOWN_GRAPH. */
+enum graph_status graphs_status(Graphs *gs, const char *id, GraphsMessage *msg);
+
+/* graph:list, runtime:getruntime: report GRAPH_STATUS for every graph, in
+ * creation order. */
+void graphs_status_all(Graphs *gs);
+
+/* Report ERROR, a system-wide error event (02 §1 error format, e.g. the
+ * persist failure of 02 §3.3), about graph_id (NULL for none). */
+void graphs_notify_error(Graphs *gs, const char *graph_id, const char *message);
+
+/* ---- Graph commands (02 §3.4) ------------------------------------------- */
+
+/* rename: set the graph's name to name (any string; the id never changes).
+ * Reports GRAPH_RENAMED with the previous name. Refused: INVALID_ID,
+ * UNKNOWN_GRAPH, INVALID_ARGUMENT (name NULL), NO_MEMORY. */
+enum graph_status graphs_rename_graph(Graphs *gs, const char *id, const char *name,
+				      GraphsMessage *msg);
+
+/* addnode: Node exists is checked before Unknown component. md NULL: the
+ * default metadata. */
+enum graph_status graphs_add_node(Graphs *gs, const char *graph, const char *node,
+				  const char *component, const BlockMetadata *md,
+				  GraphsMessage *msg);
+
+enum graph_status graphs_remove_node(Graphs *gs, const char *graph, const char *node,
+				     GraphsMessage *msg);
+
+enum graph_status graphs_rename_node(Graphs *gs, const char *graph, const char *from,
+				     const char *to, GraphsMessage *msg);
+
+enum graph_status graphs_change_node(Graphs *gs, const char *graph, const char *node,
+				     const BlockChange *chg, GraphsMessage *msg);
+
+enum graph_status graphs_add_edge(Graphs *gs, const char *graph, const char *src,
+				  const char *src_port, const char *tgt, const char *tgt_port,
+				  GraphsMessage *msg);
+
+enum graph_status graphs_remove_edge(Graphs *gs, const char *graph, const char *src,
+				     const char *src_port, const char *tgt, const char *tgt_port,
+				     GraphsMessage *msg);
+
+/* addinitial: value is the literal, already parsed for the port (02 §3.4
+ * "Initial value encoding"); the graph takes its own reference. */
+enum graph_status graphs_add_initial(Graphs *gs, const char *graph, const char *node,
+				     const char *port, const Linkable *value, GraphsMessage *msg);
+
+enum graph_status graphs_remove_initial(Graphs *gs, const char *graph, const char *node,
+					const char *port, GraphsMessage *msg);
+
+/* add/remove/rename in/outport (dir selects which). */
+enum graph_status graphs_add_port(Graphs *gs, const char *graph, enum graph_port_dir dir,
+				  const char *name, const char *node, const char *port,
+				  GraphsMessage *msg);
+
+enum graph_status graphs_remove_port(Graphs *gs, const char *graph, enum graph_port_dir dir,
+				     const char *name, GraphsMessage *msg);
+
+enum graph_status graphs_rename_port(Graphs *gs, const char *graph, enum graph_port_dir dir,
+				     const char *from, const char *to, GraphsMessage *msg);
+
+#endif

@@ -1,6 +1,7 @@
 /*
  * Internal to graphs/: what the runtime (runtime.c), the structural
- * operations (graph.c) and the generic block runtime (block.c) share.
+ * operations (graph.c, graph_ports.c) and the generic block runtime (block.c)
+ * share.
  */
 #ifndef HAKKAS_GRAPHS_GRAPH_INTERNAL_H
 #define HAKKAS_GRAPHS_GRAPH_INTERNAL_H
@@ -19,6 +20,23 @@ BlockHandle runtime_slot_alloc(Runtime *rt, Block *b);
 
 /* Free h's slot, making every handle to it stale. */
 void runtime_slot_free(Runtime *rt, BlockHandle h);
+
+/* ---- graph.c ------------------------------------------------------------ */
+
+/* Report ev (with ev.graph set to g) to the runtime's observer. */
+void graph_emit(Graph *g, GraphEvent ev);
+
+/* A heap copy of s, or NULL if memory runs out. */
+char *graph_str_dup(const char *s);
+
+/* ---- graph_ports.c: graph-level ports ---------------------------------- */
+
+/* Remove every port mapped to b, reporting each (inports, then outports, in
+ * creation order). Part of graph_remove_block. */
+void graph_ports_remove_block(Graph *g, const Block *b);
+
+/* Free every port of g, reporting nothing. Part of graph_destroy. */
+void graph_ports_free(Graph *g);
 
 /* ---- block.c: the generic block runtime (03 §2) ------------------------ */
 

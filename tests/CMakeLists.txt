@@ -16,6 +16,7 @@ hakkas_add_test(test_pal_posix LIBS hakkas_pal_posix)
 hakkas_add_test(test_work_queue)
 hakkas_add_test(test_block_types)
 hakkas_add_test(test_graph)
+hakkas_add_test(test_graphs LIBS hakkas_pal_posix)
 
 # The same work queue tests with a tiny capacity, so wrap-around and overflow
 # run in a few pushes and the capacity override is exercised. The capacity

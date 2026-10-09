@@ -26,7 +26,14 @@
  * is complete and before any resulting value delivery. A compound operation
  * reports each part: removing a block reports every removed edge and initial
  * first, then the block (02 §1.1). Starting and stopping a graph report
- * nothing (the Graphs registry, task 7, emits network:started/stopped).
+ * nothing (the Graphs registry, graphs/graphs.h, emits network:started/stopped).
+ *
+ * Graph-level ports (inports/outports, 01 §2.2 Port) are metadata: each maps
+ * a public name to one inner block's input (inport) or output (outport) and
+ * has no dataflow effect. A port refers to its block, not to the block's
+ * name, so renaming the block carries the port along; removing the block
+ * removes its ports, reported after its edges and initials and before the
+ * block (decided, plan task 7, 02 §3.4).
  *
  * Value delivery (decided, plan task 6, 01 §2.2 / 03 §2): a value from an
  * upstream output always travels through the work queue (output_set). A value
@@ -41,8 +48,10 @@
  * Reentrancy: the observer, InputWatch callbacks and compute functions must
  * not call any operation here that changes a graph or a watch.
  *
- * Not yet here: the Graphs registry, graph ids/names/ports/uptime (task 7),
- * timers (task 8), opaque node/edge metadata and placeholder blocks for
+ * Graph identity (id, name, description, icon) and lifecycle times are
+ * fields here but are managed by the Graphs registry (graphs/graphs.h).
+ *
+ * Not yet here: timers (task 8), opaque node/edge metadata and placeholder blocks for
  * unknown types (task 10, 05 §2.2), composite instances (task 21), IO
  * (task 22). A placeholder will be a block whose type is NULL: the runtime
  * already treats a NULL type as a block with no ports and no compute.
@@ -80,6 +89,14 @@ enum graph_status {
 	 * allocation failure. */
 	GRAPH_ERR_INVALID_ARGUMENT = -8,
 	GRAPH_ERR_NO_MEMORY = -9,
+	/* Refusals of the Graphs registry (graphs/graphs.h), 02 §3.4.1. */
+	GRAPH_ERR_UNKNOWN_GRAPH = -10,	   /* "Unknown graph: <id>" */
+	GRAPH_ERR_UNKNOWN_COMPONENT = -11, /* "Unknown component: <name>" */
+	GRAPH_ERR_PORT_EXISTS = -12,	   /* "Port exists: <name>" */
+	GRAPH_ERR_GRAPH_EXISTS = -13,	   /* "Graph exists: <id>" */
+	GRAPH_ERR_NAME_MISMATCH = -14,	   /* "Graph name mismatch: <id>" */
+	/* Not a wire refusal case: the random source failed (no UUID). */
+	GRAPH_ERR_UNAVAILABLE = -15,
 };
 
 /* ---- Inputs, outputs, links ------------------------------------------ */
@@ -164,12 +181,42 @@ struct Block {
 	uint32_t timer_gen; /* bumped on stop and destroy (01 §3.2); timers: task 8 */
 };
 
+/* A graph-level port's direction: an inport maps to an inner block's input,
+ * an outport to an inner block's output (01 §2.2 Port). */
+enum graph_port_dir {
+	GRAPH_INPORT = 0,
+	GRAPH_OUTPORT = 1,
+};
+
+/* A graph-level port (01 §2.2 Port, 02 §3.4 addinport/addoutport): metadata
+ * only. Its node is block->name at any time (the port follows a rename). */
+typedef struct {
+	char *name;    /* the public name, owned; unique per graph and direction */
+	Block *block;  /* the inner block */
+	uint32_t port; /* input index (inport) or output index (outport) of block */
+} GraphPort;
+
 struct Graph {
 	Runtime *rt;
 	Block **blocks; /* in creation order */
 	uint32_t block_count;
 	uint32_t block_cap;
 	bool started;
+	/* Identity (01 §2.2), owned. NULL in a graph made by graph_create alone;
+	 * the Graphs registry sets all four (graphs/graphs.h). */
+	char *id;
+	char *name;
+	char *description;
+	char *icon;
+	/* Graph-level ports per enum graph_port_dir, in creation order. */
+	GraphPort *ports[2];
+	uint32_t port_count[2];
+	uint32_t port_cap[2];
+	/* Lifecycle times (engine uptime, ms; 01 §3.4), kept by the Graphs
+	 * registry: the start of the current or most recent run (0 if never
+	 * started), and the duration of the most recent completed run. */
+	uint64_t time_started;
+	uint64_t last_run_ms;
 };
 
 /* ---- Events reported to the runtime's observer ------------------------ */
@@ -183,9 +230,24 @@ enum graph_event_type {
 	GRAPH_EVENT_EDGE_REMOVED,
 	GRAPH_EVENT_INITIAL_ADDED,
 	GRAPH_EVENT_INITIAL_REMOVED,
+	GRAPH_EVENT_INPORT_ADDED,
+	GRAPH_EVENT_INPORT_REMOVED,
+	GRAPH_EVENT_INPORT_RENAMED,
+	GRAPH_EVENT_OUTPORT_ADDED,
+	GRAPH_EVENT_OUTPORT_REMOVED,
+	GRAPH_EVENT_OUTPORT_RENAMED,
+	/* Emitted by the Graphs registry only (graphs/graphs.h). */
+	GRAPH_EVENT_GRAPH_CREATED, /* system-wide */
+	GRAPH_EVENT_GRAPH_DELETED, /* system-wide */
+	GRAPH_EVENT_GRAPH_RENAMED,
+	GRAPH_EVENT_GRAPH_STARTED,
+	GRAPH_EVENT_GRAPH_STOPPED,
+	GRAPH_EVENT_GRAPH_STATUS, /* system-wide */
+	GRAPH_EVENT_ERROR,	  /* system-wide */
 };
 
-/* Pointers are valid only during the callback. */
+/* Pointers are valid only during the callback. Every event but ERROR has a
+ * graph, whose identity fields are the applied state. */
 struct GraphEvent {
 	enum graph_event_type type;
 	Graph *graph;
@@ -194,7 +256,20 @@ struct GraphEvent {
 	const Block *src_block; /* edge: the source block */
 	uint32_t src_output;	/* edge: its output */
 	const Linkable *value;	/* initial: the literal added or removed */
-	const char *old_name;	/* BLOCK_RENAMED: the previous name */
+	/* BLOCK_RENAMED, *PORT_RENAMED, GRAPH_RENAMED: the previous name */
+	const char *old_name;
+	const GraphPort *port; /* *PORT_*: the port (with its new name if renamed) */
+	/* GRAPH_STARTED: time_ms = the run's start, uptime_ms = its uptime so far.
+	 * GRAPH_STOPPED: the start and duration of the run that just ended (0 and
+	 * 0 if the graph never ran). GRAPH_STATUS: uptime_ms of the current run,
+	 * 0 when stopped. Engine uptime in ms (01 §3.4); the wire floors uptime
+	 * to whole seconds (02 §3.3). */
+	uint64_t time_ms;
+	uint64_t uptime_ms;
+	/* ERROR: the graph id the error is about (NULL if none; graph is that
+	 * graph if it exists, else NULL) and the message. */
+	const char *graph_id;
+	const char *message;
 };
 
 /* ---- Graph ------------------------------------------------------------ */
@@ -202,7 +277,8 @@ struct GraphEvent {
 /* A new, empty, stopped graph on rt, or NULL if memory runs out. */
 Graph *graph_create(Runtime *rt);
 
-/* Stop g (as graph_stop), then free it and every block in it. Watches get
+/* Stop g (as graph_stop), then free it, every block and port in it and its
+ * identity strings. Watches get
  * on_detach; no events are reported; queued entries for its blocks become
  * stale. */
 void graph_destroy(Graph *g);
@@ -227,10 +303,13 @@ enum graph_status graph_create_block(Graph *g, const char *name, const BlockType
  * downstream input reverts to its port default, which propagates. Queued
  * entries addressed to the block become stale. Reports EDGE_REMOVED /
  * INITIAL_REMOVED for each (inputs in port order, then outputs in port and
- * connection order), then BLOCK_REMOVED. Refused: INVALID_ID, UNKNOWN_NODE. */
+ * connection order), then INPORT_REMOVED / OUTPORT_REMOVED for each graph
+ * port mapped to the block (inports, then outports, each in creation order),
+ * then BLOCK_REMOVED. Refused: INVALID_ID, UNKNOWN_NODE. */
 enum graph_status graph_remove_block(Graph *g, const char *name);
 
-/* Rename a block; links are unaffected (02 §3.4 renamenode). Refused:
+/* Rename a block; links and graph ports mapped to it are unaffected and
+ * follow it (02 §3.4 renamenode). Refused:
  * INVALID_ID, UNKNOWN_NODE, NODE_EXISTS (to names a block, from itself
  * included), NO_MEMORY. Reports BLOCK_RENAMED. */
 enum graph_status graph_rename_block(Graph *g, const char *from, const char *to);
@@ -297,6 +376,33 @@ void graph_start(Graph *g);
  * stay queued and, when drained, only store their values. Nothing happens if
  * g is already stopped. */
 void graph_stop(Graph *g);
+
+/* ---- Graph-level ports (01 §2.2 Port, 02 §3.4) ----------------------- */
+
+/* Add a port called name in direction dir, mapped to node.port: an input of
+ * node for GRAPH_INPORT, an output for GRAPH_OUTPORT (02 §3.4 addinport /
+ * addoutport). Refused: INVALID_ID (name or node), UNKNOWN_NODE, UNKNOWN_PORT
+ * (port is no input / output of node, depending on dir), PORT_EXISTS (name is
+ * already a port of that direction), NO_MEMORY. Reports INPORT_ADDED /
+ * OUTPORT_ADDED. */
+enum graph_status graph_add_port(Graph *g, enum graph_port_dir dir, const char *name,
+				 const char *node, const char *port);
+
+/* Remove the port called name (02 §3.4 removeinport / removeoutport).
+ * Refused: INVALID_ID, UNKNOWN_PORT (no such port). Reports *PORT_REMOVED. */
+enum graph_status graph_remove_port(Graph *g, enum graph_port_dir dir, const char *name);
+
+/* Rename a port (02 §3.4 renameinport / renameoutport). Refused: INVALID_ID,
+ * UNKNOWN_PORT (from is no port), PORT_EXISTS (to is a port, from itself
+ * included), NO_MEMORY. Reports *PORT_RENAMED. */
+enum graph_status graph_rename_port(Graph *g, enum graph_port_dir dir, const char *from,
+				    const char *to);
+
+/* The port called name in direction dir, or NULL. */
+const GraphPort *graph_find_port(const Graph *g, enum graph_port_dir dir, const char *name);
+
+/* The name of the inner block's port p maps to (p of direction dir). */
+const char *graph_port_inner_name(enum graph_port_dir dir, const GraphPort *p);
 
 /* Split a "block.port" reference on its last '.' (01 §2.4): the block name is
  * ref[0 .. *block_len) and *port the rest. False if there is no '.', or

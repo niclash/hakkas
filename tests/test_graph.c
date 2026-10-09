@@ -73,6 +73,9 @@ static void on_event(void *ctx, const GraphEvent *ev)
 		       ev->type == GRAPH_EVENT_INITIAL_ADDED ? '+' : '-', text(ev->value), b->name,
 		       block_input_port(b, ev->input)->name);
 		break;
+	default: /* graph ports and graph-level events: tests/test_graphs.c */
+		append(events, sizeof(events), "other;");
+		break;
 	}
 }
 

@@ -32,7 +32,7 @@ for a decision.
 - [x] **6. Generic block runtime + Graph model** (`src/graphs/`): blocks, inputs/outputs,
   links, initials, no fan-in, severing, change threshold resolution, start/stop/destroy,
   `output_set`, the drain loop, "block.port" parsing (01 §2.2–§3.3, 03 §2).
-- [ ] **7. Graphs registry + event notification** (`src/graphs/`): graph create/delete/
+- [x] **7. Graphs registry + event notification** (`src/graphs/`): graph create/delete/
   rename, ports (inports/outports), `GraphNotify` subscriber fan-out, invalid-command
   refusals with the exact messages of 02 §3.4.1, uptime accounting (01 §2.2, §4).
 - [ ] **8. Timers + `timing/Interval`**: PAL timer start/cancel (POSIX `timerfd`), timer-expiry

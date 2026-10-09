@@ -16,14 +16,14 @@
 #define BLOCKS_INITIAL 8
 #define LINKS_INITIAL 2
 
-static void emit(Graph *g, GraphEvent ev)
+void graph_emit(Graph *g, GraphEvent ev)
 {
 	ev.graph = g;
 	if (g->rt->on_event != NULL)
 		g->rt->on_event(g->rt->event_ctx, &ev);
 }
 
-static char *str_dup(const char *s)
+char *graph_str_dup(const char *s)
 {
 	size_t len = strlen(s) + 1;
 	char *copy = malloc(len);
@@ -80,6 +80,11 @@ void graph_destroy(Graph *g)
 		block_free(b);
 	}
 	free(g->blocks);
+	graph_ports_free(g);
+	free(g->id);
+	free(g->name);
+	free(g->description);
+	free(g->icon);
 	free(g);
 }
 
@@ -182,7 +187,7 @@ static Block *block_alloc(Graph *g, const char *name, const BlockTypeDef *type,
 	b->metadata = *md;
 	b->input_count = type->input_count;
 	b->output_count = type->output_count;
-	b->name = str_dup(name);
+	b->name = graph_str_dup(name);
 	size_t nvalues = (size_t)b->input_count + b->output_count;
 	if (nvalues > 0)
 		b->in_values = calloc(nvalues, sizeof(Linkable));
@@ -252,7 +257,7 @@ enum graph_status graph_create_block(Graph *g, const char *name, const BlockType
 	g->blocks[g->block_count++] = b;
 	if (g->started)
 		block_start(b); /* 01 §2.2: a block added to a started graph starts at once */
-	emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_ADDED, .block = b});
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_ADDED, .block = b});
 	if (out != NULL)
 		*out = b;
 	return GRAPH_OK;
@@ -311,19 +316,19 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 			uint32_t out = in->src_output;
 			output_unlink(&src->outputs[out], b, i);
 			input_clear_source(b, i);
-			emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
-					     .block = b,
-					     .input = i,
-					     .src_block = src,
-					     .src_output = out});
+			graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
+						   .block = b,
+						   .input = i,
+						   .src_block = src,
+						   .src_output = out});
 		} else if (in->source == INPUT_SOURCE_INITIAL) {
 			Linkable literal = in->initial; /* a move */
 			in->initial = (Linkable){0};
 			input_clear_source(b, i);
-			emit(g, (GraphEvent){.type = GRAPH_EVENT_INITIAL_REMOVED,
-					     .block = b,
-					     .input = i,
-					     .value = &literal});
+			graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_INITIAL_REMOVED,
+						   .block = b,
+						   .input = i,
+						   .value = &literal});
 			linkable_clear(&literal);
 		}
 	}
@@ -335,21 +340,23 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 			Link l = out->links[0];
 			output_unlink(out, l.block, l.input);
 			input_clear_source(l.block, l.input);
-			emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
-					     .block = l.block,
-					     .input = l.input,
-					     .src_block = b,
-					     .src_output = o});
+			graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
+						   .block = l.block,
+						   .input = l.input,
+						   .src_block = b,
+						   .src_output = o});
 			input_revert(l.block, l.input);
 		}
 	}
 
+	/* Graph ports mapped to the block go before it (decided, 02 §3.4). */
+	graph_ports_remove_block(g, b);
 	block_detach_watches(b);
 	memmove(&g->blocks[index], &g->blocks[index + 1],
 		(g->block_count - (uint32_t)index - 1) * sizeof(g->blocks[0]));
 	g->block_count--;
 	runtime_slot_free(g->rt, b->handle); /* queued entries for b go stale */
-	emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_REMOVED, .block = b});
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_REMOVED, .block = b});
 	block_free(b);
 	return GRAPH_OK;
 }
@@ -363,12 +370,12 @@ enum graph_status graph_rename_block(Graph *g, const char *from, const char *to)
 		return GRAPH_ERR_UNKNOWN_NODE;
 	if (graph_find_block(g, to) != NULL)
 		return GRAPH_ERR_NODE_EXISTS;
-	char *name = str_dup(to);
+	char *name = graph_str_dup(to);
 	if (name == NULL)
 		return GRAPH_ERR_NO_MEMORY;
 	char *old = b->name;
 	b->name = name;
-	emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_RENAMED, .block = b, .old_name = old});
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_RENAMED, .block = b, .old_name = old});
 	free(old);
 	return GRAPH_OK;
 }
@@ -393,7 +400,7 @@ enum graph_status graph_change_block(Graph *g, const char *name, const BlockChan
 		b->metadata.change_threshold = chg->change_threshold;
 	else if (chg->threshold == THRESHOLD_CLEAR)
 		b->metadata.change_threshold = (double)NAN;
-	emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_CHANGED, .block = b});
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_CHANGED, .block = b});
 	return GRAPH_OK;
 }
 
@@ -445,11 +452,11 @@ enum graph_status graph_connect(Graph *g, const char *src, const char *src_port,
 	dst->src_block = sb;
 	dst->src_output = out;
 	dst->source_gen++;
-	emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_ADDED,
-			     .block = tb,
-			     .input = in,
-			     .src_block = sb,
-			     .src_output = out});
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_ADDED,
+				   .block = tb,
+				   .input = in,
+				   .src_block = sb,
+				   .src_output = out});
 	/* 03 §2 connect: wiring delivers the signal already on the output. In
 	 * a started graph every output was pushed by start, so last_propagated
 	 * is a value that was actually propagated. */
@@ -483,11 +490,11 @@ enum graph_status graph_disconnect(Graph *g, const char *src, const char *src_po
 
 	output_unlink(&sb->outputs[out], tb, in);
 	input_clear_source(tb, in);
-	emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
-			     .block = tb,
-			     .input = in,
-			     .src_block = sb,
-			     .src_output = out});
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
+				   .block = tb,
+				   .input = in,
+				   .src_block = sb,
+				   .src_output = out});
 	input_revert(tb, in);
 	return GRAPH_OK;
 }
@@ -514,10 +521,10 @@ enum graph_status graph_add_initial(Graph *g, const char *node, const char *port
 	linkable_assign(&in->initial, value);
 	in->source = INPUT_SOURCE_INITIAL;
 	in->source_gen++;
-	emit(g, (GraphEvent){.type = GRAPH_EVENT_INITIAL_ADDED,
-			     .block = b,
-			     .input = i,
-			     .value = &in->initial});
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_INITIAL_ADDED,
+				   .block = b,
+				   .input = i,
+				   .value = &in->initial});
 	block_update(b, i, linkable_copy(&in->initial));
 	return GRAPH_OK;
 }
@@ -540,10 +547,10 @@ enum graph_status graph_remove_initial(Graph *g, const char *node, const char *p
 	Linkable literal = in->initial; /* a move */
 	in->initial = (Linkable){0};
 	input_clear_source(b, i);
-	emit(g, (GraphEvent){.type = GRAPH_EVENT_INITIAL_REMOVED,
-			     .block = b,
-			     .input = i,
-			     .value = &literal});
+	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_INITIAL_REMOVED,
+				   .block = b,
+				   .input = i,
+				   .value = &literal});
 	linkable_clear(&literal);
 	input_revert(b, i);
 	return GRAPH_OK;
