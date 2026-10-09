@@ -3,9 +3,9 @@
  * partial file, a missing file, malformed files, unknown keys, wrong types
  * and out-of-range values, nested keys, null, relative paths, the
  * allowed_origins bound, command-line overrides, the generated engine_id and
- * auth.server_secret with its write-back; and the helpers it uses
- * (system/base64.h, system/uuid.h). Files live in a fresh temporary
- * directory that is removed afterwards.
+ * auth.server_secret with its write-back; and the UUIDs it uses
+ * (system/uuid.h; its base64 encoder is tested in test_crypto.c). Files live
+ * in a fresh temporary directory that is removed afterwards.
  */
 #define _XOPEN_SOURCE 700
 
@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #include "platform/pal.h"
-#include "system/base64.h"
 #include "system/config.h"
 #include "system/log.h"
 #include "system/uuid.h"
@@ -154,31 +153,6 @@ static enum pal_err failing_random(void *buf, size_t len)
 }
 
 /* ---- Helpers of the configuration ------------------------------------------------ */
-
-static void test_base64(void)
-{
-	/* RFC 4648 §10. */
-	static const char *const vectors[][2] = {
-		{"", ""},	  {"f", "Zg=="},	 {"fo", "Zm8="},	 {"foo", "Zm9v"},
-		{"foob", "Zm9vYg=="}, {"fooba", "Zm9vYmE="}, {"foobar", "Zm9vYmFy"},
-	};
-	char out[16];
-	for (size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
-		size_t n = strlen(vectors[i][0]);
-		CHECK(base64_encode(vectors[i][0], n, out, sizeof(out)) == strlen(vectors[i][1]));
-		CHECK_STREQ(out, vectors[i][1]);
-	}
-	/* Every byte value and the high bits. */
-	const unsigned char hi[] = {0xff, 0xfe, 0xfb};
-	CHECK(base64_encode(hi, 3, out, sizeof(out)) == 4);
-	CHECK_STREQ(out, "//77");
-	/* Too small: no output. */
-	strcpy(out, "x");
-	CHECK(base64_encode("foo", 3, out, 4) == 0);
-	CHECK_STREQ(out, "x");
-	CHECK(base64_encode("foo", 3, out, 5) == 4);
-	CHECK(BASE64_ENCODED_LEN(CONFIG_SECRET_BYTES) == 44);
-}
 
 static void test_uuid(void)
 {
@@ -771,7 +745,6 @@ int main(void)
 		return 1;
 	}
 
-	RUN(test_base64);
 	RUN(test_uuid);
 	RUN(test_defaults);
 	RUN(test_full_file);

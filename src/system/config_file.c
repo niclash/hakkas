@@ -7,8 +7,8 @@
 #include <string.h>
 
 #include "cJSON.h"
-#include "system/base64.h"
 #include "system/config.h"
+#include "system/crypto.h"
 
 /* Read the file at path into a heap buffer with a NUL after its *len bytes.
  * CONFIG_ERR_STORAGE with *missing set for no file. */
@@ -260,14 +260,14 @@ enum config_status config_ensure_server_secret(Config *cfg, pal_random_fn random
 	}
 
 	unsigned char raw[CONFIG_SECRET_BYTES];
-	char secret[BASE64_ENCODED_LEN(CONFIG_SECRET_BYTES) + 1];
+	char secret[CRYPTO_BASE64_LEN(CONFIG_SECRET_BYTES) + 1];
 	if (random_bytes(raw, sizeof(raw)) != PAL_OK) {
 		free(text);
 		log_error("cannot generate auth.server_secret: random source unavailable");
 		return CONFIG_ERR_UNAVAILABLE;
 	}
-	base64_encode(raw, sizeof(raw), secret, sizeof(secret));
-	memset(raw, 0, sizeof(raw));
+	crypto_base64_encode(raw, sizeof(raw), secret, sizeof(secret));
+	crypto_zeroize(raw, sizeof(raw));
 
 	bool no_memory = false;
 	char *out = with_secret(text, len, secret, &no_memory);

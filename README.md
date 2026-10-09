@@ -14,7 +14,8 @@ src/<module>/         portable core: graphs, blocktypes, protocol, system, app, 
 src/platform/pal.h    the PAL interface (portable)
 src/platform/<port>/  PAL implementations; the only place OS/RTOS headers may appear
 tests/                unit tests (CTest)
-third_party/          vendored libraries, pinned and unmodified (cjson/: cJSON, 01 §6)
+third_party/          vendored libraries, pinned and unmodified (01 §6): cjson/ (cJSON),
+                      mbedtls/ (a subset of mbedTLS 3.6; its configuration in mbedtls-config/)
 ```
 
 Add new core sources to `HAKKAS_CORE_SOURCES` in `cmake/HakkasSources.cmake`, and POSIX PAL
@@ -26,7 +27,9 @@ header.
 Vendored libraries live in `third_party/<library>/`, copied unmodified from a pinned release,
 with a `README.md` recording the version, checksums and how to update. Those that are part of the
 core are listed in `HAKKAS_THIRD_PARTY_SOURCES` (with `HAKKAS_THIRD_PARTY_INCLUDE_DIRS` and
-`HAKKAS_THIRD_PARTY_DEFINITIONS`); nothing is fetched at build time.
+`HAKKAS_THIRD_PARTY_DEFINITIONS`); nothing is fetched at build time. mbedTLS is a subset (only
+the modules the core compiles) built with hakkas' own configuration header
+(`third_party/mbedtls-config/`); hakkas code uses it only through `src/system/crypto.h`.
 
 ## Building
 

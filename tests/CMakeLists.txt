@@ -28,6 +28,7 @@ target_compile_definitions(test_loop PRIVATE _GNU_SOURCE)
 hakkas_add_test(test_http)
 hakkas_add_test(test_web_server LIBS hakkas_pal_posix)
 target_compile_definitions(test_web_server PRIVATE _GNU_SOURCE)
+hakkas_add_test(test_crypto)
 
 # The same work queue tests with a tiny capacity, so wrap-around and overflow
 # run in a few pushes and the capacity override is exercised. The capacity
@@ -42,6 +43,7 @@ list(FILTER HAKKAS_CORE_SOURCES_NO_APP EXCLUDE REGEX
   "/app/[^/]+\\.c$|/system/config_file\\.c$|/engine/(loop|web_server)\\.c$")
 add_executable(test_work_queue_small test_work_queue.c ${HAKKAS_CORE_SOURCES_NO_APP}
   ${HAKKAS_THIRD_PARTY_SOURCES})
+hakkas_third_party_warning_exceptions()
 target_include_directories(test_work_queue_small PRIVATE ${HAKKAS_SOURCE_ROOT} ${HAKKAS_GENERATED_DIR}
   ${HAKKAS_THIRD_PARTY_INCLUDE_DIRS})
 target_compile_features(test_work_queue_small PRIVATE c_std_17)

@@ -46,9 +46,11 @@ include(cmake/HakkasCompileOptions.cmake)
 
 # The core is C17 without compiler extensions or platform headers, so it builds
 # unchanged under any hosted C toolchain.
-# Vendored libraries (third_party/) are part of it; they compile cleanly under
-# the project's warning flags, so they get the same flags (and sanitizers).
+# Vendored libraries (third_party/) are part of it; they get the project's
+# flags (and sanitizers) too, less any single warning a vendored file trips
+# (hakkas_third_party_warning_exceptions, cmake/HakkasCompileOptions.cmake).
 add_library(hakkas_core STATIC ${HAKKAS_CORE_SOURCES} ${HAKKAS_THIRD_PARTY_SOURCES})
+hakkas_third_party_warning_exceptions()
 add_library(hakkas::core ALIAS hakkas_core)
 target_include_directories(hakkas_core PUBLIC ${HAKKAS_SOURCE_ROOT} ${HAKKAS_GENERATED_DIR}
   ${HAKKAS_THIRD_PARTY_INCLUDE_DIRS})

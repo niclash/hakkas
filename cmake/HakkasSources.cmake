@@ -31,9 +31,9 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/graphs/runtime.c
   ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c
   ${HAKKAS_SOURCE_ROOT}/protocol/http.c
-  ${HAKKAS_SOURCE_ROOT}/system/base64.c
   ${HAKKAS_SOURCE_ROOT}/system/config.c
   ${HAKKAS_SOURCE_ROOT}/system/config_file.c
+  ${HAKKAS_SOURCE_ROOT}/system/crypto.c
   ${HAKKAS_SOURCE_ROOT}/system/log.c
   ${HAKKAS_SOURCE_ROOT}/system/uuid.c
 )
@@ -46,17 +46,34 @@ set(HAKKAS_CORE_SOURCES
 # headers are used. See third_party/<library>/README.md.
 #   cJSON (01 §6): CJSON_NESTING_LIMIT bounds the parser's recursion depth on
 #   MCU stacks (third_party/cjson/README.md).
+#   mbedTLS (01 §6): only the modules behind src/system/crypto.h, configured
+#   by hakkas' own third_party/mbedtls-config/hakkas_mbedtls_config.h
+#   (third_party/mbedtls/README.md).
 set(HAKKAS_THIRD_PARTY_ROOT ${CMAKE_CURRENT_LIST_DIR}/../third_party)
 cmake_path(NORMAL_PATH HAKKAS_THIRD_PARTY_ROOT)
 
+set(HAKKAS_MBEDTLS_SOURCES
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls/library/base64.c
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls/library/constant_time.c
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls/library/md.c
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls/library/pkcs5.c
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls/library/platform_util.c
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls/library/sha1.c
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls/library/sha256.c
+)
+
 set(HAKKAS_THIRD_PARTY_SOURCES
   ${HAKKAS_THIRD_PARTY_ROOT}/cjson/cJSON.c
+  ${HAKKAS_MBEDTLS_SOURCES}
 )
 set(HAKKAS_THIRD_PARTY_INCLUDE_DIRS
   ${HAKKAS_THIRD_PARTY_ROOT}/cjson
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls/include
+  ${HAKKAS_THIRD_PARTY_ROOT}/mbedtls-config
 )
 set(HAKKAS_THIRD_PARTY_DEFINITIONS
   CJSON_NESTING_LIMIT=32
+  MBEDTLS_CONFIG_FILE="hakkas_mbedtls_config.h"
 )
 
 # The POSIX PAL implementation (01 §0): the hakkas_pal_posix library, linked

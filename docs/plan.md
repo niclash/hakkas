@@ -72,6 +72,11 @@ for a decision.
   mapping, SPA fallback for extension-less paths, `.gz` variants, keep-alive, timeouts via a
   tick hook), the PAL streaming read `pal_file_open`/`read`/`close` (01 §0.1); the loop gained
   `loop_remove_tick`, `loop_now_ms` and a listener `on_closed` callback. Decisions: 05 §3.
+Order change: task 15 (crypto) was done **before** task 14, because the WebSocket handshake needs
+SHA-1 and base64 for `Sec-WebSocket-Accept` and the specs forbid hand-written cryptographic
+primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_base64_encode`;
+`tests/test_crypto.c` checks the RFC 6455 §1.3 example).
+
 - [ ] **14. WebSocket layer** (RFC 6455): upgrade, Origin check, connection and frame-size
   limits (02 §0). On the loop: `max_connections` is counted with `loop_listener_conn_count`
   (refuse the upgrade with 503 above it; set the listener's hard `max_conns` somewhat higher
@@ -85,8 +90,13 @@ for a decision.
   input before `loop_conn_close`, `engine/web_server.c`) avoids a reset. The head buffer can
   be freed after the upgrade (`http_request_init` takes the caller's buffer). The web server
   uses one of the loop's 4 tick hooks.
-- [ ] **15. Crypto primitives**: SHA-256, HMAC-SHA256, PBKDF2, base64/base64url, constant-time
-  compare, via mbedTLS (decided, 01 §6).
+- [x] **15. Crypto primitives**: SHA-256, HMAC-SHA256, PBKDF2, base64/base64url, constant-time
+  compare, via mbedTLS (decided, 01 §6). Done before task 14 (see above): a vendored mbedTLS
+  3.6.7 subset with hakkas' own configuration (`third_party/mbedtls/README.md`) under the thin
+  API `src/system/crypto.h` (also SHA-1, `crypto_zeroize`, strict decoders), which replaced task
+  11's `system/base64.h`. `tests/test_crypto.c` checks the RFC 7677 SCRAM-SHA-256 example end to
+  end (SaltedPassword … ServerSignature and the server's proof check), the chain task 16 uses
+  with 02 §2.3's AuthMessage.
 - [ ] **16. Authorization**: users file, SCRAM handshake, sessions, roles/capabilities, rate
   limiting, `hakkas user add|passwd|del|list` (02 §2). The CLI (task 11, `platform/posix/cli.c`)
   parses `user <add|passwd|del|list>` and refuses it as "not implemented yet": implement the
