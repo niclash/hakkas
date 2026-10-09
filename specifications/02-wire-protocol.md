@@ -105,7 +105,7 @@ Reply (server → client):
 {"protocol":"environment","command":"challenge","payload":{"salt":"<base64>","iterations":100000,"nonce":"<cnonce + base64 of 16 server-random bytes>"}}
 ```
 - The full `nonce` is the client nonce followed by the server's random part. It is valid for one login attempt on this connection only, and expires after 30 s.
-- **Unknown users get a normal-looking reply**: the server returns `salt = HMAC(server_secret, user)[0..16]` and the default iteration count, where `server_secret` is a random value generated once and stored with the configuration. The reply for an unknown user is indistinguishable from a real one, so user names can't be probed.
+- **Unknown users get a normal-looking reply**: the server returns `salt = HMAC(server_secret, user)[0..16]` and the default iteration count, where `server_secret` is a random value generated once and stored with the configuration (`auth.server_secret`, `05-app-lifecycle-persistence.md` §1.1: 32 random bytes in base64; the HMAC key is the stored string's bytes, not decoded). The reply for an unknown user is indistinguishable from a real one, so user names can't be probed.
 
 **Step 2 — `environment:login`** (client → server, `secret: ""`):
 ```json

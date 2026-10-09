@@ -34,18 +34,37 @@ Every key is optional; a missing key takes the default below, and a missing file
 
 The file is written (when `auth.server_secret` is generated) using the same atomic-write procedure as every other persisted file (§2.3).
 
+Implementation decisions (plan task 11, `src/system/config.h`):
+- **Nested keys**: a key `<section>.<key>` of the table is the member `<key>` of the object `<section>` (`log`, `auth`, `tls`, `net`), e.g. `{"log": {"level": "info"}}`. A top-level member literally named `"log.level"` is an unknown key.
+- **Missing file**: all defaults (noted at `info`). Every key is optional, and a key whose value is `null` is the same as an absent key (also a whole section).
+- **Malformed file → the engine refuses to start** with an error: text that is not a JSON object (or has anything but whitespace after it), nesting deeper than cJSON's limit (`third_party/cjson/README.md`), a file larger than `HAKKAS_CONFIG_FILE_MAX` (16 KiB, a per-build override), or a duplicate key at the top level or within a section.
+- **Unknown keys** (also within a section) are logged as a warning and ignored, for forward compatibility.
+- **Invalid values → the engine refuses to start**: every key with the wrong type or an out-of-range value is logged as an error naming it (`<file>: <key>: expected …`; the value itself is never logged), all of them, then startup stops. Valid values: `engine_id` a string of 1–64 bytes; `label` 0–64 bytes; `host` 1–63 bytes (not otherwise checked; binding to it is plan task 12's); `port` an integer 1–65534 (`port + 1` must be a port too); `max_connections` an integer 1–1024; `max_message_bytes` an integer 1024–16777216; `allowed_origins` an array of at most 8 strings (`HAKKAS_CONFIG_ORIGINS_MAX`, a per-build override) of 1–127 bytes; `change_threshold` a number ≥ 0, `1e999` (+Infinity) included (`01-architecture-overview.md` §3.3); `log.level` one of the four names; `log.mirror`, `tls.enabled`, `net.dhcp` booleans; `auth.idle_timeout_s`, `auth.max_lifetime_s` integers 1–2147483647; `auth.server_secret` a string of 16–128 bytes; `net.hostname` 1–63 letters, digits and inner `-` (one DNS label); `net.address`/`netmask`/`gateway` a dotted-quad IPv4 address or `""` (none); a section a JSON object; paths below. An integer may be written in any JSON number form with an integral value (`8.0e3`).
+- **Paths** (`webdir`, `datadir`, `auth.users_file`, `tls.cert`, `tls.key`): a relative path in the file is relative to the configuration directory (the file's own directory); a path given as a command-line option (§1.2) is used as given, i.e. relative to the working directory. A path (after that) is at most 251 bytes (`PAL_PATH_MAX` minus room for an atomic write's `.tmp`, §2.3). `webdir`, `datadir`, `auth.users_file` must not be empty; `tls.cert`/`tls.key` `""` means none (the default). The platform supplies the defaults that depend on it (configuration directory, `webdir`, `datadir`); the core derives the configuration file `<confdir>/hakkas.json` and the default users file `<confdir>/users.json` from the configuration directory (`/lfs/config` on Zephyr).
+- **`engine_id`** unset: a fresh random UUID v4 (lowercase, the generator of `runtime:new_graph`'s ids, `src/system/uuid.h`) at every boot, after the command-line overrides.
+- **`net.hostname`** `""` (the default) means the platform's default, `hakkas-<last 3 MAC bytes in hex>` on Zephyr.
+- **`auth.server_secret`**: generated as 32 bytes from the PAL's random source, encoded in base64 (RFC 4648 §4: standard alphabet, `=` padding, 44 characters). The HMAC key of `02-wire-protocol.md` §2.3 is the string's bytes as stored, not decoded, so a hand-written secret is any string of 16–128 bytes. Only the startup of `run` (§1.4 step 1, plan task 19) generates and writes it; the other commands never write the file. It is written back by inserting the member as text — as the first member of the `auth` object, which is created if absent (a `null` `auth` or `server_secret` is replaced) — so every other byte of the user's file (formatting, key order, numbers, unknown keys) stays as it was. A missing file is created holding only the secret (mode `0600` on POSIX, like every file `pal_storage_write` creates). If the file cannot be written (e.g. the configuration directory is missing or read-only), the engine refuses to start. The secret is never logged (`02-wire-protocol.md` §2.5 item 8).
+- **Base64**: a small encoder in the core (`src/system/base64.h`) until mbedTLS is integrated (plan task 15, `01-architecture-overview.md` §6), which may replace it with the same output.
+
 ### 1.2 POSIX build tree (Raspberry Pi, x86_64 development)
 
 A command-line tree configures and starts the runtime:
 
 - Global options: `--fine`/`--info`/`--warn` (log verbosity, most-to-least verbose; overrides `log.level`), `--basedir <dir>` (default `.`), `--confdir <dir>` (default `/etc/hakkas`).
 - `list types` — print every registered block type name.
-- `describe type <typename>` — print one block type's JSON descriptor.
-- `describe topology <filename>` — load a graph file standalone and print its JSON description.
+- `describe type <typename>` — print one block type's JSON descriptor: the `component:component` payload (`02-wire-protocol.md` §3.5).
+- `describe topology <filename>` — load a graph file standalone and print its JSON description: the graph's canonical form (§2.1).
 - `user add|passwd|del|list ...` — manage the credential store (`02-wire-protocol.md` §2.2).
 - `run [options] process <filenames>` — start the engine and load the given colon-separated list of graph files, in order.
 - `run [options] daemon` — start the engine and load every graph in `<datadir>/graphs/`.
 - `run`'s own options override the corresponding configuration-file keys: `--id <id>` (`engine_id`), `--webdir <dir>`, `--host <addr>`, `--port <n>`, `--users <file>` (`auth.users_file`).
+
+Implementation decisions (plan task 11, `src/platform/posix/cli.h`):
+- **Grammar**: `hakkas [global options] <command>`. Global options come before the command and also include `--help`/`-h` (usage on stdout) and `--version`; `run`'s options come between `run` and `process`/`daemon`. An option's value is the next argument (no `--opt=value`), must not be empty, and a repeated option takes its last value. `user` accepts `add`, `passwd`, `del` and `list`; their own arguments are plan task 16's.
+- **Configuration**: every command except `--help`/`--version` first builds the configuration — defaults < `<confdir>/hakkas.json` < options — so an unreadable, malformed or invalid file fails every command, not only `run`. `datadir` defaults to `--basedir`, `webdir` to `<working directory>/frontend/src`. `--fine`/`--info`/`--warn` already apply while the file is read; the resulting `log.level` is the log threshold.
+- **Output**: results (type names one per line, a compact JSON document on one line) go to stdout; diagnostics go through the log (§4), whose POSIX sink is stderr.
+- **Exit codes**: `0` success; `1` a runtime failure (configuration file, unknown type, a graph file that does not load, a command not implemented yet); `2` a usage error (unknown command or option, a missing or extra argument, an invalid option value such as `--port 0`).
+- **Not implemented yet**: `user …` (plan task 16) and `run` (plan task 19; its options are parsed and applied already) are refused with an error and exit code `1`.
 
 ### 1.3 Zephyr build tree (MCU targets)
 

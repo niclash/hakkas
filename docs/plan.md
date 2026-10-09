@@ -48,7 +48,7 @@ for a decision.
   placeholder blocks for unknown types, round-trip tests. cJSON does not print every double
   exactly: write f64 values via `linkable_stringify` + `cJSON_CreateRaw`, and decide how a
   non-finite initial is stored (`third_party/cjson/README.md`, "Numbers").
-- [ ] **11. Configuration file + POSIX CLI** (`src/system/`, `src/platform/posix/`): `hakkas.json`
+- [x] **11. Configuration file + POSIX CLI** (`src/system/`, `src/platform/posix/`): `hakkas.json`
   keys and defaults (05 §1.1), command tree `list types`, `describe type|topology`,
   `run process|daemon` (05 §1.2).
 
@@ -63,12 +63,17 @@ for a decision.
 - [ ] **15. Crypto primitives**: SHA-256, HMAC-SHA256, PBKDF2, base64/base64url, constant-time
   compare, via mbedTLS (decided, 01 §6).
 - [ ] **16. Authorization**: users file, SCRAM handshake, sessions, roles/capabilities, rate
-  limiting, `hakkas user add|passwd|del|list` (02 §2).
+  limiting, `hakkas user add|passwd|del|list` (02 §2). The CLI (task 11, `platform/posix/cli.c`)
+  parses `user <add|passwd|del|list>` and refuses it as "not implemented yet": implement the
+  subcommands and their arguments here. The users file path is `Config.auth.users_file`.
 - [ ] **17. Protocol dispatcher**: envelope validation, error format, secret gating,
   capability checks, `environment`/`runtime`/`component`/`trace` (02 §1, §3.1–§3.2, §3.5–§3.6).
 - [ ] **18. `graph:*` and `network:*` commands**: every command and broadcast of 02 §3.3–§3.4,
   `graph:connect` snapshot, scoping, `network:edges` live values (02 §4).
-- [ ] **19. Engine startup + `run`**: the startup sequence of 05 §1.4 wired end to end.
+- [ ] **19. Engine startup + `run`**: the startup sequence of 05 §1.4 wired end to end. Task 11
+  parses `run process|daemon` and its options and applies them to the `Config` (`cli_config`),
+  then refuses with "not implemented yet" (`cli_execute`): complete `run` here, including
+  `config_generate_engine_id` and `config_ensure_server_secret` (05 §1.1) after the overrides.
 - [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
 

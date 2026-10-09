@@ -2,7 +2,8 @@
  * The JSON forms of the graph model's metadata and initial values (05 §2.1,
  * 02 §3.4), shared by graph files (app/graph_files.h) and the wire protocol
  * (plan task 18): node metadata from and to JSON, the changenode merge, edge
- * metadata, initial values, and exact printing.
+ * metadata, initial values, exact printing, and block type descriptors
+ * (component:component, 02 §3.5; also `hakkas describe type`, 05 §1.2).
  *
  * Naming: functions are prefixed graph_json_. JSON values are cJSON trees
  * (third_party/cjson, 01 §6).
@@ -96,5 +97,14 @@ enum graph_status graph_json_to_initial(const cJSON *data, const char *port_type
  * comes back as an f64, like every JSON number). NULL for an unset value or
  * if memory runs out. */
 cJSON *graph_json_from_initial(const Linkable *v);
+
+/* ---- Block type descriptors (02 §3.5 component:component) -------------- */
+
+/* The component:component payload describing def (02 §3.5): the keys "name",
+ * "description", "subgraph", "icon", "inPorts", "outPorts" in that order;
+ * each port {"id", "description", "type", "addressable"}. A NULL description,
+ * icon or port type is "". NULL if memory runs out. Shared by
+ * `hakkas describe type` (05 §1.2) and the protocol layer (plan task 17). */
+cJSON *graph_json_component(const BlockTypeDef *def);
 
 #endif

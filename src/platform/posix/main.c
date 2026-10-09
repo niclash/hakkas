@@ -1,17 +1,25 @@
+/*
+ * The POSIX runtime's entry point: the console log sink, the PAL, then the
+ * command line (platform/posix/cli.h, 05 §1.2).
+ */
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "engine/version.h"
 #include "platform/pal.h"
+#include "platform/posix/cli.h"
 #include "platform/posix/log_stderr.h"
 #include "system/log.h"
 
-int main(void)
+int main(int argc, char *argv[])
 {
 	log_add_sink(posix_log_stderr, NULL);
-	if (pal_init() != PAL_OK)
-		return EXIT_FAILURE;
-
-	printf("hakkas %s\n", hakkas_version());
-	return 0;
+	enum pal_err err = pal_init();
+	if (err != PAL_OK) {
+		log_error("cannot initialize the platform: %s", pal_err_str(err));
+		return CLI_EXIT_FAILURE;
+	}
+	int rc = cli_main(argc, argv, stdout);
+	if (fflush(stdout) != 0 && rc == CLI_EXIT_OK)
+		rc = CLI_EXIT_FAILURE;
+	return rc;
 }

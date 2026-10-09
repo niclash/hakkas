@@ -354,3 +354,50 @@ cJSON *graph_json_from_initial(const Linkable *v)
 	}
 	return NULL;
 }
+
+/* ---- Block type descriptors (02 §3.5) ----------------------------------- */
+
+static const char *or_empty(const char *s)
+{
+	return s != NULL ? s : "";
+}
+
+static cJSON *port_descriptors(const PortDescriptor *ports, uint32_t count)
+{
+	cJSON *arr = cJSON_CreateArray();
+	if (arr == NULL)
+		return NULL;
+	for (uint32_t i = 0; i < count; i++) {
+		cJSON *p = cJSON_CreateObject();
+		if (p == NULL || !cJSON_AddItemToArray(arr, p)) {
+			cJSON_Delete(p);
+			cJSON_Delete(arr);
+			return NULL;
+		}
+		if (!add(p, "id", cJSON_CreateString(or_empty(ports[i].name))) ||
+		    !add(p, "description", cJSON_CreateString(or_empty(ports[i].description))) ||
+		    !add(p, "type", cJSON_CreateString(or_empty(ports[i].type))) ||
+		    !add(p, "addressable", cJSON_CreateBool(ports[i].addressable))) {
+			cJSON_Delete(arr);
+			return NULL;
+		}
+	}
+	return arr;
+}
+
+cJSON *graph_json_component(const BlockTypeDef *def)
+{
+	cJSON *obj = cJSON_CreateObject();
+	if (obj == NULL)
+		return NULL;
+	if (!add(obj, "name", cJSON_CreateString(or_empty(def->name))) ||
+	    !add(obj, "description", cJSON_CreateString(or_empty(def->description))) ||
+	    !add(obj, "subgraph", cJSON_CreateBool(def->subgraph)) ||
+	    !add(obj, "icon", cJSON_CreateString(or_empty(def->icon))) ||
+	    !add(obj, "inPorts", port_descriptors(def->inputs, def->input_count)) ||
+	    !add(obj, "outPorts", port_descriptors(def->outputs, def->output_count))) {
+		cJSON_Delete(obj);
+		return NULL;
+	}
+	return obj;
+}

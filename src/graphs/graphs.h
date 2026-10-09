@@ -44,12 +44,13 @@
 
 #include "graphs/graph.h"
 #include "platform/pal.h"
+#include "system/uuid.h"
 
 /* The name of a graph created without one (02 §3.2 new_graph). */
 #define GRAPHS_DEFAULT_NAME "<<new graph>>"
 
 /* A UUID in its 36-character text form plus the NUL. */
-#define GRAPHS_UUID_SIZE 37
+#define GRAPHS_UUID_SIZE UUID_TEXT_SIZE
 
 /* Room for any refusal message. A message naming a node or port longer than
  * fits is cut (it is still NUL-terminated). */
@@ -63,7 +64,7 @@ typedef const BlockTypeDef *(*graphs_type_resolver)(const char *name);
 /* The random source for UUIDs: pal_random_bytes (platform/pal.h). The engine
  * passes it to graphs_init, so the core itself links no PAL symbol and tests
  * can pass a fake. */
-typedef enum pal_err (*graphs_random_fn)(void *buf, size_t len);
+typedef pal_random_fn graphs_random_fn;
 
 /*
  * A subscriber (01 §4): one per connection, embedded by its owner. fn is

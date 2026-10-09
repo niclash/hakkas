@@ -28,7 +28,11 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
   ${HAKKAS_SOURCE_ROOT}/graphs/runtime.c
   ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c
+  ${HAKKAS_SOURCE_ROOT}/system/base64.c
+  ${HAKKAS_SOURCE_ROOT}/system/config.c
+  ${HAKKAS_SOURCE_ROOT}/system/config_file.c
   ${HAKKAS_SOURCE_ROOT}/system/log.c
+  ${HAKKAS_SOURCE_ROOT}/system/uuid.c
 )
 
 # Vendored third-party code that is part of the portable core: every build of
@@ -58,6 +62,12 @@ set(HAKKAS_POSIX_PAL_SOURCES
   ${HAKKAS_SOURCE_ROOT}/platform/posix/log_stderr.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/pal.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/storage.c
+)
+
+# The POSIX command line (05 §1.2): the hakkas_cli_posix library, linked by
+# the runtime and by its tests.
+set(HAKKAS_POSIX_CLI_SOURCES
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/cli.c
 )
 
 # The POSIX runtime executable on top of it.

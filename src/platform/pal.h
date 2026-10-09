@@ -95,6 +95,11 @@ uint64_t pal_uptime_ms(void);
  * seeded (early boot only). */
 enum pal_err pal_random_bytes(void *buf, size_t len);
 
+/* The signature of pal_random_bytes, for core code that takes the random
+ * source as a parameter so that it links no PAL symbol and tests can pass a
+ * fake (system/uuid.h, system/config.h). */
+typedef enum pal_err (*pal_random_fn)(void *buf, size_t len);
+
 /* ---- Storage (01 §0.1, 05 §2.3) ----------------------------------------- */
 
 /*

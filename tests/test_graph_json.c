@@ -270,6 +270,28 @@ static void test_initials(void)
 	CHECK(graph_json_from_initial(&unset) == NULL);
 }
 
+static void test_component(void)
+{
+	/* NULL texts are "", subgraph and addressable are reported, ports in
+	 * order (02 §3.5). */
+	static const PortDescriptor ins[] = {
+		{.name = "a", .type = "string", .addressable = true},
+		{.name = "b", .description = "B", .type = "bool"},
+	};
+	static const BlockTypeDef def = {.name = "my/Group", .inputs = ins, .input_count = 2,
+					 .subgraph = true};
+	cJSON *j = graph_json_component(&def);
+	char *text = graph_json_print(j);
+	CHECK_STREQ(text, "{\"name\":\"my/Group\",\"description\":\"\",\"subgraph\":true,"
+			  "\"icon\":\"\",\"inPorts\":["
+			  "{\"id\":\"a\",\"description\":\"\",\"type\":\"string\","
+			  "\"addressable\":true},"
+			  "{\"id\":\"b\",\"description\":\"B\",\"type\":\"bool\","
+			  "\"addressable\":false}],\"outPorts\":[]}");
+	free(text);
+	cJSON_Delete(j);
+}
+
 int main(void)
 {
 	RUN(test_exact_numbers);
@@ -277,5 +299,6 @@ int main(void)
 	RUN(test_change_merge);
 	RUN(test_edge_metadata);
 	RUN(test_initials);
+	RUN(test_component);
 	return test_result();
 }

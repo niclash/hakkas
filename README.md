@@ -53,8 +53,12 @@ The underlying commands:
 cmake --preset debug          # configure, into build/debug/
 cmake --build --preset debug  # compile
 ctest --preset debug          # run the tests
-./build/debug/hakkas
+./build/debug/hakkas --help   # the command line (specifications/05 §1.2)
 ```
+
+For example `./build/debug/hakkas --confdir . list types` or
+`./build/debug/hakkas --confdir . describe type math/Add2`. The configuration file is
+`<confdir>/hakkas.json` (default `/etc/hakkas`; a missing file means all defaults, 05 §1.1).
 
 Each preset builds into `build/<preset>/`; `rm -rf build` removes every build. Without presets,
 give CMake a build directory: `cmake -B build/debug -G Ninja && cmake --build build/debug`.
