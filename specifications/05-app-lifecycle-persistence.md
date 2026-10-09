@@ -117,7 +117,9 @@ One canonical JSON schema is used for both loading and saving a graph. Saving a 
 1. Write the complete content to `<name>.tmp` in the same directory.
 2. Flush it to stable storage and close it (`fs_sync` on Zephyr; `fsync` on POSIX).
 3. Rename `<name>.tmp` over `<name>`. The rename is atomic on LittleFS and on POSIX filesystems. On POSIX, also `fsync` the directory.
-4. At startup, delete any leftover `*.tmp` (§1.4).
+4. At startup, delete any leftover `*.tmp` (§1.4) in every directory the engine writes to: `<datadir>/graphs/`, `<datadir>/types/`, and the directories of the configuration and users files.
+
+This procedure is the PAL operation `pal_storage_write` (`01-architecture-overview.md` §0.1), and step 4 is `pal_storage_remove_tmp`. The temporary file is the full file name plus `.tmp` (`x.json` → `x.json.tmp`, at most 201 bytes for an encoded name, within LittleFS's 255). On POSIX every system call is retried on `EINTR`, partial writes are continued, a failure before the rename removes the `.tmp` file and leaves the old file untouched, and files are created with mode `0600` (the same procedure writes the users file). A filesystem that cannot `fsync` a directory (`EINVAL`) is tolerated.
 
 **Deleting**: `runtime:delete_graph` removes the graph's file; removing a group removes its type file (`02-wire-protocol.md` §3.2, §3.4.2). Renaming a graph changes only its `name`, never its `id`, so the file name stays the same.
 

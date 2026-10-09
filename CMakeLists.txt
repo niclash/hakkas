@@ -14,6 +14,7 @@ project(hakkas VERSION 0.1.0 LANGUAGES C)
 
 # A plain CMake project with no RTOS dependency:
 #   hakkas_core - the portable core library (everything outside src/platform/, 01 §0)
+#   hakkas_pal_posix - the POSIX PAL implementation (src/platform/posix/)
 #   hakkas      - the POSIX runtime (Linux / Raspberry Pi / x86_64 desktop)
 #   tests       - unit tests (CTest)
 # When included from another project via add_subdirectory()/FetchContent, only
@@ -51,11 +52,18 @@ target_compile_features(hakkas_core PUBLIC c_std_17)
 set_target_properties(hakkas_core PROPERTIES C_EXTENSIONS OFF)
 target_link_libraries(hakkas_core PRIVATE hakkas_compile_options)
 
+# The POSIX PAL, a library so that tests can link it too.
+if(HAKKAS_BUILD_POSIX_RUNTIME OR HAKKAS_BUILD_TESTS)
+  add_library(hakkas_pal_posix STATIC ${HAKKAS_POSIX_PAL_SOURCES})
+  target_link_libraries(hakkas_pal_posix PUBLIC hakkas_core PRIVATE hakkas_compile_options)
+  # The POSIX PAL targets Linux (timerfd, getrandom, 01 §0), so it may use GNU
+  # extensions; the definition stays private to the PAL sources.
+  target_compile_definitions(hakkas_pal_posix PRIVATE _GNU_SOURCE)
+endif()
+
 if(HAKKAS_BUILD_POSIX_RUNTIME)
-  add_executable(hakkas ${HAKKAS_POSIX_SOURCES})
-  target_link_libraries(hakkas PRIVATE hakkas_core hakkas_compile_options)
-  # The POSIX PAL targets Linux (timerfd, 01 §0), so it may use GNU extensions.
-  target_compile_definitions(hakkas PRIVATE _GNU_SOURCE)
+  add_executable(hakkas ${HAKKAS_POSIX_RUNTIME_SOURCES})
+  target_link_libraries(hakkas PRIVATE hakkas_pal_posix hakkas_core hakkas_compile_options)
 endif()
 
 if(HAKKAS_BUILD_TESTS)

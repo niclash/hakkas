@@ -15,7 +15,15 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/system/log.c
 )
 
-set(HAKKAS_POSIX_SOURCES
+# The POSIX PAL implementation (01 §0): the hakkas_pal_posix library, linked
+# by the POSIX runtime and by tests that exercise the PAL.
+set(HAKKAS_POSIX_PAL_SOURCES
   ${HAKKAS_SOURCE_ROOT}/platform/posix/log_stderr.c
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/pal.c
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/storage.c
+)
+
+# The POSIX runtime executable on top of it.
+set(HAKKAS_POSIX_RUNTIME_SOURCES
   ${HAKKAS_SOURCE_ROOT}/platform/posix/main.c
 )

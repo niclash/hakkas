@@ -19,7 +19,7 @@ for a decision.
   8 explicitly delegates this). Metric arithmetic rules stay out (open question 9).
 - [x] **2. Logging** (`src/system/`): four levels, threshold, file/line tagging, a sink hook
   for later remote mirroring (05 §4).
-- [ ] **3. PAL interface + POSIX clock/random/storage** (`src/platform/pal.h`,
+- [x] **3. PAL interface + POSIX clock/random/storage** (`src/platform/pal.h`,
   `src/platform/posix/`): monotonic ms clock, cryptographic random bytes, storage
   read/write/rename/remove/exists/list with the atomic-write procedure and `.tmp` cleanup
   (01 §0, 05 §2.3).

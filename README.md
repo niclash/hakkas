@@ -7,15 +7,18 @@ MCUs. The design lives in [`specifications/`](specifications/00-README.md).
 ## Layout
 
 ```
-CMakeLists.txt        plain CMake project: hakkas_core library, hakkas POSIX runtime, tests
+CMakeLists.txt        plain CMake project: hakkas_core library, POSIX PAL + runtime, tests
 CMakePresets.json     build configurations (also CLion profiles)
 cmake/                source lists, compile options, version header, portability check
 src/<module>/         portable core: graphs, blocktypes, protocol, system, app, drivers, engine (01 §6)
+src/platform/pal.h    the PAL interface (portable)
 src/platform/<port>/  PAL implementations; the only place OS/RTOS headers may appear
 tests/                unit tests (CTest)
 ```
 
-Add new core sources to `HAKKAS_CORE_SOURCES` in `cmake/HakkasSources.cmake`. The
+Add new core sources to `HAKKAS_CORE_SOURCES` in `cmake/HakkasSources.cmake`, and POSIX PAL
+sources to `HAKKAS_POSIX_PAL_SOURCES` (the `hakkas_pal_posix` library, which tests can link
+with `hakkas_add_test(<name> LIBS hakkas_pal_posix)`). The
 `portable_core` test fails if any file outside `src/platform/<port>/` includes a POSIX or Zephyr
 header.
 
