@@ -1,5 +1,15 @@
 cmake_minimum_required(VERSION 3.21)
 
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+  message(FATAL_ERROR
+    "In-source builds are not supported; they scatter build files through the source tree.\n"
+    "Use a preset, which builds into build/<preset>/:\n"
+    "  cmake --preset debug && cmake --build --preset debug\n"
+    "or a separate build directory:\n"
+    "  cmake -B build/debug && cmake --build build/debug\n"
+    "Then remove the CMakeCache.txt and CMakeFiles/ this attempt created.")
+endif()
+
 project(hakkas VERSION 0.1.0 LANGUAGES C)
 
 # A plain CMake project with no RTOS dependency:

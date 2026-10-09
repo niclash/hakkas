@@ -2,6 +2,10 @@
 /build/
 /cmake-build-*/
 
+# Left behind by a refused in-source configure (`cmake .`)
+/CMakeCache.txt
+/CMakeFiles/
+
 # Local, machine-specific CMake presets
 /CMakeUserPresets.json
 

@@ -30,12 +30,26 @@ Needs CMake ≥ 3.25, Ninja, and gcc and/or clang. ccache is used if present.
 | `asan` | Debug with AddressSanitizer + UndefinedBehaviorSanitizer |
 | `release` | RelWithDebInfo |
 
+The shortcuts:
+
 ```sh
-cmake --preset debug && cmake --build --preset debug && ctest --preset debug
+./build-debug.sh              # configure + build into build/debug/
+./run-tests.sh                # build + run every test (args go to ctest, e.g. -R version)
+PRESET=asan ./run-tests.sh    # same, with another preset
+```
+
+The underlying commands:
+
+```sh
+cmake --preset debug          # configure, into build/debug/
+cmake --build --preset debug  # compile
+ctest --preset debug          # run the tests
 ./build/debug/hakkas
 ```
 
-Each preset builds into `build/<preset>/`. Options: `-DHAKKAS_WERROR=ON`,
+Each preset builds into `build/<preset>/`; `rm -rf build` removes every build. Without presets,
+give CMake a build directory: `cmake -B build/debug -G Ninja && cmake --build build/debug`.
+In-source builds (`cmake .`) are refused. Options: `-DHAKKAS_WERROR=ON`,
 `-DHAKKAS_SANITIZERS="address;undefined"`, `-DHAKKAS_BUILD_TESTS=OFF`,
 `-DHAKKAS_BUILD_POSIX_RUNTIME=OFF`.
 
