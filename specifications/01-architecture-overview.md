@@ -150,7 +150,7 @@ Each block is an independent, single-threaded unit of state: its operations (`up
 ### 3.2 The engine loop
 
 Model the whole engine as **one thread with one global FIFO work queue**. Queue entries are typed:
-- **input update** `(target_block, input_port, value)` — produced by `output_set`, by initials, and by severing (§2.2);
+- **input update** `(target_block, input_port, value)` — produced by `output_set`. A value delivered by a structural command (an initial, severing, a new edge — §2.2) is not queued: it updates the target input directly, and only its downstream effects are queued (implementation decisions, §2.2);
 - **timer expiry** `(target_block)` — produced by a block's timer callback;
 - **IO event** `(channel, value)` — produced by the hardware/simulated IO layer (`04-drivers.md`).
 
