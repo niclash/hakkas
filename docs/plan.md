@@ -23,7 +23,7 @@ for a decision.
   `src/platform/posix/`): monotonic ms clock, cryptographic random bytes, storage
   read/write/rename/remove/exists/list with the atomic-write procedure and `.tmp` cleanup
   (01 §0, 05 §2.3).
-- [ ] **4. Work queue** (`src/graphs/`): fixed-capacity ring buffer of typed entries,
+- [x] **4. Work queue** (`src/graphs/`): fixed-capacity ring buffer of typed entries,
   block handles (slot + generation), per-input source generation, drop-oldest with a drop
   counter (01 §3.2). Capacity: fixed, default 1024 entries, overridable per build (decided).
 - [ ] **5. Block type registry + built-in math/process types** (`src/blocktypes/`):

@@ -12,6 +12,7 @@ cmake_path(NORMAL_PATH HAKKAS_SOURCE_ROOT)
 set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c
   ${HAKKAS_SOURCE_ROOT}/system/log.c
 )
 

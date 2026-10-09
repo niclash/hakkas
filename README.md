@@ -54,7 +54,8 @@ Each preset builds into `build/<preset>/`; `rm -rf build` removes every build. W
 give CMake a build directory: `cmake -B build/debug -G Ninja && cmake --build build/debug`.
 In-source builds (`cmake .`) are refused. Options: `-DHAKKAS_WERROR=ON`,
 `-DHAKKAS_SANITIZERS="address;undefined"`, `-DHAKKAS_BUILD_TESTS=OFF`,
-`-DHAKKAS_BUILD_POSIX_RUNTIME=OFF`.
+`-DHAKKAS_BUILD_POSIX_RUNTIME=OFF`, `-DHAKKAS_QUEUE_CAPACITY=<entries>` (work queue size,
+default 1024).
 
 ## Using the core from another project
 

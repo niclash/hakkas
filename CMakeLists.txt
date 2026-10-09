@@ -52,6 +52,14 @@ target_compile_features(hakkas_core PUBLIC c_std_17)
 set_target_properties(hakkas_core PROPERTIES C_EXTENSIONS OFF)
 target_link_libraries(hakkas_core PRIVATE hakkas_compile_options)
 
+# Work queue capacity in entries (01 §3.2 item 9). Public: the capacity sizes
+# the WorkQueue struct, so every user of the core must see the same value.
+set(HAKKAS_QUEUE_CAPACITY 1024 CACHE STRING "Work queue capacity in entries (01 §3.2)")
+if(NOT HAKKAS_QUEUE_CAPACITY MATCHES "^[1-9][0-9]*$")
+  message(FATAL_ERROR "HAKKAS_QUEUE_CAPACITY must be a positive integer, got '${HAKKAS_QUEUE_CAPACITY}'")
+endif()
+target_compile_definitions(hakkas_core PUBLIC HAKKAS_QUEUE_CAPACITY=${HAKKAS_QUEUE_CAPACITY})
+
 # The POSIX PAL, a library so that tests can link it too.
 if(HAKKAS_BUILD_POSIX_RUNTIME OR HAKKAS_BUILD_TESTS)
   add_library(hakkas_pal_posix STATIC ${HAKKAS_POSIX_PAL_SOURCES})
