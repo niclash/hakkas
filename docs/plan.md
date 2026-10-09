@@ -54,18 +54,32 @@ for a decision.
 
 ## Phase 3 — Network and protocol
 
-- [ ] **12. PAL sockets + event loop** (POSIX `poll`): the single loop of 01 §3.2.1 —
+- [x] **12. PAL sockets + event loop** (POSIX `poll`): the single loop of 01 §3.2.1 —
   sockets, firing due timers (`runtime_fire_timers`, poll timeout from
-  `runtime_timer_timeout_ms`), queue drain.
-- [ ] **13. HTTP static server** (05 §3): GET only, SPA fallback, `.gz` variants.
+  `runtime_timer_timeout_ms`), queue drain. Done: PAL sockets, `pal_poll`, the cross-context
+  handoff (`pal_handoff_push`) and stop request (01 §0.2); the portable loop
+  `src/engine/loop.h` with pluggable listeners/connections, bounded outgoing buffers and tick
+  hooks for other deadlines (01 §3.2.1); POSIX `SIGINT`/`SIGTERM` handlers
+  (`platform/posix/signals.h`).
+- [ ] **13. HTTP static server** (05 §3): GET only, SPA fallback, `.gz` variants. Build it on
+  the loop (`engine/loop.h`): `loop_listen` with an `on_accept` that sets a `LoopConnHandler`;
+  stream files through `on_drained`/`loop_conn_space`, pause reading with
+  `loop_conn_pause_read` while a response is pending, `loop_conn_close` after the response;
+  choose the listener's `out_cap` and a request-header limit, and an idle timeout via a tick
+  hook (`loop_add_tick`) if one is wanted.
 - [ ] **14. WebSocket layer** (RFC 6455): upgrade, Origin check, connection and frame-size
-  limits (02 §0).
+  limits (02 §0). On the loop: `max_connections` is counted with `loop_listener_conn_count`
+  (refuse the upgrade with 503 above it; set the listener's hard `max_conns` somewhat higher
+  so the 503 can be sent); choose `out_cap` (a full outgoing buffer closes the connection,
+  01 §3.2.1).
 - [ ] **15. Crypto primitives**: SHA-256, HMAC-SHA256, PBKDF2, base64/base64url, constant-time
   compare, via mbedTLS (decided, 01 §6).
 - [ ] **16. Authorization**: users file, SCRAM handshake, sessions, roles/capabilities, rate
   limiting, `hakkas user add|passwd|del|list` (02 §2). The CLI (task 11, `platform/posix/cli.c`)
   parses `user <add|passwd|del|list>` and refuses it as "not implemented yet": implement the
   subcommands and their arguments here. The users file path is `Config.auth.users_file`.
+  Session expiry and login back-off are deadlines: run them from a tick hook
+  (`loop_add_tick`, 01 §3.2.1); rate limiting keys on `loop_conn_peer(conn)->addr`.
 - [ ] **17. Protocol dispatcher**: envelope validation, error format, secret gating,
   capability checks, `environment`/`runtime`/`component`/`trace` (02 §1, §3.1–§3.2, §3.5–§3.6).
 - [ ] **18. `graph:*` and `network:*` commands**: every command and broadcast of 02 §3.3–§3.4,
@@ -74,6 +88,10 @@ for a decision.
   parses `run process|daemon` and its options and applies them to the `Config` (`cli_config`),
   then refuses with "not implemented yet" (`cli_execute`): complete `run` here, including
   `config_generate_engine_id` and `config_ensure_server_secret` (05 §1.1) after the overrides.
+  Loop wiring (05 §1.4 steps 2, 8, 9): `loop_init` over the runtime before the IO provider
+  starts, `posix_stop_signals_install`, `loop_listen` on `cfg.host` for `port` and `port + 1`
+  (a failure refuses startup), `loop_run`, then `loop_deinit` and
+  `posix_stop_signals_restore`.
 - [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
 
@@ -82,7 +100,8 @@ for a decision.
 - [ ] **21. Composite block types — runtime + `types/` persistence** (03 §5–§5.1). The
   `graph:*group` wire commands are blocked (open question 4).
 - [ ] **22. Simulated IO provider + `io/*` blocks + binding table** — **blocked** (open
-  questions 3, 6).
+  questions 3, 6). IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
+  `WORK_IO_EVENT` in `runtime_drain`.
 - [ ] **23. `process/PID`** — **blocked** (open question 5).
 - [ ] **24. Schedule blocks** — **blocked** (open questions 5, 11).
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3.

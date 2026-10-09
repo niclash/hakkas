@@ -160,6 +160,11 @@ void work_queue_push_input(WorkQueue *q, BlockHandle block, uint32_t input, uint
 void work_queue_push_timer(WorkQueue *q, BlockHandle block, uint32_t timer_gen);
 void work_queue_push_io(WorkQueue *q, IoChannelId channel, Linkable value);
 
+/* Append *e (any type but WORK_NONE, which is ignored), taking ownership of
+ * its value; *e is left empty. Used for entries handed over from another
+ * context (pal_handoff_take, engine/loop.h). Overflow as above. */
+void work_queue_push_entry(WorkQueue *q, WorkEntry *e);
+
 /* Move the oldest entry into *out, which must not hold a value, and return
  * true; the caller now owns it. On an empty queue, return false and set *out
  * to an empty WORK_NONE entry. */

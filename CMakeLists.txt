@@ -77,7 +77,10 @@ target_compile_definitions(hakkas_core PUBLIC HAKKAS_QUEUE_CAPACITY=${HAKKAS_QUE
 # The POSIX PAL, a library so that tests can link it too.
 if(HAKKAS_BUILD_POSIX_RUNTIME OR HAKKAS_BUILD_TESTS)
   add_library(hakkas_pal_posix STATIC ${HAKKAS_POSIX_PAL_SOURCES})
-  target_link_libraries(hakkas_pal_posix PUBLIC hakkas_core PRIVATE hakkas_compile_options)
+  # The handoff's lock (01 §0.2) is the PAL's only use of threads.
+  find_package(Threads REQUIRED)
+  target_link_libraries(hakkas_pal_posix PUBLIC hakkas_core Threads::Threads
+    PRIVATE hakkas_compile_options)
   # The POSIX PAL targets Linux (getrandom, 01 §0), so it may use GNU
   # extensions; the definition stays private to the PAL sources.
   target_compile_definitions(hakkas_pal_posix PRIVATE _GNU_SOURCE)
@@ -91,8 +94,8 @@ endif()
 
 if(HAKKAS_BUILD_POSIX_RUNTIME)
   add_executable(hakkas ${HAKKAS_POSIX_RUNTIME_SOURCES})
-  # The core calls the PAL (app/, system/config_file.c) and the PAL calls the
-  # core (logging). Naming hakkas_core right after the command line puts it
+  # The core calls the PAL (app/, system/config_file.c, engine/loop.c) and
+  # the PAL calls the core (logging, the work queue's entries). Naming hakkas_core right after the command line puts it
   # before the PAL on the link line, and CMake adds it again after the PAL.
   target_link_libraries(hakkas PRIVATE hakkas_cli_posix hakkas_core hakkas_compile_options)
 endif()

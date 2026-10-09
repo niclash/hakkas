@@ -17,6 +17,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c
+  ${HAKKAS_SOURCE_ROOT}/engine/loop.c
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
   ${HAKKAS_SOURCE_ROOT}/graphs/block.c
   ${HAKKAS_SOURCE_ROOT}/graphs/deadlines.c
@@ -61,7 +62,10 @@ set(HAKKAS_THIRD_PARTY_DEFINITIONS
 set(HAKKAS_POSIX_PAL_SOURCES
   ${HAKKAS_SOURCE_ROOT}/platform/posix/log_stderr.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/pal.c
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/signals.c
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/socket.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/storage.c
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/wakeup.c
 )
 
 # The POSIX command line (05 §1.2): the hakkas_cli_posix library, linked by

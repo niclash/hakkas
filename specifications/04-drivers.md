@@ -9,7 +9,7 @@ Hardware bring-up itself — devicetree authorship, board support, peripheral dr
 The engine sees IO only through the PAL's **IO-provider interface** (`01-architecture-overview.md` §0), which deals in **channels**: each channel has a stable id, a kind (digital/analog, input/output), and for analog channels a `Metric` category/unit. The interface:
 - `io_enumerate()` — list the channels available this boot;
 - `io_write(channel, value)` — hand a new value to an output channel (non-blocking; the provider does the actual hardware access on its own context);
-- event delivery — the provider pushes `(channel, value)` **IO events** into the engine's queue via the PAL's cross-context enqueue function (`01-architecture-overview.md` §3.2) whenever an input channel's value changes.
+- event delivery — the provider pushes `(channel, value)` **IO events** into the engine's queue via the PAL's cross-context enqueue function (`pal_handoff_push`, `01-architecture-overview.md` §0.2, §3.2) whenever an input channel's value changes. The handoff is bounded and drops its oldest entry when full, so a provider that produces faster than the engine drains loses the oldest readings, never blocks.
 
 Two providers implement it:
 - **Zephyr IO provider** (`platform/zephyr/`): the boot-time discovery, descriptor-driven driver, and polling described in §1–§3.

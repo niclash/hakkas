@@ -100,6 +100,15 @@ void work_queue_push_io(WorkQueue *q, IoChannelId channel, Linkable value)
 	e->as.io.value = value;
 }
 
+void work_queue_push_entry(WorkQueue *q, WorkEntry *e)
+{
+	if (e->type == WORK_NONE)
+		return;
+	WorkEntry *slot = push_slot(q);
+	*slot = *e; /* a move */
+	memset(e, 0, sizeof(*e));
+}
+
 bool work_queue_report_drops(WorkQueue *q, uint64_t now_ms)
 {
 	if (q->drops == q->drops_reported)
