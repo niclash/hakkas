@@ -14,7 +14,10 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/block.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/graph.c
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/runtime.c
   ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c
   ${HAKKAS_SOURCE_ROOT}/system/log.c
 )

@@ -258,6 +258,8 @@ There is no error behavior *in the dataflow* (`01-architecture-overview.md` §2.
 | `new_graph` with an `id` that already exists | `"Graph exists: <id>"` |
 | graph or node id that is empty or longer than 64 bytes | `"Invalid id"` |
 
+Order and edge cases (decided, plan task 6): every node id in the command is checked first (`Invalid id`), then each endpoint in turn, source before target, node before port; the first failure is reported. An `addinitial` whose `tgt` names an output is `"Invalid edge direction"` (the literal's target is not an input). A `removeedge`/`removeinitial` naming a port that exists but has the wrong direction is `"No such connection"` (no such connection can exist); a name that is no port of the node is `"Unknown port"`. `renamenode` to the node's own name is `"Node exists"`.
+
 #### 3.4.2 Groups — user-defined block types
 
 > **Provisional.** No frontend implementation exists yet and the exact mechanism isn't settled (`00-README.md`, open question 4). The commands below reuse the standard FBP group commands with the meaning this system gives a group: a **reusable user-defined block type** built from a selection of blocks (`03-block-types.md` §5).

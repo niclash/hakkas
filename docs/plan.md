@@ -29,7 +29,7 @@ for a decision.
 - [x] **5. Block type registry + built-in math/process types** (`src/blocktypes/`):
   `BlockTypeDef`, registry lookup, every stateless type in 03 §3 table (not `timing/`, not
   `io/`), with compute-function unit tests.
-- [ ] **6. Generic block runtime + Graph model** (`src/graphs/`): blocks, inputs/outputs,
+- [x] **6. Generic block runtime + Graph model** (`src/graphs/`): blocks, inputs/outputs,
   links, initials, no fan-in, severing, change threshold resolution, start/stop/destroy,
   `output_set`, the drain loop, "block.port" parsing (01 §2.2–§3.3, 03 §2).
 - [ ] **7. Graphs registry + event notification** (`src/graphs/`): graph create/delete/

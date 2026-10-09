@@ -90,6 +90,14 @@ Engine
 - **`Output`**: holds `value`, `last_propagated` (the value most recently pushed downstream, used by the change threshold, §3.3), and a list of links — each a `(destination_block, destination_input_name)` pair. An output may fan out to any number of inputs. Setting an output's value (`output_set`, §3.2) is **the single propagation primitive the entire dataflow engine is built on.** A newly connected link immediately receives the output's current `last_propagated` value — wiring a connection delivers the signal already present on it.
 - **`Port`** (inport/outport): a graph-level named port mapped to one inner block's input/output. Its purpose is to define the external interface the graph has when it is used as a group/composite block type (`03-block-types.md` §5). In a top-level graph that isn't used as a composite, inports/outports have no dataflow effect — they are metadata. The full mechanism is not yet settled (`00-README.md`, open question 4).
 
+**Implementation decisions** (plan task 6, `src/graphs/runtime.h`, `src/graphs/graph.h`):
+- **Runtime context**: one `Runtime` holds the engine-wide pieces — the work queue (§3.2), the block slot table that resolves block handles, the engine-wide default change threshold (§3.3) and the current engine time handed to `compute`. It never reads a clock: the engine loop sets the time (from `pal_uptime_ms()`) before draining, so tests control time.
+- **Memory**: the work queue is a fixed array (§3.2 item 9). Blocks, graphs, names, value arrays, link lists and state blobs are heap-allocated, sized exactly when a block is created or a link added; nothing is allocated while values propagate, except strings (§2.1). The slot table is one heap array that grows by doubling and reuses freed slots. An allocation failure refuses the operation that needed it, with no change.
+- **Blocks** keep creation order in their graph (the order `graph:connect` snapshots and start use). An input's source is none, one edge or one initial, with its source generation (§3.2); an output holds its links in connection order. Before a block's first start, an output's `last_propagated` is its port default. Node metadata holds `x`/`y` (default 50) and the optional `change_threshold` override; other metadata keys, opaque edge metadata (kept on the destination input, which has at most one edge) and placeholder blocks (`05-app-lifecycle-persistence.md` §2.2, a block with no type, hence no ports and no compute) arrive with graph-file loading (plan task 10).
+- **Value delivery by a structural operation** — an initial added or replaced, a severed input reverting to its default, a new edge delivering `last_propagated` — goes straight through the target block's `update` (§3.1: an operation on that block, not a call from another block), exactly the code the drain loop runs for a queued input update: store, live-value subscriptions, compute step if started. The input therefore never shows a stale value once the operation returns, a severed input's revert cannot be lost to queue overflow, and only the downstream effects are queued. Values from an upstream output always travel through the queue (§3.2).
+- **Change reporting**: every applied structural change (block added/removed/renamed/changed, edge added/removed, initial added/removed) is reported to one runtime-wide observer, which the `Graphs` registry (plan task 7) fans out (§4); each report follows its structural change and precedes the value delivery it causes. Removing a block reports every removed edge and initial (its inputs in port order, then its outputs' links in port and connection order) and then the block (`02-wire-protocol.md` §1.1). Start and stop are not reported by the graph; `Graphs` emits `network:started`/`stopped`. Destroying a whole graph reports nothing.
+- **Watches**: an input's live-value subscriptions are callbacks registered on the input; one fires immediately with the current value when registered, then after every update, and is detached (with a notification) when its block is removed.
+
 ### 2.3 One generic block runtime, not one implementation per block type
 
 Almost all of a block type's logic is identical event-handling plumbing — react to an input changing, recompute, propagate the output. The only real per-type difference is *which function* does the computing. The engine should reflect that directly: implement the entire `Block` contract **once**, as shared generic code, driven by a per-block-type data record:
@@ -166,6 +174,10 @@ Implementation decisions (`src/graphs/work_queue.h`):
 - **Overflow warning**: the queue only counts drops. The engine loop calls a report function once per iteration with the current uptime; it logs one `warn` line with the number of drops since the previous warning and the total, at most once per 10 s (`WORK_QUEUE_DROP_REPORT_INTERVAL_MS`). The first drops after a quiet period are reported at once.
 - **Cross-context handoff**: queue operations are engine-thread only and unlocked. Timer callbacks and IO workers hand their entries to the PAL's cross-context enqueue (§0), which the engine thread moves into this queue.
 
+Drain loop decisions (plan task 6, `src/graphs/runtime.h`):
+- **Step budget**: one drain call handles at most a given number of entries (entries pushed during the call included) and returns; the engine loop drains again on its next iteration. So item 2's "until the queue is empty" holds across loop iterations, and a feedback cycle (item 4) cannot stop the loop from servicing sockets and timers (§3.2.1). The budget value is the engine loop's choice (plan task 12).
+- **Dispatch**: an input update whose block handle or source generation is stale is discarded; otherwise it runs the block's `update`. Timer expiries are dispatched from plan task 8 (timers) and IO events from plan task 22; until then nothing produces them and they are discarded.
+
 ### 3.2.1 Running this on each PAL target
 
 The loop shape is identical on both build trees; only the primitives backing it differ:
@@ -187,6 +199,13 @@ The threshold is resolved in this order, first match wins:
 3. the **engine-wide** default from the configuration file (`change_threshold`, initial default `0.05` — `05-app-lifecycle-persistence.md` §1).
 
 A threshold of `0` propagates every distinct value. The threshold is absolute; whether relative thresholds or per-output overrides are needed is open (`00-README.md`, open question 7).
+
+Decisions (plan task 6):
+- **Equal values never propagate**, whatever the threshold: a number changes when it is not equal to `last_propagated` (so `0` and `-0` are equal) **and** `|new − last_propagated| >= threshold`; at exactly the threshold it propagates. An `i64` distance is computed without overflow. Infinities follow IEEE-754 (`+Infinity` to `+Infinity` is no change).
+- **"Any change of value type"** is any change of the `Linkable` tag, including `i64` ↔ `f64` and a plain number ↔ `Metric`, even when the magnitudes are equal. Strings compare by content; unset → unset is no change.
+- **Valid thresholds** are `>= 0`, `+Infinity` included (numbers then propagate only on start, a NaN transition or a type change). NaN or a negative value is refused, both for the engine-wide setting and for an instance override; an instance override of NaN internally means "none".
+- **"The very first value after `start`"** is the unconditional push of `start` (§2.2): a block computes and propagates only while started, so `start` always produces the first value.
+- A changed threshold applies from the next `output_set`; nothing is re-propagated.
 
 ### 3.4 Time
 

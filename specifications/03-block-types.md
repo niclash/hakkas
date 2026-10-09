@@ -26,6 +26,12 @@ Port descriptors carry `name`, `description`, `type` (`"bool"`/`"number"`/`"stri
 
 The engine delivers this as true queued message-passing, not nested/recursive calls (`01-architecture-overview.md` §3.2): when a block computes a new output, push `(downstream_block, downstream_port, value)` onto the global queue and drain it breadth-first, rather than recursing immediately into the downstream block's `update`. Cycles in the graph never deadlock under this model — they simply keep enqueuing work.
 
+Decisions (plan task 6), refining the table above:
+- `destroy()` runs the `stop()` step only if the block is started (a block in a stopped graph was already stopped and gets no second `STOP`), then removes every link into and out of the block, initials included; each downstream input reverts to its port default.
+- `connect` delivers `last_propagated` only in a started graph, where every output has been pushed by `start`, so the delivered value is always one that was actually propagated. In a stopped graph the input keeps its value (its default, since it had no source) until the graph starts and the upstream block pushes.
+- A value delivered by a structural operation (initial, severing, `connect`) runs the target's `update` at once, the same code as a queued input update (`01-architecture-overview.md` §2.2, implementation decisions); in a stopped graph `update` only stores the value and fires the live-value subscriptions.
+- A port descriptor without a default (unset) uses `default_value(type)` (§1).
+
 ## 3. Built-in block types
 
 Unless noted, the following are stateless, event-driven blocks (`compute_on_input = true`, `TIMER_NONE`), with ports named `in1..inN → out` and every port of type `"number"` with default `0`. The comparison blocks' `out` port is of type `"bool"`. Every type uses the engine-wide change threshold unless a type default is listed here.
