@@ -99,7 +99,7 @@ Implementation decisions (plan task 10, `src/app/graph_files.h`):
 
 ### 2.2 Loading rules
 
-- Each block's `component` is resolved against the block type registry. An unresolvable type name produces a **placeholder block**: it logs a warning, has no ports, and takes part in no dataflow. It keeps its original `component` name, metadata, and every connection that referenced it, and writes them back unchanged on save, so loading a graph on a system that lacks a type never destroys data.
+- Each block's `component` is resolved against the block type registry. An unresolvable type name produces a **placeholder block**: it logs a warning, has no ports, and takes part in no dataflow. It keeps its original `component` name, metadata, and every connection that referenced it, and writes them back unchanged on save, so loading a graph on a system that lacks a type never destroys data. The one exception is an explicit user edit: a live edge or initial wired to an input that a retained connection feeds, or a live graph port taking a retained port's name, replaces the retained entry (`01-architecture-overview.md` §2.2), since the model never holds a fan-in.
 - A connection that violates the graph's invariants (unknown node or port, fan-in) is logged and skipped, exactly as the equivalent wire command would be refused (`02-wire-protocol.md` §3.4.1).
 - Initials are applied as their connections are loaded; the graph starts (if `started`) only after the whole file is loaded.
 
