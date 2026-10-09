@@ -27,6 +27,10 @@ CMake is the canonical build system. The repository is a plain CMake project wit
 - `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` (also `clang`, `asan`, `release`)
 - New core sources go in `HAKKAS_CORE_SOURCES` (`cmake/HakkasSources.cmake`). Platform code lives only under `src/platform/<port>/`. The `portable_core` CTest enforces the header rule above.
 
+## Git workflow
+
+There is one developer. For now, commit directly on `main`; don't create feature branches.
+
 ## Terminology
 
 "Graph" and "process" mean the same thing. "Group" and "composite block type" mean the same thing (`00-README.md`, Terminology).
