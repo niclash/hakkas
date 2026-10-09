@@ -1,0 +1,18 @@
+# Linux kernel style with 100 columns (as used by Zephyr).
+BasedOnStyle: LLVM
+IndentWidth: 8
+TabWidth: 8
+UseTab: ForContinuationAndIndentation
+ColumnLimit: 100
+BreakBeforeBraces: Linux
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlignConsecutiveMacros: AcrossComments
+AlignEscapedNewlines: Right
+IndentCaseLabels: false
+SpaceBeforeParens: ControlStatementsExceptControlMacros
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive

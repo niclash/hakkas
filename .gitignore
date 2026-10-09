@@ -1,0 +1,12 @@
+# Build trees (CMake presets build into build/<preset>; CLion's default is cmake-build-*)
+/build/
+/cmake-build-*/
+
+# Local, machine-specific CMake presets
+/CMakeUserPresets.json
+
+# IDE / tooling state
+/.idea/
+/.vscode/
+/.cache/
+/compile_commands.json
