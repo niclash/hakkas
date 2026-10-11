@@ -150,7 +150,9 @@ typedef struct {
 } RateEntry;
 
 struct Auth {
-	const UserStore *users;
+	UserStore *users; /* borrowed; re-read into at every challenge */
+	auth_users_fn load_users;
+	void *load_users_ctx;
 	char server_secret[CONFIG_SECRET_MAX + 1];
 	size_t server_secret_len;
 	uint64_t idle_ms;
@@ -344,6 +346,34 @@ static bool cnonce_valid(const char *cnonce)
 	       n <= AUTH_CNONCE_MAX;
 }
 
+/* Re-reads the users file, if there is a loader (02 §2.2; decided, plan
+ * task 18): a missing, empty or malformed file is no users (as at startup);
+ * an unreadable one keeps the users of the previous read. */
+static void reload_users(Auth *a)
+{
+	if (a->load_users == NULL)
+		return;
+	UserStore *fresh = malloc(sizeof(*fresh));
+	if (fresh == NULL) {
+		log_warn("authorization: out of memory re-reading the users file: keeping the "
+			 "previous users");
+		return;
+	}
+	enum users_status st = a->load_users(a->load_users_ctx, fresh);
+	if (st == USERS_OK || st == USERS_ERR_NOT_FOUND || st == USERS_ERR_MALFORMED) {
+		if (st == USERS_ERR_MALFORMED)
+			log_warn("authorization: the users file is malformed: every login is "
+				 "refused until it is repaired");
+		memcpy(a->users, fresh, sizeof(*a->users));
+	} else {
+		log_warn("authorization: the users file could not be read (%s): keeping the "
+			 "previous users",
+			 users_status_str(st));
+	}
+	crypto_zeroize(fresh, sizeof(*fresh));
+	free(fresh);
+}
+
 /* Make the challenge for user (valid) and cnonce (valid) on c at now: c is
  * CHALLENGED and *out its reply. False (logged; c unchanged) if the random
  * source or a hash fails. */
@@ -359,6 +389,7 @@ static bool make_challenge(Auth *a, AuthConn *c, const char *user, const char *c
 	crypto_base64_encode(rnd, sizeof(rnd), rnd64, sizeof(rnd64));
 	crypto_zeroize(rnd, sizeof(rnd));
 
+	reload_users(a);
 	AuthChallenge ch;
 	const UserRecord *r = users_find(a->users, user);
 	if (r != NULL) {
@@ -693,6 +724,8 @@ bool auth_create(const AuthConfig *cfg, Auth **out)
 		return false;
 	}
 	a->users = cfg->users;
+	a->load_users = cfg->load_users;
+	a->load_users_ctx = cfg->load_users_ctx;
 	memcpy(a->server_secret, cfg->server_secret, secret_len);
 	a->server_secret_len = secret_len;
 	a->idle_ms = (uint64_t)cfg->idle_timeout_s * 1000u;

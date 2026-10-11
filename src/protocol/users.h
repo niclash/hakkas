@@ -171,6 +171,10 @@ enum users_status users_load(UserStore *s, const char *path);
  * status. */
 enum users_status users_load_startup(UserStore *s, const char *path);
 
+/* users_load(s, path) as the authorizer's loader (AuthConfig.load_users,
+ * protocol/auth.h, plan task 18): path is the users file's path. */
+enum users_status users_loader(void *path, UserStore *s);
+
 /* Writes s to path (users_serialize), atomically (pal_storage_write, 05
  * §2.3; mode 0600 on POSIX). USERS_ERR_STORAGE (logged),
  * USERS_ERR_NO_MEMORY. */

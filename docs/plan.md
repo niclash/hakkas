@@ -125,7 +125,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   terminal, one line otherwise) and the `user` subcommands in `platform/posix/cli.c`
   (`cli_main`/`cli_execute` now take the input stream). Decisions: 02 §2.2–§2.5 (strict file
   format, names without control characters, a malformed file → no users but the engine
-  starts, the file read at startup only, challenge and login rules, what counts as a failure,
+  starts, the file read at startup only — changed by task 18: re-read at every challenge —, challenge and login rules, what counts as a failure,
   close code 1008 after 3 failures, back-off counted from the last failure and the deferred
   challenge, the interface's extra operations, log lines), 05 §1.2 (commands, password
   input), 05 §1.4 step 3.
@@ -174,7 +174,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   <name>"`, when `"graph"` is set, out of memory closes with 1011, bursts deferred to
   `on_drained` or `"Reply too large"`), 02 §2.5 (dispatcher), §3.2, §3.5, §3.6, §4.1
   (subscription from login, unscoped), 05 §4 (mirroring).
-- [ ] **18. `graph:*` and `network:*` commands**: every command and broadcast of 02 §3.3–§3.4,
+- [x] **18. `graph:*` and `network:*` commands**: every command and broadcast of 02 §3.3–§3.4,
   `graph:connect` snapshot, scoping, `network:edges` live values (02 §4).
   The snapshot must fit the connection's free outgoing space (`ws_send_space`; `WS_OUT_CAP`,
   64 KiB by default, smaller on the MCU, 02 §0 "Outgoing buffer"): if it does not, wait for
@@ -196,6 +196,17 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   bursts). `graph:list`/`network:getstatus` are `graphs_status_all`/`graphs_status`.
   `network:edges` subscriptions must end on logout and expiry too (`cmd_logout`,
   `on_expired`) and on close (`protocol_conn_close`).
+  Done: every `graph:*` command of 02 §3.4 and `network:*` command of 02 §3.3 in
+  `src/protocol/dispatcher.c` (the group commands of 02 §3.4.2 still answer the generic error,
+  open question 4), every graph event in `proto_msg_event` plus the snapshot and
+  `network:data` builders in `src/protocol/messages.h` (`proto_msg_graph_clear`, `_addnode`,
+  `_addedge`, `_addinitial`, `_addport`, `_data`), the `graph:connect` snapshot as a burst with
+  `PENDING_CONNECT` (re-scope at the instant the snapshot is sent; `"Graph too large to send:
+  <id>"` when it never fits), `network:edges` as `InputWatch`es per connection (coalesced under
+  back-pressure, `PENDING_DATA`), and the users file re-read at every challenge
+  (`AuthConfig.load_users`, `users_loader`, read into the borrowed store, now non-const).
+  Decisions: 02 §1.1 (getstatus wording), §1.2, §2.2 ("When it is read"), §3.3, §3.4 (request
+  handling, `changeedge` metadata `{}`), §4.1, §4.1.1, §4.2; 05 §1.2, §1.4 step 3.
 - [ ] **19. Engine startup + `run`**: the startup sequence of 05 §1.4 wired end to end. Task 11
   parses `run process|daemon` and its options and applies them to the `Config` (`cli_config`),
   then refuses with "not implemented yet" (`cli_execute`): complete `run` here, including
@@ -214,7 +225,9 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `users_load_startup(&store, cfg.auth.users_file)` (it never refuses startup; `store` a static
   `UserStore`) and `auth_create` with `{&store, cfg.auth.server_secret,
   cfg.auth.idle_timeout_s, cfg.auth.max_lifetime_s, clock = a two-line wrapper over
-  loop_now_ms, random_bytes = pal_random_bytes}` (a failure refuses startup), then
+  loop_now_ms, random_bytes = pal_random_bytes, load_users = users_loader, load_users_ctx =
+  cfg.auth.users_file}` (task 18: the users file is re-read at every challenge, into `store`; a
+  failure refuses startup), then
   `loop_add_tick(&loop, auth_tick, auth)`; hand `auth_authorizer(auth)` to the protocol layer;
   after `loop_run`: `ws_server_close`, `loop_remove_tick`, `auth_destroy`. A `--users <file>`
   override already lands in `cfg.auth.users_file`.
@@ -226,6 +239,14 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `protocol_destroy(proto)`, then `loop_remove_tick`/`auth_destroy`.
 - [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
+  From task 18: `tests/test_dispatcher.c` covers every command in-process with the fake
+  transport (exact payloads, two editors and a viewer, refusals, scoping, snapshot order,
+  placeholders, too-large and deferred snapshots, initial encoding, `network:edges`, the users
+  file reload); the end-to-end tests should add what only a real socket shows: the snapshot
+  against the real `ws_send_space` with `WS_OUT_CAP` (a graph just under and just over the
+  buffer: `"Graph too large to send: <id>"`, connection open), the deferred snapshot after a
+  burst that filled the buffer (`on_drained`), `network:data` coalescing while the client does
+  not read, and a users-file edit while the engine runs (next login).
 
 ## Phase 4 — Provisional / blocked areas
 

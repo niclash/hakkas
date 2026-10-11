@@ -78,6 +78,8 @@
  *    the connection to UNAUTHENTICATED and calls on_expired, so the protocol
  *    layer sends environment:logout and stops delivering events. A logout
  *    (revoke_secret) or close ends it at once, without on_expired.
+ *  - The users file (plan task 18): re-read through load_users at every
+ *    challenge made (also a delayed one, when it is made); see AuthConfig.
  *  - Logging (02 §2.5 item 8): a login's success (info) or failure (warn)
  *    with the user name and source address only; a session's end (info),
  *    a closing connection and a back-off (info). Never a secret, proof,
@@ -282,10 +284,27 @@ typedef struct Auth Auth;
 /* The engine time in ms (e.g. loop_now_ms of the engine loop). */
 typedef uint64_t (*auth_clock_fn)(void *ctx);
 
+/* Reads the users file into *out (users_loader, protocol/users.h, with the
+ * file's path as ctx; a fake in tests), as users_load: USERS_OK,
+ * USERS_ERR_NOT_FOUND and USERS_ERR_MALFORMED leave *out the users to use
+ * (empty for the two failures); any other status means the file could not
+ * be read. */
+typedef enum users_status (*auth_users_fn)(void *ctx, UserStore *out);
+
 typedef struct {
-	/* The users (borrowed; must outlive the Auth). An empty store refuses
-	 * every login (02 §2.2). */
-	const UserStore *users;
+	/* The users (borrowed; must outlive the Auth): users_load_startup's
+	 * store, which load_users re-reads into. An empty store refuses every
+	 * login (02 §2.2). */
+	UserStore *users;
+	/* Re-reads the users file whenever a challenge is made (02 §2.2;
+	 * decided, plan task 18), so a user added, removed or given a new
+	 * password takes effect at the next login; sessions already open are
+	 * not affected. A missing, empty or malformed file means no users (as
+	 * at startup, 05 §1.4 step 3); a file that cannot be read (a storage
+	 * error, out of memory) keeps the users of the previous read, with a
+	 * warning. NULL: the users are never re-read. */
+	auth_users_fn load_users;
+	void *load_users_ctx;
 	/* auth.server_secret (05 §1.1), at least CONFIG_SECRET_MIN (16)
 	 * bytes: the HMAC key is the string's bytes as stored (copied). */
 	const char *server_secret;

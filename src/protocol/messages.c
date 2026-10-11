@@ -264,6 +264,193 @@ static char *graph_stopped(const Graph *g, const GraphEvent *ev)
 	return finish("network", "stopped", p, ok);
 }
 
+/* ---- graph:* messages (02 §3.4, §4.1.1) ------------------------------------------- */
+
+/* {"node","port"}, or NULL if memory runs out. */
+static cJSON *endpoint(const char *node, const char *port)
+{
+	cJSON *e = cJSON_CreateObject();
+	if (e == NULL || !add_str(e, "node", node) || !add_str(e, "port", port)) {
+		cJSON_Delete(e);
+		return NULL;
+	}
+	return e;
+}
+
+static const char *input_name(const Block *b, uint32_t input)
+{
+	return block_input_port(b, input)->name;
+}
+
+static const char *output_name(const Block *b, uint32_t output)
+{
+	return block_output_port(b, output)->name;
+}
+
+/* v's text form (linkable_stringify) in small, or in a heap string for a
+ * longer one (*heap, to free). NULL if memory runs out. */
+static const char *stringified(const Linkable *v, char small[LINKABLE_NUMBER_TEXT_MAX],
+			       char **heap)
+{
+	*heap = NULL;
+	size_t len = linkable_stringify(v, small, LINKABLE_NUMBER_TEXT_MAX);
+	if (len < LINKABLE_NUMBER_TEXT_MAX)
+		return small;
+	*heap = malloc(len + 1);
+	if (*heap != NULL)
+		linkable_stringify(v, *heap, len + 1);
+	return *heap;
+}
+
+/* Add v stringified under key (02 §3.4, §3.3: values go out as strings). */
+static bool add_value(cJSON *obj, const char *key, const Linkable *v)
+{
+	char small[LINKABLE_NUMBER_TEXT_MAX], *heap;
+	const char *text = stringified(v, small, &heap);
+	bool ok = text != NULL && add_str(obj, key, text);
+	free(heap);
+	return ok;
+}
+
+/* {"data":"<v stringified>"}, or NULL. */
+static cJSON *data_object(const Linkable *v)
+{
+	cJSON *d = cJSON_CreateObject();
+	if (d == NULL || !add_value(d, "data", v)) {
+		cJSON_Delete(d);
+		return NULL;
+	}
+	return d;
+}
+
+char *proto_msg_graph_clear(const Graph *g)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "id", g->id) && add_str(p, "name", g->name) &&
+		  add_bool(p, "main", true) && add_str(p, "description", g->description) &&
+		  add_str(p, "icon", g->icon);
+	return finish("graph", "clear", p, ok);
+}
+
+char *proto_msg_addnode(const Graph *g, const Block *b)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", g->id) &&
+		  add_str(p, "component", block_component(b)) && add_str(p, "id", b->name) &&
+		  add(p, "metadata", graph_json_from_metadata(&b->metadata));
+	return finish("graph", "addnode", p, ok);
+}
+
+char *proto_msg_addedge(const Graph *g, const Block *src, uint32_t output, const Block *tgt,
+			uint32_t input)
+{
+	const char *md = tgt->inputs[input].edge_metadata;
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", g->id) &&
+		  add(p, "src", endpoint(src->name, output_name(src, output))) &&
+		  add(p, "tgt", endpoint(tgt->name, input_name(tgt, input)));
+	if (ok && md != NULL)
+		ok = add(p, "metadata", graph_json_from_edge_metadata(md));
+	return finish("graph", "addedge", p, ok);
+}
+
+char *proto_msg_addinitial(const Graph *g, const Block *b, uint32_t input, const Linkable *v)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", g->id) && add(p, "src", data_object(v)) &&
+		  add(p, "tgt", endpoint(b->name, input_name(b, input)));
+	return finish("graph", "addinitial", p, ok);
+}
+
+char *proto_msg_addport(const Graph *g, enum graph_port_dir dir, const GraphPort *port)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", g->id) && add_str(p, "name", port->name) &&
+		  add_str(p, "node", port->block->name) &&
+		  add_str(p, "port", graph_port_inner_name(dir, port));
+	return finish("graph", dir == GRAPH_INPORT ? "addinport" : "addoutport", p, ok);
+}
+
+char *proto_msg_data(const char *graph, const char *src_node, const char *src_port,
+		     const char *tgt_node, const char *tgt_port, const Linkable *v)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "id", "unknown") && add_str(p, "graph", graph) &&
+		  add(p, "src", endpoint(src_node, src_port)) &&
+		  add(p, "tgt", endpoint(tgt_node, tgt_port)) && add_value(p, "data", v);
+	return finish("network", "data", p, ok);
+}
+
+/* The events' own shapes (02 §3.4 "broadcast"). */
+
+static char *graph_renamed(const GraphEvent *ev)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "id", ev->graph->id) &&
+		  add_str(p, "from", ev->old_name) && add_str(p, "to", ev->graph->name);
+	return finish("graph", "rename", p, ok);
+}
+
+static char *node_removed(const GraphEvent *ev)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "id", ev->block->name) &&
+		  add_str(p, "graph", ev->graph->id);
+	return finish("graph", "removenode", p, ok);
+}
+
+/* graph:renamenode, rename{in,out}port: {"graph","from","to"}. */
+static char *renamed(const char *command, const GraphEvent *ev, const char *to)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", ev->graph->id) &&
+		  add_str(p, "from", ev->old_name) && add_str(p, "to", to);
+	return finish("graph", command, p, ok);
+}
+
+static char *node_changed(const GraphEvent *ev)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "id", ev->block->name) &&
+		  add_str(p, "graph", ev->graph->id) &&
+		  add(p, "metadata", graph_json_from_metadata(&ev->block->metadata));
+	return finish("graph", "changenode", p, ok);
+}
+
+/* graph:removeedge {"graph","src","tgt"}; graph:changeedge also "metadata",
+ * the edge's resulting metadata, {} for none (decided, plan task 18). */
+static char *edge_event(const char *command, const GraphEvent *ev, bool with_metadata)
+{
+	const Block *src = ev->src_block, *tgt = ev->block;
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", ev->graph->id) &&
+		  add(p, "src", endpoint(src->name, output_name(src, ev->src_output))) &&
+		  add(p, "tgt", endpoint(tgt->name, input_name(tgt, ev->input)));
+	if (ok && with_metadata) {
+		const char *md = tgt->inputs[ev->input].edge_metadata;
+		ok = add(p, "metadata",
+			 md != NULL ? graph_json_from_edge_metadata(md) : cJSON_CreateObject());
+	}
+	return finish("graph", command, p, ok);
+}
+
+static char *initial_removed(const GraphEvent *ev)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add(p, "src", data_object(ev->value)) &&
+		  add(p, "tgt", endpoint(ev->block->name, input_name(ev->block, ev->input))) &&
+		  add_str(p, "graph", ev->graph->id);
+	return finish("graph", "removeinitial", p, ok);
+}
+
+static char *port_removed(const char *command, const GraphEvent *ev)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", ev->graph->id) &&
+		  add_str(p, "name", ev->port->name);
+	return finish("graph", command, p, ok);
+}
+
 char *proto_msg_event(const GraphEvent *ev)
 {
 	switch (ev->type) {
@@ -279,8 +466,39 @@ char *proto_msg_event(const GraphEvent *ev)
 		return graph_stopped(ev->graph, ev);
 	case GRAPH_EVENT_ERROR:
 		return proto_msg_error(ev->message, ev->graph_id);
-	default:
-		/* The graph:* events: plan task 18. */
-		return NULL;
+	case GRAPH_EVENT_GRAPH_RENAMED:
+		return graph_renamed(ev);
+	case GRAPH_EVENT_BLOCK_ADDED:
+		return proto_msg_addnode(ev->graph, ev->block);
+	case GRAPH_EVENT_BLOCK_REMOVED:
+		return node_removed(ev);
+	case GRAPH_EVENT_BLOCK_RENAMED:
+		return renamed("renamenode", ev, ev->block->name);
+	case GRAPH_EVENT_BLOCK_CHANGED:
+		return node_changed(ev);
+	case GRAPH_EVENT_EDGE_ADDED:
+		return proto_msg_addedge(ev->graph, ev->src_block, ev->src_output, ev->block,
+					 ev->input);
+	case GRAPH_EVENT_EDGE_REMOVED:
+		return edge_event("removeedge", ev, false);
+	case GRAPH_EVENT_EDGE_CHANGED:
+		return edge_event("changeedge", ev, true);
+	case GRAPH_EVENT_INITIAL_ADDED:
+		return proto_msg_addinitial(ev->graph, ev->block, ev->input, ev->value);
+	case GRAPH_EVENT_INITIAL_REMOVED:
+		return initial_removed(ev);
+	case GRAPH_EVENT_INPORT_ADDED:
+		return proto_msg_addport(ev->graph, GRAPH_INPORT, ev->port);
+	case GRAPH_EVENT_INPORT_REMOVED:
+		return port_removed("removeinport", ev);
+	case GRAPH_EVENT_INPORT_RENAMED:
+		return renamed("renameinport", ev, ev->port->name);
+	case GRAPH_EVENT_OUTPORT_ADDED:
+		return proto_msg_addport(ev->graph, GRAPH_OUTPORT, ev->port);
+	case GRAPH_EVENT_OUTPORT_REMOVED:
+		return port_removed("removeoutport", ev);
+	case GRAPH_EVENT_OUTPORT_RENAMED:
+		return renamed("renameoutport", ev, ev->port->name);
 	}
+	return NULL;
 }

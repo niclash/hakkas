@@ -59,6 +59,11 @@ enum users_status users_load_startup(UserStore *s, const char *path)
 	return st;
 }
 
+enum users_status users_loader(void *path, UserStore *s)
+{
+	return users_load(s, path);
+}
+
 enum users_status users_save(const UserStore *s, const char *path)
 {
 	size_t len = 0;

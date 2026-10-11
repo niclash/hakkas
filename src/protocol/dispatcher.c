@@ -9,6 +9,7 @@
 
 #include "blocktypes/block_types.h"
 #include "cJSON.h"
+#include "graphs/graph_json.h"
 #include "protocol/messages.h"
 #include "system/log.h"
 
@@ -16,7 +17,24 @@
 enum {
 	PENDING_RUNTIME = 1u << 0,    /* runtime:getruntime after login */
 	PENDING_COMPONENTS = 1u << 1, /* component:list */
+	PENDING_CONNECT = 1u << 2,    /* the graph:connect snapshot of connect_id */
+	PENDING_DATA = 1u << 3,	      /* network:data of a dirty link-value watch */
 };
+
+/* One network:edges subscription (02 §4.2): a live watch on the input
+ * tgt_node.tgt_port of the connection's watch_graph. */
+typedef struct {
+	InputWatch w; /* first: the callbacks get &w */
+	ProtoConn *c;
+	Block *block; /* NULL once detached (the block was removed) */
+	uint32_t input;
+	/* A value did not fit the outgoing buffer: the input's value at the
+	 * next on_drained is sent instead (PENDING_DATA). */
+	bool dirty;
+	/* The request's src and tgt, as given (one allocation, names). */
+	const char *src_node, *src_port, *tgt_node, *tgt_port;
+	char *names;
+} EdgeWatch;
 
 struct ProtoConn {
 	Protocol *p;
@@ -27,6 +45,11 @@ struct ProtoConn {
 	bool subscribed;
 	bool closing; /* a close started or a send failed: send nothing more */
 	unsigned pending;
+	char connect_id[GRAPH_ID_MAX + 1]; /* PENDING_CONNECT: the graph */
+	/* The network:edges set (02 §4.2): watch_count watches on watch_graph. */
+	EdgeWatch *watches;
+	size_t watch_count;
+	char *watch_graph;
 	ProtoConn *prev, *next;
 };
 
@@ -209,17 +232,43 @@ typedef struct {
 	char **msgs;
 	size_t count;
 	size_t cap;
-	bool failed; /* out of memory */
+	size_t need;  /* their bytes, PROTO_FRAME_OVERHEAD per message included */
+	size_t limit; /* a message that would take need beyond it is not kept */
+	bool over;    /* a message was dropped for the limit */
+	bool failed;  /* out of memory */
 } Burst;
 
+#define BURST_NO_LIMIT SIZE_MAX
+
+/* Adds msg (taken over; NULL is out of memory), unless the burst failed or
+ * went over its limit already. */
 static void burst_add(Burst *b, char *msg)
 {
-	if (b->failed || msg == NULL || b->count == b->cap) {
+	if (msg == NULL)
 		b->failed = true;
+	if (b->failed || b->over) {
 		free(msg);
 		return;
 	}
+	size_t n = strlen(msg) + PROTO_FRAME_OVERHEAD;
+	if (n > b->limit - b->need) {
+		b->over = true;
+		free(msg);
+		return;
+	}
+	if (b->count == b->cap) {
+		size_t cap = b->cap == 0 ? 16 : b->cap * 2;
+		char **msgs = realloc(b->msgs, cap * sizeof(*msgs));
+		if (msgs == NULL) {
+			b->failed = true;
+			free(msg);
+			return;
+		}
+		b->msgs = msgs;
+		b->cap = cap;
+	}
 	b->msgs[b->count++] = msg;
+	b->need += n;
 }
 
 static void burst_free(Burst *b)
@@ -227,6 +276,7 @@ static void burst_free(Burst *b)
 	for (size_t i = 0; i < b->count; i++)
 		free(b->msgs[i]);
 	free(b->msgs);
+	*b = (Burst){0};
 }
 
 /* The component:component messages of every registered type and the
@@ -234,18 +284,23 @@ static void burst_free(Burst *b)
 static bool burst_components(Burst *b, char *first)
 {
 	size_t types = block_types_count();
-	b->cap = types + 2;
-	b->msgs = malloc(b->cap * sizeof(*b->msgs));
-	if (b->msgs == NULL) {
-		free(first);
-		return false;
-	}
+	b->limit = BURST_NO_LIMIT;
 	if (first != NULL)
 		burst_add(b, first);
 	for (size_t i = 0; i < types; i++)
 		burst_add(b, proto_msg_component(block_types_at(i)));
 	burst_add(b, proto_msg_componentsready(types));
 	return !b->failed;
+}
+
+/* Sends every message of b; false if the connection is closing. */
+static bool burst_emit(ProtoConn *c, const Burst *b)
+{
+	for (size_t i = 0; i < b->count; i++) {
+		if (!send_raw(c, b->msgs[i], strlen(b->msgs[i])))
+			return false;
+	}
+	return true;
 }
 
 enum burst_result {
@@ -259,10 +314,7 @@ enum burst_result {
  * large". */
 static enum burst_result burst_send(ProtoConn *c, Burst *b, unsigned flag)
 {
-	size_t need = 0;
-	for (size_t i = 0; i < b->count; i++)
-		need += strlen(b->msgs[i]) + PROTO_FRAME_OVERHEAD;
-	if (need > c->t->send_space(c->conn)) {
+	if (b->need > c->t->send_space(c->conn)) {
 		if (c->t->send_pending(c->conn) > 0) {
 			c->pending |= flag;
 			return BURST_DEFERRED;
@@ -270,11 +322,7 @@ static enum burst_result burst_send(ProtoConn *c, Burst *b, unsigned flag)
 		reply_error(c, "Reply too large", NULL);
 		return BURST_FAILED;
 	}
-	for (size_t i = 0; i < b->count; i++) {
-		if (!send_raw(c, b->msgs[i], strlen(b->msgs[i])))
-			return BURST_FAILED;
-	}
-	return BURST_SENT;
+	return burst_emit(c, b) ? BURST_SENT : BURST_FAILED;
 }
 
 /* getruntime after login: runtime:runtime, the components, then a
@@ -342,6 +390,17 @@ static void invalid_field(ProtoConn *c, const char *name, const char *graph)
 	reply_error(c, text, known_graph(graph));
 }
 
+static void edges_clear(ProtoConn *c);
+
+/* The session ended (logout, expiry): no more events, no link values
+ * (02 §4.2), no deferred snapshot. */
+static void end_delivery(ProtoConn *c)
+{
+	unsubscribe(c);
+	edges_clear(c);
+	c->pending &= ~PENDING_CONNECT;
+}
+
 /* ---- environment (02 §2.3, §3.1) --------------------------------------------------- */
 
 static void send_challenge(ProtoConn *c, const AuthChallenge *ch)
@@ -391,7 +450,7 @@ static void cmd_logout(ProtoConn *c, const Envelope *env)
 	(void)env;
 	const Authorizer *a = &c->p->auth;
 	a->ops->revoke_secret(a->self, c->ac);
-	unsubscribe(c);
+	end_delivery(c);
 	reply(c, proto_msg_logout());
 }
 
@@ -399,7 +458,7 @@ static void cmd_logout(ProtoConn *c, const Envelope *env)
 static void on_expired(void *user)
 {
 	ProtoConn *c = user;
-	unsubscribe(c); /* 02 §2.5 item 3: stop event delivery */
+	end_delivery(c); /* 02 §2.5 item 3: stop event delivery */
 	reply(c, proto_msg_logout());
 }
 
@@ -489,6 +548,668 @@ static void cmd_trace(ProtoConn *c, const Envelope *env)
 	reply(c, proto_msg_trace(env->command, graph));
 }
 
+/* ---- graph:* and network:* helpers (02 §3.3-§3.4) ---------------------------------- */
+
+/* A refused command (02 §3.4.1): its message to the requester only, with
+ * "graph" for a valid graph id. */
+static void refused(ProtoConn *c, const GraphsMessage *msg, const char *graph)
+{
+	reply_error(c, msg->text, known_graph(graph));
+}
+
+/* The refusal st about graph (Invalid id, Unknown graph). */
+static void refuse_graph(ProtoConn *c, enum graph_status st, const char *graph)
+{
+	GraphsMessage msg;
+	GraphRefusal r = {.graph = graph};
+	graph_refusal_message(st, &r, msg.text, sizeof(msg.text));
+	refused(c, &msg, graph);
+}
+
+/* A required string member key: *out, or "Invalid field: <key>" (with
+ * "graph" for a valid graph id) and false. */
+static bool need_str(ProtoConn *c, const cJSON *payload, const char *key, const char *graph,
+		     const char **out)
+{
+	*out = str_field(payload, key);
+	if (*out == NULL) {
+		invalid_field(c, key, graph);
+		return false;
+	}
+	return true;
+}
+
+/* An edge endpoint {"node":String,"port":String}. */
+typedef struct {
+	const char *node;
+	const char *port;
+} Endpoint;
+
+static bool endpoint_of(const cJSON *v, Endpoint *out)
+{
+	out->node = cJSON_IsObject(v) ? str_field(v, "node") : NULL;
+	out->port = cJSON_IsObject(v) ? str_field(v, "port") : NULL;
+	return out->node != NULL && out->port != NULL;
+}
+
+/* A required endpoint member key, as need_str. */
+static bool need_endpoint(ProtoConn *c, const cJSON *payload, const char *key, const char *graph,
+			  Endpoint *out)
+{
+	if (!endpoint_of(cJSON_GetObjectItemCaseSensitive(payload, key), out)) {
+		invalid_field(c, key, graph);
+		return false;
+	}
+	return true;
+}
+
+/* A member that is absent or JSON null. */
+static const cJSON *opt_member(const cJSON *payload, const char *key)
+{
+	const cJSON *v = cJSON_GetObjectItemCaseSensitive(payload, key);
+	return cJSON_IsNull(v) ? NULL : v;
+}
+
+/* ---- graph (02 §3.4) ------------------------------------------------------------------- */
+
+static void cmd_graph_list(ProtoConn *c, const Envelope *env)
+{
+	(void)env;
+	graphs_status_all(c->p->graphs); /* a network:status broadcast per graph */
+}
+
+/* The graph:connect snapshot of g (02 §4.1.1): graph:clear, the blocks,
+ * the graph ports (inports, then outports), the initials, then the edges,
+ * each per block in creation order and input in port order. Retained
+ * entries of placeholders are not live and are never sent. */
+static void build_snapshot(Burst *b, const Graph *g)
+{
+	burst_add(b, proto_msg_graph_clear(g));
+	for (uint32_t i = 0; i < g->block_count; i++)
+		burst_add(b, proto_msg_addnode(g, g->blocks[i]));
+	for (int dir = GRAPH_INPORT; dir <= GRAPH_OUTPORT; dir++) {
+		for (uint32_t i = 0; i < g->port_count[dir]; i++)
+			burst_add(b, proto_msg_addport(g, (enum graph_port_dir)dir,
+						       &g->ports[dir][i]));
+	}
+	for (int pass = 0; pass < 2; pass++) {
+		for (uint32_t i = 0; i < g->block_count; i++) {
+			const Block *blk = g->blocks[i];
+			for (uint32_t in = 0; in < blk->input_count; in++) {
+				const Input *input = &blk->inputs[in];
+				if (pass == 0 && input->source == INPUT_SOURCE_INITIAL)
+					burst_add(b, proto_msg_addinitial(g, blk, in,
+									  &input->initial));
+				else if (pass == 1 && input->source == INPUT_SOURCE_EDGE)
+					burst_add(b, proto_msg_addedge(g, input->src_block,
+								       input->src_output, blk, in));
+			}
+		}
+	}
+}
+
+/* graph:connect's re-scope and snapshot (02 §4.1, §4.1.1; decided, plan
+ * task 18). The snapshot is built only up to the free outgoing space. If it
+ * fits, the connection is re-scoped and the snapshot sent at the same
+ * instant, so no event of the graph can come between them. If it does not
+ * fit while the buffer holds data, it is deferred (PENDING_CONNECT) and made
+ * again on drained; the scope stays as it was meanwhile, so events keep
+ * arriving under the old scope, all before the snapshot's graph:clear. If
+ * it does not fit an empty buffer, "Graph too large to send: <id>", and the
+ * scope stays. */
+static void send_snapshot(ProtoConn *c, const char *id)
+{
+	Graph *g = NULL;
+	enum graph_status st = GRAPH_ERR_INVALID_ID;
+	if (graph_id_valid(id)) {
+		g = graphs_find(c->p->graphs, id);
+		st = g != NULL ? GRAPH_OK : GRAPH_ERR_UNKNOWN_GRAPH;
+	}
+	if (st != GRAPH_OK) {
+		refuse_graph(c, st, id);
+		return;
+	}
+	Burst b = {.limit = c->t->send_space(c->conn)};
+	build_snapshot(&b, g);
+	if (b.failed) {
+		burst_free(&b);
+		reply(c, NULL);
+		return;
+	}
+	if (b.over) {
+		burst_free(&b);
+		if (c->t->send_pending(c->conn) > 0) {
+			memcpy(c->connect_id, id, strlen(id) + 1);
+			c->pending |= PENDING_CONNECT;
+		} else {
+			char text[GRAPHS_MESSAGE_MAX];
+			snprintf(text, sizeof(text), "Graph too large to send: %s", id);
+			reply_error(c, text, id);
+		}
+		return;
+	}
+	protocol_conn_scope(c, id);
+	burst_emit(c, &b);
+	burst_free(&b);
+}
+
+static void cmd_connect(ProtoConn *c, const Envelope *env)
+{
+	const char *id;
+	if (!need_str(c, env->payload, "id", NULL, &id))
+		return;
+	c->pending &= ~PENDING_CONNECT; /* a newer connect replaces a deferred one */
+	send_snapshot(c, id);
+}
+
+static void cmd_rename(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *id = str_field(pl, "id"), *to;
+	/* The request's "from" is not checked (02 §3.4). */
+	if (!need_str(c, pl, "id", id, &id) || !need_str(c, pl, "to", id, &to))
+		return;
+	GraphsMessage msg;
+	if (graphs_rename_graph(c->p->graphs, id, to, &msg) != GRAPH_OK)
+		refused(c, &msg, id);
+}
+
+static void cmd_addnode(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *id, *component;
+	if (!need_str(c, pl, "id", graph, &id) || !need_str(c, pl, "graph", graph, &graph) ||
+	    !need_str(c, pl, "component", graph, &component))
+		return;
+	BlockMetadata md;
+	enum graph_status st = graph_json_to_metadata(opt_member(pl, "metadata"), &md);
+	if (st == GRAPH_ERR_NO_MEMORY) {
+		reply(c, NULL);
+		return;
+	}
+	if (st != GRAPH_OK) {
+		invalid_field(c, "metadata", graph);
+		return;
+	}
+	GraphsMessage msg;
+	if (graphs_add_node(c->p->graphs, graph, id, component, &md, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+	block_metadata_release(&md);
+}
+
+static void cmd_removenode(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *id;
+	if (!need_str(c, pl, "id", graph, &id) || !need_str(c, pl, "graph", graph, &graph))
+		return;
+	GraphsMessage msg;
+	if (graphs_remove_node(c->p->graphs, graph, id, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_renamenode(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *from, *to;
+	if (!need_str(c, pl, "from", graph, &from) || !need_str(c, pl, "to", graph, &to) ||
+	    !need_str(c, pl, "graph", graph, &graph))
+		return;
+	GraphsMessage msg;
+	if (graphs_rename_node(c->p->graphs, graph, from, to, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+/* changenode's patch merged into cur: GRAPH_OK, or a reply already sent
+ * (an invalid patch, out of memory) for any other status. */
+static enum graph_status node_change(ProtoConn *c, const BlockMetadata *cur, const cJSON *patch,
+				     const char *graph, BlockChange *chg)
+{
+	enum graph_status st = graph_json_to_change(cur, patch, chg);
+	if (st == GRAPH_ERR_NO_MEMORY)
+		reply(c, NULL);
+	else if (st != GRAPH_OK)
+		invalid_field(c, "metadata", graph);
+	return st;
+}
+
+static void cmd_changenode(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *id;
+	if (!need_str(c, pl, "id", graph, &id))
+		return;
+	const cJSON *patch = cJSON_GetObjectItemCaseSensitive(pl, "metadata");
+	if (!cJSON_IsObject(patch)) {
+		invalid_field(c, "metadata", graph);
+		return;
+	}
+	if (!need_str(c, pl, "graph", graph, &graph))
+		return;
+	/* The patch's values are checked before the graph and node are (a
+	 * payload field, 02 §1.2); the merge itself needs the node's
+	 * metadata. */
+	BlockMetadata none = block_metadata_default();
+	BlockChange chg;
+	if (node_change(c, &none, patch, graph, &chg) != GRAPH_OK)
+		return;
+	block_change_release(&chg);
+	Graph *g = graph_id_valid(graph) ? graphs_find(c->p->graphs, graph) : NULL;
+	Block *b = g != NULL && graph_id_valid(id) ? graph_find_block(g, id) : NULL;
+	GraphsMessage msg;
+	if (b == NULL) {
+		/* Refused by the registry: Invalid id, Unknown graph or node. */
+		BlockChange nothing = {0};
+		if (graphs_change_node(c->p->graphs, graph, id, &nothing, &msg) != GRAPH_OK)
+			refused(c, &msg, graph);
+		return;
+	}
+	if (node_change(c, &b->metadata, patch, graph, &chg) != GRAPH_OK)
+		return;
+	if (graphs_change_node(c->p->graphs, graph, id, &chg, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+	block_change_release(&chg);
+}
+
+/* Edge metadata (addedge: optional, changeedge: required) as model text in
+ * *out: GRAPH_OK, or a reply already sent. */
+static enum graph_status edge_metadata(ProtoConn *c, const cJSON *pl, bool required,
+				       const char *graph, char **out)
+{
+	*out = NULL;
+	const cJSON *v = cJSON_GetObjectItemCaseSensitive(pl, "metadata");
+	enum graph_status st = required && v == NULL ? GRAPH_ERR_INVALID_ARGUMENT
+						     : graph_json_to_edge_metadata(v, out);
+	if (st == GRAPH_ERR_NO_MEMORY)
+		reply(c, NULL);
+	else if (st != GRAPH_OK)
+		invalid_field(c, "metadata", graph);
+	return st;
+}
+
+static void cmd_addedge(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph");
+	Endpoint src, tgt;
+	char *md;
+	if (!need_endpoint(c, pl, "src", graph, &src) ||
+	    !need_endpoint(c, pl, "tgt", graph, &tgt) || !need_str(c, pl, "graph", graph, &graph) ||
+	    edge_metadata(c, pl, false, graph, &md) != GRAPH_OK)
+		return;
+	GraphsMessage msg;
+	if (graphs_add_edge(c->p->graphs, graph, src.node, src.port, tgt.node, tgt.port, md,
+			    &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+	free(md);
+}
+
+static void cmd_removeedge(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph");
+	Endpoint src, tgt;
+	if (!need_endpoint(c, pl, "src", graph, &src) ||
+	    !need_endpoint(c, pl, "tgt", graph, &tgt) || !need_str(c, pl, "graph", graph, &graph))
+		return;
+	GraphsMessage msg;
+	if (graphs_remove_edge(c->p->graphs, graph, src.node, src.port, tgt.node, tgt.port,
+			       &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_changeedge(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph");
+	Endpoint src, tgt;
+	char *md;
+	if (!need_endpoint(c, pl, "src", graph, &src) ||
+	    !need_endpoint(c, pl, "tgt", graph, &tgt) ||
+	    edge_metadata(c, pl, true, graph, &md) != GRAPH_OK)
+		return;
+	if (!need_str(c, pl, "graph", graph, &graph)) {
+		free(md);
+		return;
+	}
+	GraphsMessage msg;
+	if (graphs_change_edge(c->p->graphs, graph, src.node, src.port, tgt.node, tgt.port, md,
+			       &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+	free(md);
+}
+
+/* The declared type of the input node.port of graph, or NULL if there is no
+ * such input (the command is then refused by the registry, 02 §3.4.1). */
+static const char *input_type(const Protocol *p, const char *graph, const char *node,
+			      const char *port)
+{
+	const Graph *g = graph_id_valid(graph) ? graphs_find(p->graphs, graph) : NULL;
+	const Block *b = g != NULL && graph_id_valid(node) ? graph_find_block(g, node) : NULL;
+	int32_t i = b != NULL && !block_is_placeholder(b) ? block_input_index(b, port) : -1;
+	return i >= 0 ? block_input_port(b, (uint32_t)i)->type : NULL;
+}
+
+static void cmd_addinitial(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph");
+	Endpoint tgt;
+	if (!need_endpoint(c, pl, "tgt", graph, &tgt))
+		return;
+	const cJSON *src = cJSON_GetObjectItemCaseSensitive(pl, "src");
+	const cJSON *data = cJSON_IsObject(src) ? cJSON_GetObjectItemCaseSensitive(src, "data")
+						: NULL;
+	if (!cJSON_IsString(data) && !cJSON_IsNumber(data) && !cJSON_IsBool(data)) {
+		invalid_field(c, "src", graph);
+		return;
+	}
+	if (!need_str(c, pl, "graph", graph, &graph))
+		return;
+	/* Parsed for the target port's declared type (02 §3.4 "Initial value
+	 * encoding"); without such an input any value does, the registry
+	 * refuses the command. */
+	Linkable v;
+	enum graph_status st =
+		graph_json_to_initial(data, input_type(c->p, graph, tgt.node, tgt.port), &v);
+	if (st != GRAPH_OK) {
+		reply(c, NULL); /* out of memory: data was checked above */
+		return;
+	}
+	GraphsMessage msg;
+	if (graphs_add_initial(c->p->graphs, graph, tgt.node, tgt.port, &v, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+	linkable_clear(&v);
+}
+
+static void cmd_removeinitial(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph");
+	Endpoint tgt;
+	if (!need_endpoint(c, pl, "tgt", graph, &tgt) || !need_str(c, pl, "graph", graph, &graph))
+		return;
+	GraphsMessage msg;
+	if (graphs_remove_initial(c->p->graphs, graph, tgt.node, tgt.port, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+/* add{in,out}port {"graph","node","port","public"}: the broadcast calls the
+ * public name "name" (02 §3.4). */
+static void add_port(ProtoConn *c, const Envelope *env, enum graph_port_dir dir)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *node, *port, *name;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "node", graph, &node) ||
+	    !need_str(c, pl, "port", graph, &port) || !need_str(c, pl, "public", graph, &name))
+		return;
+	GraphsMessage msg;
+	if (graphs_add_port(c->p->graphs, graph, dir, name, node, port, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void remove_port(ProtoConn *c, const Envelope *env, enum graph_port_dir dir)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *name;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "public", graph, &name))
+		return;
+	GraphsMessage msg;
+	if (graphs_remove_port(c->p->graphs, graph, dir, name, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void rename_port(ProtoConn *c, const Envelope *env, enum graph_port_dir dir)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *from, *to;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "from", graph, &from) ||
+	    !need_str(c, pl, "to", graph, &to))
+		return;
+	GraphsMessage msg;
+	if (graphs_rename_port(c->p->graphs, graph, dir, from, to, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_addinport(ProtoConn *c, const Envelope *env)
+{
+	add_port(c, env, GRAPH_INPORT);
+}
+
+static void cmd_removeinport(ProtoConn *c, const Envelope *env)
+{
+	remove_port(c, env, GRAPH_INPORT);
+}
+
+static void cmd_renameinport(ProtoConn *c, const Envelope *env)
+{
+	rename_port(c, env, GRAPH_INPORT);
+}
+
+static void cmd_addoutport(ProtoConn *c, const Envelope *env)
+{
+	add_port(c, env, GRAPH_OUTPORT);
+}
+
+static void cmd_removeoutport(ProtoConn *c, const Envelope *env)
+{
+	remove_port(c, env, GRAPH_OUTPORT);
+}
+
+static void cmd_renameoutport(ProtoConn *c, const Envelope *env)
+{
+	rename_port(c, env, GRAPH_OUTPORT);
+}
+
+/* ---- network (02 §3.3) ----------------------------------------------------------------- */
+
+static void cmd_start(ProtoConn *c, const Envelope *env)
+{
+	const char *graph;
+	if (!need_str(c, env->payload, "graph", NULL, &graph))
+		return;
+	GraphsMessage msg;
+	if (graphs_start(c->p->graphs, graph, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_stop(ProtoConn *c, const Envelope *env)
+{
+	const char *graph;
+	if (!need_str(c, env->payload, "graph", NULL, &graph))
+		return;
+	GraphsMessage msg;
+	if (graphs_stop(c->p->graphs, graph, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_getstatus(ProtoConn *c, const Envelope *env)
+{
+	const char *graph;
+	if (!need_str(c, env->payload, "graph", NULL, &graph))
+		return;
+	GraphsMessage msg;
+	if (graphs_status(c->p->graphs, graph, &msg) != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_persist(ProtoConn *c, const Envelope *env)
+{
+	const char *graph;
+	if (!need_str(c, env->payload, "graph", NULL, &graph))
+		return;
+	GraphsMessage msg;
+	enum graph_files_status st = graph_files_persist(c->p->files, graph, &msg);
+	/* An invalid or unknown graph is a refusal to the requester; a failed
+	 * save was broadcast already (02 §3.3); success has no reply. */
+	if (st == GRAPH_FILES_ERR_INVALID || st == GRAPH_FILES_ERR_NOT_FOUND)
+		refused(c, &msg, graph);
+}
+
+/* ---- network:edges, link-value subscriptions (02 §4.2) ------------------------------- */
+
+/* Sends the watch's network:data with v, if the session is live. A message
+ * that does not fit the free space is not sent: the watch turns dirty and
+ * the input's value at the next on_drained goes out instead (decided, plan
+ * task 18: a value stream coalesces under back-pressure rather than closing
+ * the connection); one that would not fit even an empty buffer is dropped. */
+static void send_data(EdgeWatch *ew, const Linkable *v)
+{
+	ProtoConn *c = ew->c;
+	if (c->closing || caps_of(c) == 0)
+		return;
+	char *m = proto_msg_data(c->watch_graph, ew->src_node, ew->src_port, ew->tgt_node,
+				 ew->tgt_port, v);
+	if (m == NULL) {
+		reply(c, NULL);
+		return;
+	}
+	size_t len = strlen(m);
+	if (len <= c->t->send_space(c->conn)) {
+		ew->dirty = false;
+		send_raw(c, m, len);
+	} else if (c->t->send_pending(c->conn) > 0) {
+		ew->dirty = true;
+		c->pending |= PENDING_DATA;
+	}
+	free(m);
+}
+
+static void watch_value(InputWatch *w, const Block *b, uint32_t input, const Linkable *value)
+{
+	(void)b;
+	(void)input;
+	send_data((EdgeWatch *)w, value);
+}
+
+static void watch_detached(InputWatch *w)
+{
+	((EdgeWatch *)w)->block = NULL; /* its block is gone (removed, or its graph) */
+}
+
+/* Ends every link-value subscription of c (a replacement, logout, expiry,
+ * close). */
+static void edges_clear(ProtoConn *c)
+{
+	for (size_t i = 0; i < c->watch_count; i++) {
+		EdgeWatch *ew = &c->watches[i];
+		if (ew->block != NULL)
+			block_unwatch_input(ew->block, ew->input, &ew->w);
+		free(ew->names);
+	}
+	free(c->watches);
+	free(c->watch_graph);
+	c->watches = NULL;
+	c->watch_count = 0;
+	c->watch_graph = NULL;
+	c->pending &= ~PENDING_DATA;
+}
+
+/* The values of c's dirty watches, as they are now. */
+static void send_dirty(ProtoConn *c)
+{
+	for (size_t i = 0; i < c->watch_count && !c->closing; i++) {
+		EdgeWatch *ew = &c->watches[i];
+		if (ew->dirty && ew->block != NULL)
+			send_data(ew, &ew->block->in_values[ew->input]);
+	}
+}
+
+static char *dup_str(const char *s)
+{
+	size_t n = strlen(s) + 1;
+	char *d = malloc(n);
+	if (d != NULL)
+		memcpy(d, s, n);
+	return d;
+}
+
+/* Fills ew's names from the pair (copied). False if memory runs out. */
+static bool watch_names(EdgeWatch *ew, const Endpoint *src, const Endpoint *tgt)
+{
+	const char *parts[4] = {src->node, src->port, tgt->node, tgt->port};
+	size_t len[4], total = 0;
+	for (int i = 0; i < 4; i++)
+		total += len[i] = strlen(parts[i]) + 1;
+	ew->names = malloc(total);
+	if (ew->names == NULL)
+		return false;
+	const char **out[4] = {&ew->src_node, &ew->src_port, &ew->tgt_node, &ew->tgt_port};
+	char *p = ew->names;
+	for (int i = 0; i < 4; i++) {
+		memcpy(p, parts[i], len[i]);
+		*out[i] = p;
+		p += len[i];
+	}
+	return true;
+}
+
+/* network:edges (02 §4.2; decided, plan task 18): the request replaces the
+ * connection's whole set. Every pair whose tgt is an input of the graph
+ * becomes a watch; any other pair (no such graph, node or input) is
+ * ignored. The payload is echoed first as network:edges, then each watch
+ * sends the input's current value. */
+static void cmd_edges(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph;
+	if (!need_str(c, pl, "graph", NULL, &graph))
+		return;
+	const cJSON *edges = cJSON_GetObjectItemCaseSensitive(pl, "edges");
+	bool valid = cJSON_IsArray(edges);
+	const cJSON *e = valid ? edges->child : NULL;
+	for (; e != NULL && valid; e = e->next) {
+		Endpoint src, tgt;
+		valid = cJSON_IsObject(e) &&
+			endpoint_of(cJSON_GetObjectItemCaseSensitive(e, "src"), &src) &&
+			endpoint_of(cJSON_GetObjectItemCaseSensitive(e, "tgt"), &tgt);
+	}
+	if (!valid) {
+		invalid_field(c, "edges", graph);
+		return;
+	}
+	edges_clear(c);
+	cJSON *echo = cJSON_Duplicate(pl, true);
+	reply(c, echo != NULL ? proto_msg_build("network", "edges", echo) : NULL);
+	size_t n = (size_t)cJSON_GetArraySize(edges);
+	if (c->closing || n == 0)
+		return;
+	c->watches = calloc(n, sizeof(*c->watches));
+	c->watch_graph = dup_str(graph);
+	if (c->watches == NULL || c->watch_graph == NULL) {
+		edges_clear(c);
+		reply(c, NULL);
+		return;
+	}
+	Graph *g = graph_id_valid(graph) ? graphs_find(c->p->graphs, graph) : NULL;
+	cJSON_ArrayForEach(e, edges)
+	{
+		Endpoint src, tgt;
+		endpoint_of(cJSON_GetObjectItemCaseSensitive(e, "src"), &src);
+		endpoint_of(cJSON_GetObjectItemCaseSensitive(e, "tgt"), &tgt);
+		Block *b = g != NULL && graph_id_valid(tgt.node) ? graph_find_block(g, tgt.node)
+								 : NULL;
+		int32_t input = b != NULL ? block_input_index(b, tgt.port) : -1;
+		if (input < 0)
+			continue; /* no such tgt: ignored */
+		EdgeWatch *ew = &c->watches[c->watch_count];
+		if (!watch_names(ew, &src, &tgt)) {
+			edges_clear(c);
+			reply(c, NULL);
+			return;
+		}
+		ew->w.on_value = watch_value;
+		ew->w.on_detach = watch_detached;
+		ew->c = c;
+		ew->block = b;
+		ew->input = (uint32_t)input;
+		c->watch_count++;
+		block_watch_input(b, ew->input, &ew->w); /* sends the current value */
+		if (c->closing)
+			return;
+	}
+}
+
 /* ---- Dispatch ------------------------------------------------------------------------ */
 
 typedef struct {
@@ -497,7 +1218,9 @@ typedef struct {
 	void (*fn)(ProtoConn *c, const Envelope *env);
 } ProtoCommand;
 
-/* The commands this layer runs; plan task 18 adds graph:* and network:*. */
+/* The commands this layer runs. The provisional group commands of 02 §3.4.2
+ * (graph:addgroup, removegroup, renamegroup, changegroup) have no handler
+ * yet (open question 4): they get the generic error. */
 static const ProtoCommand commands[] = {
 	{"environment", "challenge", cmd_challenge},
 	{"environment", "login", cmd_login},
@@ -505,6 +1228,29 @@ static const ProtoCommand commands[] = {
 	{"runtime", "getruntime", cmd_getruntime},
 	{"runtime", "new_graph", cmd_new_graph},
 	{"runtime", "delete_graph", cmd_delete_graph},
+	{"network", "start", cmd_start},
+	{"network", "stop", cmd_stop},
+	{"network", "getstatus", cmd_getstatus},
+	{"network", "persist", cmd_persist},
+	{"network", "edges", cmd_edges},
+	{"graph", "list", cmd_graph_list},
+	{"graph", "connect", cmd_connect},
+	{"graph", "rename", cmd_rename},
+	{"graph", "addnode", cmd_addnode},
+	{"graph", "removenode", cmd_removenode},
+	{"graph", "renamenode", cmd_renamenode},
+	{"graph", "changenode", cmd_changenode},
+	{"graph", "addedge", cmd_addedge},
+	{"graph", "removeedge", cmd_removeedge},
+	{"graph", "changeedge", cmd_changeedge},
+	{"graph", "addinitial", cmd_addinitial},
+	{"graph", "removeinitial", cmd_removeinitial},
+	{"graph", "addinport", cmd_addinport},
+	{"graph", "removeinport", cmd_removeinport},
+	{"graph", "renameinport", cmd_renameinport},
+	{"graph", "addoutport", cmd_addoutport},
+	{"graph", "removeoutport", cmd_removeoutport},
+	{"graph", "renameoutport", cmd_renameoutport},
 	{"component", "list", cmd_component_list},
 	{"component", "getsource", cmd_getsource},
 	{"trace", "start", cmd_trace},
@@ -552,7 +1298,7 @@ static void dispatch(ProtoConn *c, const Envelope *env)
 	}
 	const ProtoCommand *cmd = find_command(env->protocol, env->command);
 	if (cmd == NULL)
-		unknown_command(c, env); /* graph:*, network:*: plan task 18 */
+		unknown_command(c, env); /* the group commands (02 §3.4.2) */
 	else
 		cmd->fn(c, env);
 }
@@ -634,6 +1380,10 @@ void protocol_conn_drained(ProtoConn *c)
 	}
 	if ((pending & PENDING_COMPONENTS) && caps_of(c) != 0)
 		send_component_burst(c);
+	if ((pending & PENDING_CONNECT) && caps_of(c) != 0 && !c->closing)
+		send_snapshot(c, c->connect_id);
+	if (pending & PENDING_DATA)
+		send_dirty(c);
 	drop_event_cache(c->p);
 }
 
@@ -673,6 +1423,7 @@ void protocol_conn_close(ProtoConn *c)
 	if (c->next != NULL)
 		c->next->prev = c->prev;
 	unsubscribe(c);
+	edges_clear(c);
 	p->auth.ops->close(p->auth.self, c->ac);
 	free(c);
 }

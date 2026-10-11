@@ -20,8 +20,14 @@
  * GRAPH_DELETED -> runtime:delete_graph, GRAPH_STATUS -> network:status,
  * GRAPH_STARTED -> network:started, GRAPH_STOPPED -> network:stopped (a
  * started graph's delete_graph reports it first, 02 §3.2) and ERROR ->
- * network:error. Plan task 18 adds the graph:* events (blocks, edges,
- * initials, ports, rename) to the same switch.
+ * network:error. Plan task 18 maps the graph:* events: GRAPH_RENAMED ->
+ * graph:rename, BLOCK_ADDED/REMOVED/RENAMED/CHANGED -> graph:addnode,
+ * removenode, renamenode, changenode, EDGE_ADDED/REMOVED/CHANGED ->
+ * graph:addedge, removeedge, changeedge, INITIAL_ADDED/REMOVED ->
+ * graph:addinitial, removeinitial, and the in/outport events ->
+ * graph:add/remove/rename{in,out}port, with the broadcast shapes of 02 §3.4
+ * (the request's "public" is the broadcast's "name"; an initial's data and a
+ * network:data value as a string, linkable_stringify).
  *
  * Every function returns a heap string to free with free(), or NULL when
  * memory runs out (or, for proto_msg_event, when the event has no wire
@@ -91,6 +97,32 @@ char *proto_msg_source(const char *name, const char *code);
 /* trace:<command> {"graph"}, and for dump also "type":"flowtrace.json",
  * "flowtrace":"" (02 §3.6). */
 char *proto_msg_trace(const char *command, const char *graph);
+
+/* ---- graph:* (02 §3.4, the graph:connect snapshot of 02 §4.1.1) ---------------------- */
+
+/* graph:clear {"id","name","main":true,"description","icon"}. */
+char *proto_msg_graph_clear(const Graph *g);
+
+/* graph:addnode {"graph","component","id","metadata"}: the block's full
+ * metadata (x, y, change_threshold if set, the opaque keys); a placeholder's
+ * original component name. */
+char *proto_msg_addnode(const Graph *g, const Block *b);
+
+/* graph:addedge {"graph","src","tgt"[,"metadata"]} for the link from
+ * src.output to tgt.input; "metadata" only if the edge has any. */
+char *proto_msg_addedge(const Graph *g, const Block *src, uint32_t output, const Block *tgt,
+			uint32_t input);
+
+/* graph:addinitial {"graph","src":{"data":"<v stringified>"},"tgt"}. */
+char *proto_msg_addinitial(const Graph *g, const Block *b, uint32_t input, const Linkable *v);
+
+/* graph:addinport / addoutport {"graph","name","node","port"}. */
+char *proto_msg_addport(const Graph *g, enum graph_port_dir dir, const GraphPort *port);
+
+/* network:data {"id":"unknown","graph","src","tgt","data":"<v stringified>"}
+ * (02 §3.3, §4.2). */
+char *proto_msg_data(const char *graph, const char *src_node, const char *src_port,
+		     const char *tgt_node, const char *tgt_port, const Linkable *v);
 
 /* The wire message of ev (see "Event mapping" above), or NULL. */
 char *proto_msg_event(const GraphEvent *ev);

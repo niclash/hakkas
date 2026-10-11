@@ -6,14 +6,19 @@
  * table per role, challenge/login/logout including the delayed challenge
  * and the close after failures, session expiry, getruntime before and after
  * login, new_graph/delete_graph broadcasts and refusals, component:list and
- * getsource, the trace no-ops, deferred bursts, log mirroring, and a full
- * SCRAM login through the real authorizer with a test user made here.
+ * getsource, the trace no-ops, deferred bursts, log mirroring, a full SCRAM
+ * login through the real authorizer with a test user made here; and (plan
+ * task 18) every graph:* and network:* command with its broadcasts on
+ * several connections and its refusals, scoping, the graph:connect snapshot
+ * and the outgoing buffer, initial value encoding, network:edges with its
+ * network:data stream, and the users file re-read at every challenge.
  */
 #define _XOPEN_SOURCE 700
 
 #include "test.h"
 
 #include <ftw.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdlib.h>
 
@@ -413,9 +418,9 @@ static const char *login_as(FakeConn *f, enum user_role role)
 	command(f, "environment", "login", "{'user':'u','nonce':'n','proof':'p'}", "");
 	CHECK(f->count == 2);
 	clear(f);
-	static char secret[4][AUTH_SECRET_SIZE];
+	static char secret[16][AUTH_SECRET_SIZE];
 	static int next;
-	char *s = secret[next++ % 4];
+	char *s = secret[next++ % 16];
 	AuthConn *ac = last_auth_conn();
 	for (size_t i = 0; i < fake_conn_count; i++) {
 		if (fake_conns[i]->user == f->pc)
@@ -1317,6 +1322,1232 @@ static void test_real_authorizer(void)
 	auth_destroy(auth);
 }
 
+/* ---- graph:* and network:* (02 §3.3-§3.4, §4; plan task 18) ----------------------- */
+
+/* A test type with an input of each port type (02 §3.4 "Initial value
+ * encoding"). */
+static int64_t types_compute(BlockCtx *ctx)
+{
+	(void)ctx;
+	return -1;
+}
+
+static const PortDescriptor types_inputs[] = {
+	{.name = "b", .type = "bool", .default_value = LINKABLE_BOOL_INIT(false)},
+	{.name = "s", .type = "string", .default_value = LINKABLE_EMPTY_STRING_INIT},
+	{.name = "n", .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
+};
+
+static const PortDescriptor types_outputs[] = {
+	{.name = "out", .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
+};
+
+static const BlockTypeDef types_def = {
+	.name = "test/Types",
+	.inputs = types_inputs,
+	.input_count = 3,
+	.outputs = types_outputs,
+	.output_count = 1,
+	.compute = types_compute,
+	.change_threshold = NAN,
+};
+
+/* Expect exactly the n messages expected (JSON with ' for "), in order, on
+ * each of the nc connections, then clear them: the multi-client rule (05 §5,
+ * 02 §1.1): the same event sequence everywhere. */
+static void expect_all(FakeConn *const *conns, size_t nc, const char *const *expected, size_t n)
+{
+	for (size_t c = 0; c < nc; c++) {
+		CHECK(conns[c]->count == n);
+		for (size_t i = 0; i < n; i++)
+			CHECK(json_equal(msg(conns[c], i), expected[i]));
+		clear(conns[c]);
+	}
+}
+
+/* The error message with "graph" (JSON with ' for "). */
+static const char *graph_error_json(const char *message, const char *graph)
+{
+	static char buf[4][1024];
+	static int next;
+	char *p = buf[next++ % 4];
+	char *m = proto_msg_error(message, graph);
+	snprintf(p, 1024, "%s", m);
+	free(m);
+	return p;
+}
+
+/* Two editors (a, b) and a viewer (v), all logged in and connected to g1
+ * ("One"), and an anonymous connection. */
+typedef struct {
+	FakeConn a, b, v, anon;
+	const char *sa, *sb, *sv;
+} Clients;
+
+static void clients_open(Clients *k, const char *graph)
+{
+	conn_open(&k->a);
+	conn_open(&k->b);
+	conn_open(&k->v);
+	conn_open(&k->anon);
+	k->sa = login_as(&k->a, USER_ROLE_EDITOR);
+	k->sb = login_as(&k->b, USER_ROLE_EDITOR);
+	k->sv = login_as(&k->v, USER_ROLE_VIEWER);
+	if (graph != NULL) {
+		char payload[128];
+		snprintf(payload, sizeof(payload), "{'id':'%s'}", graph);
+		command(&k->a, "graph", "connect", payload, k->sa);
+		command(&k->b, "graph", "connect", payload, k->sb);
+		command(&k->v, "graph", "connect", payload, k->sv);
+	}
+	clear(&k->a);
+	clear(&k->b);
+	clear(&k->v);
+}
+
+static void clients_close(Clients *k)
+{
+	CHECK(k->anon.count == 0); /* nothing before login (02 §2.5 item 6) */
+	conn_close(&k->a);
+	conn_close(&k->b);
+	conn_close(&k->v);
+	conn_close(&k->anon);
+}
+
+/* A graph command from a, its events on a, b and v. */
+static void edit(Clients *k, const char *cmd, const char *payload, const char *const *expected,
+		 size_t n)
+{
+	command(&k->a, "graph", cmd, payload, k->sa);
+	FakeConn *all[] = {&k->a, &k->b, &k->v};
+	expect_all(all, 3, expected, n);
+}
+
+static void edit1(Clients *k, const char *cmd, const char *payload, const char *expected)
+{
+	edit(k, cmd, payload, &expected, 1);
+}
+
+static void test_graph_commands(void)
+{
+	setup();
+	CHECK(graphs_new_graph(&gs, "g1", "One", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	Clients k;
+	clients_open(&k, "g1");
+
+	/* addnode: defaulted x/y, payload keys in 02 order (byte for byte). */
+	command(&k.a, "graph", "addnode", "{'id':'n1','graph':'g1','component':'math/Add2'}",
+		k.sa);
+	static const char addnode_n1[] =
+		"{\"protocol\":\"graph\",\"command\":\"addnode\",\"payload\":{\"graph\":\"g1\","
+		"\"component\":\"math/Add2\",\"id\":\"n1\",\"metadata\":{\"x\":50,\"y\":50}}}";
+	FakeConn *all[] = {&k.a, &k.b, &k.v};
+	for (int i = 0; i < 3; i++) {
+		CHECK(all[i]->count == 1);
+		CHECK_STREQ(msg(all[i], 0), addnode_n1);
+		clear(all[i]);
+	}
+	edit1(&k, "addnode",
+	      "{'id':'n2','graph':'g1','component':'math/Add2','metadata':{'x':10.5,'y':-3,"
+	      "'change_threshold':0.25,'label':'L'}}",
+	      "{'protocol':'graph','command':'addnode','payload':{'graph':'g1','component':"
+	      "'math/Add2','id':'n2','metadata':{'x':10.5,'y':-3,'change_threshold':0.25,"
+	      "'label':'L'}}}");
+	edit1(&k, "addnode",
+	      "{'id':'t1','graph':'g1','component':'test/Types','metadata':{'y':7}}",
+	      "{'protocol':'graph','command':'addnode','payload':{'graph':'g1','component':"
+	      "'test/Types','id':'t1','metadata':{'x':50,'y':7}}}");
+	edit1(&k, "addnode", "{'id':'n4','graph':'g1','component':'math/Add2','metadata':null}",
+	      "{'protocol':'graph','command':'addnode','payload':{'graph':'g1','component':"
+	      "'math/Add2','id':'n4','metadata':{'x':50,'y':50}}}");
+	edit1(&k, "renamenode", "{'from':'n2','to':'n3','graph':'g1'}",
+	      "{'protocol':'graph','command':'renamenode','payload':{'graph':'g1','from':'n2',"
+	      "'to':'n3'}}");
+	/* changenode: the full merged metadata. */
+	edit1(&k, "changenode",
+	      "{'id':'n3','metadata':{'x':1,'change_threshold':null,'label':null,'extra':[1,2]},"
+	      "'graph':'g1'}",
+	      "{'protocol':'graph','command':'changenode','payload':{'id':'n3','graph':'g1',"
+	      "'metadata':{'x':1,'y':-3,'extra':[1,2]}}}");
+	edit1(&k, "changenode", "{'id':'n3','metadata':{'y':null},'graph':'g1'}",
+	      "{'protocol':'graph','command':'changenode','payload':{'id':'n3','graph':'g1',"
+	      "'metadata':{'x':1,'y':50,'extra':[1,2]}}}");
+	/* Edges and their metadata. */
+	edit1(&k, "addedge",
+	      "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n3','port':'in1'},'graph':'g1',"
+	      "'metadata':{'route':3}}",
+	      "{'protocol':'graph','command':'addedge','payload':{'graph':'g1','src':{'node':"
+	      "'n1','port':'out'},'tgt':{'node':'n3','port':'in1'},'metadata':{'route':3}}}");
+	edit1(&k, "addedge",
+	      "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n4','port':'in2'},'graph':'g1'}",
+	      "{'protocol':'graph','command':'addedge','payload':{'graph':'g1','src':{'node':"
+	      "'n1','port':'out'},'tgt':{'node':'n4','port':'in2'}}}");
+	edit1(&k, "changeedge",
+	      "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n3','port':'in1'},'metadata':"
+	      "{'route':5,'secure':true},'graph':'g1'}",
+	      "{'protocol':'graph','command':'changeedge','payload':{'graph':'g1','src':{'node':"
+	      "'n1','port':'out'},'tgt':{'node':'n3','port':'in1'},'metadata':{'route':5,"
+	      "'secure':true}}}");
+	edit1(&k, "changeedge",
+	      "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n3','port':'in1'},'metadata':"
+	      "null,'graph':'g1'}",
+	      "{'protocol':'graph','command':'changeedge','payload':{'graph':'g1','src':{'node':"
+	      "'n1','port':'out'},'tgt':{'node':'n3','port':'in1'},'metadata':{}}}");
+	edit1(&k, "removeedge",
+	      "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n4','port':'in2'},'graph':'g1'}",
+	      "{'protocol':'graph','command':'removeedge','payload':{'graph':'g1','src':{'node':"
+	      "'n1','port':'out'},'tgt':{'node':'n4','port':'in2'}}}");
+	/* Initials: data as a string; a replaced literal is a new addinitial. */
+	edit1(&k, "addinitial", "{'tgt':{'node':'n1','port':'in1'},'src':{'data':5},'graph':'g1'}",
+	      "{'protocol':'graph','command':'addinitial','payload':{'graph':'g1','src':{'data':"
+	      "'5'},'tgt':{'node':'n1','port':'in1'}}}");
+	edit1(&k, "addinitial",
+	      "{'tgt':{'node':'n1','port':'in1'},'src':{'data':'2.5'},'graph':'g1'}",
+	      "{'protocol':'graph','command':'addinitial','payload':{'graph':'g1','src':{'data':"
+	      "'2.5'},'tgt':{'node':'n1','port':'in1'}}}");
+	command(&k.a, "graph", "removeinitial", "{'tgt':{'node':'n1','port':'in1'},'graph':'g1'}",
+		k.sa);
+	static const char removeinitial[] =
+		"{\"protocol\":\"graph\",\"command\":\"removeinitial\",\"payload\":{\"src\":{"
+		"\"data\":\"2.5\"},\"tgt\":{\"node\":\"n1\",\"port\":\"in1\"},\"graph\":\"g1\"}}";
+	for (int i = 0; i < 3; i++) {
+		CHECK(all[i]->count == 1);
+		CHECK_STREQ(msg(all[i], 0), removeinitial);
+		clear(all[i]);
+	}
+	/* Graph ports: the request's "public" is the broadcast's "name". */
+	command(&k.a, "graph", "addinport", "{'graph':'g1','node':'n1','port':'in2','public':'IN'}",
+		k.sa);
+	static const char addinport[] =
+		"{\"protocol\":\"graph\",\"command\":\"addinport\",\"payload\":{\"graph\":\"g1\","
+		"\"name\":\"IN\",\"node\":\"n1\",\"port\":\"in2\"}}";
+	for (int i = 0; i < 3; i++) {
+		CHECK(all[i]->count == 1);
+		CHECK_STREQ(msg(all[i], 0), addinport);
+		clear(all[i]);
+	}
+	edit1(&k, "addoutport", "{'graph':'g1','node':'n3','port':'out','public':'OUT'}",
+	      "{'protocol':'graph','command':'addoutport','payload':{'graph':'g1','name':'OUT',"
+	      "'node':'n3','port':'out'}}");
+	edit1(&k, "renameinport", "{'graph':'g1','from':'IN','to':'IN2'}",
+	      "{'protocol':'graph','command':'renameinport','payload':{'graph':'g1','from':'IN',"
+	      "'to':'IN2'}}");
+	edit1(&k, "renameoutport", "{'graph':'g1','from':'OUT','to':'OUT2'}",
+	      "{'protocol':'graph','command':'renameoutport','payload':{'graph':'g1','from':"
+	      "'OUT','to':'OUT2'}}");
+	edit1(&k, "removeinport", "{'graph':'g1','public':'IN2'}",
+	      "{'protocol':'graph','command':'removeinport','payload':{'graph':'g1','name':"
+	      "'IN2'}}");
+	edit1(&k, "removeoutport", "{'graph':'g1','public':'OUT2'}",
+	      "{'protocol':'graph','command':'removeoutport','payload':{'graph':'g1','name':"
+	      "'OUT2'}}");
+	/* rename: the event's from is the actual name, not the request's. */
+	edit1(&k, "rename", "{'id':'g1','from':'whatever','to':'Uno'}",
+	      "{'protocol':'graph','command':'rename','payload':{'id':'g1','from':'One','to':"
+	      "'Uno'}}");
+	CHECK_STREQ(graphs_find(&gs, "g1")->name, "Uno");
+
+	/* removenode: a compound effect, its parts in applied order (02 §1.1,
+	 * §3.4): the initials and edges into it (port order), the edges out of
+	 * it, its inports, its outports, then the node. */
+	command(&k.a, "graph", "addinitial",
+		"{'tgt':{'node':'n1','port':'in1'},'src':{'data':1},'graph':'g1'}", k.sa);
+	command(&k.a, "graph", "addedge",
+		"{'src':{'node':'n3','port':'out'},'tgt':{'node':'n1','port':'in2'},'graph':'g1'}",
+		k.sa);
+	command(&k.a, "graph", "addinport", "{'graph':'g1','node':'n1','port':'in2','public':'P'}",
+		k.sa);
+	command(&k.a, "graph", "addoutport", "{'graph':'g1','node':'n1','port':'out','public':'Q'}",
+		k.sa);
+	CHECK(k.a.count == 4 && k.b.count == 4);
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	static const char *const removed[] = {
+		"{'protocol':'graph','command':'removeinitial','payload':{'src':{'data':'1'},'tgt':"
+		"{'node':'n1','port':'in1'},'graph':'g1'}}",
+		"{'protocol':'graph','command':'removeedge','payload':{'graph':'g1','src':{'node':"
+		"'n3','port':'out'},'tgt':{'node':'n1','port':'in2'}}}",
+		"{'protocol':'graph','command':'removeedge','payload':{'graph':'g1','src':{'node':"
+		"'n1','port':'out'},'tgt':{'node':'n3','port':'in1'}}}",
+		"{'protocol':'graph','command':'removeinport','payload':{'graph':'g1','name':'P'}}",
+		"{'protocol':'graph','command':'removeoutport','payload':{'graph':'g1','name':"
+		"'Q'}}",
+		"{'protocol':'graph','command':'removenode','payload':{'id':'n1','graph':'g1'}}",
+	};
+	edit(&k, "removenode", "{'id':'n1','graph':'g1'}", removed, 6);
+	CHECK(graph_find_block(graphs_find(&gs, "g1"), "n1") == NULL);
+
+	/* graph:list: a network:status per graph, to every authenticated
+	 * connection. */
+	CHECK(graphs_new_graph(&gs, "g2", "Two", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	command(&k.v, "graph", "list", "{}", k.sv);
+	static const char *const list[] = {
+		"{'protocol':'network','command':'status','payload':{'graph':'g1','name':'Uno',"
+		"'description':'','uptime':0,'running':false,'started':false,'debug':false}}",
+		"{'protocol':'network','command':'status','payload':{'graph':'g2','name':'Two',"
+		"'description':'','uptime':0,'running':false,'started':false,'debug':false}}",
+	};
+	expect_all(all, 3, list, 2);
+
+	/* A viewer may not edit. */
+	command(&k.v, "graph", "addnode", "{'id':'x','graph':'g1','component':'math/Add2'}", k.sv);
+	expect_error(&k.v, "Not permitted: graph:addnode");
+	CHECK(k.a.count == 0 && k.b.count == 0);
+	clients_close(&k);
+	teardown();
+}
+
+/* A command from a that is refused with message (and "graph" if not NULL):
+ * the error on a only, nothing on b (02 §1.1, §3.4.1). */
+static void refused_cmd(Clients *k, const char *protocol, const char *cmd, const char *payload,
+			const char *message, const char *graph)
+{
+	command(&k->a, protocol, cmd, payload, k->sa);
+	CHECK(k->a.count == 1);
+	if (!json_equal(msg(&k->a, 0), graph_error_json(message, graph)))
+		fprintf(stderr, "  for %s:%s %s\n", protocol, cmd, jq(payload));
+	clear(&k->a);
+	CHECK(k->b.count == 0 && k->v.count == 0);
+}
+
+static void test_graph_refusals(void)
+{
+	setup();
+	CHECK(graphs_new_graph(&gs, "g1", "One", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	Graph *g = graphs_find(&gs, "g1");
+	CHECK(graphs_add_node(&gs, "g1", "n1", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "g1", "n2", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_edge(&gs, "g1", "n1", "out", "n2", "in1", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "g1", GRAPH_INPORT, "P", "n1", "in1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "g1", GRAPH_OUTPORT, "Q", "n1", "out", NULL) == GRAPH_OK);
+	Clients k;
+	clients_open(&k, "g1");
+	char long_id[80];
+	memset(long_id, 'x', 65);
+	long_id[65] = '\0';
+	char payload[256];
+
+	/* Every case of 02 §3.4.1 that a graph command can hit. */
+	refused_cmd(&k, "graph", "addnode", "{'id':'x','graph':'zz','component':'math/Add2'}",
+		    "Unknown graph: zz", "zz");
+	refused_cmd(&k, "graph", "addnode", "{'id':'','graph':'g1','component':'math/Add2'}",
+		    "Invalid id", "g1");
+	snprintf(payload, sizeof(payload), "{'id':'x','graph':'%s','component':'math/Add2'}",
+		 long_id);
+	refused_cmd(&k, "graph", "addnode", payload, "Invalid id", NULL);
+	refused_cmd(&k, "graph", "addnode", "{'id':'n1','graph':'g1','component':'math/Add2'}",
+		    "Node exists: n1", "g1");
+	refused_cmd(&k, "graph", "addnode", "{'id':'n9','graph':'g1','component':'nope/X'}",
+		    "Unknown component: nope/X", "g1");
+	refused_cmd(&k, "graph", "removenode", "{'id':'zz','graph':'g1'}", "Unknown node: zz",
+		    "g1");
+	refused_cmd(&k, "graph", "renamenode", "{'from':'n1','to':'n2','graph':'g1'}",
+		    "Node exists: n2", "g1");
+	refused_cmd(&k, "graph", "renamenode", "{'from':'n1','to':'n1','graph':'g1'}",
+		    "Node exists: n1", "g1");
+	refused_cmd(&k, "graph", "changenode", "{'id':'zz','metadata':{'x':1},'graph':'g1'}",
+		    "Unknown node: zz", "g1");
+	refused_cmd(&k, "graph", "changenode", "{'id':'n1','metadata':{'x':1},'graph':'zz'}",
+		    "Unknown graph: zz", "zz");
+	refused_cmd(&k, "graph", "addedge",
+		    "{'src':{'node':'n1','port':'nope'},'tgt':{'node':'n2','port':'in2'},"
+		    "'graph':'g1'}",
+		    "Unknown port: n1.nope", "g1");
+	refused_cmd(&k, "graph", "addedge",
+		    "{'src':{'node':'zz','port':'out'},'tgt':{'node':'n2','port':'in2'},"
+		    "'graph':'g1'}",
+		    "Unknown node: zz", "g1");
+	refused_cmd(&k, "graph", "addedge",
+		    "{'src':{'node':'n1','port':'in1'},'tgt':{'node':'n2','port':'in2'},"
+		    "'graph':'g1'}",
+		    "Invalid edge direction", "g1");
+	refused_cmd(&k, "graph", "addedge",
+		    "{'src':{'node':'n2','port':'out'},'tgt':{'node':'n2','port':'in1'},"
+		    "'graph':'g1'}",
+		    "Input already connected: n2.in1", "g1");
+	refused_cmd(&k, "graph", "addinitial",
+		    "{'tgt':{'node':'n2','port':'in1'},'src':{'data':1},'graph':'g1'}",
+		    "Input already connected: n2.in1", "g1");
+	refused_cmd(&k, "graph", "addinitial",
+		    "{'tgt':{'node':'n2','port':'out'},'src':{'data':1},'graph':'g1'}",
+		    "Invalid edge direction", "g1");
+	refused_cmd(&k, "graph", "addinitial",
+		    "{'tgt':{'node':'n2','port':'nope'},'src':{'data':1},'graph':'g1'}",
+		    "Unknown port: n2.nope", "g1");
+	refused_cmd(&k, "graph", "addinitial",
+		    "{'tgt':{'node':'zz','port':'in1'},'src':{'data':'x'},'graph':'g1'}",
+		    "Unknown node: zz", "g1");
+	refused_cmd(&k, "graph", "removeedge",
+		    "{'src':{'node':'n2','port':'out'},'tgt':{'node':'n1','port':'in2'},"
+		    "'graph':'g1'}",
+		    "No such connection", "g1");
+	refused_cmd(&k, "graph", "changeedge",
+		    "{'src':{'node':'n2','port':'out'},'tgt':{'node':'n1','port':'in2'},"
+		    "'metadata':{},'graph':'g1'}",
+		    "No such connection", "g1");
+	refused_cmd(&k, "graph", "removeinitial", "{'tgt':{'node':'n1','port':'in2'},'graph':'g1'}",
+		    "No such connection", "g1");
+	refused_cmd(&k, "graph", "addinport",
+		    "{'graph':'g1','node':'n2','port':'in2','public':'P'}", "Port exists: P", "g1");
+	refused_cmd(&k, "graph", "addinport",
+		    "{'graph':'g1','node':'n2','port':'out','public':'P2'}", "Unknown port: n2.out",
+		    "g1");
+	refused_cmd(&k, "graph", "addoutport",
+		    "{'graph':'g1','node':'n2','port':'out','public':'Q'}", "Port exists: Q", "g1");
+	refused_cmd(&k, "graph", "renameinport", "{'graph':'g1','from':'P','to':'P'}",
+		    "Port exists: P", "g1");
+	refused_cmd(&k, "graph", "removeinport", "{'graph':'g1','public':'nope'}",
+		    "Unknown port: nope", "g1");
+	refused_cmd(&k, "graph", "removeoutport", "{'graph':'g1','public':'P'}",
+		    "Unknown port: P", "g1");
+	refused_cmd(&k, "graph", "renameoutport", "{'graph':'g1','from':'nope','to':'x'}",
+		    "Unknown port: nope", "g1");
+	refused_cmd(&k, "graph", "rename", "{'id':'zz','from':'a','to':'b'}", "Unknown graph: zz",
+		    "zz");
+	refused_cmd(&k, "graph", "connect", "{'id':'zz'}", "Unknown graph: zz", "zz");
+	refused_cmd(&k, "graph", "connect", "{'id':''}", "Invalid id", NULL);
+	refused_cmd(&k, "network", "start", "{'graph':'zz'}", "Unknown graph: zz", "zz");
+	refused_cmd(&k, "network", "stop", "{'graph':''}", "Invalid id", NULL);
+	refused_cmd(&k, "network", "getstatus", "{'graph':'zz'}", "Unknown graph: zz", "zz");
+	refused_cmd(&k, "network", "persist", "{'graph':'zz'}", "Unknown graph: zz", "zz");
+	refused_cmd(&k, "network", "persist", "{'graph':''}", "Invalid id", NULL);
+
+	/* Missing or mistyped payload fields (02 §1.2), checked before the
+	 * refusals above, in the order 02 §3.4 lists them. */
+	refused_cmd(&k, "graph", "addnode", "{'id':'x','graph':'g1'}", "Invalid field: component",
+		    "g1");
+	refused_cmd(&k, "graph", "addnode", "{'graph':'zz'}", "Invalid field: id", "zz");
+	refused_cmd(&k, "graph", "addnode", "{'id':'x','graph':5,'component':'c'}",
+		    "Invalid field: graph", NULL);
+	refused_cmd(&k, "graph", "addnode",
+		    "{'id':'x','graph':'g1','component':'math/Add2','metadata':{'x':'1'}}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "addnode",
+		    "{'id':'x','graph':'zz','component':'math/Add2','metadata':[]}",
+		    "Invalid field: metadata", "zz");
+	refused_cmd(&k, "graph", "addnode",
+		    "{'id':'x','graph':'g1','component':'math/Add2','metadata':"
+		    "{'change_threshold':-1}}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "removenode", "{'id':7,'graph':'g1'}", "Invalid field: id", "g1");
+	refused_cmd(&k, "graph", "renamenode", "{'from':'n1','graph':'g1'}", "Invalid field: to",
+		    "g1");
+	refused_cmd(&k, "graph", "changenode", "{'id':'n1','graph':'g1'}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "changenode", "{'id':'zz','metadata':{'y':true},'graph':'g1'}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "addedge", "{'src':'n1.out','tgt':{'node':'n2','port':'in2'},"
+		    "'graph':'g1'}", "Invalid field: src", "g1");
+	refused_cmd(&k, "graph", "addedge", "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n2'},"
+		    "'graph':'g1'}", "Invalid field: tgt", "g1");
+	refused_cmd(&k, "graph", "addedge",
+		    "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n2','port':'in2'},"
+		    "'graph':'g1','metadata':[1]}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "changeedge",
+		    "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n2','port':'in1'},"
+		    "'graph':'g1'}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "addinitial",
+		    "{'tgt':{'node':'n1','port':'in2'},'src':{'data':{}},'graph':'g1'}",
+		    "Invalid field: src", "g1");
+	refused_cmd(&k, "graph", "addinitial",
+		    "{'tgt':{'node':'n1','port':'in2'},'src':{'data':null},'graph':'g1'}",
+		    "Invalid field: src", "g1");
+	refused_cmd(&k, "graph", "addinitial", "{'tgt':{'node':'n1','port':'in2'},'graph':'g1'}",
+		    "Invalid field: src", "g1");
+	refused_cmd(&k, "graph", "removeinitial", "{'graph':'g1'}", "Invalid field: tgt", "g1");
+	refused_cmd(&k, "graph", "addinport", "{'graph':'g1','node':'n1','port':'in2'}",
+		    "Invalid field: public", "g1");
+	refused_cmd(&k, "graph", "removeoutport", "{'graph':'g1'}", "Invalid field: public", "g1");
+	refused_cmd(&k, "graph", "renameinport", "{'graph':'g1','to':'x'}", "Invalid field: from",
+		    "g1");
+	refused_cmd(&k, "graph", "rename", "{'id':'g1','from':'a'}", "Invalid field: to", "g1");
+	refused_cmd(&k, "graph", "connect", "{}", "Invalid field: id", NULL);
+	refused_cmd(&k, "network", "start", "{}", "Invalid field: graph", NULL);
+	refused_cmd(&k, "network", "persist", "{'graph':1}", "Invalid field: graph", NULL);
+	refused_cmd(&k, "network", "edges", "{'graph':'g1'}", "Invalid field: edges", "g1");
+	refused_cmd(&k, "network", "edges",
+		    "{'graph':'g1','edges':[{'src':{'node':'n1','port':'out'}}]}",
+		    "Invalid field: edges", "g1");
+	/* The provisional group commands (02 §3.4.2) are not implemented. */
+	refused_cmd(&k, "graph", "addgroup", "{'graph':'g1','name':'x','nodes':[]}",
+		    "Unknown command: graph:addgroup", NULL);
+	refused_cmd(&k, "graph", "changegroup", "{'graph':'g1','name':'x','metadata':{}}",
+		    "Unknown command: graph:changegroup", NULL);
+
+	/* Nothing changed. */
+	CHECK(g->block_count == 2 && g->port_count[GRAPH_INPORT] == 1 &&
+	      g->port_count[GRAPH_OUTPORT] == 1);
+	CHECK(graph_find_block(g, "n2")->inputs[0].source == INPUT_SOURCE_EDGE);
+	CHECK(graph_find_block(g, "n1")->inputs[1].source == INPUT_SOURCE_NONE);
+	clients_close(&k);
+	teardown();
+}
+
+/* Scoping (02 §4.1): graph-specific events go to connections scoped to
+ * their graph or unscoped, system-wide ones to every authenticated one. */
+static void test_scoping(void)
+{
+	setup();
+	CHECK(graphs_new_graph(&gs, "g1", "One", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_new_graph(&gs, "g2", "Two", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	FakeConn a, b, u;
+	conn_open(&a);
+	conn_open(&b);
+	conn_open(&u);
+	const char *sa = login_as(&a, USER_ROLE_EDITOR);
+	const char *sb = login_as(&b, USER_ROLE_EDITOR);
+	login_as(&u, USER_ROLE_VIEWER); /* unscoped: every graph */
+	command(&a, "graph", "connect", "{'id':'g1'}", sa);
+	command(&b, "graph", "connect", "{'id':'g2'}", sb);
+	clear(&a);
+	clear(&b);
+
+	/* A g1 event: a and u, not b. */
+	command(&b, "graph", "addnode", "{'id':'n','graph':'g1','component':'math/Add2'}", sb);
+	CHECK(a.count == 1 && u.count == 1 && b.count == 0);
+	CHECK(json_equal(msg(&a, 0), msg(&u, 0)));
+	clear(&a);
+	clear(&u);
+	command(&b, "graph", "rename", "{'id':'g1','to':'Uno'}", sb);
+	CHECK(a.count == 1 && u.count == 1 && b.count == 0);
+	clear(&a);
+	clear(&u);
+	command(&b, "network", "start", "{'graph':'g2'}", sb);
+	CHECK(a.count == 0 && u.count == 1 && b.count == 1);
+	CHECK(strstr(msg(&b, 0), "\"command\":\"started\"") != NULL);
+	clear(&b);
+	clear(&u);
+	/* System-wide: status, new_graph, errors reach everyone. */
+	command(&a, "network", "getstatus", "{'graph':'g2'}", sa);
+	CHECK(a.count == 1 && b.count == 1 && u.count == 1);
+	CHECK(strstr(msg(&a, 0), "\"command\":\"status\"") != NULL);
+	clear(&a);
+	clear(&b);
+	clear(&u);
+	command(&a, "runtime", "new_graph", "{'id':'g3'}", sa);
+	CHECK(a.count == 1 && b.count == 1 && u.count == 1);
+	clear(&a);
+	clear(&b);
+	clear(&u);
+	graphs_notify_error(&gs, "g2", "boom");
+	CHECK(a.count == 1 && b.count == 1 && u.count == 1);
+	clear(&a);
+	clear(&b);
+	clear(&u);
+
+	/* Re-scoping: a moves to g2. */
+	command(&a, "graph", "connect", "{'id':'g2'}", sa);
+	CHECK(a.count > 0 && strstr(msg(&a, 0), "\"command\":\"clear\"") != NULL);
+	clear(&a);
+	command(&b, "graph", "addnode", "{'id':'m','graph':'g1','component':'math/Add2'}", sb);
+	CHECK(a.count == 0 && b.count == 0 && u.count == 1);
+	clear(&u);
+	command(&b, "graph", "addnode", "{'id':'m','graph':'g2','component':'math/Add2'}", sb);
+	CHECK(a.count == 1 && b.count == 1 && u.count == 1);
+	clear(&a);
+	clear(&b);
+	clear(&u);
+	/* A failed connect keeps the scope. */
+	command(&a, "graph", "connect", "{'id':'nope'}", sa);
+	clear(&a);
+	command(&b, "graph", "addnode", "{'id':'k','graph':'g2','component':'math/Add2'}", sb);
+	CHECK(a.count == 1);
+	clear(&a);
+	clear(&b);
+	clear(&u);
+	/* A logout and a new login start unscoped (02 §4.1). */
+	command(&a, "environment", "logout", "{}", "");
+	clear(&a);
+	login_as(&a, USER_ROLE_EDITOR);
+	command(&b, "graph", "addnode", "{'id':'k','graph':'g1','component':'math/Add2'}", sb);
+	CHECK(a.count == 1);
+	conn_close(&a);
+	conn_close(&b);
+	conn_close(&u);
+	teardown();
+}
+
+/* A graph with every kind of snapshot entry, a placeholder and its retained
+ * entries (05 §2.2). */
+static const char snap_file[] =
+	"{'id':'gs','name':'Snap','description':'desc','icon':'cog','started':false,"
+	"'blocks':{'a':{'component':'math/Add2','metadata':{'x':1,'y':2,'change_threshold':0.5,"
+	"'k':'v'}},'b':{'component':'math/Add2'},'p':{'component':'nope/Missing','metadata':"
+	"{'x':9,'y':9}}},"
+	"'connections':[{'src':{'node':'a','port':'out'},'tgt':{'node':'b','port':'in1'},"
+	"'metadata':{'route':3}},{'src':{'data':7},'tgt':{'node':'a','port':'in2'}},"
+	"{'src':{'data':'3 V'},'tgt':{'node':'b','port':'in2'}},"
+	"{'src':{'node':'p','port':'x'},'tgt':{'node':'a','port':'in1'}},"
+	"{'src':{'data':1},'tgt':{'node':'p','port':'y'}}],"
+	"'inports':[{'name':'I','node':'a','port':'in1'},{'name':'R','node':'p','port':'y'}],"
+	"'outports':[{'name':'O','node':'b','port':'out'}]}";
+
+static const char *const snapshot[] = {
+	"{'protocol':'graph','command':'clear','payload':{'id':'gs','name':'Snap','main':true,"
+	"'description':'desc','icon':'cog'}}",
+	"{'protocol':'graph','command':'addnode','payload':{'graph':'gs','component':"
+	"'math/Add2','id':'a','metadata':{'x':1,'y':2,'change_threshold':0.5,'k':'v'}}}",
+	"{'protocol':'graph','command':'addnode','payload':{'graph':'gs','component':"
+	"'math/Add2','id':'b','metadata':{'x':50,'y':50}}}",
+	"{'protocol':'graph','command':'addnode','payload':{'graph':'gs','component':"
+	"'nope/Missing','id':'p','metadata':{'x':9,'y':9}}}",
+	"{'protocol':'graph','command':'addinport','payload':{'graph':'gs','name':'I','node':"
+	"'a','port':'in1'}}",
+	"{'protocol':'graph','command':'addoutport','payload':{'graph':'gs','name':'O','node':"
+	"'b','port':'out'}}",
+	"{'protocol':'graph','command':'addinitial','payload':{'graph':'gs','src':{'data':'7'},"
+	"'tgt':{'node':'a','port':'in2'}}}",
+	"{'protocol':'graph','command':'addinitial','payload':{'graph':'gs','src':{'data':"
+	"'3 V'},'tgt':{'node':'b','port':'in2'}}}",
+	"{'protocol':'graph','command':'addedge','payload':{'graph':'gs','src':{'node':'a',"
+	"'port':'out'},'tgt':{'node':'b','port':'in1'},'metadata':{'route':3}}}",
+};
+#define SNAPSHOT_LEN (sizeof(snapshot) / sizeof(snapshot[0]))
+
+static size_t snapshot_bytes(void)
+{
+	size_t n = 0;
+	for (size_t i = 0; i < SNAPSHOT_LEN; i++) {
+		cJSON *m = cJSON_Parse(jq(snapshot[i]));
+		char *t = graph_json_print(m);
+		n += strlen(t) + PROTO_FRAME_OVERHEAD;
+		free(t);
+		cJSON_Delete(m);
+	}
+	return n;
+}
+
+static void load_snap(void)
+{
+	const char *text = jq(snap_file);
+	CHECK(graph_files_load_text(&gf, text, strlen(text), "snap", NULL) == GRAPH_FILES_OK);
+}
+
+static void test_connect_snapshot(void)
+{
+	setup();
+	load_snap();
+	CHECK(graphs_new_graph(&gs, "g1", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
+	FakeConn f, o;
+	conn_open(&f);
+	conn_open(&o);
+	const char *s = login_as(&f, USER_ROLE_VIEWER);
+	login_as(&o, USER_ROLE_VIEWER);
+	command(&f, "graph", "connect", "{'id':'gs'}", s);
+	FakeConn *one[] = {&f};
+	expect_all(one, 1, snapshot, SNAPSHOT_LEN);
+	CHECK(o.count == 0); /* a reply to the requester only */
+	/* The first message byte for byte. */
+	command(&f, "graph", "connect", "{'id':'gs'}", s);
+	CHECK_STREQ(msg(&f, 0), "{\"protocol\":\"graph\",\"command\":\"clear\",\"payload\":{"
+				"\"id\":\"gs\",\"name\":\"Snap\",\"main\":true,\"description\":"
+				"\"desc\",\"icon\":\"cog\"}}");
+	clear(&f);
+	/* Scoped to gs now. */
+	CHECK(graphs_add_node(&gs, "g1", "x", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(f.count == 0 && o.count == 1);
+	clear(&o);
+	/* The placeholder can be moved and removed like any block; its
+	 * retained entries go with it, without events. */
+	command(&f, "environment", "logout", "{}", "");
+	clear(&f);
+	s = login_as(&f, USER_ROLE_EDITOR);
+	command(&f, "graph", "changenode", "{'id':'p','metadata':{'x':3},'graph':'gs'}", s);
+	CHECK(f.count == 1 && json_equal(msg(&f, 0),
+					 "{'protocol':'graph','command':'changenode','payload':{"
+					 "'id':'p','graph':'gs','metadata':{'x':3,'y':9}}}"));
+	clear(&f);
+	command(&f, "graph", "removenode", "{'id':'p','graph':'gs'}", s);
+	CHECK(f.count == 1 && json_equal(msg(&f, 0),
+					 "{'protocol':'graph','command':'removenode','payload':{"
+					 "'id':'p','graph':'gs'}}"));
+	clear(&f);
+	clear(&o);
+	conn_close(&f);
+	conn_close(&o);
+	teardown();
+}
+
+/* The snapshot and the outgoing buffer (02 §4.1.1; decided, plan task 18). */
+static void test_connect_buffer(void)
+{
+	setup();
+	load_snap();
+	CHECK(graphs_new_graph(&gs, "g1", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
+	size_t need = snapshot_bytes();
+	FakeConn f;
+	conn_open(&f);
+	const char *s = login_as(&f, USER_ROLE_VIEWER);
+
+	/* Exactly fits. */
+	f.space = need;
+	command(&f, "graph", "connect", "{'id':'gs'}", s);
+	CHECK(f.count == SNAPSHOT_LEN);
+	clear(&f);
+	command(&f, "environment", "logout", "{}", "");
+	clear(&f);
+	s = login_as(&f, USER_ROLE_VIEWER); /* unscoped again */
+
+	/* Larger than an empty buffer: refused, the connection stays open and
+	 * unscoped. */
+	f.space = need - 1;
+	f.pending = 0;
+	command(&f, "graph", "connect", "{'id':'gs'}", s);
+	expect_one(&f, graph_error_json("Graph too large to send: gs", "gs"));
+	CHECK(!f.closed);
+	f.space = 1u << 20;
+	CHECK(graphs_add_node(&gs, "g1", "x", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(f.count == 1);
+	clear(&f);
+
+	/* Does not fit while the buffer holds data: deferred, the scope
+	 * unchanged until the snapshot goes out; events meanwhile arrive
+	 * under the old scope, before the snapshot's graph:clear. */
+	f.space = 200;
+	f.pending = 100;
+	command(&f, "graph", "connect", "{'id':'gs'}", s);
+	CHECK(f.count == 0 && !f.closed);
+	f.space = 1u << 20;
+	CHECK(graphs_add_node(&gs, "gs", "c", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "g1", "y", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(f.count == 2);
+	clear(&f);
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	CHECK(f.count == SNAPSHOT_LEN + 1); /* made at the drain: with node c */
+	CHECK(json_equal(msg(&f, 0), snapshot[0]));
+	CHECK(strstr(msg(&f, 4), "\"id\":\"c\"") != NULL);
+	clear(&f);
+	CHECK(graphs_add_node(&gs, "g1", "z", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(f.count == 0); /* scoped to gs now */
+	CHECK(graphs_remove_node(&gs, "gs", "c", NULL) == GRAPH_OK);
+	CHECK(f.count == 1);
+	clear(&f);
+
+	/* Deferred, then too large for the drained buffer. */
+	f.space = 200;
+	f.pending = 100;
+	command(&f, "graph", "connect", "{'id':'g1'}", s);
+	CHECK(f.count == 0);
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	expect_one(&f, graph_error_json("Graph too large to send: g1", "g1"));
+	CHECK(graphs_add_node(&gs, "g1", "w", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(f.count == 0); /* still scoped to gs */
+
+	/* Deferred, and the graph is deleted meanwhile; a newer connect
+	 * replaces a deferred one. */
+	f.pending = 100;
+	command(&f, "graph", "connect", "{'id':'gs'}", s);
+	CHECK(f.count == 0);
+	f.space = 1u << 20;
+	CHECK(graphs_delete_graph(&gs, "gs", "Snap", NULL) == GRAPH_OK);
+	clear(&f);
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	expect_one(&f, graph_error_json("Unknown graph: gs", "gs"));
+	f.space = 10;
+	f.pending = 100;
+	command(&f, "graph", "connect", "{'id':'g1'}", s);
+	command(&f, "graph", "connect", "{'id':'g1'}", s);
+	f.space = 1u << 20;
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	CHECK(f.count == 1 + 4); /* clear and g1's 4 blocks, once */
+	clear(&f);
+	/* A logout drops a deferred snapshot. */
+	f.space = 10;
+	f.pending = 100;
+	command(&f, "graph", "connect", "{'id':'g1'}", s);
+	f.space = 1u << 20;
+	command(&f, "environment", "logout", "{}", "");
+	clear(&f);
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	CHECK(f.count == 0);
+	conn_close(&f);
+	teardown();
+}
+
+/* The data of t1's input port after an addinitial of data (JSON with '),
+ * as the event carries it, and the stored value's type. */
+static void check_initial(Clients *k, const char *port, const char *data, const char *want,
+			  enum linkable_type type)
+{
+	char payload[256];
+	snprintf(payload, sizeof(payload),
+		 "{'tgt':{'node':'t1','port':'%s'},'src':{'data':%s},'graph':'g1'}", port, data);
+	command(&k->a, "graph", "addinitial", payload, k->sa);
+	CHECK(k->a.count == 1 && k->b.count == 1);
+	char expected[512];
+	cJSON *e = cJSON_CreateObject();
+	cJSON_AddStringToObject(e, "protocol", "graph");
+	cJSON_AddStringToObject(e, "command", "addinitial");
+	cJSON *pl = cJSON_AddObjectToObject(e, "payload");
+	cJSON_AddStringToObject(pl, "graph", "g1");
+	cJSON_AddStringToObject(cJSON_AddObjectToObject(pl, "src"), "data", want);
+	cJSON *tgt = cJSON_AddObjectToObject(pl, "tgt");
+	cJSON_AddStringToObject(tgt, "node", "t1");
+	cJSON_AddStringToObject(tgt, "port", port);
+	char *t = cJSON_PrintUnformatted(e);
+	snprintf(expected, sizeof(expected), "%s", t);
+	free(t);
+	cJSON_Delete(e);
+	if (!json_equal(msg(&k->a, 0), expected) || !json_equal(msg(&k->b, 0), expected))
+		fprintf(stderr, "  for %s = %s\n", port, jq(data));
+	clear(&k->a);
+	clear(&k->b);
+	clear(&k->v);
+	const Block *b = graph_find_block(graphs_find(&gs, "g1"), "t1");
+	int32_t i = block_input_index(b, port);
+	CHECK(b->inputs[i].initial.type == type && b->in_values[i].type == type);
+}
+
+static void test_initial_encoding(void)
+{
+	setup();
+	CHECK(graphs_new_graph(&gs, "g1", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "g1", "t1", "test/Types", NULL, NULL) == GRAPH_OK);
+	Clients k;
+	clients_open(&k, "g1");
+	/* "number": a number, a numeric string, a Metric, other text -> 0. */
+	check_initial(&k, "n", "5", "5", LINKABLE_F64);
+	check_initial(&k, "n", "-0.125", "-0.125", LINKABLE_F64);
+	check_initial(&k, "n", "0.1", "0.1", LINKABLE_F64);
+	check_initial(&k, "n", "'2.5'", "2.5", LINKABLE_F64);
+	check_initial(&k, "n", "'3 V'", "3 V", LINKABLE_METRIC);
+	check_initial(&k, "n", "'abc'", "0", LINKABLE_F64);
+	check_initial(&k, "n", "'Infinity'", "Infinity", LINKABLE_F64);
+	check_initial(&k, "n", "1e999", "Infinity", LINKABLE_F64);
+	check_initial(&k, "n", "true", "true", LINKABLE_BOOL);
+	/* "bool": to_bool of a string. */
+	check_initial(&k, "b", "'true'", "true", LINKABLE_BOOL);
+	check_initial(&k, "b", "'yes'", "false", LINKABLE_BOOL);
+	check_initial(&k, "b", "false", "false", LINKABLE_BOOL);
+	check_initial(&k, "b", "1", "1", LINKABLE_F64);
+	/* "string": as-is. */
+	check_initial(&k, "s", "'hello world'", "hello world", LINKABLE_STRING);
+	check_initial(&k, "s", "''", "", LINKABLE_STRING);
+	check_initial(&k, "s", "'5'", "5", LINKABLE_STRING);
+	check_initial(&k, "s", "7", "7", LINKABLE_F64);
+	/* removeinitial carries the removed value, as a string. */
+	command(&k.a, "graph", "removeinitial", "{'tgt':{'node':'t1','port':'s'},'graph':'g1'}",
+		k.sa);
+	FakeConn *two[] = {&k.a, &k.b};
+	static const char *const removed[] = {
+		"{'protocol':'graph','command':'removeinitial','payload':{'src':{'data':'7'},"
+		"'tgt':{'node':'t1','port':'s'},'graph':'g1'}}",
+	};
+	expect_all(two, 2, removed, 1);
+	clear(&k.v);
+	clients_close(&k);
+	teardown();
+}
+
+/* network:start, stop, getstatus, persist (02 §3.3). */
+static void test_network_commands(void)
+{
+	setup();
+	CHECK(graphs_new_graph(&gs, "g1", "One", "first", NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_new_graph(&gs, "g2", "Two", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	Clients k;
+	clients_open(&k, "g1");
+	FakeConn op, other;
+	conn_open(&op);
+	conn_open(&other);
+	const char *so = login_as(&op, USER_ROLE_OPERATOR);
+	const char *sx = login_as(&other, USER_ROLE_VIEWER);
+	command(&other, "graph", "connect", "{'id':'g2'}", sx);
+	clear(&other);
+	FakeConn *subs[] = {&k.a, &k.b, &k.v, &op};
+
+	/* start: network:started to the graph's subscribers (op is
+	 * unscoped), the sender included; not to a connection on g2. */
+	runtime_set_now(&rt, 2000);
+	command(&op, "network", "start", "{'graph':'g1'}", so);
+	static const char *const started[] = {
+		"{'protocol':'network','command':'started','payload':{'graph':'g1','time':"
+		"'1970-01-01T00:00:02Z','started':true,'running':true,'debug':false}}",
+	};
+	expect_all(subs, 4, started, 1);
+	CHECK(other.count == 0);
+	/* Again: re-sent, the run's start time kept. */
+	runtime_set_now(&rt, 5000);
+	command(&op, "network", "start", "{'graph':'g1'}", so);
+	expect_all(subs, 4, started, 1);
+	/* getstatus: to every authenticated connection, the uptime in whole
+	 * seconds. */
+	runtime_set_now(&rt, 5999);
+	command(&op, "network", "getstatus", "{'graph':'g1'}", so);
+	static const char *const status[] = {
+		"{'protocol':'network','command':'status','payload':{'graph':'g1','name':'One',"
+		"'description':'first','uptime':3,'running':true,'started':true,'debug':false}}",
+	};
+	expect_all(subs, 4, status, 1);
+	FakeConn *others[] = {&other};
+	expect_all(others, 1, status, 1);
+	/* stop: the start and duration of the run; again: the same. */
+	runtime_set_now(&rt, 9500);
+	command(&op, "network", "stop", "{'graph':'g1'}", so);
+	static const char *const stopped[] = {
+		"{'protocol':'network','command':'stopped','payload':{'graph':'g1','time':"
+		"'1970-01-01T00:00:02Z','uptime':7,'started':false,'running':false,'debug':false}}",
+	};
+	expect_all(subs, 4, stopped, 1);
+	runtime_set_now(&rt, 20000);
+	command(&op, "network", "stop", "{'graph':'g1'}", so);
+	expect_all(subs, 4, stopped, 1);
+	/* A graph that never ran: the epoch and 0. */
+	command(&op, "network", "stop", "{'graph':'g2'}", so);
+	CHECK(op.count == 1 && other.count == 1 && k.a.count == 0);
+	CHECK(json_equal(msg(&other, 0),
+			 "{'protocol':'network','command':'stopped','payload':{'graph':'g2','time':"
+			 "'1970-01-01T00:00:00Z','uptime':0,'started':false,'running':false,"
+			 "'debug':false}}"));
+	clear(&op);
+	clear(&other);
+	/* An operator may not persist; a viewer may not start. */
+	command(&op, "network", "persist", "{'graph':'g1'}", so);
+	expect_error(&op, "Not permitted: network:persist");
+	command(&k.v, "network", "start", "{'graph':'g1'}", k.sv);
+	expect_error(&k.v, "Not permitted: network:start");
+
+	/* persist: a failed save is broadcast to everyone (graphs/ is a file
+	 * here, so it cannot be created). */
+	char path[PAL_PATH_MAX + 16];
+	snprintf(path, sizeof(path), "%s/%s", gf.datadir, GRAPH_FILES_GRAPHS_DIR);
+	CHECK(pal_storage_write(path, "x", 1) == PAL_OK);
+	command(&k.a, "network", "persist", "{'graph':'g1'}", k.sa);
+	static const char *const failed[] = {
+		"{'protocol':'network','command':'error','payload':{'stack':'','message':"
+		"'Unable to save graph: One (g1)','graph':'g1'}}",
+	};
+	expect_all(subs, 4, failed, 1);
+	expect_all(others, 1, failed, 1);
+	/* Success: no reply at all, the file written. */
+	CHECK(pal_storage_remove(path) == PAL_OK);
+	command(&k.a, "network", "persist", "{'graph':'g1'}", k.sa);
+	CHECK(k.a.count == 0 && k.b.count == 0 && op.count == 0);
+	CHECK(file_exists("g1"));
+	conn_close(&op);
+	conn_close(&other);
+	clients_close(&k);
+	teardown();
+}
+
+/* The network:data message expected for tgt node.port with data. */
+static const char *data_json(const char *graph, const char *sn, const char *sp, const char *tn,
+			     const char *tp, const char *data)
+{
+	static char buf[4][512];
+	static int next;
+	char *p = buf[next++ % 4];
+	snprintf(p, 512,
+		 "{'protocol':'network','command':'data','payload':{'id':'unknown','graph':'%s',"
+		 "'src':{'node':'%s','port':'%s'},'tgt':{'node':'%s','port':'%s'},'data':'%s'}}",
+		 graph, sn, sp, tn, tp, data);
+	return p;
+}
+
+static void set_initial(const char *node, const char *port, double v)
+{
+	Linkable l = linkable_from_f64(v);
+	CHECK(graphs_add_initial(&gs, "g1", node, port, &l, NULL) == GRAPH_OK);
+}
+
+/* network:edges and network:data (02 §4.2). */
+static void test_network_edges(void)
+{
+	setup();
+	CHECK(graphs_new_graph(&gs, "g1", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "g1", "n1", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "g1", "n2", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_edge(&gs, "g1", "n1", "out", "n2", "in1", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_start(&gs, "g1", NULL) == GRAPH_OK);
+	runtime_drain(&rt, SIZE_MAX);
+	FakeConn f, e;
+	conn_open(&f);
+	conn_open(&e);
+	const char *s = login_as(&f, USER_ROLE_VIEWER);
+	login_as(&e, USER_ROLE_VIEWER);
+	/* Graph events go elsewhere, so only the link values reach f. */
+	CHECK(protocol_conn_scope(f.pc, "elsewhere"));
+
+	/* The echo (requester only), then the current value of each existing
+	 * tgt; a nonexistent tgt is ignored. */
+	static const char req[] =
+		"{'graph':'g1','edges':[{'src':{'node':'n1','port':'out'},'tgt':{'node':'n2',"
+		"'port':'in1'}},{'src':{'node':'x','port':'y'},'tgt':{'node':'nope','port':'in1'}},"
+		"{'src':{'node':'x','port':'y'},'tgt':{'node':'n2','port':'out'}}],'extra':1.5}";
+	command(&f, "network", "edges", req, s);
+	CHECK(f.count == 2);
+	char echo[1024];
+	snprintf(echo, sizeof(echo), "{'protocol':'network','command':'edges','payload':%s}", req);
+	CHECK(json_equal(msg(&f, 0), echo));
+	CHECK(json_equal(msg(&f, 1), data_json("g1", "n1", "out", "n2", "in1", "0")));
+	/* The payload byte for byte. */
+	CHECK(strstr(msg(&f, 1), "\"payload\":{\"id\":\"unknown\",\"graph\":\"g1\",\"src\":{"
+				 "\"node\":\"n1\",\"port\":\"out\"},\"tgt\":{\"node\":\"n2\","
+				 "\"port\":\"in1\"},\"data\":\"0\"}") != NULL);
+	clear(&f);
+	CHECK(e.count == 0);
+
+	/* A change: one network:data when the value arrives (after the
+	 * drain), none for a value that did not change. */
+	set_initial("n1", "in1", 5);
+	CHECK(f.count == 0);
+	runtime_drain(&rt, SIZE_MAX);
+	expect_one(&f, data_json("g1", "n1", "out", "n2", "in1", "5"));
+	set_initial("n1", "in2", 0);
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 0);
+	set_initial("n1", "in2", 0.5);
+	runtime_drain(&rt, SIZE_MAX);
+	expect_one(&f, data_json("g1", "n1", "out", "n2", "in1", "5.5"));
+
+	/* Back-pressure: values that do not fit are coalesced; the latest one
+	 * goes out at the drain. */
+	f.space = 50;
+	f.pending = 100;
+	set_initial("n1", "in2", 1);
+	runtime_drain(&rt, SIZE_MAX);
+	set_initial("n1", "in2", 2);
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 0 && !f.closed);
+	f.space = 1u << 20;
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	expect_one(&f, data_json("g1", "n1", "out", "n2", "in1", "7"));
+	protocol_conn_drained(f.pc);
+	CHECK(f.count == 0);
+
+	/* Replacement: the new set only. A structural change on the watched
+	 * input (an initial) is reported at once. */
+	command(&f, "network", "edges",
+		"{'graph':'g1','edges':[{'src':{'node':'a','port':'b'},'tgt':{'node':'n1','port':"
+		"'in1'}}]}",
+		s);
+	CHECK(f.count == 2);
+	CHECK(json_equal(msg(&f, 1), data_json("g1", "a", "b", "n1", "in1", "5")));
+	clear(&f);
+	set_initial("n1", "in1", 6);
+	expect_one(&f, data_json("g1", "a", "b", "n1", "in1", "6"));
+	runtime_drain(&rt, SIZE_MAX); /* n2.in1 changes: no longer watched */
+	CHECK(f.count == 0);
+	/* An invalid request leaves the set as it was. */
+	command(&f, "network", "edges", "{'graph':'g1','edges':[1]}", s);
+	expect_one(&f, graph_error_json("Invalid field: edges", "g1"));
+	set_initial("n1", "in1", 7);
+	CHECK(f.count == 1);
+	clear(&f);
+	/* An empty array clears it. */
+	command(&f, "network", "edges", "{'graph':'g1','edges':[]}", s);
+	expect_one(&f, "{'protocol':'network','command':'edges','payload':{'graph':'g1',"
+		       "'edges':[]}}");
+	set_initial("n1", "in1", 8);
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 0);
+	/* An unknown graph: every pair ignored, still echoed. */
+	command(&f, "network", "edges",
+		"{'graph':'zz','edges':[{'src':{'node':'a','port':'b'},'tgt':{'node':'n1','port':"
+		"'in1'}}]}",
+		s);
+	CHECK(f.count == 1 && strstr(msg(&f, 0), "\"command\":\"edges\"") != NULL);
+	clear(&f);
+
+	static const char watch_n1[] =
+		"{'graph':'g1','edges':[{'src':{'node':'a','port':'b'},'tgt':{'node':'n1','port':"
+		"'in1'}},{'src':{'node':'n1','port':'out'},'tgt':{'node':'n2','port':'in1'}}]}";
+	/* Torn down at logout. */
+	command(&f, "network", "edges", watch_n1, s);
+	CHECK(f.count == 3);
+	clear(&f);
+	command(&f, "environment", "logout", "{}", "");
+	clear(&f);
+	set_initial("n1", "in1", 9);
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 0);
+	s = login_as(&f, USER_ROLE_VIEWER);
+	CHECK(protocol_conn_scope(f.pc, "elsewhere"));
+	set_initial("n1", "in1", 10);
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 0);
+	/* At expiry: nothing after its deadline, torn down at the tick. */
+	command(&f, "network", "edges", watch_n1, s);
+	clear(&f);
+	auth_of(&f)->expired = true;
+	set_initial("n1", "in1", 11);
+	CHECK(f.count == 0);
+	AuthConn *ac = auth_of(&f);
+	ac->authenticated = false;
+	ac->expired = false;
+	ac->events->on_expired(ac->user);
+	expect_one(&f, "{'protocol':'environment','command':'logout'}");
+	s = login_as(&f, USER_ROLE_VIEWER);
+	CHECK(protocol_conn_scope(f.pc, "elsewhere"));
+	set_initial("n1", "in1", 12);
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 0);
+	/* The watched block removed: its watch ends; the others go on. */
+	command(&f, "network", "edges", watch_n1, s);
+	clear(&f);
+	CHECK(graphs_remove_node(&gs, "g1", "n2", NULL) == GRAPH_OK);
+	set_initial("n1", "in1", 13);
+	expect_one(&f, data_json("g1", "a", "b", "n1", "in1", "13"));
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 0);
+	command(&f, "network", "edges", "{'graph':'g1','edges':[]}", s); /* replaced */
+	clear(&f);
+	/* Closed with live watches, and a graph deleted under them. */
+	command(&f, "network", "edges", watch_n1, s);
+	clear(&f);
+	FakeConn h;
+	conn_open(&h);
+	const char *sh = login_as(&h, USER_ROLE_VIEWER);
+	CHECK(protocol_conn_scope(h.pc, "elsewhere"));
+	command(&h, "network", "edges", watch_n1, sh);
+	clear(&h);
+	conn_close(&f);
+	set_initial("n1", "in1", 14);
+	CHECK(h.count == 1);
+	clear(&h);
+	CHECK(graphs_delete_graph(&gs, "g1", graphs_find(&gs, "g1")->name, NULL) == GRAPH_OK);
+	clear(&h);
+	command(&h, "network", "edges", "{'graph':'g1','edges':[]}", sh);
+	clear(&h);
+	conn_close(&h);
+	conn_close(&e);
+	teardown();
+}
+
+/* ---- The users file re-read at every challenge (02 §2.2; plan task 18) ------------- */
+
+static struct {
+	enum users_status status;
+	const UserStore *src;
+	int calls;
+} loader;
+
+static enum users_status fake_loader(void *ctx, UserStore *out)
+{
+	(void)ctx;
+	loader.calls++;
+	users_init(out);
+	if (loader.status == USERS_OK)
+		*out = *loader.src;
+	return loader.status;
+}
+
+static void test_users_reload(void)
+{
+	char path[PAL_PATH_MAX + 32];
+	snprintf(path, sizeof(path), "%s/users-reload.json", root);
+	static UserStore users;
+	users_init(&users);
+	CHECK(users_add(&users, "alice", USER_ROLE_EDITOR, "pencil", 6, 64, test_random) ==
+	      USERS_OK);
+	CHECK(users_save(&users, path) == USERS_OK);
+	static UserStore start;
+	CHECK(users_load(&start, path) == USERS_OK);
+	AuthConfig ac = {
+		.users = &start,
+		.load_users = users_loader,
+		.load_users_ctx = path,
+		.server_secret = "dGVzdCBzZXJ2ZXIgc2VjcmV0IG9ubHkhIQ==",
+		.idle_timeout_s = 1000,
+		.max_lifetime_s = 10000,
+		.clock = test_clock,
+		.random_bytes = test_random,
+	};
+	Auth *auth = NULL;
+	CHECK(auth_create(&ac, &auth));
+	setup_with(auth_authorizer(auth), false);
+
+	FakeConn f;
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "pencil")[0] != '\0');
+	conn_close(&f);
+	/* A user added while the engine runs can log in at once. */
+	CHECK(users_add(&users, "bob", USER_ROLE_EDITOR, "secret", 6, 64, test_random) ==
+	      USERS_OK);
+	CHECK(users_save(&users, path) == USERS_OK);
+	FakeConn b;
+	conn_open(&b);
+	char sb[64];
+	snprintf(sb, sizeof(sb), "%s", client_login(&b, "bob", "secret"));
+	CHECK(sb[0] != '\0');
+	/* A removed user is refused; a session already open stays valid. */
+	CHECK(users_remove(&users, "bob") == USERS_OK);
+	CHECK(users_save(&users, path) == USERS_OK);
+	conn_open(&f);
+	CHECK(client_login(&f, "bob", "secret")[0] == '\0');
+	conn_close(&f);
+	command(&b, "trace", "stop", "{'graph':'g'}", sb);
+	CHECK(b.count == 1 && strstr(msg(&b, 0), "\"trace\"") != NULL);
+	clear(&b);
+	/* A changed password takes effect at the next login. */
+	CHECK(users_passwd(&users, "alice", "eraser", 6, 64, test_random) == USERS_OK);
+	CHECK(users_save(&users, path) == USERS_OK);
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "eraser")[0] != '\0');
+	conn_close(&f);
+	/* A malformed file means no users (as at startup). */
+	CHECK(pal_storage_write(path, "[{", 2) == PAL_OK);
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "eraser")[0] == '\0');
+	conn_close(&f);
+	/* Repaired: users again; deleted: no users. */
+	CHECK(users_save(&users, path) == USERS_OK);
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "eraser")[0] != '\0');
+	conn_close(&f);
+	CHECK(pal_storage_remove(path) == PAL_OK);
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "eraser")[0] == '\0');
+	conn_close(&f);
+	conn_close(&b);
+	teardown();
+	auth_destroy(auth);
+
+	/* A file that cannot be read keeps the previous users; NULL never
+	 * re-reads. */
+	static UserStore none;
+	users_init(&none);
+	loader.status = USERS_OK;
+	loader.src = &users;
+	loader.calls = 0;
+	ac.users = &none;
+	ac.load_users = fake_loader;
+	ac.load_users_ctx = NULL;
+	CHECK(auth_create(&ac, &auth));
+	setup_with(auth_authorizer(auth), false);
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "eraser")[0] != '\0');
+	conn_close(&f);
+	CHECK(loader.calls == 1);
+	loader.status = USERS_ERR_STORAGE;
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "eraser")[0] != '\0');
+	conn_close(&f);
+	CHECK(loader.calls == 2);
+	loader.status = USERS_ERR_NO_MEMORY;
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "eraser")[0] != '\0');
+	conn_close(&f);
+	loader.status = USERS_ERR_NOT_FOUND;
+	conn_open(&f);
+	CHECK(client_login(&f, "alice", "eraser")[0] == '\0');
+	conn_close(&f);
+	teardown();
+	auth_destroy(auth);
+}
+
 static int remove_entry(const char *path, const struct stat *sb, int flag, struct FTW *ftw)
 {
 	(void)sb;
@@ -1329,6 +2560,7 @@ int main(void)
 {
 	CHECK(pal_init() == PAL_OK);
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
+	CHECK(block_types_register(&types_def) == BLOCK_TYPES_OK);
 	const char *base = getenv("TMPDIR");
 	snprintf(root, sizeof(root), "%s/hakkas-dispatch-XXXXXX", base && *base ? base : "/tmp");
 	if (mkdtemp(root) == NULL) {
@@ -1349,6 +2581,15 @@ int main(void)
 	RUN(test_bursts);
 	RUN(test_mirror);
 	RUN(test_real_authorizer);
+	RUN(test_graph_commands);
+	RUN(test_graph_refusals);
+	RUN(test_scoping);
+	RUN(test_connect_snapshot);
+	RUN(test_connect_buffer);
+	RUN(test_initial_encoding);
+	RUN(test_network_commands);
+	RUN(test_network_edges);
+	RUN(test_users_reload);
 
 	block_types_reset();
 	if (nftw(root, remove_entry, 16, FTW_DEPTH | FTW_PHYS) != 0)

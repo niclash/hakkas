@@ -43,7 +43,7 @@
  * twice, else one line), never from argv, and store only the derived keys
  * (a fresh random salt, USERS_DEFAULT_ITERATIONS). A malformed users file
  * is never overwritten: the command fails. The file is written atomically;
- * a running engine reads it at its next start.
+ * a running engine re-reads it at every login challenge (02 §2.2).
  *
  * Output (a type list, a JSON descriptor) goes to out (stdout); diagnostics
  * go through the log, whose POSIX sink is stderr. JSON is printed compact, one

@@ -38,26 +38,55 @@
  *     bytes, "..." appended).
  *  5. Capabilities (02 §2.4): "Not permitted: <protocol>:<command>".
  *  6. The command. A known command this layer does not implement yet (the
- *     graph:* and network:* commands of plan task 18) gets the generic
- *     error. A missing or mistyped payload field of a runtime, component or
- *     trace command is "Invalid field: <name>"; of environment:challenge and
- *     login it is "Login failed" (02 §2.3).
+ *     provisional group commands graph:addgroup, removegroup, renamegroup,
+ *     changegroup, 02 §3.4.2, blocked by open question 4) gets the generic
+ *     error. A missing or mistyped payload field is "Invalid field: <name>"
+ *     (checked in the order 02 lists the fields, before any refusal of
+ *     02 §3.4.1); of environment:challenge and login it is "Login failed"
+ *     (02 §2.3).
  *
  * Errors carry "graph" only when the command named a valid graph id (02 §1).
  *
- * Replies and broadcasts (02 §1.1): runtime:new_graph and delete_graph are
- * acknowledged only through their broadcasts (runtime:new_graph,
- * network:stopped for a started graph, runtime:delete_graph), which reach
- * every authenticated connection, the sender included; a refusal reaches
- * the sender only. getruntime, component:*, trace:* and environment:* reply
- * to the sender. getruntime after login also triggers a network:status
- * broadcast per graph.
+ * Replies and broadcasts (02 §1.1): runtime:new_graph and delete_graph, the
+ * graph-mutating graph:* commands and network:start/stop are acknowledged
+ * only through their broadcasts (the registry's events, mapped by
+ * proto_msg_event), which reach every subscribed authenticated connection,
+ * the sender included; a refusal reaches the sender only. graph:list,
+ * network:getstatus and getruntime after login trigger network:status
+ * broadcasts; network:persist has no reply on success (a failed save is a
+ * broadcast network:error). getruntime, component:*, trace:*,
+ * environment:*, graph:connect and network:edges reply to the sender.
+ *
+ * Graph commands (02 §3.4, decided in plan task 18): payload fields are
+ * mapped onto the graphs_ commands (graphs/graphs.h), whose refusal messages
+ * are sent as they are. Node metadata whose x, y or change_threshold is
+ * invalid is "Invalid field: metadata" (for changenode checked before the
+ * node is looked up); an initial's data is parsed for the target input's
+ * declared type (graph_json_to_initial).
+ *
+ * graph:connect (02 §4.1.1): the snapshot (graph:clear, the blocks, the
+ * inports and outports, the initials, the edges; never the retained entries
+ * of placeholders) is built only up to the free outgoing space. If it fits,
+ * the connection is re-scoped and the snapshot sent at once, atomically. If
+ * not while the buffer holds data, it is deferred to on_drained
+ * (PENDING_CONNECT) and made then, with the state of that moment; the scope
+ * changes only when it is sent, so no event of the graph comes between the
+ * re-scope and the snapshot. If it does not fit even an empty buffer:
+ * "Graph too large to send: <id>" and the scope stays.
+ *
+ * network:edges (02 §4.2): the request replaces the connection's whole set
+ * of live watches (graphs/graph.h InputWatch) on existing tgt inputs; the
+ * payload is echoed, then each watch sends network:data with the current
+ * value and again on every update. A network:data that does not fit the
+ * free space marks its watch dirty; the value at on_drained is sent then
+ * (coalesced). The set ends on replacement, logout, expiry and close; a
+ * watch ends with its block.
  *
  * Event delivery (02 §2.5 item 6, §4.1): a connection is a graphs subscriber
  * from its login until its logout, expiry or close, and an event is only
  * delivered while ops->capabilities_for is non-zero (so not after a session's
  * deadline, before the tick hook ends it). A login starts unscoped (every
- * graph); protocol_conn_scope is graph:connect's re-scoping (plan task 18).
+ * graph); protocol_conn_scope is graph:connect's re-scoping.
  * Each event's message is built once for all connections.
  *
  * Bursts (02 §0 "Outgoing buffer"): the getruntime and component:list
@@ -129,7 +158,9 @@ typedef struct ProtoConn ProtoConn;
 bool protocol_create(const ProtocolConfig *cfg, Protocol **out);
 
 /* Removes the log sink and frees the layer and any connection still open
- * (closing its session). After ws_server_close. NULL is ignored. */
+ * (closing its session and its network:edges watches). After
+ * ws_server_close; before graphs_deinit, or after it (the watches are then
+ * detached already). NULL is ignored. */
 void protocol_destroy(Protocol *p);
 
 /* The WebSocket server's callbacks; their ctx is the Protocol. */
@@ -154,7 +185,8 @@ void protocol_conn_drained(ProtoConn *c);
 void protocol_conn_close(ProtoConn *c);
 
 /* Scopes c's graph-specific events to graph_id, or to every graph for NULL
- * (02 §4.1; graph:connect, plan task 18). False for an invalid id. */
+ * (02 §4.1; graph:connect does it with its snapshot). False for an invalid
+ * id. */
 bool protocol_conn_scope(ProtoConn *c, const char *graph_id);
 
 #endif
