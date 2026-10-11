@@ -106,6 +106,22 @@ bool loop_conn_write(LoopConn *c, const void *data, size_t len)
 	return true;
 }
 
+bool loop_conn_set_out_cap(LoopConn *c, size_t cap)
+{
+	if (cap == 0 || cap < c->out_len)
+		return false;
+	if (c->out_start > 0) {
+		memmove(c->out, c->out + c->out_start, c->out_len);
+		c->out_start = 0;
+	}
+	uint8_t *p = realloc(c->out, cap);
+	if (p == NULL)
+		return false;
+	c->out = p;
+	c->out_cap = cap;
+	return true;
+}
+
 void loop_conn_close(LoopConn *c)
 {
 	if (c->state != CONN_OPEN)

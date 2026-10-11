@@ -19,7 +19,7 @@ Every key is optional; a missing key takes the default below, and a missing file
 | `webdir` | POSIX: `<cwd>/frontend/src`; Zephyr: `/lfs/web` | Location of the frontend's static assets. |
 | `datadir` | POSIX: `<basedir>`; Zephyr: `/lfs` | Parent directory of `graphs/` and `types/` (§2.3). |
 | `max_connections` | `4` | Maximum concurrent WebSocket connections. |
-| `max_message_bytes` | `16384` | Maximum WebSocket message size. |
+| `max_message_bytes` | `16384` | Maximum WebSocket message size (all fragments of a message together; `02-wire-protocol.md` §0). |
 | `allowed_origins` | `[]` | Extra `Origin` values accepted on the WebSocket upgrade, besides the device's own (`02-wire-protocol.md` §0). |
 | `change_threshold` | `0.05` | Engine-wide default change threshold (`01-architecture-overview.md` §3.3). |
 | `log.level` | `"warn"` | `fine`, `info`, `warn`, or `error` (§4). |
@@ -28,7 +28,7 @@ Every key is optional; a missing key takes the default below, and a missing file
 | `auth.idle_timeout_s` | `1800` | Session idle timeout (`02-wire-protocol.md` §2.5). |
 | `auth.max_lifetime_s` | `43200` | Session absolute lifetime. |
 | `auth.server_secret` | *(generated on first boot and written back to the file)* | Random key used to fake challenges for unknown users (`02-wire-protocol.md` §2.3). |
-| `tls.enabled`, `tls.cert`, `tls.key` | `false`, —, — | Optional TLS on both ports (`02-wire-protocol.md` §2.5 item 9). |
+| `tls.enabled`, `tls.cert`, `tls.key` | `false`, —, — | Optional TLS on both ports (`02-wire-protocol.md` §2.5 item 9; not implemented yet: `true` refuses startup, `02-wire-protocol.md` §0). |
 | `net.hostname` | `"hakkas-<last 3 MAC bytes in hex>"` | mDNS hostname (Zephyr; `04-drivers.md` §6). |
 | `net.dhcp`, `net.address`, `net.netmask`, `net.gateway` | `true`, —, —, — | IPv4 configuration (Zephyr only; the POSIX build uses the host OS's network configuration). |
 
@@ -79,7 +79,7 @@ There is no argv to parse at boot. Configuration comes from Kconfig (compile-tim
 5. Initialize the IO provider: discover and configure hardware modules on Zephyr, or set up simulated channels on POSIX (`04-drivers.md` §0–§1).
 6. Load composite block types from `<datadir>/types/` in dependency order: repeatedly register every type whose inner types are all registered, until no more can be registered. Anything left over (an unknown inner type, or a cycle) is logged as an error and skipped.
 7. Load the configured graph files (POSIX `process`) or every graph in `<datadir>/graphs/` (POSIX `daemon`, Zephyr). Start each graph whose persisted `started` flag is `true` (§2.1).
-8. Open the web server on `port` (`web_server_open_config`, §3) and the FBP WebSocket listener on `port + 1`, both on `host` (`loop_listen`); if either cannot be opened, the engine refuses to start.
+8. Open the web server on `port` (`web_server_open_config`, §3) and the FBP WebSocket listener on `port + 1` (`ws_server_open_config`, `02-wire-protocol.md` §0), both on `host`; if either cannot be opened, the engine refuses to start (also when `tls.enabled` is set: TLS is not implemented yet).
 9. Enter the engine loop (`01-architecture-overview.md` §3.2, §3.2.1). It runs until a stop request (POSIX: `SIGINT`/`SIGTERM`), then closes every connection and listener and returns.
 
 ## 2. Persistence

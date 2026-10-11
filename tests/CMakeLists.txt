@@ -29,6 +29,8 @@ hakkas_add_test(test_http)
 hakkas_add_test(test_web_server LIBS hakkas_pal_posix)
 target_compile_definitions(test_web_server PRIVATE _GNU_SOURCE)
 hakkas_add_test(test_crypto)
+hakkas_add_test(test_ws_server LIBS hakkas_pal_posix)
+target_compile_definitions(test_ws_server PRIVATE _GNU_SOURCE)
 
 # The same work queue tests with a tiny capacity, so wrap-around and overflow
 # run in a few pushes and the capacity override is exercised. The capacity
@@ -36,11 +38,12 @@ hakkas_add_test(test_crypto)
 # linking hakkas_core (built with HAKKAS_QUEUE_CAPACITY). It links no PAL, so
 # it leaves out the core files that call the PAL directly: app/ (01 §6),
 # system/config_file.c (05 §1.1), the engine loop, engine/loop.c (01
-# §3.2.1), and the web server on it, engine/web_server.c (05 §3); the rest of
-# the core is compiled with the small capacity.
+# §3.2.1), and the servers on it, engine/web_server.c (05 §3) and
+# engine/ws_server.c (02 §0); the rest of the core is compiled with the small
+# capacity.
 set(HAKKAS_CORE_SOURCES_NO_APP ${HAKKAS_CORE_SOURCES})
 list(FILTER HAKKAS_CORE_SOURCES_NO_APP EXCLUDE REGEX
-  "/app/[^/]+\\.c$|/system/config_file\\.c$|/engine/(loop|web_server)\\.c$")
+  "/app/[^/]+\\.c$|/system/config_file\\.c$|/engine/(loop|web_server|ws_server)\\.c$")
 add_executable(test_work_queue_small test_work_queue.c ${HAKKAS_CORE_SOURCES_NO_APP}
   ${HAKKAS_THIRD_PARTY_SOURCES})
 hakkas_third_party_warning_exceptions()

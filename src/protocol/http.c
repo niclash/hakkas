@@ -23,6 +23,8 @@ int http_parse_status(enum http_parse result)
 const char *http_reason(int status)
 {
 	switch (status) {
+	case 101:
+		return "Switching Protocols";
 	case 200:
 		return "OK";
 	case 400:
@@ -37,6 +39,8 @@ const char *http_reason(int status)
 		return "Request Timeout";
 	case 414:
 		return "URI Too Long";
+	case 426:
+		return "Upgrade Required";
 	case 431:
 		return "Request Header Fields Too Large";
 	case 500:

@@ -86,8 +86,9 @@
  * out (a peer that stopped reading) before the connection is closed anyway. */
 #define LOOP_CLOSE_LINGER_MS 5000
 
-/* Most tick hooks. */
-#define LOOP_TICKS_MAX 4
+/* Most tick hooks: the web server, the WebSocket server and the sessions of
+ * the authorization (plan tasks 13, 14, 16) use one each. */
+#define LOOP_TICKS_MAX 8
 
 /* A tick hook's "no deadline". */
 #define LOOP_NO_DEADLINE UINT64_MAX
@@ -325,6 +326,12 @@ static inline size_t loop_conn_pending(const LoopConn *c)
 {
 	return c->out_len;
 }
+
+/* Resizes the outgoing buffer to cap bytes (> 0), keeping what it holds
+ * (cap must be at least loop_conn_pending). False, unchanged, if cap is too
+ * small or out of memory. E.g. a small buffer for a handshake, a larger one
+ * after it (plan task 14). */
+bool loop_conn_set_out_cap(LoopConn *c, size_t cap);
 
 /* Stops (true) or resumes (false) on_readable, e.g. while the outgoing
  * buffer is too full to answer more requests. */

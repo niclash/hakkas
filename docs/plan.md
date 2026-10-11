@@ -77,7 +77,7 @@ SHA-1 and base64 for `Sec-WebSocket-Accept` and the specs forbid hand-written cr
 primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_base64_encode`;
 `tests/test_crypto.c` checks the RFC 6455 §1.3 example).
 
-- [ ] **14. WebSocket layer** (RFC 6455): upgrade, Origin check, connection and frame-size
+- [x] **14. WebSocket layer** (RFC 6455): upgrade, Origin check, connection and frame-size
   limits (02 §0). On the loop: `max_connections` is counted with `loop_listener_conn_count`
   (refuse the upgrade with 503 above it; set the listener's hard `max_conns` somewhat higher
   so the 503 can be sent); choose `out_cap` (a full outgoing buffer closes the connection,
@@ -89,7 +89,14 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   status is `http_parse_status`; the web server's error-and-close path (discard the buffered
   input before `loop_conn_close`, `engine/web_server.c`) avoids a reset. The head buffer can
   be freed after the upgrade (`http_request_init` takes the caller's buffer). The web server
-  uses one of the loop's 4 tick hooks.
+  uses one of the loop's 4 tick hooks. Done: the socket-free pieces `src/protocol/websocket.h`
+  (accept key, frame header codec, close codes, an incremental UTF-8 validator, the own-origin
+  check) and the server `src/engine/ws_server.h` on the loop (upgrade, Origin check,
+  `max_connections`/503, framing and reassembly, close handshake, server pings, a callback API
+  for the protocol layer, `ws_server_open_config`); the loop gained `loop_conn_set_out_cap`
+  and `LOOP_TICKS_MAX` went from 4 to 8. Decisions: 02 §0 (upgrade, Origin rules, a missing
+  Origin is 403, what counts toward the limit, outgoing buffer sizing and its MCU cost, TLS
+  refused for now).
 - [x] **15. Crypto primitives**: SHA-256, HMAC-SHA256, PBKDF2, base64/base64url, constant-time
   compare, via mbedTLS (decided, 01 §6). Done before task 14 (see above): a vendored mbedTLS
   3.6.7 subset with hakkas' own configuration (`third_party/mbedtls/README.md`) under the thin
@@ -102,11 +109,29 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   parses `user <add|passwd|del|list>` and refuses it as "not implemented yet": implement the
   subcommands and their arguments here. The users file path is `Config.auth.users_file`.
   Session expiry and login back-off are deadlines: run them from a tick hook
-  (`loop_add_tick`, 01 §3.2.1); rate limiting keys on `loop_conn_peer(conn)->addr`.
+  (`loop_add_tick`, 01 §3.2.1); rate limiting keys on `loop_conn_peer(conn)->addr`
+  (on a WebSocket: `ws_peer(conn)->addr`). Session expiry gets its own tick hook (8 are
+  available; the WebSocket server's covers only its handshake, ping and close deadlines). The
+  session idle timeout counts client messages (`on_message`), not the pongs to the WebSocket
+  server's pings (02 §0, "Liveness"). The session lives in the connection's user context
+  (`ws_set_user`) and ends in `on_close` (02 §2.5 item 2).
 - [ ] **17. Protocol dispatcher**: envelope validation, error format, secret gating,
   capability checks, `environment`/`runtime`/`component`/`trace` (02 §1, §3.1–§3.2, §3.5–§3.6).
+  Built on `src/engine/ws_server.h` (task 14): pass a `WsHandler` (`on_open` allocates the
+  per-connection state and stores it with `ws_set_user`; `on_message` gets one complete,
+  valid UTF-8 text message, NUL-terminated, valid during the call only; `on_close` frees the
+  state, once per opened connection, after which the `WsConn` is gone; `on_drained`) and its
+  context to `ws_server_open_config`. Send with `ws_send_text` (a message that does not fit
+  the outgoing buffer closes the connection, 01 §3.2.1, so check `ws_send_space` before a
+  burst), close with `ws_close(conn, code, reason)`. The server never looks at message
+  contents and never logs them.
 - [ ] **18. `graph:*` and `network:*` commands**: every command and broadcast of 02 §3.3–§3.4,
   `graph:connect` snapshot, scoping, `network:edges` live values (02 §4).
+  The snapshot must fit the connection's free outgoing space (`ws_send_space`; `WS_OUT_CAP`,
+  64 KiB by default, smaller on the MCU, 02 §0 "Outgoing buffer"): if it does not, wait for
+  `on_drained` and generate it then (still atomic). Decide (and record in 02 §4.1.1) the
+  answer to a graph whose snapshot exceeds the whole buffer — e.g. a `network:error` instead
+  of an endless close/reconnect cycle.
 - [ ] **19. Engine startup + `run`**: the startup sequence of 05 §1.4 wired end to end. Task 11
   parses `run process|daemon` and its options and applies them to the `Config` (`cli_config`),
   then refuses with "not implemented yet" (`cli_execute`): complete `run` here, including
@@ -117,7 +142,10 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `posix_stop_signals_restore`. The web server (task 13) is `web_server_open_config(&loop,
   &cfg, &srv)` in step 8 (a failure refuses startup); after `loop_run` returns,
   `web_server_close(srv)` (safe after the loop's shutdown closed its listener), then
-  `loop_deinit`.
+  `loop_deinit`. The WebSocket server (task 14) likewise: `ws_server_open_config(&loop, &cfg,
+  &handler, ctx, &ws)` in step 8 (the protocol layer's `WsHandler`, task 17; a failure,
+  including `tls.enabled`, which is refused as not implemented yet, refuses startup);
+  `ws_server_close(ws)` after `loop_run`, before `loop_deinit`.
 - [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
 
@@ -130,4 +158,6 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `WORK_IO_EVENT` in `runtime_drain`.
 - [ ] **23. `process/PID`** — **blocked** (open question 5).
 - [ ] **24. Schedule blocks** — **blocked** (open questions 5, 11).
-- [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3.
+- [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
+  smaller `WS_OUT_CAP` (e.g. 16 KiB) for the WebSocket connections' outgoing buffers (02 §0,
+  "Outgoing buffer": 64 KiB × `max_connections` is too much SRAM).
