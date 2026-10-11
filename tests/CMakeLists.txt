@@ -1,11 +1,13 @@
 # Unit tests for the POSIX build tree, run with CTest (05 §5).
 
 # hakkas_add_test(<name> [LIBS <library>...]): builds <name>.c against the
-# core, plus any extra libraries such as hakkas_pal_posix.
+# core, plus any extra libraries such as hakkas_pal_posix. The core comes
+# first, before the PAL, which adds it again after itself (the core calls the
+# PAL and the PAL the core, as for the runtime in CMakeLists.txt).
 function(hakkas_add_test name)
   cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "LIBS")
   add_executable(${name} ${name}.c)
-  target_link_libraries(${name} PRIVATE ${arg_LIBS} hakkas_core hakkas_compile_options)
+  target_link_libraries(${name} PRIVATE hakkas_core ${arg_LIBS} hakkas_compile_options)
   add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
@@ -33,6 +35,7 @@ hakkas_add_test(test_ws_server LIBS hakkas_pal_posix)
 target_compile_definitions(test_ws_server PRIVATE _GNU_SOURCE)
 hakkas_add_test(test_users LIBS hakkas_pal_posix)
 hakkas_add_test(test_auth)
+hakkas_add_test(test_dispatcher LIBS hakkas_pal_posix)
 
 # The same work queue tests with a tiny capacity, so wrap-around and overflow
 # run in a few pushes and the capacity override is exercised. The capacity
@@ -40,13 +43,13 @@ hakkas_add_test(test_auth)
 # linking hakkas_core (built with HAKKAS_QUEUE_CAPACITY). It links no PAL, so
 # it leaves out the core files that call the PAL directly: app/ (01 §6),
 # system/config_file.c (05 §1.1), protocol/users_file.c (02 §2.2), the engine
-# loop, engine/loop.c (01
-# §3.2.1), and the servers on it, engine/web_server.c (05 §3) and
-# engine/ws_server.c (02 §0); the rest of the core is compiled with the small
-# capacity.
+# loop, engine/loop.c (01 §3.2.1), the servers on it, engine/web_server.c
+# (05 §3) and engine/ws_server.c (02 §0), and the protocol dispatcher over
+# them, protocol/dispatcher.c (which uses app/) and protocol/protocol_ws.c;
+# the rest of the core is compiled with the small capacity.
 set(HAKKAS_CORE_SOURCES_NO_APP ${HAKKAS_CORE_SOURCES})
 list(FILTER HAKKAS_CORE_SOURCES_NO_APP EXCLUDE REGEX
-  "/app/[^/]+\\.c$|/system/config_file\\.c$|/protocol/users_file\\.c$|/engine/(loop|web_server|ws_server)\\.c$")
+  "/app/[^/]+\\.c$|/system/config_file\\.c$|/protocol/(users_file|dispatcher|protocol_ws)\\.c$|/engine/(loop|web_server|ws_server)\\.c$")
 add_executable(test_work_queue_small test_work_queue.c ${HAKKAS_CORE_SOURCES_NO_APP}
   ${HAKKAS_THIRD_PARTY_SOURCES})
 hakkas_third_party_warning_exceptions()

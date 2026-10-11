@@ -1133,17 +1133,20 @@ static void test_overflow(void)
 	Client cl = ws_connect();
 	WsConn *c = ev.conn;
 	CHECK(ws_send_space(c) == 2048 - 4);
+	CHECK(ws_send_pending(c) == 0);
 	static char m[2048]; /* messages of 1000 bytes, and up to out_cap */
 	memset(m, 'm', sizeof(m));
 	/* Without running the loop nothing is written out: the third message
 	 * does not fit, and the connection closes (no close frame). */
 	CHECK(ws_send_text(c, m, 1000));
 	CHECK(ws_send_space(c) == 2048 - 1004 - 4);
+	CHECK(ws_send_pending(c) == 1004);
 	CHECK(ws_send_text(c, m, 1000));
 	CHECK(ws_send_space(c) == 2048 - 2008 - 2);
 	CHECK(!ws_send_text(c, m, 1000));
 	CHECK(!ws_is_open(c));
 	CHECK(ws_send_space(c) == 0);
+	CHECK(ws_send_pending(c) == 0); /* not open */
 	CHECK(!ws_send_text(c, "x", 1));
 	ws_close(c, WS_CLOSE_NORMAL, NULL); /* ignored */
 	wait_closed(1);
@@ -1166,6 +1169,7 @@ static void test_overflow(void)
 	/* Written out: on_drained, and all the space is free again. */
 	CHECK(ev.drained > drained);
 	CHECK(ws_send_space(c) == space);
+	CHECK(ws_send_pending(c) == 0);
 	client_close(&cl);
 	wait_closed(2);
 	teardown();

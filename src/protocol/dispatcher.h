@@ -1,0 +1,160 @@
+/*
+ * The protocol dispatcher (02 §1-§3, plan task 17): one protocol session per
+ * WebSocket connection, between the WebSocket server (engine/ws_server.h)
+ * and the engine. It parses each client message's envelope, gates it on the
+ * connection's secret and the session's capabilities through the Authorizer
+ * interface (protocol/auth.h), runs the command, and turns the graphs
+ * registry's events into the broadcasts every authenticated connection
+ * receives (01 §4, 02 §1.1, §4.1).
+ *
+ * Naming: the layer is a Protocol (protocol_), a connection's session a
+ * ProtoConn (protocol_conn_). Wire messages are built by protocol/messages.h.
+ *
+ * Composition (plan task 19): protocol_create from the graphs registry (its
+ * runtime is gs->rt), the graph files, the configuration (engine_id, label,
+ * log.mirror) and the Authorizer; block types come from the global registry
+ * (blocktypes/block_types.h). Then
+ *	ws_server_open_config(&loop, &cfg, protocol_ws_handler(), proto, &ws)
+ * and, after loop_run: ws_server_close(ws), then protocol_destroy(proto).
+ *
+ * The connection is reached through a ProtoTransport (send, space, pending,
+ * close), so tests drive the dispatcher in-process with a fake one;
+ * protocol_ws_handler adapts it to a WsConn (protocol/protocol_ws.c).
+ *
+ * Message handling, in order (decided, plan task 17, 02 §1 "Implementation
+ * decisions"):
+ *  1. ops->activity for every message (the idle timeout, 02 §2.5 item 3).
+ *  2. The envelope (02 §1): one JSON object (nothing but whitespace after
+ *     it) whose "protocol" is one of the six names, "command" a string,
+ *     "payload" an object and "secret" a string; other members are ignored.
+ *     Otherwise network:error "Badly formatted request: <raw text>", the raw
+ *     text cut to its first PROTO_RAW_ECHO_MAX bytes (at a character
+ *     boundary, and at a U+0000) followed by "..." when cut.
+ *  3. Secret gating (02 §2.5 item 5): a gated command (auth_command_rule)
+ *     whose secret ops->validate_secret refuses: "Not authenticated" (the
+ *     value is never echoed).
+ *  4. A command not in 02 §3: the generic error "Unknown command:
+ *     <protocol>:<command>" (the command cut to PROTO_COMMAND_ECHO_MAX
+ *     bytes, "..." appended).
+ *  5. Capabilities (02 §2.4): "Not permitted: <protocol>:<command>".
+ *  6. The command. A known command this layer does not implement yet (the
+ *     graph:* and network:* commands of plan task 18) gets the generic
+ *     error. A missing or mistyped payload field of a runtime, component or
+ *     trace command is "Invalid field: <name>"; of environment:challenge and
+ *     login it is "Login failed" (02 §2.3).
+ *
+ * Errors carry "graph" only when the command named a valid graph id (02 §1).
+ *
+ * Replies and broadcasts (02 §1.1): runtime:new_graph and delete_graph are
+ * acknowledged only through their broadcasts (runtime:new_graph,
+ * network:stopped for a started graph, runtime:delete_graph), which reach
+ * every authenticated connection, the sender included; a refusal reaches
+ * the sender only. getruntime, component:*, trace:* and environment:* reply
+ * to the sender. getruntime after login also triggers a network:status
+ * broadcast per graph.
+ *
+ * Event delivery (02 §2.5 item 6, §4.1): a connection is a graphs subscriber
+ * from its login until its logout, expiry or close, and an event is only
+ * delivered while ops->capabilities_for is non-zero (so not after a session's
+ * deadline, before the tick hook ends it). A login starts unscoped (every
+ * graph); protocol_conn_scope is graph:connect's re-scoping (plan task 18).
+ * Each event's message is built once for all connections.
+ *
+ * Bursts (02 §0 "Outgoing buffer"): the getruntime and component:list
+ * replies are sent whole only if they fit the free space (send_space, with
+ * PROTO_FRAME_OVERHEAD per message); otherwise the reply is made again on
+ * on_drained (protocol_conn_drained), when the buffer is empty. A reply that
+ * does not fit even an empty buffer is network:error "Reply too large".
+ * Other replies meanwhile may overtake the deferred one.
+ *
+ * Log mirroring (05 §4, 02 §3.3): with log.mirror, a log sink sends each log
+ * line, as formatted, to every authenticated connection: network:error
+ * {"stack":"","message"} for error, else network:output {"type":"message",
+ * "message"}. A line is dropped for a connection whose outgoing buffer
+ * cannot hold it (mirroring never closes a connection). A line logged while
+ * the layer is sending (from inside the transport) or mirroring is dropped,
+ * so mirroring never recurses.
+ *
+ * Threading: engine thread only.
+ */
+#ifndef HAKKAS_PROTOCOL_DISPATCHER_H
+#define HAKKAS_PROTOCOL_DISPATCHER_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "app/graph_files.h"
+#include "engine/ws_server.h"
+#include "graphs/graphs.h"
+#include "protocol/auth.h"
+#include "system/config.h"
+
+/* Bytes of the raw text echoed in "Badly formatted request: ...". */
+#define PROTO_RAW_ECHO_MAX 256
+/* Bytes of a command echoed in the generic error. */
+#define PROTO_COMMAND_ECHO_MAX 64
+/* What a burst reserves per message beyond its text (a WebSocket frame
+ * header is at most 10 bytes). */
+#define PROTO_FRAME_OVERHEAD 10
+
+/* A connection, as the dispatcher sees it; conn is the transport's own. */
+typedef struct {
+	/* Sends one text message. False if it was not sent: the connection is
+	 * then closing (e.g. the message did not fit, 02 §0). */
+	bool (*send_text)(void *conn, const char *text, size_t len);
+	/* The longest message send_text takes now. */
+	size_t (*send_space)(void *conn);
+	/* Bytes waiting to be written; 0 means no on_drained will follow. */
+	size_t (*send_pending)(void *conn);
+	/* Starts closing with a WebSocket close code and reason. */
+	void (*close)(void *conn, uint16_t code, const char *reason);
+} ProtoTransport;
+
+typedef struct {
+	Graphs *graphs;	   /* borrowed, must outlive the Protocol */
+	GraphFiles *files; /* borrowed: delete_graph removes the graph's file */
+	/* Read at creation: engine_id (must be set, config_generate_engine_id),
+	 * label, log.mirror. */
+	const Config *cfg;
+	Authorizer auth;
+} ProtocolConfig;
+
+typedef struct Protocol Protocol;
+typedef struct ProtoConn ProtoConn;
+
+/* Makes the protocol layer; with log.mirror it registers its log sink.
+ * False (logged) for an invalid cfg (a NULL member, no engine_id), out of
+ * memory, or no free log sink. */
+bool protocol_create(const ProtocolConfig *cfg, Protocol **out);
+
+/* Removes the log sink and frees the layer and any connection still open
+ * (closing its session). After ws_server_close. NULL is ignored. */
+void protocol_destroy(Protocol *p);
+
+/* The WebSocket server's callbacks; their ctx is the Protocol. */
+const WsHandler *protocol_ws_handler(void);
+
+/* ---- Sessions (one per connection) ----------------------------------------------- */
+
+/* A connection opened (on_open): its session, with ops->open for peer_addr.
+ * NULL (out of memory, or the authorizer refused): close the connection. */
+ProtoConn *protocol_conn_open(Protocol *p, const ProtoTransport *t, void *conn,
+			      const char *peer_addr);
+
+/* One client message of len bytes, NUL-terminated after them (on_message). */
+void protocol_conn_message(ProtoConn *c, const char *text, size_t len);
+
+/* The outgoing buffer has been written out (on_drained): a deferred reply
+ * is made now. */
+void protocol_conn_drained(ProtoConn *c);
+
+/* The connection is gone (on_close): its session ends and c is freed. NULL
+ * is ignored. */
+void protocol_conn_close(ProtoConn *c);
+
+/* Scopes c's graph-specific events to graph_id, or to every graph for NULL
+ * (02 §4.1; graph:connect, plan task 18). False for an invalid id. */
+bool protocol_conn_scope(ProtoConn *c, const char *graph_id);
+
+#endif

@@ -129,7 +129,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   close code 1008 after 3 failures, back-off counted from the last failure and the deferred
   challenge, the interface's extra operations, log lines), 05 §1.2 (commands, password
   input), 05 §1.4 step 3.
-- [ ] **17. Protocol dispatcher**: envelope validation, error format, secret gating,
+- [x] **17. Protocol dispatcher**: envelope validation, error format, secret gating,
   capability checks, `environment`/`runtime`/`component`/`trace` (02 §1, §3.1–§3.2, §3.5–§3.6).
   Built on `src/engine/ws_server.h` (task 14): pass a `WsHandler` (`on_open` allocates the
   per-connection state and stores it with `ws_set_user`; `on_message` gets one complete,
@@ -161,6 +161,19 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   Event delivery and `runtime:runtime`'s capabilities use `ops->capabilities_for(c)` (0 =
   not authenticated). Callbacks never come from inside an `ops` call, only from
   `auth_tick`, and must not call `ops->close`.
+  Done: the dispatcher `src/protocol/dispatcher.h` (`Protocol`, one `ProtoConn` session per
+  connection behind a `ProtoTransport` — send, space, pending, close — so tests use a fake;
+  `protocol_ws_handler()` in `protocol_ws.c` adapts it to `WsConn`), the wire messages
+  `src/protocol/messages.h` (envelope, the two special shapes, errors, the replies, ISO 8601
+  times, and `proto_msg_event`, the `GraphEvent` → message mapping), `ws_send_pending` in the
+  WebSocket server, and `tests/test_dispatcher.c` (fake connections and a fake `Authorizer`,
+  plus a full SCRAM login through the real one). Mapped events: graph created/deleted,
+  status, started, stopped (a started graph's `delete_graph`), error. Log mirroring is the
+  layer's log sink. Decisions: 02 §1.2 (check order, envelope, the raw text bounded to 256
+  bytes, the generic error `"Unknown command: <protocol>:<command>"`, `"Invalid field:
+  <name>"`, when `"graph"` is set, out of memory closes with 1011, bursts deferred to
+  `on_drained` or `"Reply too large"`), 02 §2.5 (dispatcher), §3.2, §3.5, §3.6, §4.1
+  (subscription from login, unscoped), 05 §4 (mirroring).
 - [ ] **18. `graph:*` and `network:*` commands**: every command and broadcast of 02 §3.3–§3.4,
   `graph:connect` snapshot, scoping, `network:edges` live values (02 §4).
   The snapshot must fit the connection's free outgoing space (`ws_send_space`; `WS_OUT_CAP`,
@@ -168,6 +181,21 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `on_drained` and generate it then (still atomic). Decide (and record in 02 §4.1.1) the
   answer to a graph whose snapshot exceeds the whole buffer — e.g. a `network:error` instead
   of an endless close/reconnect cycle.
+  From task 17 (`src/protocol/dispatcher.c`, `messages.c`): add each command to the
+  `commands[]` table (`{protocol, command, handler}`; secret gating and the capability check
+  are already done before a handler runs, and a known command without a handler gets the
+  generic error); add the `graph:*` events to `proto_msg_event`'s switch (the `GraphEvent` →
+  message mapping, built once per event for every subscriber; `GRAPH_STARTED`/`STOPPED`,
+  `STATUS`, `CREATED`, `DELETED`, `ERROR` are mapped already). Missing or mistyped payload
+  fields: `invalid_field()` (`"Invalid field: <name>"`, with `"graph"` for a valid graph id,
+  02 §1.2); refusals via `GraphsMessage` and `reply_error(c, msg.text, known_graph(id))`.
+  `graph:connect` re-scopes with `protocol_conn_scope` (a login starts unscoped); the
+  snapshot is a burst: reuse the burst helpers (`Burst`, `burst_send`, a new `PENDING_` flag
+  for `protocol_conn_drained`; `send_pending` 0 means the buffer is empty, so the answer to a
+  snapshot that never fits is chosen there — currently `"Reply too large"` for the other
+  bursts). `graph:list`/`network:getstatus` are `graphs_status_all`/`graphs_status`.
+  `network:edges` subscriptions must end on logout and expiry too (`cmd_logout`,
+  `on_expired`) and on close (`protocol_conn_close`).
 - [ ] **19. Engine startup + `run`**: the startup sequence of 05 §1.4 wired end to end. Task 11
   parses `run process|daemon` and its options and applies them to the `Config` (`cli_config`),
   then refuses with "not implemented yet" (`cli_execute`): complete `run` here, including
@@ -190,6 +218,12 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `loop_add_tick(&loop, auth_tick, auth)`; hand `auth_authorizer(auth)` to the protocol layer;
   after `loop_run`: `ws_server_close`, `loop_remove_tick`, `auth_destroy`. A `--users <file>`
   override already lands in `cfg.auth.users_file`.
+  Protocol layer (task 17): after the graphs are loaded and before the listeners open,
+  `protocol_create(&(ProtocolConfig){&gs, &gf, &cfg, auth_authorizer(auth)}, &proto)` (needs
+  `cfg.engine_id` set, i.e. after `config_generate_engine_id`; it registers the log mirror
+  sink when `log.mirror` is on; a failure refuses startup), then `ws_server_open_config(&loop,
+  &cfg, protocol_ws_handler(), proto, &ws)`. After `loop_run`: `ws_server_close(ws)`, then
+  `protocol_destroy(proto)`, then `loop_remove_tick`/`auth_destroy`.
 - [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
 
@@ -197,6 +231,11 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
 
 - [ ] **21. Composite block types — runtime + `types/` persistence** (03 §5–§5.1). The
   `graph:*group` wire commands are blocked (open question 4).
+  From task 17: `component:getsource` returns `code: ""` for every type (`cmd_getsource` in
+  `src/protocol/dispatcher.c`): give a composite its authoring JSON there; the
+  `component:component` broadcast of a new or changed type (02 §3.4.2, system-wide per §4.1)
+  needs a broadcast to every connection with a live session (as the log mirror iterates
+  them), built with `proto_msg_component`.
 - [ ] **22. Simulated IO provider + `io/*` blocks + binding table** — **blocked** (open
   questions 3, 6). IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
   `WORK_IO_EVENT` in `runtime_drain`.

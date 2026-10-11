@@ -189,6 +189,13 @@ size_t ws_send_space(const WsConn *w)
 	return space - 10;
 }
 
+size_t ws_send_pending(const WsConn *w)
+{
+	if (w->state != S_OPEN)
+		return 0;
+	return loop_conn_pending(w->conn);
+}
+
 void ws_close(WsConn *w, uint16_t code, const char *reason)
 {
 	if (w->state != S_OPEN)

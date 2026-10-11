@@ -32,7 +32,10 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/graphs/runtime.c
   ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c
   ${HAKKAS_SOURCE_ROOT}/protocol/auth.c
+  ${HAKKAS_SOURCE_ROOT}/protocol/dispatcher.c
   ${HAKKAS_SOURCE_ROOT}/protocol/http.c
+  ${HAKKAS_SOURCE_ROOT}/protocol/messages.c
+  ${HAKKAS_SOURCE_ROOT}/protocol/protocol_ws.c
   ${HAKKAS_SOURCE_ROOT}/protocol/users.c
   ${HAKKAS_SOURCE_ROOT}/protocol/users_file.c
   ${HAKKAS_SOURCE_ROOT}/protocol/websocket.c
