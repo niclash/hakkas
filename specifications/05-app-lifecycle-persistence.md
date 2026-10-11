@@ -54,17 +54,19 @@ A command-line tree configures and starts the runtime:
 - `list types` — print every registered block type name.
 - `describe type <typename>` — print one block type's JSON descriptor: the `component:component` payload (`02-wire-protocol.md` §3.5).
 - `describe topology <filename>` — load a graph file standalone and print its JSON description: the graph's canonical form (§2.1).
-- `user add|passwd|del|list ...` — manage the credential store (`02-wire-protocol.md` §2.2).
+- `user add <name> --role <role>`, `user passwd <name>`, `user del <name>`, `user list` — manage the credential store (`02-wire-protocol.md` §2.2).
 - `run [options] process <filenames>` — start the engine and load the given colon-separated list of graph files, in order.
 - `run [options] daemon` — start the engine and load every graph in `<datadir>/graphs/`.
 - `run`'s own options override the corresponding configuration-file keys: `--id <id>` (`engine_id`), `--webdir <dir>`, `--host <addr>`, `--port <n>`, `--users <file>` (`auth.users_file`).
 
 Implementation decisions (plan task 11, `src/platform/posix/cli.h`):
-- **Grammar**: `hakkas [global options] <command>`. Global options come before the command and also include `--help`/`-h` (usage on stdout) and `--version`; `run`'s options come between `run` and `process`/`daemon`. An option's value is the next argument (no `--opt=value`), must not be empty, and a repeated option takes its last value. `user` accepts `add`, `passwd`, `del` and `list`; their own arguments are plan task 16's.
+- **Grammar**: `hakkas [global options] <command>`. Global options come before the command and also include `--help`/`-h` (usage on stdout) and `--version`; `run`'s options come between `run` and `process`/`daemon`. An option's value is the next argument (no `--opt=value`), must not be empty, and a repeated option takes its last value. `user add` takes the name and `--role <role>` in either order.
 - **Configuration**: every command except `--help`/`--version` first builds the configuration — defaults < `<confdir>/hakkas.json` < options — so an unreadable, malformed or invalid file fails every command, not only `run`. `datadir` defaults to `--basedir`, `webdir` to `<working directory>/frontend/src`. `--fine`/`--info`/`--warn` already apply while the file is read; the resulting `log.level` is the log threshold.
 - **Output**: results (type names one per line, a compact JSON document on one line) go to stdout; diagnostics go through the log (§4), whose POSIX sink is stderr.
-- **Exit codes**: `0` success; `1` a runtime failure (configuration file, unknown type, a graph file that does not load, a command not implemented yet); `2` a usage error (unknown command or option, a missing or extra argument, an invalid option value such as `--port 0`).
-- **Not implemented yet**: `user …` (plan task 16) and `run` (plan task 19; its options are parsed and applied already) are refused with an error and exit code `1`.
+- **Exit codes**: `0` success; `1` a runtime failure (configuration file, unknown type, a graph file that does not load, an unknown or already existing user, a refused password, a malformed or unwritable users file, a command not implemented yet); `2` a usage error (unknown command or option, a missing or extra argument, an invalid option value such as `--port 0`, an invalid user name or role for `user add`, a missing `--role`).
+- **User commands** (plan task 16): they edit `auth.users_file` (default `<confdir>/users.json`; a missing file is no users, and `add` creates it). `add` creates a user with the role (`admin`, `editor`, `operator`, `viewer`; required; a name that exists is refused); `passwd` sets an existing user's password, keeping the role; `del` removes a user; `list` prints `<name> <role>` per user, one per line, in file order, and nothing else. A malformed users file is never overwritten: the command fails (`02-wire-protocol.md` §2.2). The file is written atomically (§2.3). The engine reads it only at startup, so a change takes effect when the engine next starts.
+- **Passwords** (`add`, `passwd`) are read from standard input, never from argv. When it is a terminal: a prompt on stderr, echo turned off while the line is read straight from the descriptor (so no stdio buffer keeps a copy), the password asked twice and both entries must match; `SIGINT`/`SIGTERM`/`SIGQUIT`/`SIGTSTP` while echo is off restore the terminal before taking effect. When it is not a terminal (a pipe or file, for scripts and tests): one line is read, without a prompt or confirmation. The line ends at a newline (a CR before it is dropped) or the end of input; an empty password, no input and more than 1024 bytes are refused. Password buffers are zeroized after use.
+- **Not implemented yet**: `run` (plan task 19; its options are parsed and applied already) is refused with an error and exit code `1`.
 
 ### 1.3 Zephyr build tree (MCU targets)
 
@@ -74,7 +76,7 @@ There is no argv to parse at boot. Configuration comes from Kconfig (compile-tim
 
 1. Read the configuration file and apply command-line overrides (POSIX) → initialize logging and file locations. On Zephyr, first mount LittleFS.
 2. Initialize the PAL: clock, random source, storage; on Zephyr also bring up networking (`04-drivers.md` §6). Delete any leftover `*.tmp` files from an interrupted write (§2.3). Create the engine loop (`loop_init`, which opens the PAL's cross-context handoff, `01-architecture-overview.md` §0.2) before step 5 starts any IO worker; on POSIX, install the `SIGINT`/`SIGTERM` stop handlers.
-3. Load the credential store and initialize the authorization component (`02-wire-protocol.md` §2).
+3. Load the credential store and initialize the authorization component (`02-wire-protocol.md` §2). A missing, empty, malformed or unreadable users file never refuses startup: the engine runs with no users and every login is refused (`users_load_startup`, `02-wire-protocol.md` §2.2). The authorization component's tick hook (session expiry, delayed challenges, `auth_tick`) is added to the loop (`loop_add_tick`).
 4. Register every built-in block type (`03-block-types.md`).
 5. Initialize the IO provider: discover and configure hardware modules on Zephyr, or set up simulated channels on POSIX (`04-drivers.md` §0–§1).
 6. Load composite block types from `<datadir>/types/` in dependency order: repeatedly register every type whose inner types are all registered, until no more can be registered. Anything left over (an unknown inner type, or a cycle) is logged as an error and skipped.

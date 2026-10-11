@@ -104,7 +104,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   11's `system/base64.h`. `tests/test_crypto.c` checks the RFC 7677 SCRAM-SHA-256 example end to
   end (SaltedPassword … ServerSignature and the server's proof check), the chain task 16 uses
   with 02 §2.3's AuthMessage.
-- [ ] **16. Authorization**: users file, SCRAM handshake, sessions, roles/capabilities, rate
+- [x] **16. Authorization**: users file, SCRAM handshake, sessions, roles/capabilities, rate
   limiting, `hakkas user add|passwd|del|list` (02 §2). The CLI (task 11, `platform/posix/cli.c`)
   parses `user <add|passwd|del|list>` and refuses it as "not implemented yet": implement the
   subcommands and their arguments here. The users file path is `Config.auth.users_file`.
@@ -114,7 +114,21 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   available; the WebSocket server's covers only its handshake, ping and close deadlines). The
   session idle timeout counts client messages (`on_message`), not the pongs to the WebSocket
   server's pings (02 §0, "Liveness"). The session lives in the connection's user context
-  (`ws_set_user`) and ends in `on_close` (02 §2.5 item 2).
+  (`ws_set_user`) and ends in `on_close` (02 §2.5 item 2). Done: the credential store
+  `src/protocol/users.h` (records, strict parsing and printing, key derivation,
+  `users_load`/`users_load_startup`/`users_save` through the PAL in `users_file.c`, at most `HAKKAS_USERS_MAX` = 32 users), the
+  authorizer `src/protocol/auth.h` (the `Authorizer` interface `AuthOps` and the real one,
+  `auth_create`; per-connection state, challenge/login with 02 §2.3's AuthMessage, sessions
+  with idle and lifetime expiry from the tick hook `auth_tick`, roles → capabilities,
+  `auth_command_rule`/`auth_permits` for every command, the rate limiter with deferred
+  challenges, logging), the POSIX password reader `platform/posix/password.h` (echo off on a
+  terminal, one line otherwise) and the `user` subcommands in `platform/posix/cli.c`
+  (`cli_main`/`cli_execute` now take the input stream). Decisions: 02 §2.2–§2.5 (strict file
+  format, names without control characters, a malformed file → no users but the engine
+  starts, the file read at startup only, challenge and login rules, what counts as a failure,
+  close code 1008 after 3 failures, back-off counted from the last failure and the deferred
+  challenge, the interface's extra operations, log lines), 05 §1.2 (commands, password
+  input), 05 §1.4 step 3.
 - [ ] **17. Protocol dispatcher**: envelope validation, error format, secret gating,
   capability checks, `environment`/`runtime`/`component`/`trace` (02 §1, §3.1–§3.2, §3.5–§3.6).
   Built on `src/engine/ws_server.h` (task 14): pass a `WsHandler` (`on_open` allocates the
@@ -125,6 +139,28 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   the outgoing buffer closes the connection, 01 §3.2.1, so check `ws_send_space` before a
   burst), close with `ws_close(conn, code, reason)`. The server never looks at message
   contents and never logs them.
+  Authorization (task 16, `src/protocol/auth.h`, whose header comment shows the flow): take an
+  `Authorizer` (the real one from `auth_authorizer`, a fake in tests). `on_open`:
+  `ops->open(self, ws_peer(conn)->addr, &events, conn_state)` (NULL: close the connection);
+  `on_close`: `ops->close`. For **every** message call `ops->activity` first (the idle
+  timeout). Gating: `auth_command_rule(protocol, command)`; if `gated`,
+  `ops->validate_secret(secret)` else `"Not authenticated"` (never echo the value); then
+  unknown (`!known`) → the generic error; then `auth_permits(ops->capabilities_for(c), &rule)`
+  else `"Not permitted: <protocol>:<command>"`. `environment:challenge {user, cnonce}` →
+  `ops->challenge`: `AUTH_OK` reply `{salt, iterations, nonce}` from the `AuthChallenge`;
+  `AUTH_DELAYED` send nothing now — the `on_challenge` callback (from `auth_tick`) sends the
+  reply later (its argument NULL: `"Login failed"`); `AUTH_FAILED` `"Login failed"`.
+  `environment:login {user, nonce, proof}` → `ops->verify_proof`, then on `AUTH_OK`
+  `ops->issue_secret` (false: `"Login failed"`) and reply `{secret, role
+  (users_role_name), capabilities (auth_capability_name of the set bits in order),
+  server_signature}`; `AUTH_FAILED` `"Login failed"`; `AUTH_FAILED_CLOSE` `"Login failed"`
+  then `ws_close(conn, WS_CLOSE_POLICY, ...)` (1008, 02 §2.5). Missing or mistyped
+  payload fields of `challenge`/`login` also answer `"Login failed"` (pass NULL). `logout` →
+  `ops->revoke_secret`, reply `{"protocol":"environment","command":"logout"}` (no payload).
+  `on_expired` (from `auth_tick`): send that same logout message and stop event delivery.
+  Event delivery and `runtime:runtime`'s capabilities use `ops->capabilities_for(c)` (0 =
+  not authenticated). Callbacks never come from inside an `ops` call, only from
+  `auth_tick`, and must not call `ops->close`.
 - [ ] **18. `graph:*` and `network:*` commands**: every command and broadcast of 02 §3.3–§3.4,
   `graph:connect` snapshot, scoping, `network:edges` live values (02 §4).
   The snapshot must fit the connection's free outgoing space (`ws_send_space`; `WS_OUT_CAP`,
@@ -146,6 +182,14 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   &handler, ctx, &ws)` in step 8 (the protocol layer's `WsHandler`, task 17; a failure,
   including `tls.enabled`, which is refused as not implemented yet, refuses startup);
   `ws_server_close(ws)` after `loop_run`, before `loop_deinit`.
+  Authorization (task 16): in step 3, after `config_ensure_server_secret`,
+  `users_load_startup(&store, cfg.auth.users_file)` (it never refuses startup; `store` a static
+  `UserStore`) and `auth_create` with `{&store, cfg.auth.server_secret,
+  cfg.auth.idle_timeout_s, cfg.auth.max_lifetime_s, clock = a two-line wrapper over
+  loop_now_ms, random_bytes = pal_random_bytes}` (a failure refuses startup), then
+  `loop_add_tick(&loop, auth_tick, auth)`; hand `auth_authorizer(auth)` to the protocol layer;
+  after `loop_run`: `ws_server_close`, `loop_remove_tick`, `auth_destroy`. A `--users <file>`
+  override already lands in `cfg.auth.users_file`.
 - [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
 

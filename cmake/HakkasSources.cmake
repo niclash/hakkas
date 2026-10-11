@@ -31,7 +31,10 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/graphs/linkable.c
   ${HAKKAS_SOURCE_ROOT}/graphs/runtime.c
   ${HAKKAS_SOURCE_ROOT}/graphs/work_queue.c
+  ${HAKKAS_SOURCE_ROOT}/protocol/auth.c
   ${HAKKAS_SOURCE_ROOT}/protocol/http.c
+  ${HAKKAS_SOURCE_ROOT}/protocol/users.c
+  ${HAKKAS_SOURCE_ROOT}/protocol/users_file.c
   ${HAKKAS_SOURCE_ROOT}/protocol/websocket.c
   ${HAKKAS_SOURCE_ROOT}/system/config.c
   ${HAKKAS_SOURCE_ROOT}/system/config_file.c
@@ -93,6 +96,7 @@ set(HAKKAS_POSIX_PAL_SOURCES
 # the runtime and by its tests.
 set(HAKKAS_POSIX_CLI_SOURCES
   ${HAKKAS_SOURCE_ROOT}/platform/posix/cli.c
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/password.c
 )
 
 # The POSIX runtime executable on top of it.

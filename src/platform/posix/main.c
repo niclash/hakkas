@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
 		log_error("cannot initialize the platform: %s", pal_err_str(err));
 		return CLI_EXIT_FAILURE;
 	}
-	int rc = cli_main(argc, argv, stdout);
+	int rc = cli_main(argc, argv, stdin, stdout);
 	if (fflush(stdout) != 0 && rc == CLI_EXIT_OK)
 		rc = CLI_EXIT_FAILURE;
 	return rc;

@@ -62,6 +62,10 @@ ctest --preset debug          # run the tests
 For example `./build/debug/hakkas --confdir . list types` or
 `./build/debug/hakkas --confdir . describe type math/Add2`. The configuration file is
 `<confdir>/hakkas.json` (default `/etc/hakkas`; a missing file means all defaults, 05 §1.1).
+Users are provisioned locally, never over the network:
+`./build/debug/hakkas --confdir . user add alice --role editor` asks for the password (twice, with
+echo off; from a pipe it reads one line) and writes `<confdir>/users.json`; `user passwd`,
+`user del` and `user list` do the rest (02 §2.2, 05 §1.2). Without users every login is refused.
 
 Each preset builds into `build/<preset>/`; `rm -rf build` removes every build. Without presets,
 give CMake a build directory: `cmake -B build/debug -G Ninja && cmake --build build/debug`.

@@ -18,6 +18,9 @@
 #include "blocktypes/block_types.h"
 #include "platform/pal.h"
 #include "platform/posix/cli.h"
+#include "protocol/auth.h"
+#include "protocol/users.h"
+#include "system/crypto.h"
 #include "system/log.h"
 
 static char root[PAL_PATH_MAX];
@@ -102,6 +105,9 @@ static int parse(const char *first, ...)
 /* What cli_main writes to out, and its exit code. */
 static char output[16384];
 
+/* What cli_main reads from in (not a terminal): the password lines. */
+static const char *input = "";
+
 static int run(const char *first, ...)
 {
 	char *argv[ARGV_MAX];
@@ -114,7 +120,12 @@ static int run(const char *first, ...)
 	size_t size = 0;
 	FILE *out = open_memstream(&buf, &size);
 	CHECK(out != NULL);
-	int rc = cli_main(argc, argv, out);
+	FILE *in = input[0] != '\0' ? fmemopen((void *)input, strlen(input), "r")
+				    : fopen("/dev/null", "r");
+	CHECK(in != NULL);
+	int rc = cli_main(argc, argv, in, out);
+	fclose(in);
+	input = "";
 	fclose(out);
 	snprintf(output, sizeof(output), "%s", buf != NULL ? buf : "");
 	free(buf);
@@ -139,12 +150,25 @@ static void test_parse_commands(void)
 	CHECK(opts.command == CLI_DESCRIBE_TOPOLOGY);
 	CHECK_STREQ(opts.arg, "g.json");
 
-	const char *subs[] = {"add", "passwd", "del", "list"};
-	for (size_t i = 0; i < 4; i++) {
-		CHECK(parse("user", subs[i], "alice", "--role", "editor", NULL) == CLI_EXIT_OK);
-		CHECK(opts.command == CLI_USER);
-		CHECK_STREQ(opts.arg, subs[i]);
-	}
+	CHECK(parse("user", "add", "alice", "--role", "editor", NULL) == CLI_EXIT_OK);
+	CHECK(opts.command == CLI_USER);
+	CHECK_STREQ(opts.arg, "add");
+	CHECK_STREQ(opts.user, "alice");
+	CHECK_STREQ(opts.role, "editor");
+	CHECK(parse("user", "add", "--role", "viewer", "bob", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(opts.user, "bob");
+	CHECK_STREQ(opts.role, "viewer");
+	CHECK(parse("user", "passwd", "alice", NULL) == CLI_EXIT_OK);
+	CHECK(opts.command == CLI_USER);
+	CHECK_STREQ(opts.arg, "passwd");
+	CHECK_STREQ(opts.user, "alice");
+	CHECK(opts.role == NULL);
+	CHECK(parse("user", "del", "alice", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(opts.arg, "del");
+	CHECK_STREQ(opts.user, "alice");
+	CHECK(parse("user", "list", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(opts.arg, "list");
+	CHECK(opts.user == NULL);
 
 	CHECK(parse("run", "daemon", NULL) == CLI_EXIT_OK);
 	CHECK(opts.command == CLI_RUN_DAEMON);
@@ -222,6 +246,21 @@ static void test_parse_usage_errors(void)
 		    NULL);
 	usage_error("user: expected 'add', 'passwd', 'del' or 'list'", "user", NULL);
 	usage_error("user: expected", "user", "remove", "bob", NULL);
+	usage_error("user add: missing the user name", "user", "add", "--role", "admin", NULL);
+	usage_error("user add: missing --role <role>", "user", "add", "alice", NULL);
+	usage_error("user add: invalid role 'root'", "user", "add", "alice", "--role", "root",
+		    NULL);
+	usage_error("option --role needs a value", "user", "add", "alice", "--role", NULL);
+	usage_error("user add: invalid user name", "user", "add",
+		    "a-name-that-is-longer-than-32-bytes", "--role", "viewer", NULL);
+	usage_error("user add: invalid user name", "user", "add", "tab\there", "--role",
+		    "viewer", NULL);
+	usage_error("user add: unexpected argument 'bob'", "user", "add", "alice", "bob", NULL);
+	usage_error("user passwd: missing the user name", "user", "passwd", NULL);
+	usage_error("user passwd: unknown option '--role'", "user", "passwd", "alice", "--role",
+		    "admin", NULL);
+	usage_error("user del: unexpected argument 'b'", "user", "del", "a", "b", NULL);
+	usage_error("user list: unexpected argument 'x'", "user", "list", "x", NULL);
 	usage_error("run: expected 'process <files>' or 'daemon'", "run", NULL);
 	usage_error("run: expected", "run", "--port", "1", NULL);
 	usage_error("run: expected", "run", "start", NULL);
@@ -405,8 +444,6 @@ static void test_describe_topology(void)
 static void test_not_implemented(void)
 {
 	const char *conf = subdir("ni-conf");
-	CHECK(run("--confdir", conf, "user", "add", "alice", NULL) == CLI_EXIT_FAILURE);
-	CHECK(strstr(logs, "error user add: not implemented yet") != NULL);
 	CHECK(run("--confdir", conf, "run", "--port", "9000", "daemon", NULL) == CLI_EXIT_FAILURE);
 	CHECK(strstr(logs, "error run: not implemented yet") != NULL);
 	CHECK(run("--confdir", conf, "run", "process", "a.json", NULL) == CLI_EXIT_FAILURE);
@@ -415,6 +452,171 @@ static void test_not_implemented(void)
 	CHECK(run("--confdir", conf, "run", "--port", "0", "daemon", NULL) == CLI_EXIT_USAGE);
 	CHECK(strstr(logs, "not implemented") == NULL);
 	CHECK_STREQ(output, "");
+}
+
+/* ---- user add|passwd|del|list (02 §2.2) ------------------------------------------- */
+
+static uint64_t fixed_clock(void *ctx)
+{
+	(void)ctx;
+	return 1000;
+}
+
+/* Whether user logs in with password against the users file at path: the
+ * client's side of 02 §2.3 computed here, against the real authorizer. */
+static bool can_login(const char *path, const char *user, const char *password)
+{
+	static UserStore store;
+	if (users_load(&store, path) != USERS_OK)
+		return false;
+	AuthConfig cfg = {
+		.users = &store,
+		.server_secret = "a test server secret",
+		.idle_timeout_s = 60,
+		.max_lifetime_s = 60,
+		.clock = fixed_clock,
+		.random_bytes = pal_random_bytes,
+	};
+	Auth *auth;
+	CHECK(auth_create(&cfg, &auth));
+	Authorizer az = auth_authorizer(auth);
+	AuthConn *c = az.ops->open(az.self, "127.0.0.1", NULL, NULL);
+	AuthChallenge ch;
+	bool ok = az.ops->challenge(az.self, c, user, "AAECAwQFBgcICQoLDA0ODw==", &ch) == AUTH_OK;
+
+	uint8_t salt[16], salted[32], client_key[32], stored[32], client_sig[32], proof[32];
+	size_t n = 0;
+	ok = ok && crypto_base64_decode(ch.salt, strlen(ch.salt), salt, sizeof(salt), &n) &&
+	     crypto_pbkdf2_hmac_sha256(password, strlen(password), salt, n, ch.iterations,
+				       salted, 32) &&
+	     crypto_hmac_sha256(salted, 32, "Client Key", 10, client_key) &&
+	     crypto_sha256(client_key, 32, stored);
+	char msg[256], proof64[64];
+	snprintf(msg, sizeof(msg), "%s,%s,%s,%u", user, ch.nonce, ch.salt,
+		 (unsigned)ch.iterations);
+	ok = ok && crypto_hmac_sha256(stored, 32, msg, strlen(msg), client_sig);
+	for (int i = 0; i < 32; i++)
+		proof[i] = client_key[i] ^ client_sig[i];
+	crypto_base64_encode(proof, 32, proof64, sizeof(proof64));
+	AuthProof p;
+	ok = ok && az.ops->verify_proof(az.self, c, user, ch.nonce, proof64, &p) == AUTH_OK;
+	char secret[AUTH_SECRET_SIZE];
+	ok = ok && az.ops->issue_secret(az.self, c, secret);
+	az.ops->close(az.self, c);
+	auth_destroy(auth);
+	return ok;
+}
+
+/* The file at path as text (empty if none). */
+static const char *contents(const char *path)
+{
+	static char buf[USERS_FILE_MAX + 1];
+	size_t len = 0;
+	if (pal_storage_read(path, buf, sizeof(buf) - 1, &len) != PAL_OK)
+		len = 0;
+	buf[len] = '\0';
+	return buf;
+}
+
+static void test_user_commands(void)
+{
+	const char *conf = subdir("users-conf");
+	const char *users = join(conf, "users.json");
+
+	/* No file yet: no users. */
+	CHECK(run("--confdir", conf, "user", "list", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(output, "");
+	CHECK(!pal_storage_exists(users));
+
+	/* add: the password from in (not a terminal: one line). */
+	input = "correct horse\n";
+	CHECK(run("--confdir", conf, "user", "add", "alice", "--role", "editor", NULL) ==
+	      CLI_EXIT_OK);
+	CHECK_STREQ(output, "");
+	CHECK(pal_storage_exists(users));
+	CHECK(strstr(contents(users), "\"alice\"") != NULL);
+	CHECK(strstr(contents(users), "100000") != NULL);
+	CHECK(strstr(contents(users), "correct") == NULL); /* only derived keys */
+	CHECK(strstr(logs, "correct") == NULL);
+	CHECK(can_login(users, "alice", "correct horse"));
+	CHECK(!can_login(users, "alice", "correct horse\n"));
+
+	input = "pw2\r\n";
+	CHECK(run("--confdir", conf, "user", "add", "--role", "viewer", "bob", NULL) ==
+	      CLI_EXIT_OK);
+	CHECK(run("--confdir", conf, "user", "list", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(output, "alice editor\nbob viewer\n");
+
+	/* Refusals leave the file as it was. */
+	char before[USERS_FILE_MAX + 1];
+	snprintf(before, sizeof(before), "%s", contents(users));
+	input = "x\n";
+	CHECK(run("--confdir", conf, "user", "add", "alice", "--role", "admin", NULL) ==
+	      CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "user add: user 'alice' exists") != NULL);
+	input = "\n";
+	CHECK(run("--confdir", conf, "user", "add", "carol", "--role", "admin", NULL) ==
+	      CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "user add: empty password") != NULL);
+	CHECK(run("--confdir", conf, "user", "add", "carol", "--role", "admin", NULL) ==
+	      CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "user add: no password given") != NULL);
+	static char long_input[USERS_PASSWORD_MAX + 8];
+	memset(long_input, 'p', USERS_PASSWORD_MAX + 1);
+	long_input[USERS_PASSWORD_MAX + 1] = '\n';
+	input = long_input;
+	CHECK(run("--confdir", conf, "user", "add", "carol", "--role", "admin", NULL) ==
+	      CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "user add: password too long") != NULL);
+	input = "x\n";
+	CHECK(run("--confdir", conf, "user", "passwd", "nobody", NULL) == CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "user passwd: no user 'nobody'") != NULL);
+	CHECK(run("--confdir", conf, "user", "del", "nobody", NULL) == CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "user del: no user 'nobody'") != NULL);
+	CHECK_STREQ(contents(users), before);
+
+	/* passwd: a new password, the same role. */
+	input = "battery staple\n";
+	CHECK(run("--confdir", conf, "user", "passwd", "alice", NULL) == CLI_EXIT_OK);
+	CHECK(can_login(users, "alice", "battery staple"));
+	CHECK(!can_login(users, "alice", "correct horse"));
+	CHECK(run("--confdir", conf, "user", "list", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(output, "alice editor\nbob viewer\n");
+
+	/* del. */
+	CHECK(run("--confdir", conf, "user", "del", "bob", NULL) == CLI_EXIT_OK);
+	CHECK(run("--confdir", conf, "user", "list", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(output, "alice editor\n");
+	CHECK(run("--confdir", conf, "user", "del", "alice", NULL) == CLI_EXIT_OK);
+	CHECK(run("--confdir", conf, "user", "list", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(output, "");
+	CHECK_STREQ(contents(users), "[]\n");
+
+	/* A malformed file is never overwritten. */
+	put(users, "[{\"user\": \"x\"}]");
+	input = "pw\n";
+	CHECK(run("--confdir", conf, "user", "add", "dave", "--role", "viewer", NULL) ==
+	      CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "malformed users file, left unchanged") != NULL);
+	CHECK(run("--confdir", conf, "user", "list", NULL) == CLI_EXIT_FAILURE);
+	CHECK_STREQ(contents(users), "[{\"user\": \"x\"}]");
+
+	/* auth.users_file from the configuration file, relative to confdir. */
+	const char *conf2 = subdir("users-conf2");
+	put(join(conf2, "hakkas.json"), "{\"auth\": {\"users_file\": \"people.json\"}}");
+	input = "pw\n";
+	CHECK(run("--confdir", conf2, "user", "add", "erin", "--role", "operator", NULL) ==
+	      CLI_EXIT_OK);
+	CHECK(pal_storage_exists(join(conf2, "people.json")));
+	CHECK(!pal_storage_exists(join(conf2, "users.json")));
+	CHECK(run("--confdir", conf2, "user", "list", NULL) == CLI_EXIT_OK);
+	CHECK_STREQ(output, "erin operator\n");
+
+	/* A missing confdir cannot be written. */
+	input = "pw\n";
+	CHECK(run("--confdir", join(root, "no-such-dir"), "user", "add", "x", "--role", "viewer",
+		  NULL) == CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "cannot write") != NULL);
 }
 
 static void test_help_and_version(void)
@@ -459,6 +661,7 @@ int main(void)
 	RUN(test_describe_type);
 	RUN(test_describe_topology);
 	RUN(test_not_implemented);
+	RUN(test_user_commands);
 	RUN(test_help_and_version);
 
 	log_remove_sink(log_sink, NULL);

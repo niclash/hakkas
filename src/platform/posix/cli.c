@@ -14,6 +14,9 @@
 #include "graphs/graph_json.h"
 #include "graphs/graphs.h"
 #include "platform/pal.h"
+#include "platform/posix/password.h"
+#include "protocol/users.h"
+#include "system/crypto.h"
 
 #define HINT " (see hakkas --help)"
 
@@ -32,7 +35,11 @@ void cli_usage(FILE *out)
 	      "  list types                     print every registered block type name\n"
 	      "  describe type <typename>       print a block type's JSON descriptor\n"
 	      "  describe topology <filename>   load a graph file and print its JSON\n"
-	      "  user add|passwd|del|list ...   manage the users file (not implemented yet)\n"
+	      "  user add <name> --role <role>  add a user (role: admin, editor, operator,\n"
+	      "                                 viewer); the password is asked for\n"
+	      "  user passwd <name>             set a user's password\n"
+	      "  user del <name>                remove a user\n"
+	      "  user list                      print every user's name and role\n"
 	      "  run [run options] process <file>[:<file>...]\n"
 	      "                                 run the engine with these graph files\n"
 	      "  run [run options] daemon       run the engine with every graph in\n"
@@ -122,6 +129,64 @@ static int parse_run(Args *a, CliOptions *o)
 	return CLI_EXIT_USAGE;
 }
 
+/* user add <name> --role <role> (the option before or after the name),
+ * user passwd|del <name>, user list (02 §2.2). */
+static int parse_user(Args *a, CliOptions *o)
+{
+	const char *sub = next(a);
+	if (sub == NULL || (strcmp(sub, "add") != 0 && strcmp(sub, "passwd") != 0 &&
+			    strcmp(sub, "del") != 0 && strcmp(sub, "list") != 0)) {
+		log_error("user: expected 'add', 'passwd', 'del' or 'list'" HINT);
+		return CLI_EXIT_USAGE;
+	}
+	o->command = CLI_USER;
+	o->arg = sub;
+	if (strcmp(sub, "list") == 0)
+		return no_more(a, "user list");
+
+	char command[16];
+	snprintf(command, sizeof(command), "user %s", sub);
+	bool add = strcmp(sub, "add") == 0;
+	const char *arg;
+	while ((arg = next(a)) != NULL) {
+		if (add && strcmp(arg, "--role") == 0) {
+			if ((o->role = option_value(a, arg)) == NULL)
+				return CLI_EXIT_USAGE;
+		} else if (arg[0] == '-') {
+			log_error("%s: unknown option '%s'" HINT, command, arg);
+			return CLI_EXIT_USAGE;
+		} else if (o->user == NULL) {
+			o->user = arg;
+		} else {
+			log_error("%s: unexpected argument '%s'" HINT, command, arg);
+			return CLI_EXIT_USAGE;
+		}
+	}
+	if (o->user == NULL || o->user[0] == '\0') {
+		log_error("%s: missing the user name" HINT, command);
+		return CLI_EXIT_USAGE;
+	}
+	if (!add)
+		return CLI_EXIT_OK;
+	if (!users_name_valid(o->user)) {
+		log_error("user add: invalid user name: 1-32 bytes of UTF-8 without control "
+			  "characters" HINT);
+		return CLI_EXIT_USAGE;
+	}
+	enum user_role role;
+	if (o->role == NULL) {
+		log_error("user add: missing --role <role>" HINT);
+		return CLI_EXIT_USAGE;
+	}
+	if (!users_role_parse(o->role, &role)) {
+		log_error("user add: invalid role '%s': expected admin, editor, operator or "
+			  "viewer" HINT,
+			  o->role);
+		return CLI_EXIT_USAGE;
+	}
+	return CLI_EXIT_OK;
+}
+
 int cli_parse(int argc, char *const argv[], CliOptions *o)
 {
 	memset(o, 0, sizeof(*o));
@@ -179,18 +244,8 @@ int cli_parse(int argc, char *const argv[], CliOptions *o)
 		log_error("describe: expected 'type <typename>' or 'topology <filename>'" HINT);
 		return CLI_EXIT_USAGE;
 	}
-	if (strcmp(arg, "user") == 0) {
-		/* The subcommands' own arguments are plan task 16's. */
-		const char *sub = next(&a);
-		if (sub == NULL || (strcmp(sub, "add") != 0 && strcmp(sub, "passwd") != 0 &&
-				    strcmp(sub, "del") != 0 && strcmp(sub, "list") != 0)) {
-			log_error("user: expected 'add', 'passwd', 'del' or 'list'" HINT);
-			return CLI_EXIT_USAGE;
-		}
-		o->command = CLI_USER;
-		o->arg = sub;
-		return CLI_EXIT_OK;
-	}
+	if (strcmp(arg, "user") == 0)
+		return parse_user(&a, o);
 	if (strcmp(arg, "run") == 0)
 		return parse_run(&a, o);
 	log_error("unknown command '%s'" HINT, arg);
@@ -300,7 +355,82 @@ static int describe_topology(const Config *cfg, const char *path, FILE *out)
 	return rc;
 }
 
-int cli_execute(const CliOptions *o, const Config *cfg, FILE *out)
+/* The users file, edited by the user commands: static, it is a few KiB. */
+static UserStore user_store;
+
+/* Read the password for user add/passwd from in into buf (zeroized by the
+ * caller). */
+static bool read_password(const char *command, FILE *in, char *buf, size_t cap, size_t *len)
+{
+	enum posix_password_status st = posix_read_password(in, stderr, true, buf, cap, len);
+	if (st != POSIX_PASSWORD_OK) {
+		log_error("%s: %s", command, posix_password_status_str(st));
+		return false;
+	}
+	return true;
+}
+
+/* user add|passwd|del|list (02 §2.2): load the users file, change it, write
+ * it back atomically. */
+static int user_command(const CliOptions *o, const Config *cfg, FILE *in, FILE *out)
+{
+	const char *path = cfg->auth.users_file;
+	char command[16];
+	snprintf(command, sizeof(command), "user %s", o->arg);
+	enum users_status st = users_load(&user_store, path);
+	if (st == USERS_ERR_NOT_FOUND)
+		st = USERS_OK; /* no users yet */
+	if (st != USERS_OK) {
+		log_error("%s: %s: %s, left unchanged", command, path, users_status_str(st));
+		return CLI_EXIT_FAILURE;
+	}
+
+	int rc = CLI_EXIT_FAILURE;
+	char password[USERS_PASSWORD_MAX + 1];
+	size_t len = 0;
+	if (strcmp(o->arg, "list") == 0) {
+		for (size_t i = 0; i < user_store.count; i++)
+			fprintf(out, "%s %s\n", user_store.users[i].name,
+				users_role_name(user_store.users[i].role));
+		rc = CLI_EXIT_OK;
+	} else if (strcmp(o->arg, "del") == 0) {
+		if (users_remove(&user_store, o->user) != USERS_OK)
+			log_error("%s: no user '%s'", command, o->user);
+		else if (users_save(&user_store, path) == USERS_OK)
+			rc = CLI_EXIT_OK;
+	} else if (strcmp(o->arg, "add") == 0) {
+		enum user_role role = USER_ROLE_VIEWER;
+		users_role_parse(o->role, &role); /* checked by cli_parse */
+		if (users_find(&user_store, o->user) != NULL)
+			log_error("%s: user '%s' exists", command, o->user);
+		else if (user_store.count >= HAKKAS_USERS_MAX)
+			log_error("%s: %s already holds %d users", command, path, HAKKAS_USERS_MAX);
+		else if (read_password(command, in, password, sizeof(password), &len)) {
+			st = users_add(&user_store, o->user, role, password, len,
+				       USERS_DEFAULT_ITERATIONS, pal_random_bytes);
+			if (st != USERS_OK)
+				log_error("%s: %s", command, users_status_str(st));
+			else if (users_save(&user_store, path) == USERS_OK)
+				rc = CLI_EXIT_OK;
+		}
+	} else { /* passwd */
+		if (users_find(&user_store, o->user) == NULL)
+			log_error("%s: no user '%s'", command, o->user);
+		else if (read_password(command, in, password, sizeof(password), &len)) {
+			st = users_passwd(&user_store, o->user, password, len,
+					  USERS_DEFAULT_ITERATIONS, pal_random_bytes);
+			if (st != USERS_OK)
+				log_error("%s: %s", command, users_status_str(st));
+			else if (users_save(&user_store, path) == USERS_OK)
+				rc = CLI_EXIT_OK;
+		}
+	}
+	crypto_zeroize(password, sizeof(password));
+	users_init(&user_store);
+	return rc;
+}
+
+int cli_execute(const CliOptions *o, const Config *cfg, FILE *in, FILE *out)
 {
 	switch (o->command) {
 	case CLI_HELP:
@@ -318,8 +448,7 @@ int cli_execute(const CliOptions *o, const Config *cfg, FILE *out)
 	case CLI_DESCRIBE_TOPOLOGY:
 		return describe_topology(cfg, o->arg, out);
 	case CLI_USER:
-		log_error("user %s: not implemented yet (plan task 16)", o->arg);
-		return CLI_EXIT_FAILURE;
+		return user_command(o, cfg, in, out);
 	case CLI_RUN_PROCESS:
 	case CLI_RUN_DAEMON:
 		/* The startup sequence (05 §1.4) is plan task 19. */
@@ -329,14 +458,14 @@ int cli_execute(const CliOptions *o, const Config *cfg, FILE *out)
 	return CLI_EXIT_FAILURE;
 }
 
-int cli_main(int argc, char *const argv[], FILE *out)
+int cli_main(int argc, char *const argv[], FILE *in, FILE *out)
 {
 	CliOptions o;
 	int rc = cli_parse(argc, argv, &o);
 	if (rc != CLI_EXIT_OK)
 		return rc;
 	if (o.command == CLI_HELP || o.command == CLI_VERSION)
-		return cli_execute(&o, NULL, out);
+		return cli_execute(&o, NULL, in, out);
 
 	/* Config is a few KiB; keep it off the stack. */
 	static Config cfg;
@@ -348,7 +477,7 @@ int cli_main(int argc, char *const argv[], FILE *out)
 		block_types_reset();
 		return CLI_EXIT_FAILURE;
 	}
-	rc = cli_execute(&o, &cfg, out);
+	rc = cli_execute(&o, &cfg, in, out);
 	block_types_reset();
 	return rc;
 }
