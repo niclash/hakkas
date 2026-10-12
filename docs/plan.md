@@ -363,7 +363,9 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   after `loop_init` (the handoff exists) and the authorizer; the provider would be a platform
   part handed in through `EngineParams` like the start/stop hooks, stopped in `engine_stop`
   before the loop.
-- [ ] **23. `process/PID`** — **blocked** (open question 5).
+- [ ] **23. `process/PID`** — behavior decided (03 §6.1); **waits for the user's PID code**: the
+  implementation is to be based on the user's existing implementations, and the user adds the
+  parameters `Pconst`, `Itime`, `Dtime`, `MaxD`. Don't start it without that code.
 - [ ] **24. Schedule blocks** — **blocked** (open questions 5, 11).
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
   smaller `WS_OUT_CAP` (e.g. 16 KiB) for the WebSocket connections' outgoing buffers (02 §0,
