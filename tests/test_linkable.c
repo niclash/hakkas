@@ -106,8 +106,12 @@ static void test_to_u64(void)
 {
 	Linkable v = linkable_from_f64(7.9);
 	CHECK(linkable_to_u64(&v) == 7);
-	v = linkable_from_i64(-1); /* modular, like the C cast */
-	CHECK(linkable_to_u64(&v) == UINT64_MAX);
+	v = linkable_from_i64(-1); /* saturates like a negative double */
+	CHECK(linkable_to_u64(&v) == 0);
+	v = linkable_from_i64(INT64_MIN);
+	CHECK(linkable_to_u64(&v) == 0);
+	v = linkable_from_i64(INT64_MAX);
+	CHECK(linkable_to_u64(&v) == (uint64_t)INT64_MAX);
 	v = linkable_from_i64(5);
 	CHECK(linkable_to_u64(&v) == 5);
 	v = linkable_from_bool(true);

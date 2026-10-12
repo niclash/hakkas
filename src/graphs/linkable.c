@@ -309,7 +309,7 @@ uint64_t linkable_to_u64(const Linkable *v)
 	case LINKABLE_F64:
 		return f64_to_u64(v->as.f64);
 	case LINKABLE_I64:
-		return (uint64_t)v->as.i64;
+		return v->as.i64 < 0 ? 0 : (uint64_t)v->as.i64; /* saturates, 01 §2.1 */
 	case LINKABLE_METRIC:
 		return f64_to_u64(v->as.metric.value);
 	case LINKABLE_BOOL:

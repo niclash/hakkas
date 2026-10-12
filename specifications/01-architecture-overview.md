@@ -53,7 +53,7 @@ Intent:
 ```
 to_f64(v):  f64→v; i64→(double)v; metric→v.value; bool→1.0:0.0; string→parse as f64, else 0; unset→0.0
 to_i64(v):  f64→(int64_t)v; i64→v; metric→(int64_t)v.value; bool→1:0; string→parse as i64, else 0; unset→0
-to_u64(v):  f64→(uint64_t)v; i64→(uint64_t)v; metric→(uint64_t)v.value; bool→1:0; string→parse as u64, else 0; unset→0
+to_u64(v):  f64→(uint64_t)v; i64→(v<0 ? 0 : (uint64_t)v); metric→(uint64_t)v.value; bool→1:0; string→parse as u64, else 0; unset→0
 to_bool(v): bool→v; f64→v!=0.0; metric→v.value!=0.0; i64→v!=0; string→(v=="true") [exact match only]; unset→false
 default_value(typename): "bool"→false; "number"→0.0; "string"→""; else→0.0
 ```
@@ -61,7 +61,7 @@ default_value(typename): "bool"→false; "number"→0.0; "string"→""; else→0
 - f64: `[+-]? (digits [. digits*] | . digits) [(e|E) [+-]? digits]`, or exactly `NaN`, `Infinity`, `+Infinity`, `-Infinity`. Hexadecimal and the C library's `inf`/`nan` spellings are not accepted. Decimal text beyond the double range gives ±Infinity.
 - i64: `[+-]? digits`, within the `int64_t` range; u64: `[+]? digits`, within the `uint64_t` range. Integer parsing does not go through f64: `"12.5"` and `"1e3"` are not integers and give `0`, as does an out-of-range integer string.
 
-**Double → integer** (NaN, ±Infinity, out-of-range — decided, `00-README.md` open question 8): `to_i64`/`to_u64` of a double (an f64, a `Metric` magnitude) **saturate**. NaN → `0`; a value at or beyond the target type's upper bound → `INT64_MAX`/`UINT64_MAX` (+Infinity included); below the lower bound → `INT64_MIN`/`0` (−Infinity and every negative value ≤ −1 for `to_u64`); everything else truncates toward zero as the C cast does. This costs a NaN test and two comparisons, is well-defined C (a plain cast of such a value is undefined behavior), and matches what common FPUs' conversion instructions do. Note the asymmetry it leaves: `to_u64` of the f64 `-1.0` is `0`, while `to_u64` of the i64 `-1` is the modular C cast, `UINT64_MAX`.
+**Double → integer** (NaN, ±Infinity, out-of-range — decided, `00-README.md` open question 8): `to_i64`/`to_u64` of a double (an f64, a `Metric` magnitude) **saturate**. NaN → `0`; a value at or beyond the target type's upper bound → `INT64_MAX`/`UINT64_MAX` (+Infinity included); below the lower bound → `INT64_MIN`/`0` (−Infinity and every negative value ≤ −1 for `to_u64`); everything else truncates toward zero as the C cast does. This costs a NaN test and two comparisons, is well-defined C (a plain cast of such a value is undefined behavior), and matches what common FPUs' conversion instructions do. `to_u64` of a negative **i64** saturates to `0` as well (decided, open question 8), so every negative value gives `0` whatever its type.
 
 **Stringifying** a value for display/wire transport uses each type's natural string representation; a value with no natural string form — "unset" — renders as `"<not stringable>"`. The forms:
 - string: as-is; i64: decimal; bool: `"true"`/`"false"` (so `to_bool` reads it back);
