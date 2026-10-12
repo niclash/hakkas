@@ -27,7 +27,7 @@
                     "addressable": false
                 },
                 {
-                    "id": "mute",
+                    "id": "frequency",
                     "description": "Frequency input",
                     "type": "bool",
                     "addressable": false
