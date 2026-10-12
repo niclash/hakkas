@@ -4,6 +4,10 @@
  *
  *	static void test_something(void) { CHECK(1 + 1 == 2); }
  *	int main(void) { RUN(test_something); return test_result(); }
+ *
+ * A test made of several source files (the end-to-end tests over e2e.c)
+ * defines TEST_SHARED_FAILURES before including this header in each of them,
+ * so their checks count in one test_failures, defined in e2e.c.
  */
 #ifndef HAKKAS_TEST_H
 #define HAKKAS_TEST_H
@@ -11,7 +15,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef TEST_SHARED_FAILURES
+extern int test_failures;
+#else
 static int test_failures;
+#endif
 
 #define CHECK(cond)                                                                                \
 	do {                                                                                       \

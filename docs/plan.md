@@ -252,7 +252,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   the `.tmp` cleanup, `run process` refuses a graph file that does not load while `run daemon`
   skips it, the ready line, the shutdown order, nothing saved at shutdown), §2.3; 01 §0.1, §5,
   §6.
-- [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
+- [x] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
   From task 18: `tests/test_dispatcher.c` covers every command in-process with the fake
   transport (exact payloads, two editors and a viewer, refusals, scoping, snapshot order,
@@ -268,6 +268,31 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   the clients use non-blocking sockets, and end with `pal_request_stop`, `engine_run`,
   `engine_stop`; its WebSocket client, SCRAM login and frame helpers can move into a shared
   test header.
+  Done: the shared helpers `tests/e2e.{h,c}` (start/stop the engine in a temporary
+  directory with test users of every role, connect with the own Origin, the SCRAM login,
+  send an envelope or raw frames, receive with a bound on loop iterations, expect a message by
+  protocol/command and parsed JSON payload — objects in any order, arrays exact, `'*'` for any
+  value —, silence checked with a barrier request, collect up to a barrier, expect a close
+  code; `test.h` gains `TEST_SHARED_FAILURES` so the helpers' checks count), `test_engine.c`
+  on top of them, and three executables (about 2 s together under ASan):
+  `test_e2e_catalog` (every request/response pair of 02 §3 — runtime, network including a
+  failed persist, graph including the snapshot and `removenode`'s compound events,
+  component, trace, environment —, the 25 refusal cases of §3.4.1 each with the error to the
+  sender only and no event on two other connections, the envelope errors of §1 and the raw
+  text cut at 256 bytes, the generic error per sub-protocol, `"Not authenticated"` including a
+  secret of another connection, `"Not permitted: …"` for the viewer and operator, `"Login
+  failed"`, the close with 1008 after three failures, logout), `test_e2e_clients` (the same
+  events as byte-identical frames on two editors whoever sends, a conflicting `addnode` won by
+  the first, refusals without events, scoping to another graph, an unauthenticated
+  connection seeing nothing, the snapshot exactly as large as an empty outgoing buffer and one
+  byte larger, the snapshot deferred behind a reply in the buffer, `network:data` coalescing
+  while the client does not read, the users file edited while running, a 1009 close (whole
+  and fragmented), a command in three fragments across many TCP writes with a ping between,
+  200 pipelined commands, clients reset mid-burst in both directions, log mirroring) and
+  `test_e2e_dataflow` (three chained `math/Add2` with live values through initials, a stop and
+  start and a removed edge; a 20 ms `timing/Interval` toggling on the real clock;
+  `network:persist`, a restart in daemon mode and the same snapshot, started, values flowing).
+  No engine bug found. Decisions: 05 §5 (implementation note).
 
 ## Phase 4 — Provisional / blocked areas
 

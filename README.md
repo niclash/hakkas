@@ -13,7 +13,8 @@ cmake/                source lists, compile options, version header, portability
 src/<module>/         portable core: graphs, blocktypes, protocol, system, app, drivers, engine (01 §6)
 src/platform/pal.h    the PAL interface (portable)
 src/platform/<port>/  PAL implementations; the only place OS/RTOS headers may appear
-tests/                unit tests (CTest)
+tests/                unit tests and end-to-end protocol tests (CTest; e2e.h: the
+                      engine in-process with real WebSocket clients)
 third_party/          vendored libraries, pinned and unmodified (01 §6): cjson/ (cJSON),
                       mbedtls/ (a subset of mbedTLS 3.6; its configuration in mbedtls-config/)
 ```

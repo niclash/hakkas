@@ -1,12 +1,13 @@
 # Unit tests for the POSIX build tree, run with CTest (05 §5).
 
-# hakkas_add_test(<name> [LIBS <library>...]): builds <name>.c against the
-# core, plus any extra libraries such as hakkas_pal_posix. The core comes
-# first, before the PAL, which adds it again after itself (the core calls the
-# PAL and the PAL the core, as for the runtime in CMakeLists.txt).
+# hakkas_add_test(<name> [SOURCES <file>...] [LIBS <library>...]): builds
+# <name>.c (and the extra sources) against the core, plus any extra libraries
+# such as hakkas_pal_posix. The core comes first, before the PAL, which adds
+# it again after itself (the core calls the PAL and the PAL the core, as for
+# the runtime in CMakeLists.txt).
 function(hakkas_add_test name)
-  cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "LIBS")
-  add_executable(${name} ${name}.c)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;LIBS")
+  add_executable(${name} ${name}.c ${arg_SOURCES})
   target_link_libraries(${name} PRIVATE hakkas_core ${arg_LIBS} hakkas_compile_options)
   add_test(NAME ${name} COMMAND ${name})
 endfunction()
@@ -38,8 +39,12 @@ target_compile_definitions(test_ws_server PRIVATE _GNU_SOURCE)
 hakkas_add_test(test_users LIBS hakkas_pal_posix)
 hakkas_add_test(test_auth)
 hakkas_add_test(test_dispatcher LIBS hakkas_pal_posix)
-hakkas_add_test(test_engine LIBS hakkas_pal_posix)
-target_compile_definitions(test_engine PRIVATE _GNU_SOURCE)
+# The engine in-process with real WebSocket clients (e2e.h): its startup,
+# and the end-to-end protocol tests (plan task 20, 05 §5).
+foreach(test test_engine test_e2e_catalog test_e2e_clients test_e2e_dataflow)
+  hakkas_add_test(${test} SOURCES e2e.c LIBS hakkas_pal_posix)
+  target_compile_definitions(${test} PRIVATE _GNU_SOURCE)
+endforeach()
 
 # The same work queue tests with a tiny capacity, so wrap-around and overflow
 # run in a few pushes and the capacity override is exercised. The capacity
