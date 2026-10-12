@@ -1,0 +1,46 @@
+{
+    "protocol": "component",
+    "command": "component",
+    "payload": {
+        "vco": {
+            "name": "VCO",
+            "description": "VCO",
+            "icon": "plus",
+            "subgraph": false,
+            "inPorts": [
+                {
+                    "id": "freq",
+                    "description": "Frequency input",
+                    "type": "number",
+                    "addressable": false
+                },
+                {
+                    "id": "ampl",
+                    "description": "Amplitude input",
+                    "type": "number",
+                    "addressable": false
+                },
+                {
+                    "id": "mute",
+                    "description": "Mute input",
+                    "type": "bool",
+                    "addressable": false
+                },
+                {
+                    "id": "mute",
+                    "description": "Frequency input",
+                    "type": "bool",
+                    "addressable": false
+                }
+            ],
+            "outPorts": [
+                {
+                    "id": "out",
+                    "description": "Output",
+                    "type": "number",
+                    "addressable": false
+                }
+            ]
+        }
+    }
+}
