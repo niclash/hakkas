@@ -435,3 +435,7 @@ This protocol is a dialect of the standard FBP network protocol (`fbp-protocol.h
 7. **`network:icon`/`connect`/`disconnect`/`begingroup`/`endgroup`** (standard FBP execution-tracing events) are not part of this protocol.
 8. **Values are transmitted as strings** on `network:data` and in initial-value broadcasts, not as native JSON types — a receiver re-parses according to the port's declared type (§3.4).
 9. **Groups** (§3.4.2) define reusable block types instead of being purely visual groupings.
+
+## 6. Local C API (decided in principle, `00-README.md` open question 12)
+
+The host that embeds hakkas (POSIX `main.c`, the Zephyr application) manages process lifetime: it loads processes, starts and stops them, and monitors their lifecycle. For that, the protocol of this document is also available **in-process, as a C API**: the same commands (`runtime:new_graph`, `network:start`/`stop`, `graph:*`, …) with the same validation and refusals, and the same events, delivered to the host as a subscriber under the command → event model of §1.1 — the host sees exactly what every client sees, in the same order. The host is a trusted local party (no login). *Open*: the form of the API — JSON envelopes passed in and out (reusing the dispatcher as-is) or typed C functions and event structs (or typed wrappers over the JSON form).

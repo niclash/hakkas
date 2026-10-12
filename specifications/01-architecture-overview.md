@@ -270,10 +270,11 @@ Configuration → SystemContext (file locations, log level, auth)
                  ├─ Web server on port             → static asset serving only
                  ├─ WebSocket listener on port+1   → FBP protocol; routes text frames into protocol dispatch
                  └─ IO layer (`04-drivers.md`)
-             → load each configured/discovered graph file
+             (the host — POSIX main.c, the Zephyr application — then loads and starts
+              processes through the local C API, `02-wire-protocol.md` §6)
 ```
 
-The sequence is implemented once, in portable code, by `src/engine/engine.h` (plan task 19); its order and decisions are in `05-app-lifecycle-persistence.md` §1.4 (graphs are loaded before the protocol layer and the listeners open, so no client sees the loading).
+The sequence is implemented once, in portable code, by `src/engine/engine.h` (plan task 19); its order and decisions are in `05-app-lifecycle-persistence.md` §1.4 (graphs are loaded before the protocol layer and the listeners open, so no client sees the loading). **Decided** (`00-README.md` open question 12): process lifetime is the host's responsibility, not the engine's — loading and starting processes moves out of the engine's startup into the host, which uses the local C API; the engine provides the runtime, the protocol and the listeners.
 
 ## 6. Module map
 

@@ -82,7 +82,7 @@ There is no argv to parse at boot. Configuration comes from Kconfig (compile-tim
 4. Register every built-in block type (`03-block-types.md`).
 5. Initialize the IO provider: discover and configure hardware modules on Zephyr, or set up simulated channels on POSIX (`04-drivers.md` §0–§1).
 6. Load composite block types from `<datadir>/types/` in dependency order: repeatedly register every type whose inner types are all registered, until no more can be registered. Anything left over (an unknown inner type, or a cycle) is logged as an error and skipped.
-7. Load the configured graph files (POSIX `process`) or every graph in `<datadir>/graphs/` (POSIX `daemon`, Zephyr). Start each graph whose persisted `started` flag is `true` (§2.1).
+7. *(Moving to the host — `00-README.md` open question 12.)* The host loads its processes and starts the ones it wants, through the local C API (`02-wire-protocol.md` §6): on POSIX, `main.c` loads the configured graph files (`run process`), the process list, or every graph in `<datadir>/graphs/` (`run daemon`); on Zephyr, the application. The engine itself starts no graph. Until that refactoring is done (plan task 21e), the engine still loads graphs here and starts those whose `started` flag is `true`.
 8. Open the web server on `port` (`web_server_open_config`, §3) and the FBP WebSocket listener on `port + 1` (`ws_server_open_config`, `02-wire-protocol.md` §0), both on `host`; if either cannot be opened, the engine refuses to start (also when `tls.enabled` is set: TLS is not implemented yet).
 9. Enter the engine loop (`01-architecture-overview.md` §3.2, §3.2.1). It runs until a stop request (POSIX: `SIGINT`/`SIGTERM`), then closes every connection and listener and returns.
 
@@ -121,7 +121,7 @@ One canonical JSON schema is used for both loading and saving a graph. Saving a 
 }
 ```
 
-- `started` is the graph's started/stopped state when it was persisted; it is restored at boot (`00-README.md`, open question 12). It defaults to `false` if absent.
+- `started` is the graph's started/stopped state when it was persisted. The engine does not act on it; it is information for the host, which decides what to start (`00-README.md`, open question 12). It defaults to `false` if absent.
 - `blocks` is an object keyed by instance name; each value's `component` names a registered block type. `metadata.x`/`metadata.y` are the canvas position (default `50,50`). Any other metadata keys are preserved as-is (metadata is UI-only; a `change_threshold` key from older files is an ordinary opaque key, `01-architecture-overview.md` §3.3).
 - `connections` entries are either a normal edge (`src`/`tgt` both reference `{node, port}`, with optional opaque UI `metadata`) or an initial (`src` is `{"data": <value>}`, stored as a native JSON string, number, or boolean — `02-wire-protocol.md` §3.4).
 - `inports`/`outports` declare the graph-level named ports that a group built from this graph would expose (`01-architecture-overview.md` §2.2).
