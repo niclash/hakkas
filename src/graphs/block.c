@@ -55,11 +55,6 @@ bool block_value_changed(const Linkable *last, const Linkable *next, double thre
 		return i64_changed(last->as.i64, next->as.i64, threshold);
 	case LINKABLE_F64:
 		return f64_changed(last->as.f64, next->as.f64, threshold);
-	case LINKABLE_METRIC:
-		if (last->as.metric.category != next->as.metric.category ||
-		    strcmp(last->as.metric.unit, next->as.metric.unit) != 0)
-			return true;
-		return f64_changed(last->as.metric.value, next->as.metric.value, threshold);
 	}
 	return true;
 }
@@ -196,7 +191,6 @@ static int64_t run_compute(Block *b, Reason reason, int changed_input)
 		.now_ms = b->graph->rt->now_ms,
 		.reason = reason,
 		.changed_input = changed_input,
-		.error = &b->error,
 	};
 	return b->type->compute(&ctx);
 }

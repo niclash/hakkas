@@ -72,7 +72,6 @@ typedef struct {
 	uint64_t now_ms;   /* engine monotonic time (01 §3.4) */
 	Reason reason;
 	int changed_input; /* the input that changed when reason == REASON_INPUT, else -1 */
-	bool *error;	   /* the block's error flag (01 §2.1, Metric); never NULL */
 } BlockCtx;
 
 /* For TIMER_SCHEDULED types, returns the delay in ms until the next

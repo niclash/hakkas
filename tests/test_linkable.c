@@ -12,13 +12,6 @@ static Linkable str(const char *s)
 	return v;
 }
 
-static Linkable metric(double value, const char *unit)
-{
-	Linkable v;
-	CHECK(linkable_from_metric(&v, value, unit, strlen(unit), METRIC_VOLTAGE));
-	return v;
-}
-
 /* Stringify into a static buffer for CHECK_STREQ. */
 static const char *text(const Linkable *v)
 {
@@ -26,6 +19,40 @@ static const char *text(const Linkable *v)
 	size_t n = linkable_stringify(v, buf, sizeof(buf));
 	CHECK(n == strlen(buf));
 	return buf;
+}
+
+/* The value model has exactly five types (01 §2.1): string, i64, f64, bool
+ * and unset; no unit-tagged Metric (00-README open question 9). The switch has
+ * no default, so -Wswitch flags a sixth enumerator here. */
+static int type_index(enum linkable_type t)
+{
+	switch (t) {
+	case LINKABLE_UNSET:
+		return 0;
+	case LINKABLE_STRING:
+		return 1;
+	case LINKABLE_I64:
+		return 2;
+	case LINKABLE_F64:
+		return 3;
+	case LINKABLE_BOOL:
+		return 4;
+	}
+	return -1;
+}
+
+static void test_exactly_five_types(void)
+{
+	const enum linkable_type types[] = {LINKABLE_UNSET, LINKABLE_STRING, LINKABLE_I64,
+					    LINKABLE_F64, LINKABLE_BOOL};
+	bool seen[5] = {false};
+	for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
+		CHECK((int)types[i] >= 0 && (int)types[i] < 5); /* dense 0..4 */
+		int k = type_index(types[i]);
+		CHECK(k >= 0 && k < 5 && !seen[k]);
+		seen[k] = true;
+	}
+	CHECK(type_index((enum linkable_type)5) == -1);
 }
 
 static void test_unset_is_zero_initialized(void)
@@ -49,10 +76,6 @@ static void test_to_f64(void)
 	CHECK(linkable_to_f64(&v) == 1.0);
 	v = linkable_from_bool(false);
 	CHECK(linkable_to_f64(&v) == 0.0);
-
-	v = metric(3.25, "V");
-	CHECK(linkable_to_f64(&v) == 3.25);
-	linkable_clear(&v);
 
 	v = str("-1.5e3");
 	CHECK(linkable_to_f64(&v) == -1500.0);
@@ -84,10 +107,6 @@ static void test_to_i64(void)
 	v = linkable_from_bool(false);
 	CHECK(linkable_to_i64(&v) == 0);
 
-	v = metric(-4.7, "V");
-	CHECK(linkable_to_i64(&v) == -4);
-	linkable_clear(&v);
-
 	v = str("-9223372036854775808");
 	CHECK(linkable_to_i64(&v) == INT64_MIN);
 	linkable_clear(&v);
@@ -117,10 +136,6 @@ static void test_to_u64(void)
 	v = linkable_from_bool(true);
 	CHECK(linkable_to_u64(&v) == 1);
 
-	v = metric(9.99, "V");
-	CHECK(linkable_to_u64(&v) == 9);
-	linkable_clear(&v);
-
 	v = str("18446744073709551615");
 	CHECK(linkable_to_u64(&v) == UINT64_MAX);
 	linkable_clear(&v);
@@ -148,13 +163,6 @@ static void test_to_bool(void)
 	CHECK(!linkable_to_bool(&v));
 	v = linkable_from_i64(-3);
 	CHECK(linkable_to_bool(&v));
-
-	v = metric(0.0, "V");
-	CHECK(!linkable_to_bool(&v));
-	linkable_clear(&v);
-	v = metric(1.0, "V");
-	CHECK(linkable_to_bool(&v));
-	linkable_clear(&v);
 
 	v = str("true");
 	CHECK(linkable_to_bool(&v));
@@ -203,13 +211,6 @@ static void test_double_to_integer_edge_cases(void)
 	v = linkable_from_f64(-1.0);
 	CHECK(linkable_to_u64(&v) == 0);
 
-	v = metric(NAN, "V");
-	CHECK(linkable_to_i64(&v) == 0);
-	linkable_clear(&v);
-	v = metric(-INFINITY, "V");
-	CHECK(linkable_to_i64(&v) == INT64_MIN);
-	CHECK(linkable_to_u64(&v) == 0);
-	linkable_clear(&v);
 	v = str("1e30");
 	CHECK(linkable_to_f64(&v) == 1e30);
 	CHECK(linkable_to_i64(&v) == 0); /* strings parse as i64 only */
@@ -348,9 +349,6 @@ static void test_stringify(void)
 	v = str("hello world");
 	CHECK_STREQ(text(&v), "hello world");
 	linkable_clear(&v);
-	v = metric(23.5, "degC");
-	CHECK_STREQ(text(&v), "23.5 degC");
-	linkable_clear(&v);
 }
 
 static void test_stringify_truncates_like_snprintf(void)
@@ -362,10 +360,9 @@ static void test_stringify_truncates_like_snprintf(void)
 	CHECK(linkable_stringify(&v, NULL, 0) == 6);
 	linkable_clear(&v);
 
-	v = metric(1.5, "mm");
+	v = linkable_from_f64(-0.125);
 	CHECK(linkable_stringify(&v, buf, sizeof(buf)) == 6);
-	CHECK_STREQ(buf, "1.5");
-	linkable_clear(&v);
+	CHECK_STREQ(buf, "-0.");
 
 	v = (Linkable){0};
 	CHECK(linkable_stringify(&v, buf, 1) == 16);
@@ -420,34 +417,22 @@ static void test_parse_by_port_type(void)
 	CHECK(linkable_parse(&v, "number", "NaN"));
 	CHECK(v.type == LINKABLE_F64 && isnan(v.as.f64));
 
-	CHECK(linkable_parse(&v, "number", "3.3 V"));
-	CHECK(v.type == LINKABLE_METRIC);
-	CHECK(v.as.metric.value == 3.3);
-	CHECK_STREQ(v.as.metric.unit, "V");
-	CHECK(v.as.metric.category == METRIC_UNCLASSIFIED);
-	linkable_clear(&v);
-	CHECK(linkable_parse(&v, "number", "-20 m/s 2")); /* split on the first space */
-	CHECK(v.type == LINKABLE_METRIC && v.as.metric.value == -20.0);
-	CHECK_STREQ(v.as.metric.unit, "m/s 2");
-	linkable_clear(&v);
-
-	const char *not_numbers[] = {"", "abc", "12abc", "5 ", " 5", "abc V", "1e V", "V 5"};
+	/* Anything not wholly a number gives 0.0, including a former Metric
+	 * unit form (00-README open question 9). */
+	const char *not_numbers[] = {"",      "abc",  "12abc", "5 ",   " 5",
+				     "abc V", "1e V", "V 5",   "4.2 V", "-20 m/s 2"};
 	for (size_t i = 0; i < sizeof(not_numbers) / sizeof(not_numbers[0]); i++) {
 		CHECK(linkable_parse(&v, "number", not_numbers[i]));
 		CHECK(v.type == LINKABLE_F64 && v.as.f64 == 0.0);
 	}
 
 	/* Unknown type names parse like "number", matching default_value. */
+	CHECK(linkable_parse(&v, "link", "7"));
+	CHECK(v.type == LINKABLE_F64 && v.as.f64 == 7.0);
 	CHECK(linkable_parse(&v, "link", "7 mm"));
-	CHECK(v.type == LINKABLE_METRIC && v.as.metric.value == 7.0);
-	linkable_clear(&v);
+	CHECK(v.type == LINKABLE_F64 && v.as.f64 == 0.0);
 	CHECK(linkable_parse(&v, NULL, "7"));
 	CHECK(v.type == LINKABLE_F64 && v.as.f64 == 7.0);
-
-	/* A Metric round-trips through stringify and parse. */
-	CHECK(linkable_parse(&v, "number", "0.1 bar"));
-	CHECK_STREQ(text(&v), "0.1 bar");
-	linkable_clear(&v);
 }
 
 static void test_copy_assign_share_strings(void)
@@ -459,14 +444,13 @@ static void test_copy_assign_share_strings(void)
 	CHECK(a.type == LINKABLE_UNSET);
 	CHECK_STREQ(b.as.s, "shared"); /* still alive through b */
 
-	Linkable m = metric(1.0, "kPa");
+	Linkable m = str("kPa");
 	linkable_assign(&b, &m); /* releases "shared" */
-	CHECK(b.type == LINKABLE_METRIC && b.as.metric.unit == m.as.metric.unit);
-	CHECK(b.as.metric.category == METRIC_VOLTAGE);
+	CHECK(b.type == LINKABLE_STRING && b.as.s == m.as.s);
 	linkable_assign(&b, &b); /* self-assignment keeps the value */
-	CHECK_STREQ(b.as.metric.unit, "kPa");
+	CHECK_STREQ(b.as.s, "kPa");
 	linkable_clear(&m);
-	CHECK_STREQ(b.as.metric.unit, "kPa");
+	CHECK_STREQ(b.as.s, "kPa");
 
 	Linkable n = linkable_from_i64(3);
 	linkable_assign(&b, &n);
@@ -481,6 +465,7 @@ static void test_copy_assign_share_strings(void)
 
 int main(void)
 {
+	RUN(test_exactly_five_types);
 	RUN(test_unset_is_zero_initialized);
 	RUN(test_to_f64);
 	RUN(test_to_i64);

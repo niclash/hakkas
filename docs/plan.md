@@ -370,9 +370,16 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `test_deadband`/`test_deadband_zero` and the opaque-key checks in `test_graph.c`,
   `test_graph_json.c`, `test_graphs.c`, `test_composite.c`, `test_graph_files.c`,
   `test_dispatcher.c`; the descriptor in `test_block_types.c`.
-- [ ] **21d. Remove `Metric`** (open question 9, 01 §2.1): drop the `Metric` value type,
+- [x] **21d. Remove `Metric`** (open question 9, 01 §2.1): drop the `Metric` value type,
   its parsing (`"<number> <unit>"` now gives 0.0 like any invalid number text), stringify,
   JSON/file forms and the `BlockCtx.error` flag, from the code and the tests.
+  Done: `Metric`, `enum metric_category`, `LINKABLE_METRIC` and `linkable_from_metric` are
+  gone from `graphs/linkable.h` (the heap strings now back only string values);
+  `linkable_parse` of a `"number"` is f64 when wholly a number, else 0.0; `Block.error` and
+  `BlockCtx.error` are gone. Tests: `test_exactly_five_types` and the `"4.2 V"` → 0.0 cases
+  in `test_linkable.c`, `test_graph_json.c`, `test_graph_files.c` (from a file),
+  `test_dispatcher.c` (`graph:addinitial`) and `test_e2e_catalog.c`; the back-pressure
+  tests in `test_e2e_clients.c` stream large values into a string port of a test type.
 - [ ] **21e. Host-managed lifetime + local C API** (open question 12, 02 §6, 05 §1.4): the
   engine stops loading/starting graphs itself; the host (POSIX `main.c`, later the Zephyr
   app) does it through a local C API carrying the protocol's commands and events; the POSIX

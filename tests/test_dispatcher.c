@@ -1902,7 +1902,7 @@ static const char snap_file[] =
 	"{'x':9,'y':9}}},"
 	"'connections':[{'src':{'node':'a','port':'out'},'tgt':{'node':'b','port':'in1'},"
 	"'metadata':{'route':3}},{'src':{'data':7},'tgt':{'node':'a','port':'in2'}},"
-	"{'src':{'data':'3 V'},'tgt':{'node':'b','port':'in2'}},"
+	"{'src':{'data':'3.5'},'tgt':{'node':'b','port':'in2'}},"
 	"{'src':{'node':'p','port':'x'},'tgt':{'node':'a','port':'in1'}},"
 	"{'src':{'data':1},'tgt':{'node':'p','port':'y'}}],"
 	"'inports':[{'name':'I','node':'a','port':'in1'},{'name':'R','node':'p','port':'y'}],"
@@ -1924,7 +1924,7 @@ static const char *const snapshot[] = {
 	"{'protocol':'graph','command':'addinitial','payload':{'graph':'gs','src':{'data':'7'},"
 	"'tgt':{'node':'a','port':'in2'}}}",
 	"{'protocol':'graph','command':'addinitial','payload':{'graph':'gs','src':{'data':"
-	"'3 V'},'tgt':{'node':'b','port':'in2'}}}",
+	"'3.5'},'tgt':{'node':'b','port':'in2'}}}",
 	"{'protocol':'graph','command':'addedge','payload':{'graph':'gs','src':{'node':'a',"
 	"'port':'out'},'tgt':{'node':'b','port':'in1'},'metadata':{'route':3}}}",
 };
@@ -2136,12 +2136,13 @@ static void test_initial_encoding(void)
 	CHECK(graphs_add_node(&gs, "g1", "t1", "test/Types", NULL, NULL) == GRAPH_OK);
 	Clients k;
 	clients_open(&k, "g1");
-	/* "number": a number, a numeric string, a Metric, other text -> 0. */
+	/* "number": a number, a numeric string; other text -> 0, a former
+	 * unit form ("4.2 V", 00-README open question 9) included. */
 	check_initial(&k, "n", "5", "5", LINKABLE_F64);
 	check_initial(&k, "n", "-0.125", "-0.125", LINKABLE_F64);
 	check_initial(&k, "n", "0.1", "0.1", LINKABLE_F64);
 	check_initial(&k, "n", "'2.5'", "2.5", LINKABLE_F64);
-	check_initial(&k, "n", "'3 V'", "3 V", LINKABLE_METRIC);
+	check_initial(&k, "n", "'4.2 V'", "0", LINKABLE_F64);
 	check_initial(&k, "n", "'abc'", "0", LINKABLE_F64);
 	check_initial(&k, "n", "'Infinity'", "Infinity", LINKABLE_F64);
 	check_initial(&k, "n", "1e999", "Infinity", LINKABLE_F64);

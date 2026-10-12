@@ -4,9 +4,8 @@
  * A Graph owns its blocks, keyed by instance name. A Block is an instance of a
  * BlockTypeDef (graphs/block_type.h): its input and output values, each
  * input's single source, each output's fan-out links and last propagated
- * value, its metadata, its state blob and its error flag. Every block type
- * runs through the same code here; only the type's compute function differs
- * (01 §2.3).
+ * value, its metadata and its state blob. Every block type runs through the
+ * same code here; only the type's compute function differs (01 §2.3).
  *
  * Naming: graph_ for structural operations on a graph, block_ for one block.
  *
@@ -237,7 +236,6 @@ struct Block {
 	void *state;	      /* type->state_size bytes, zeroed at creation; NULL when 0 */
 	BlockMetadata metadata;
 	bool started; /* mirrors the graph's started state (03 §2) */
-	bool error;   /* the error flag (01 §2.1) */
 	/* The block's one timer (TIMER_PERIODIC / TIMER_SCHEDULED types), a
 	 * deadline in the runtime's heap (graphs/runtime.h "Timers"). */
 	Deadline timer;
@@ -616,10 +614,10 @@ const Linkable *block_output_value(const Block *b, uint32_t output);
 double block_change_threshold(const Block *b);
 
 /* Whether next differs from last enough to propagate under threshold
- * (01 §3.3): a different value type always (i64 vs f64 and number vs Metric
- * included); numbers when they are not equal and |next − last| >= threshold,
- * NaN ↔ non-NaN always, NaN → NaN never; a Metric also on any unit or
- * category change; bool and string on any difference; unset → unset never. */
+ * (01 §3.3): a different value type always (i64 vs f64 included); numbers
+ * when they are not equal and |next − last| >= threshold, NaN ↔ non-NaN
+ * always, NaN → NaN never; bool and string on any difference; unset → unset
+ * never. */
 bool block_value_changed(const Linkable *last, const Linkable *next, double threshold);
 
 /* output_set (01 §3.2 item 1): store value (taking ownership) in output i and,

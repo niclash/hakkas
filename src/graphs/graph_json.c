@@ -292,22 +292,6 @@ enum graph_status graph_json_to_initial(const cJSON *data, const char *port_type
 	return GRAPH_ERR_INVALID_ARGUMENT;
 }
 
-/* A string item holding v's text form (non-finite f64, Metric). */
-static cJSON *text_item(const Linkable *v)
-{
-	char small[LINKABLE_NUMBER_TEXT_MAX];
-	size_t len = linkable_stringify(v, small, sizeof(small));
-	if (len < sizeof(small))
-		return cJSON_CreateString(small);
-	char *buf = malloc(len + 1);
-	if (buf == NULL)
-		return NULL;
-	linkable_stringify(v, buf, len + 1);
-	cJSON *item = cJSON_CreateString(buf);
-	free(buf);
-	return item;
-}
-
 cJSON *graph_json_from_initial(const Linkable *v)
 {
 	char buf[LINKABLE_NUMBER_TEXT_MAX];
@@ -323,9 +307,9 @@ cJSON *graph_json_from_initial(const Linkable *v)
 	case LINKABLE_F64:
 		if (isfinite(v->as.f64))
 			return graph_json_number(v->as.f64);
-		return text_item(v); /* "NaN", "Infinity", "-Infinity" (05 §2.1) */
-	case LINKABLE_METRIC:
-		return text_item(v); /* "<value> <unit>" */
+		/* "NaN", "Infinity", "-Infinity" (05 §2.1) */
+		linkable_stringify(v, buf, sizeof(buf));
+		return cJSON_CreateString(buf);
 	case LINKABLE_UNSET:
 		break;
 	}

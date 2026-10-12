@@ -24,6 +24,7 @@
  */
 #include "e2e.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 
@@ -371,28 +372,54 @@ static void test_snapshot_buffer(void)
 	e2e_close(&m);
 }
 
-/* Changes from to to of co's n.in1 from e while the watcher does not read:
- * batches of initials, each a Metric with a unit of unit_len characters
- * (02 §3.4 "Initial value encoding"). With UNIT, every network:data takes
- * about 1 KiB and the socket's and the engine's buffers fill after a few
- * thousand. */
-enum { VALUES = 4000, BATCH = 200, UNIT = 900 };
-
-static void stream_values(E2eClient *e, int from, int to, int unit_len)
+/* A test type with a string input, so a watched value can be large: the
+ * value is a string port's initial, taken as-is (02 §3.4 "Initial value
+ * encoding"). */
+static int64_t text_compute(BlockCtx *ctx)
 {
-	char unit[UNIT + 1];
-	memset(unit, 'u', (size_t)unit_len);
-	unit[unit_len] = '\0';
+	block_ctx_set_output(ctx, 0, linkable_copy(&ctx->inputs[0]));
+	return 0;
+}
+
+static const PortDescriptor text_inputs[] = {
+	{.name = "in", .type = "string", .default_value = LINKABLE_EMPTY_STRING_INIT},
+};
+
+static const PortDescriptor text_outputs[] = {
+	{.name = "out", .type = "string", .default_value = LINKABLE_EMPTY_STRING_INIT},
+};
+
+static const BlockTypeDef text_def = {
+	.name = "test/Text",
+	.inputs = text_inputs,
+	.input_count = 1,
+	.outputs = text_outputs,
+	.output_count = 1,
+	.compute = text_compute,
+	.change_threshold = NAN,
+};
+
+/* Changes from to to of co's n.in from e while the watcher does not read:
+ * batches of initials, each the string "<k> " and pad_len characters. With
+ * PAD, every network:data takes about 1 KiB and the socket's and the
+ * engine's buffers fill after a few thousand. */
+enum { VALUES = 4000, BATCH = 200, PAD = 900 };
+
+static void stream_values(E2eClient *e, int from, int to, int pad_len)
+{
+	char pad[PAD + 1];
+	memset(pad, 'u', (size_t)pad_len);
+	pad[pad_len] = '\0';
 	for (int i = from; i <= to; i += BATCH) {
 		size_t sent = 0;
-		uint8_t *batch = malloc((size_t)BATCH * (UNIT + 256));
+		uint8_t *batch = malloc((size_t)BATCH * (PAD + 256));
 		CHECK(batch != NULL);
 		for (int k = i; k < i + BATCH && k <= to; k++) {
-			char payload[UNIT + 128];
+			char payload[PAD + 128];
 			snprintf(payload, sizeof(payload),
-				 "{'tgt':{'node':'n','port':'in1'},'src':{'data':'%d %s'},"
+				 "{'tgt':{'node':'n','port':'in'},'src':{'data':'%d %s'},"
 				 "'graph':'co'}",
-				 k, unit);
+				 k, pad);
 			char *msg = e2e_envelope("graph", "addinitial", payload, e->secret);
 			sent += e2e_frame(batch + sent, WS_OP_TEXT, true, msg, strlen(msg));
 			free(msg);
@@ -403,27 +430,30 @@ static void stream_values(E2eClient *e, int from, int to, int unit_len)
 	}
 }
 
-/* Graphs co (node n) and co-quiet (node q), e and w scoped to co-quiet (so
- * neither gets co's events), w watching n.in1 (its first value read). */
+/* Graphs co (node n, a test/Text) and co-quiet (node q), e and w scoped to
+ * co-quiet (so neither gets co's events), w watching n.in (its first value
+ * read). */
 static void stream_setup(E2eClient *e, E2eClient *w)
 {
+	if (block_types_get(text_def.name) == NULL)
+		CHECK(block_types_register(&text_def) == BLOCK_TYPES_OK);
 	e2e_send(e, "runtime", "new_graph", "{'id':'co','name':'Co'}");
 	same_next(e, w);
 	e2e_send(e, "runtime", "new_graph", "{'id':'co-quiet','name':'Q'}");
 	same_next(e, w);
 	scope(e, "co-quiet");
 	scope(w, "co-quiet");
-	e2e_send(e, "graph", "addnode", "{'id':'n','graph':'co','component':'math/Add2'}");
+	e2e_send(e, "graph", "addnode", "{'id':'n','graph':'co','component':'test/Text'}");
 	QUIET(e);
 	e2e_send(e, "graph", "addnode", "{'id':'q','graph':'co-quiet','component':'math/Add2'}");
 	CHECK(e2e_match(same_next(e, w), "graph", "addnode", NULL));
 	e2e_send(w, "network", "edges",
 		 "{'graph':'co','edges':[{'src':{'node':'s','port':'out'},'tgt':{'node':'n',"
-		 "'port':'in1'}}]}");
+		 "'port':'in'}}]}");
 	CHECK(e2e_expect(w, "network", "edges", NULL));
 	EXPECT(w, "network", "data",
 	       "{'id':'unknown','graph':'co','src':{'node':'s','port':'out'},'tgt':{'node':'n',"
-	       "'port':'in1'},'data':'0'}");
+	       "'port':'in'},'data':''}");
 }
 
 static void stream_teardown(E2eClient *e, E2eClient *w)
@@ -446,7 +476,7 @@ static void test_data_coalescing(void)
 	connect_login(&e, "alice");
 	CHECK(e2e_connect_rcvbuf(&w, 4096) && e2e_login(&w, "vera"));
 	stream_setup(&e, &w);
-	stream_values(&e, 1, VALUES, UNIT);
+	stream_values(&e, 1, VALUES, PAD);
 	/* Now w reads: increasing values, fewer than the changes, until the
 	 * current one, sent when the buffer has drained. */
 	int n = 0;
@@ -482,7 +512,7 @@ static void test_data_stream_replies(void)
 	 * buffer with small ones (about 150 bytes each): without the reserve,
 	 * less free space would be left than the replies and the event below
 	 * take together, and the first that did not fit would close w. */
-	stream_values(&e, 1, VALUES - 1000, UNIT);
+	stream_values(&e, 1, VALUES - 1000, PAD);
 	stream_values(&e, VALUES - 1000 + 1, VALUES, 1);
 	/* w, still not reading, sends commands; e makes an unrelated event. */
 	e2e_send(&w, "network", "getstatus", "{'graph':'co'}");

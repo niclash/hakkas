@@ -1,7 +1,6 @@
 /*
  * process/Linear (03 §3): out = k*in+m, stateless and event-driven like the
- * math/... types (see blocktypes/math.c for the conventions, including the
- * Metric note: Metric inputs convert to their magnitude, no unit rules).
+ * math/... types (see blocktypes/math.c for the conventions).
  *
  * process/Deadband (03 §3, plan task 21c): out follows in only when it moves
  * by at least threshold. It needs no state: the value it holds is its own

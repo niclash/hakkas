@@ -122,7 +122,6 @@ static int64_t probe(BlockCtx *ctx)
 	s->calls[ctx->reason]++;
 	s->last_changed = ctx->changed_input;
 	probe_calls[ctx->reason]++;
-	CHECK(ctx->error != NULL);
 	CHECK(ctx->now_ms == rt.now_ms);
 	block_ctx_set_output(ctx, 0, linkable_copy(&ctx->inputs[0]));
 	return 0;
@@ -380,29 +379,9 @@ static void test_value_changed(void)
 	CHECK(block_value_changed(&empty, &s1, 100));
 	CHECK(block_value_changed(&s1, &f1, 100));
 
-	/* Metric: magnitude by threshold; unit or category change always. */
-	Linkable m1 = {0}, m2 = {0}, m3 = {0}, m4 = {0}, mnan = {0};
-	CHECK(linkable_from_metric(&m1, 1.0, "V", 1, METRIC_VOLTAGE));
-	CHECK(linkable_from_metric(&m2, 1.25, "V", 1, METRIC_VOLTAGE));
-	CHECK(linkable_from_metric(&m3, 1.0, "mV", 2, METRIC_VOLTAGE));
-	CHECK(linkable_from_metric(&m4, 1.0, "V", 1, METRIC_UNCLASSIFIED));
-	CHECK(linkable_from_metric(&mnan, NAN, "V", 1, METRIC_VOLTAGE));
-	CHECK(!block_value_changed(&m1, &m2, 0.5));
-	CHECK(block_value_changed(&m1, &m2, 0.25));
-	CHECK(block_value_changed(&m1, &m3, 100));
-	CHECK(block_value_changed(&m1, &m4, 100));
-	CHECK(block_value_changed(&m1, &mnan, 100));
-	CHECK(!block_value_changed(&mnan, &mnan, 0));
-	CHECK(block_value_changed(&m1, &f1, 100));
-
 	linkable_clear(&s1);
 	linkable_clear(&s2);
 	linkable_clear(&s3);
-	linkable_clear(&m1);
-	linkable_clear(&m2);
-	linkable_clear(&m3);
-	linkable_clear(&m4);
-	linkable_clear(&mnan);
 }
 
 static void test_threshold_drift(void)

@@ -4,15 +4,9 @@
  * in1..inN → out, every input a "number" with default 0.
  *
  * Inputs are normalized with the linkable_to_* converters (01 §2.1), so a
- * string, bool, i64 or Metric input works like the number it converts to.
+ * string, bool or i64 input works like the number it converts to.
  * Results: the arithmetic blocks output an f64, the bitwise blocks an i64 (so
  * every bit survives) and the comparisons a bool (03 §3).
- *
- * Metric inputs: the unit rules of 01 §2.1 (category kept by same-category
- * addition, the error flag on a mismatch, dimensional multiplication) are not
- * implemented, as they are not specified yet (00-README open question 9). A
- * Metric input converts to its magnitude via linkable_to_f64 / to_i64, the
- * result is a plain number, and the error flag is never set.
  *
  * Every compute ignores ctx->reason: a stateless type computes the same
  * result for every trigger, and the runtime decides what is propagated

@@ -348,7 +348,7 @@ static const char canonical[] =
 	"{'src':{'data':'NaN'},'tgt':{'block':'A','port':'in2'}},"
 	"{'src':{'block':'A','port':'out'},'tgt':{'block':'B','port':'in1'},"
 	"'metadata':{'route':3,'secure':false}},"
-	"{'src':{'data':'21.5 degC'},'tgt':{'block':'B','port':'in2'}},"
+	"{'src':{'data':21.5},'tgt':{'block':'B','port':'in2'}},"
 	"{'src':{'data':'-Infinity'},'tgt':{'block':'S','port':'n'}},"
 	"{'src':{'data':'hi \\\\ \\'you\\''},'tgt':{'block':'S','port':'s'}},"
 	"{'src':{'data':true},'tgt':{'block':'S','port':'b'}}],"
@@ -383,9 +383,8 @@ static Graph *build_canonical(void)
 	CHECK(graphs_add_initial(&gs, "g1", "S", "n", &v, NULL) == GRAPH_OK);
 	CHECK(graphs_add_edge(&gs, "g1", "A", "out", "B", "in1", "{\"route\":3,\"secure\":false}",
 			      NULL) == GRAPH_OK);
-	CHECK(linkable_from_metric(&v, 21.5, "degC", 4, METRIC_UNCLASSIFIED));
+	v = linkable_from_f64(21.5);
 	CHECK(graphs_add_initial(&gs, "g1", "B", "in2", &v, NULL) == GRAPH_OK);
-	linkable_clear(&v);
 	v = linkable_from_f64(NAN);
 	CHECK(graphs_add_initial(&gs, "g1", "A", "in2", &v, NULL) == GRAPH_OK);
 	v = linkable_from_f64(0.1 + 0.2);
@@ -434,9 +433,8 @@ static void test_round_trip(void)
 	CHECK_STREQ(input_value(g, "S", "n"), "-Infinity");
 	CHECK_STREQ(input_value(g, "S", "s"), "hi \\ \"you\"");
 	const Block *b = graph_find_block(g, "B");
-	CHECK(b->inputs[1].initial.type == LINKABLE_METRIC);
-	CHECK_STREQ(b->inputs[1].initial.as.metric.unit, "degC");
-	CHECK(b->inputs[1].initial.as.metric.value == 21.5);
+	CHECK(b->inputs[1].initial.type == LINKABLE_F64);
+	CHECK(b->inputs[1].initial.as.f64 == 21.5);
 	CHECK_STREQ(b->inputs[0].edge_metadata, "{\"route\":3,\"secure\":false}");
 	const Block *s = graph_find_block(g, "S");
 	CHECK(s->inputs[2].initial.type == LINKABLE_BOOL && s->inputs[2].initial.as.b);
@@ -467,17 +465,22 @@ static void test_hand_written(void)
 		"'x': 4.0 }, 'component': 'math/Add2' }, 'A': { 'component': 'math/Add2' } },\n"
 		"  'connections': [ { 'tgt': { 'port': 'in2', 'node': 'B' },"
 		" 'src': { 'data': '5' } },"
+		" { 'tgt': { 'port': 'in2', 'node': 'A' }, 'src': { 'data': '4.2 V' } },"
 		" { 'metadata': null, 'tgt': { 'node': 'B', 'port': 'in1' },"
 		" 'src': { 'port': 'out', 'node': 'A' } } ],"
 		"  'id': 'h', 'name': 'Hand' }";
 	Graph *g = load(file, GRAPH_FILES_OK);
+	/* A former unit form on a number port is not a number: 0.0 (02 §3.4). */
+	const Linkable *init = &graph_find_block(g, "A")->inputs[1].initial;
+	CHECK(init->type == LINKABLE_F64 && init->as.f64 == 0.0);
 	const char *saved =
 		"{'id':'h','name':'Hand','description':'','icon':'','started':false,"
 		"'blocks':{'B':{'component':'math/Add2','metadata':{'x':4,'y':3,'route':100}},"
 		"'A':{'component':'math/Add2','metadata':{'x':50,'y':50}}},"
 		"'connections':[{'src':{'block':'A','port':'out'},"
 		"'tgt':{'block':'B','port':'in1'}},"
-		"{'src':{'data':5},'tgt':{'block':'B','port':'in2'}}],"
+		"{'src':{'data':5},'tgt':{'block':'B','port':'in2'}},"
+		"{'src':{'data':0},'tgt':{'block':'A','port':'in2'}}],"
 		"'inports':[],'outports':[]}";
 	check_saved(g, jq(saved));
 	CHECK(graphs_delete_graph(&gs, "h", "Hand", NULL) == GRAPH_OK);

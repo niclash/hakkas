@@ -82,30 +82,10 @@ bool linkable_from_string(Linkable *out, const char *s, size_t len)
 	return true;
 }
 
-bool linkable_from_metric(Linkable *out, double value, const char *unit, size_t unit_len,
-			  enum metric_category category)
-{
-	const char *str = str_new(unit, unit_len);
-	if (str == NULL) {
-		*out = (Linkable){0};
-		return false;
-	}
-	*out = (Linkable){.type = LINKABLE_METRIC,
-			  .as.metric = {.value = value, .unit = str, .category = category}};
-	return true;
-}
-
 /* The string v owns a reference to, or NULL. */
 static const char *owned_str(const Linkable *v)
 {
-	switch (v->type) {
-	case LINKABLE_STRING:
-		return v->as.s;
-	case LINKABLE_METRIC:
-		return v->as.metric.unit;
-	default:
-		return NULL;
-	}
+	return v->type == LINKABLE_STRING ? v->as.s : NULL;
 }
 
 void linkable_clear(Linkable *v)
@@ -270,8 +250,6 @@ double linkable_to_f64(const Linkable *v)
 		return v->as.f64;
 	case LINKABLE_I64:
 		return (double)v->as.i64;
-	case LINKABLE_METRIC:
-		return v->as.metric.value;
 	case LINKABLE_BOOL:
 		return v->as.b ? 1.0 : 0.0;
 	case LINKABLE_STRING:
@@ -290,8 +268,6 @@ int64_t linkable_to_i64(const Linkable *v)
 		return f64_to_i64(v->as.f64);
 	case LINKABLE_I64:
 		return v->as.i64;
-	case LINKABLE_METRIC:
-		return f64_to_i64(v->as.metric.value);
 	case LINKABLE_BOOL:
 		return v->as.b ? 1 : 0;
 	case LINKABLE_STRING:
@@ -310,8 +286,6 @@ uint64_t linkable_to_u64(const Linkable *v)
 		return f64_to_u64(v->as.f64);
 	case LINKABLE_I64:
 		return v->as.i64 < 0 ? 0 : (uint64_t)v->as.i64; /* saturates, 01 §2.1 */
-	case LINKABLE_METRIC:
-		return f64_to_u64(v->as.metric.value);
 	case LINKABLE_BOOL:
 		return v->as.b ? 1 : 0;
 	case LINKABLE_STRING:
@@ -334,8 +308,6 @@ bool linkable_to_bool(const Linkable *v)
 		return v->as.b;
 	case LINKABLE_F64:
 		return v->as.f64 != 0.0;
-	case LINKABLE_METRIC:
-		return v->as.metric.value != 0.0;
 	case LINKABLE_I64:
 		return v->as.i64 != 0;
 	case LINKABLE_STRING:
@@ -369,12 +341,6 @@ bool linkable_parse(Linkable *out, const char *type_name, const char *text)
 	if (parse_f64_span(text, len, &d)) {
 		*out = linkable_from_f64(d);
 		return true;
-	}
-	const char *space = strchr(text, ' ');
-	if (space != NULL && space[1] != '\0' && parse_f64_span(text, (size_t)(space - text), &d)) {
-		const char *unit = space + 1;
-		return linkable_from_metric(out, d, unit, len - (size_t)(unit - text),
-					    METRIC_UNCLASSIFIED);
 	}
 	*out = linkable_from_f64(0.0);
 	return true;
@@ -429,11 +395,6 @@ size_t linkable_stringify(const Linkable *v, char *buf, size_t size)
 		return put(buf, size, 0, num, n);
 	case LINKABLE_BOOL:
 		return v->as.b ? put(buf, size, 0, "true", 4) : put(buf, size, 0, "false", 5);
-	case LINKABLE_METRIC:
-		n = f64_text(v->as.metric.value, num);
-		n = put(buf, size, 0, num, n);
-		n = put(buf, size, n, " ", 1);
-		return put(buf, size, n, v->as.metric.unit, linkable_strlen(v->as.metric.unit));
 	case LINKABLE_UNSET:
 		break;
 	}

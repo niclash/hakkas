@@ -2,7 +2,7 @@
  * The JSON forms of the graph model (graphs/graph_json.h; 05 §2.1, 02 §3.4):
  * exact number printing, node metadata from and to JSON with opaque keys, the
  * changenode merge (change_threshold null included), edge metadata, and
- * initial values of every type, non-finite, Metric and i64 included.
+ * initial values of every type, non-finite and i64 included.
  */
 #include "test.h"
 
@@ -237,18 +237,16 @@ static void test_initials(void)
 	round_trip(linkable_from_f64(NAN), "number", "\"NaN\"", "NaN");
 	round_trip(linkable_from_f64(INFINITY), "number", "\"Infinity\"", "Infinity");
 	round_trip(linkable_from_f64(-INFINITY), "number", "\"-Infinity\"", "-Infinity");
-	/* A Metric as "<value> <unit>". */
-	CHECK(linkable_from_metric(&v, 21.5, "degC", 4, METRIC_UNCLASSIFIED));
-	round_trip(v, "number", "\"21.5 degC\"", "21.5 degC");
 	/* An i64 as exact integer text, read back as an f64 (02 §3.4). */
 	round_trip(linkable_from_i64(INT64_MIN), "number", "-9223372036854775808",
 		   "-9.223372036854776e+18");
 	round_trip(linkable_from_i64(42), "number", "42", "42");
 
-	/* The types after reading. */
+	/* The types after reading; a former unit form on a number port is 0.0
+	 * (02 §3.4). */
 	cJSON *j = cJSON_Parse("\"21.5 degC\"");
-	CHECK(graph_json_to_initial(j, "number", &v) == GRAPH_OK && v.type == LINKABLE_METRIC);
-	linkable_clear(&v);
+	CHECK(graph_json_to_initial(j, "number", &v) == GRAPH_OK && v.type == LINKABLE_F64 &&
+	      v.as.f64 == 0.0);
 	CHECK(graph_json_to_initial(j, "string", &v) == GRAPH_OK && v.type == LINKABLE_STRING);
 	linkable_clear(&v);
 	cJSON_Delete(j);

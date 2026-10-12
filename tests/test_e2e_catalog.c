@@ -656,11 +656,13 @@ static void test_graph(void)
 	event1("graph", "addinitial", "{'tgt':{'node':'n1','port':'in1'},'src':{'data':5},"
 	       "'graph':'g'}",
 	       "{'graph':'g','src':{'data':'5'},'tgt':{'node':'n1','port':'in1'}}");
+	/* Text that is not wholly a number, a former unit form included, is 0
+	 * on a number port (02 §3.4); the event carries the applied value. */
 	event1("graph", "addinitial",
 	       "{'tgt':{'node':'n1','port':'in2'},'src':{'data':'2 m'},'graph':'g'}",
-	       "{'graph':'g','src':{'data':'2 m'},'tgt':{'node':'n1','port':'in2'}}");
+	       "{'graph':'g','src':{'data':'0'},'tgt':{'node':'n1','port':'in2'}}");
 	event1("graph", "removeinitial", "{'tgt':{'node':'n1','port':'in2'},'graph':'g'}",
-	       "{'src':{'data':'2 m'},'tgt':{'node':'n1','port':'in2'},'graph':'g'}");
+	       "{'src':{'data':'0'},'tgt':{'node':'n1','port':'in2'},'graph':'g'}");
 	event1("graph", "addinport", "{'graph':'g','node':'n1','port':'in2','public':'IN'}",
 	       "{'graph':'g','name':'IN','node':'n1','port':'in2'}");
 	event1("graph", "addoutport", "{'graph':'g','node':'n3','port':'out','public':'OUT'}",

@@ -280,19 +280,11 @@ static Linkable s(const char *text)
 	return v;
 }
 
-static Linkable m(double value, const char *unit)
-{
-	Linkable v = {0};
-	CHECK(linkable_from_metric(&v, value, unit, strlen(unit), METRIC_UNCLASSIFIED));
-	return v;
-}
-
 static const Linkable unset;
 
 /* Run type's compute with inputs in[0..n) (taking ownership of them; inputs
  * past n hold the port defaults) and return output 0, which the caller owns.
- * Checks the context contract on the way: the error flag stays clear and the
- * return value is 0. */
+ * Checks the context contract on the way: the return value is 0. */
 static Linkable run(const char *type, Linkable *in, size_t n)
 {
 	const BlockTypeDef *t = block_types_get(type);
@@ -315,16 +307,13 @@ static Linkable run(const char *type, Linkable *in, size_t n)
 	linkable_clear(&outputs[0]);
 	outputs[0] = s("previous");
 
-	bool error = false;
 	BlockCtx ctx = {.inputs = inputs,
 			.outputs = outputs,
 			.state = NULL,
 			.now_ms = 1234,
 			.reason = n > 0 ? REASON_INPUT : REASON_START,
-			.changed_input = n > 0 ? 0 : -1,
-			.error = &error};
+			.changed_input = n > 0 ? 0 : -1};
 	CHECK(t->compute(&ctx) == 0);
-	CHECK(!error);
 
 	for (uint32_t k = 0; k < t->input_count; k++)
 		linkable_clear(&inputs[k]);
@@ -400,20 +389,20 @@ static void test_add_subtract_mult(void)
 
 static void test_mixed_input_types(void)
 {
-	/* string, bool, i64 and Metric inputs go through to_f64 (01 §2.1). */
+	/* string, bool and i64 inputs go through to_f64 (01 §2.1). */
 	CHECK(is_f64(run2("math/Add2", s("2.5"), b(true)), 3.5));
-	CHECK(is_f64(run2("math/Add2", i(40), m(2.5, "V")), 42.5));
+	CHECK(is_f64(run2("math/Add2", i(40), f(2.5)), 42.5));
 	CHECK(is_f64(run2("math/Add2", s("12abc"), f(1)), 1.0)); /* strict parse: 0 */
 	CHECK(is_f64(run2("math/Add2", s("true"), b(false)), 0.0));
-	CHECK(is_f64(run2("math/Subtract", m(20, "C"), m(5, "K")), 15.0)); /* no unit rules */
+	CHECK(is_f64(run2("math/Subtract", s("20 C"), i(5)), -5.0)); /* no unit forms */
 	CHECK(is_f64(run2("math/Mult2", s("-Infinity"), i(2)), -INFINITY));
 	Linkable in[2] = {unset, f(3)};
 	CHECK(is_f64(run("math/Mult2", in, 2), 0.0));
-	CHECK(is_f64(run4("math/Add4", i(1), s("2"), b(true), m(0.5, "mm")), 4.5));
+	CHECK(is_f64(run4("math/Add4", i(1), s("2"), b(true), s("0.5")), 4.5));
 	/* Bitwise inputs go through to_i64: strings parse as integers only. */
 	CHECK(is_i64(run2("math/Or2", s("12"), s("1.5")), 12));
-	CHECK(is_i64(run2("math/Or2", b(true), m(6.9, "A")), 7));
-	CHECK(is_bool(run2("math/Greater", s("10"), m(9.5, "V")), true));
+	CHECK(is_i64(run2("math/Or2", b(true), f(6.9)), 7));
+	CHECK(is_bool(run2("math/Greater", s("10"), f(9.5)), true));
 	CHECK(is_bool(run2("math/Equal", b(true), i(1)), true));
 	CHECK(is_bool(run2("math/Equal", s("1"), s("1.0")), true));
 }
@@ -539,8 +528,8 @@ static void test_linear(void)
 	CHECK(is_f64(run("process/Linear", in, 3), 7.0));
 	Linkable in2[3] = {f(-4), f(0.5), f(10)};
 	CHECK(is_f64(run("process/Linear", in2, 3), 8.0));
-	Linkable in3[3] = {m(10, "V"), s("30"), i(-5)};
-	CHECK(is_f64(run("process/Linear", in3, 3), 295.0));
+	Linkable in3[3] = {b(true), s("30"), i(-5)};
+	CHECK(is_f64(run("process/Linear", in3, 3), 25.0));
 	/* k and m unconnected: 0. */
 	Linkable in4[1] = {f(5)};
 	CHECK(is_f64(run("process/Linear", in4, 1), 0.0));

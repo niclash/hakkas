@@ -91,8 +91,7 @@ enum graph_status graph_json_to_initial(const cJSON *data, const char *port_type
 
 /* The literal v as stored in a graph file (decided, 05 §2.1): a string or a
  * bool natively; a finite f64 as an exact number; NaN, Infinity, -Infinity as
- * those strings; a Metric as its string form "<value> <unit>"; an i64 as an
- * exact JSON integer. Each reads back through graph_json_to_initial (an i64
+ * those strings; an i64 as an exact JSON integer. Each reads back through graph_json_to_initial (an i64
  * comes back as an f64, like every JSON number). NULL for an unset value or
  * if memory runs out. */
 cJSON *graph_json_from_initial(const Linkable *v);
