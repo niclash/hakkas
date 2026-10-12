@@ -95,33 +95,6 @@ static void remove_tmp_all(const Engine *e)
 		remove_tmp(users_dir);
 }
 
-/* Step 7: the graphs of the mode. False refuses startup. */
-static bool load_graphs(Engine *e)
-{
-	size_t loaded = 0;
-	enum graph_files_status st;
-	if (e->params.load == ENGINE_LOAD_LIST) {
-		/* `run process`: the user named these files, so each must load
-		 * (decided, plan task 19; 05 §1.4 step 7). */
-		st = graph_files_load_list(&e->gf, e->params.graph_files, &loaded);
-		if (st != GRAPH_FILES_OK) {
-			log_error("run process: a graph file did not load (%s): not starting",
-				  graph_files_status_str(st));
-			return false;
-		}
-	} else {
-		/* `run daemon`: a file that does not load is logged (by
-		 * graph_files) and skipped; the others still run. */
-		st = graph_files_load_all(&e->gf, &loaded);
-		if (st != GRAPH_FILES_OK)
-			log_warn("not every graph in %s/" GRAPH_FILES_GRAPHS_DIR
-				 " loaded (%s): starting with the others",
-				 e->gf.datadir, graph_files_status_str(st));
-	}
-	log_info("%zu graph%s loaded", loaded, loaded == 1 ? "" : "s");
-	return true;
-}
-
 /* Step 8: the protocol layer and both listeners. False refuses startup. */
 static bool open_servers(Engine *e)
 {
@@ -245,11 +218,9 @@ bool engine_start(const Config *cfg, const EngineParams *params, Engine **out)
 			 e->gf.datadir);
 	log_info("%zu composite type%s loaded", types, types == 1 ? "" : "s");
 
-	/* Step 7: the graphs. Started graphs start with the engine time of now
-	 * (01 §3.4), which the loop takes over. */
-	runtime_set_now(&e->rt, pal_uptime_ms());
-	if (!load_graphs(e))
-		goto fail;
+	/* Step 7 is the host's (05 §1.4, 00-README open question 12): the
+	 * engine loads and starts no process; the host does, through the
+	 * local C API (hakkas.h), before it runs the loop. */
 
 	/* Step 8: the protocol layer and the listeners. */
 	if (!open_servers(e))
@@ -310,6 +281,16 @@ const Config *engine_config(const Engine *e)
 Loop *engine_loop(Engine *e)
 {
 	return &e->loop;
+}
+
+Graphs *engine_graphs(Engine *e)
+{
+	return &e->gs;
+}
+
+GraphFiles *engine_files(Engine *e)
+{
+	return &e->gf;
 }
 
 uint16_t engine_web_port(const Engine *e)

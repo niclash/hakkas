@@ -21,7 +21,8 @@
  * order, then the retained ones.
  *
  * Round trip: saving is a fixed point of loading. A file this code wrote
- * loads into a graph that saves to the same bytes; the first save of any
+ * loads into a graph that, started as the file's flag says (loading leaves
+ * it stopped, below), saves to the same bytes; the first save of any
  * other valid file is its canonical form: the same graph, but in the order
  * above, compact, numbers in their shortest exact form, initials in the
  * types they were parsed into (02 §3.4: "5" on a number port becomes 5, an
@@ -30,9 +31,10 @@
  * Loading (05 §2.2) goes through the Graphs registry and its commands, so a
  * file entry is refused exactly as the equivalent wire command would be, and
  * loading reports the same events those commands report: graph created,
- * then each block, edge, initial and graph port, then, if the file's started
- * flag is true, started. At startup no subscriber exists yet (listeners open
- * after the graphs are loaded, 05 §1.4), so nobody receives them.
+ * then each block, edge, initial and graph port. Loading never starts a
+ * graph (decided, plan task 21e; 00-README open question 12): the file's
+ * started flag is handed to the caller, the host, which decides what to
+ * start (hakkas.h, 05 §1.2).
  *
  * Threading: engine-thread only (01 §3.2).
  */
@@ -160,35 +162,39 @@ enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, Grap
  * one that has more than one of the three members is invalid (the entry is
  * skipped as above). Other members of a reference, such as the "data" the
  * sister project writes in a connection's tgt, are ignored.
- * An initial's data is parsed for its port (graph_json_to_initial). The graph
- * is started (graphs_start) after everything is loaded, if "started" is true.
+ * An initial's data is parsed for its port (graph_json_to_initial).
+ *
+ * The graph is left stopped, whatever its "started" flag: *started (if not
+ * NULL) is that flag (false if absent, and on any failure), for the caller
+ * to act on (05 §2.1: information for the host).
  *
  * GRAPH_FILES_ERR_NO_MEMORY at any point deletes the partly loaded graph.
  */
 enum graph_files_status graph_files_load_text(GraphFiles *gf, const char *text, size_t len,
-					      const char *origin, Graph **out);
+					      const char *origin, Graph **out, bool *started);
 
 /* Load the graph file at path (any path: `run process` files need not live
  * in datadir). Read through the PAL into a buffer sized by pal_storage_stat;
  * refused as GRAPH_FILES_ERR_TOO_BIG beyond HAKKAS_GRAPH_FILE_MAX bytes.
  * Otherwise as graph_files_load_text; failures are logged. */
-enum graph_files_status graph_files_load(GraphFiles *gf, const char *path, Graph **out);
+enum graph_files_status graph_files_load(GraphFiles *gf, const char *path, Graph **out,
+					 bool *started);
 
-/* `run daemon` (05 §1.4 step 7): load every regular file ending in ".json"
- * in <datadir>/graphs, in byte order of their names (so graphs are created
- * in the same order every boot). A file whose name is not the encoding of
- * its graph's id is loaded but logged as a warning (persist writes to the
- * id's file name). Every file is tried; returns GRAPH_FILES_OK if all
- * loaded, else the status of the first failure (GRAPH_FILES_ERR_NOT_FOUND
- * if the directory does not exist). *loaded (if not NULL) is the number of
- * graphs loaded. */
-enum graph_files_status graph_files_load_all(GraphFiles *gf, size_t *loaded);
+/* Called by graph_files_load_all for each graph loaded, with its file's
+ * started flag. It may start the graph. */
+typedef void (*graph_files_loaded_fn)(void *ctx, Graph *g, bool started);
 
-/* `run process <files>` (05 §1.2): load each file of the colon-separated
- * list paths, in order. Returns and counts like graph_files_load_all; an
- * empty element or one longer than PAL_PATH_MAX - 1 is
- * GRAPH_FILES_ERR_INVALID. */
-enum graph_files_status graph_files_load_list(GraphFiles *gf, const char *paths, size_t *loaded);
+/* Every saved graph (`run daemon`, 05 §1.2; hakkas_process_load_saved): load
+ * every regular file ending in ".json" in <datadir>/graphs, in byte order of
+ * their names (so graphs are created in the same order every boot), calling
+ * fn (if not NULL) after each one that loaded. A file whose name is not the
+ * encoding of its graph's id is loaded but logged as a warning (persist
+ * writes to the id's file name). Every file is tried; returns GRAPH_FILES_OK
+ * if all loaded, else the status of the first failure
+ * (GRAPH_FILES_ERR_NOT_FOUND if the directory does not exist). *loaded (if
+ * not NULL) is the number of graphs loaded. */
+enum graph_files_status graph_files_load_all(GraphFiles *gf, graph_files_loaded_fn fn, void *ctx,
+					     size_t *loaded);
 
 /* ---- Reading and listing (shared with app/type_files.h) -------------------- */
 

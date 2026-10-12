@@ -32,6 +32,7 @@ hakkas_add_test(test_config LIBS hakkas_pal_posix)
 # The command line calls the engine (engine/engine.c, in the core), which
 # calls the PAL: the core again after the command line, then the PAL.
 hakkas_add_test(test_cli LIBS hakkas_cli_posix hakkas_core hakkas_pal_posix)
+target_compile_definitions(test_cli PRIVATE HAKKAS_EXAMPLES_DIR="${PROJECT_SOURCE_DIR}/examples")
 hakkas_add_test(test_loop LIBS hakkas_pal_posix)
 target_compile_definitions(test_loop PRIVATE _GNU_SOURCE)
 hakkas_add_test(test_http)
@@ -43,9 +44,11 @@ target_compile_definitions(test_ws_server PRIVATE _GNU_SOURCE)
 hakkas_add_test(test_users LIBS hakkas_pal_posix)
 hakkas_add_test(test_auth)
 hakkas_add_test(test_dispatcher LIBS hakkas_pal_posix)
+hakkas_add_test(test_process_list LIBS hakkas_pal_posix)
 # The engine in-process with real WebSocket clients (e2e.h): its startup,
-# and the end-to-end protocol tests (plan task 20, 05 §5).
-foreach(test test_engine test_e2e_catalog test_e2e_clients test_e2e_dataflow)
+# the end-to-end protocol tests (plan task 20, 05 §5) and the local C API
+# (plan task 21e, 02 §6).
+foreach(test test_engine test_e2e_catalog test_e2e_clients test_e2e_dataflow test_api)
   hakkas_add_test(${test} SOURCES e2e.c LIBS hakkas_pal_posix)
   target_compile_definitions(${test} PRIVATE _GNU_SOURCE)
 endforeach()
@@ -59,11 +62,12 @@ endforeach()
 # loop, engine/loop.c (01 §3.2.1), the servers on it, engine/web_server.c
 # (05 §3) and engine/ws_server.c (02 §0), the protocol dispatcher over
 # them, protocol/dispatcher.c (which uses app/) and protocol/protocol_ws.c,
-# and the engine startup over all of them, engine/engine.c (05 §1.4);
-# the rest of the core is compiled with the small capacity.
+# the engine startup over all of them, engine/engine.c (05 §1.4), and the
+# local C API over it, engine/hakkas.c (02 §6); the rest of the core is
+# compiled with the small capacity.
 set(HAKKAS_CORE_SOURCES_NO_APP ${HAKKAS_CORE_SOURCES})
 list(FILTER HAKKAS_CORE_SOURCES_NO_APP EXCLUDE REGEX
-  "/app/[^/]+\\.c$|/system/config_file\\.c$|/protocol/(users_file|dispatcher|protocol_ws)\\.c$|/engine/(engine|loop|web_server|ws_server)\\.c$")
+  "/app/[^/]+\\.c$|/system/config_file\\.c$|/protocol/(users_file|dispatcher|protocol_ws)\\.c$|/engine/(engine|hakkas|loop|web_server|ws_server)\\.c$")
 add_executable(test_work_queue_small test_work_queue.c ${HAKKAS_CORE_SOURCES_NO_APP}
   ${HAKKAS_THIRD_PARTY_SOURCES})
 hakkas_third_party_warning_exceptions()

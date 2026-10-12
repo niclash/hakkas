@@ -13,6 +13,7 @@ cmake_path(NORMAL_PATH HAKKAS_SOURCE_ROOT)
 set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/app/file_names.c
   ${HAKKAS_SOURCE_ROOT}/app/graph_files.c
+  ${HAKKAS_SOURCE_ROOT}/app/process_list.c
   ${HAKKAS_SOURCE_ROOT}/app/type_files.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/block_types.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/composite_types.c
@@ -20,6 +21,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c
   ${HAKKAS_SOURCE_ROOT}/engine/engine.c
+  ${HAKKAS_SOURCE_ROOT}/engine/hakkas.c
   ${HAKKAS_SOURCE_ROOT}/engine/loop.c
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
   ${HAKKAS_SOURCE_ROOT}/engine/web_server.c
@@ -102,6 +104,7 @@ set(HAKKAS_POSIX_PAL_SOURCES
 # the runtime and by its tests.
 set(HAKKAS_POSIX_CLI_SOURCES
   ${HAKKAS_SOURCE_ROOT}/platform/posix/cli.c
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/host.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/password.c
 )
 

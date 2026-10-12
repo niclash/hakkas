@@ -1,8 +1,10 @@
 /*
  * End-to-end test helpers (plan task 20, 05 §5): the whole engine started
- * in-process over the POSIX PAL (engine/engine.h, on ephemeral loopback
- * ports), and real WebSocket clients on non-blocking sockets that drive it
- * with loop_run_once while they wait.
+ * in-process over the POSIX PAL through the local C API (hakkas.h, on
+ * ephemeral loopback ports), its processes loaded and started through the
+ * C API like the POSIX host does (platform/posix/host.h), and real
+ * WebSocket clients on non-blocking sockets that drive it with
+ * hakkas_run_once while they wait.
  *
  *	e2e_setup("catalog");		temp confdir/basedir/webdir, test users
  *	e2e_start();			run daemon over that basedir
@@ -48,7 +50,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "engine/engine.h"
+#include "hakkas.h"
 #include "protocol/websocket.h"
 #include "system/config.h"
 
@@ -60,7 +62,7 @@
 #define E2E_INDEX_HTML "<!doctype html><title>hakkas e2e</title>\n"
 
 /* The running engine (NULL when stopped) and the test's directories. */
-extern Engine *e2e_engine;
+extern Hakkas *e2e_hakkas;
 extern char e2e_root[], e2e_confdir[], e2e_basedir[], e2e_webdir[];
 
 /* ---- Engine -------------------------------------------------------------------- */
@@ -76,18 +78,22 @@ void e2e_teardown(void);
  * defaults, <confdir>/hakkas.json, host 127.0.0.1, log level info. */
 void e2e_config(Config *cfg);
 
-/* engine_start with cfg and params, then the tick hook; the captured log
- * cleared first. */
-bool e2e_start_params(const Config *cfg, const EngineParams *params);
+/* hakkas_create with cfg and params, then the tick hook; the captured log
+ * cleared first. No process is loaded (the engine loads none itself). */
+bool e2e_start_params(const Config *cfg, const HakkasParams *params);
 
-/* e2e_start_params on ephemeral ports in the mode (files for
- * ENGINE_LOAD_LIST). */
-bool e2e_start_with(const Config *cfg, enum engine_load load, const char *files);
+/* e2e_start_params on ephemeral ports, then the processes, as the POSIX
+ * host loads them (platform/posix/host.h): files NULL is `run daemon`
+ * (every saved process, one that does not load skipped), else the
+ * colon-separated graph files (any that does not load: the engine is
+ * stopped again and the result is false); then every process whose file's
+ * started flag is true is started, in load order. */
+bool e2e_start_with(const Config *cfg, const char *files);
 
 /* e2e_start_with the configuration of e2e_config, `run daemon`. */
 bool e2e_start(void);
 
-/* A stop request, engine_run, engine_stop. */
+/* A stop request, hakkas_run, hakkas_destroy. */
 void e2e_stop(void);
 
 /* n loop iterations. */

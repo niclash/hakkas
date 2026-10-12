@@ -187,12 +187,17 @@ static void check_saved(const Graph *g, const char *want)
 	free(text);
 }
 
+/* The started flag of the last load(). */
+static bool loaded_started;
+
 /* Load text (JSON with ' for "), expecting st. */
 static Graph *load(const char *text, enum graph_files_status st)
 {
 	const char *t = jq(text);
 	Graph *g = (Graph *)&gs;
-	CHECK(graph_files_load_text(&gf, t, strlen(t), "v", &g) == st);
+	loaded_started = true;
+	CHECK(graph_files_load_text(&gf, t, strlen(t), "v", &g, &loaded_started) == st);
+	CHECK(st == GRAPH_FILES_OK || !loaded_started);
 	CHECK((st == GRAPH_FILES_OK) == (g != NULL));
 	return g;
 }
@@ -419,7 +424,7 @@ static void test_round_trip(void)
 	(void)g;
 
 	events[0] = '\0';
-	CHECK(graph_files_load(&gf, graph_path("g1"), &g) == GRAPH_FILES_OK);
+	CHECK(graph_files_load(&gf, graph_path("g1"), &g, NULL) == GRAPH_FILES_OK);
 	CHECK_STREQ(logs, "");
 	/* Loading reports what the equivalent commands report (05 §2.2). */
 	CHECK_STREQ(events, "+graph;+node A;+node B;+node S;+init;+init;+edge;+init;+init;+init;"
@@ -495,13 +500,13 @@ static void test_hand_written(void)
 	char *text = graph_files_serialize(g, &len);
 	CHECK(text != NULL && strstr(text, "{\"data\":1152921504606846977}") != NULL);
 	CHECK(graphs_delete_graph(&gs, "h", "Hand", NULL) == GRAPH_OK);
-	CHECK(graph_files_load_text(&gf, text, len, "h", &g) == GRAPH_FILES_OK);
+	CHECK(graph_files_load_text(&gf, text, len, "h", &g, NULL) == GRAPH_FILES_OK);
 	free(text);
 	CHECK(graph_find_block(g, "A")->inputs[0].initial.type == LINKABLE_F64);
 	text = graph_files_serialize(g, &len);
 	CHECK(text != NULL && strstr(text, "{\"data\":1.152921504606847e+18}") != NULL);
 	CHECK(graphs_delete_graph(&gs, "h", "Hand", NULL) == GRAPH_OK);
-	CHECK(graph_files_load_text(&gf, text, len, "h", &g) == GRAPH_FILES_OK);
+	CHECK(graph_files_load_text(&gf, text, len, "h", &g, NULL) == GRAPH_FILES_OK);
 	check_saved(g, text);
 	free(text);
 	CHECK_STREQ(logs, "");
@@ -510,6 +515,8 @@ static void test_hand_written(void)
 
 /* ---- Started flag (05 §2.1, §2.2) ------------------------------------------- */
 
+/* Loading never starts a graph: the flag is reported to the caller, the
+ * host, which decides (plan task 21e). */
 static void test_started(void)
 {
 	setup("started");
@@ -519,9 +526,12 @@ static void test_started(void)
 			   "{'src':{'block':'A','port':'out'},'tgt':{'block':'B','port':'in1'}},"
 			   "{'src':{'data':3},'tgt':{'block':'A','port':'in2'}}]}";
 	Graph *g = load(file, GRAPH_FILES_OK);
-	CHECK(g->started);
-	/* Started after everything else is loaded. */
-	CHECK_STREQ(events, "+graph;+node A;+node B;+init;+edge;+init;started;");
+	CHECK(loaded_started && !g->started);
+	CHECK_STREQ(events, "+graph;+node A;+node B;+init;+edge;+init;");
+	runtime_drain(&rt, 100);
+	CHECK_STREQ(input_value(g, "B", "in1"), "0");
+	/* The host starts it. */
+	CHECK(graphs_start(&gs, "s", NULL) == GRAPH_OK);
 	runtime_drain(&rt, 100);
 	CHECK_STREQ(input_value(g, "B", "in1"), "5");
 	/* The current state is what persist writes. */
@@ -538,7 +548,7 @@ static void test_started(void)
 		 "'math/Add2'}},'connections':[{'src':{'data':2},'tgt':{'block':'A','port':'in1'}},"
 		 "{'src':{'block':'A','port':'out'},'tgt':{'block':'B','port':'in1'}}]}",
 		 GRAPH_FILES_OK);
-	CHECK(!g->started);
+	CHECK(!loaded_started && !g->started);
 	runtime_drain(&rt, 100);
 	CHECK_STREQ(input_value(g, "B", "in1"), "0");
 	CHECK_STREQ(input_value(g, "A", "in1"), "2");
@@ -568,7 +578,9 @@ static void test_placeholders(void)
 	Graph *g = load(placeholder_file, GRAPH_FILES_OK);
 	CHECK_STREQ(logs, "warn v: block P: unknown component vendor/Gizmo, kept as a "
 			  "placeholder\n");
-	CHECK_STREQ(events, "+graph;+node A;+node P;+node B;+init;started;");
+	CHECK_STREQ(events, "+graph;+node A;+node P;+node B;+init;");
+	CHECK(loaded_started && !g->started);
+	CHECK(graphs_start(&gs, "p", NULL) == GRAPH_OK);
 	const Block *p = graph_find_block(g, "P");
 	CHECK(p != NULL && block_is_placeholder(p) && p->input_count == 0 &&
 	      p->output_count == 0);
@@ -798,7 +810,8 @@ static void test_examples(void)
 {
 	setup("examples");
 	Graph *g = NULL;
-	CHECK(graph_files_load(&gf, HAKKAS_EXAMPLES_DIR "/example.json", &g) == GRAPH_FILES_OK);
+	CHECK(graph_files_load(&gf, HAKKAS_EXAMPLES_DIR "/example.json", &g, NULL) ==
+	      GRAPH_FILES_OK);
 	CHECK_STREQ(logs, "");
 	CHECK(g != NULL);
 	if (g == NULL) {
@@ -852,7 +865,7 @@ static void test_examples(void)
 	g = load(saved, GRAPH_FILES_OK);
 	check_saved(g, jq(saved));
 
-	CHECK(graph_files_load(&gf, HAKKAS_EXAMPLES_DIR "/empty.json", &g) == GRAPH_FILES_OK);
+	CHECK(graph_files_load(&gf, HAKKAS_EXAMPLES_DIR "/empty.json", &g, NULL) == GRAPH_FILES_OK);
 	CHECK_STREQ(logs, "");
 	if (g != NULL)
 		check_saved(g, jq("{'id':'main','name':'pink2web main process','description':'',"
@@ -916,18 +929,18 @@ static void test_malformed(void)
 	char path[PAL_PATH_MAX];
 	snprintf(path, sizeof(path), "%s", join(gf.datadir, "none.json"));
 	logs[0] = '\0';
-	CHECK(graph_files_load(&gf, path, NULL) == GRAPH_FILES_ERR_NOT_FOUND);
+	CHECK(graph_files_load(&gf, path, NULL, NULL) == GRAPH_FILES_ERR_NOT_FOUND);
 	CHECK(strstr(logs, "not found") != NULL);
-	CHECK(graph_files_load(&gf, gf.datadir, NULL) == GRAPH_FILES_ERR_STORAGE);
+	CHECK(graph_files_load(&gf, gf.datadir, NULL, NULL) == GRAPH_FILES_ERR_STORAGE);
 	size_t size = HAKKAS_GRAPH_FILE_MAX + 1;
 	char *big = malloc(size);
 	memset(big, ' ', size);
 	memcpy(big, "{\"id\":\"big\"}", 12);
 	snprintf(path, sizeof(path), "%s", join(gf.datadir, "big.json"));
 	CHECK(pal_storage_write(path, big, size) == PAL_OK);
-	CHECK(graph_files_load(&gf, path, NULL) == GRAPH_FILES_ERR_TOO_BIG);
+	CHECK(graph_files_load(&gf, path, NULL, NULL) == GRAPH_FILES_ERR_TOO_BIG);
 	CHECK(pal_storage_write(path, big, size - 1) == PAL_OK); /* at the limit: fine */
-	CHECK(graph_files_load(&gf, path, NULL) == GRAPH_FILES_OK);
+	CHECK(graph_files_load(&gf, path, NULL, NULL) == GRAPH_FILES_OK);
 	free(big);
 	CHECK(graphs_find(&gs, "big") != NULL);
 	teardown();
@@ -1009,15 +1022,25 @@ static void test_delete(void)
 
 /* ---- Loading many (05 §1.2, §1.4 step 7) -------------------------------------- */
 
+/* What graph_files_load_all reported: "<id> <started>;" per graph. */
+static char loaded_list[256];
+
+static void on_loaded(void *ctx, Graph *g, bool started)
+{
+	(void)ctx;
+	size_t len = strlen(loaded_list);
+	snprintf(loaded_list + len, sizeof(loaded_list) - len, "%s %d;", g->id, started);
+}
+
 static void test_load_all(void)
 {
 	setup("all");
 	/* No graphs/ directory yet. */
 	size_t n = 99;
-	CHECK(graph_files_load_all(&gf, &n) == GRAPH_FILES_ERR_NOT_FOUND && n == 0);
+	CHECK(graph_files_load_all(&gf, NULL, NULL, &n) == GRAPH_FILES_ERR_NOT_FOUND && n == 0);
 	CHECK(graph_files_make_dirs(&gf) == GRAPH_FILES_OK);
 	logs[0] = '\0';
-	CHECK(graph_files_load_all(&gf, &n) == GRAPH_FILES_OK && n == 0);
+	CHECK(graph_files_load_all(&gf, NULL, NULL, &n) == GRAPH_FILES_OK && n == 0);
 
 	char dir[PAL_PATH_MAX], path[PAL_PATH_MAX];
 	CHECK(graph_files_dir(&gf, GRAPH_FILES_GRAPHS_DIR, dir, sizeof(dir)) == GRAPH_FILES_OK);
@@ -1035,48 +1058,24 @@ static void test_load_all(void)
 	CHECK(pal_storage_mkdir(path) == PAL_OK);
 
 	events[0] = logs[0] = '\0';
-	CHECK(graph_files_load_all(&gf, &n) == GRAPH_FILES_ERR_MALFORMED);
+	loaded_list[0] = '\0';
+	CHECK(graph_files_load_all(&gf, on_loaded, NULL, &n) == GRAPH_FILES_ERR_MALFORMED);
 	CHECK(n == 3);
-	/* In name order: a%2F1, b, c, (d fails). */
-	CHECK_STREQ(events, "+graph;+graph;started;+graph;");
+	/* In name order: a%2F1, b, c, (d fails); each reported with its flag,
+	 * none started. */
+	CHECK_STREQ(events, "+graph;+graph;+graph;");
+	CHECK_STREQ(loaded_list, "a/1 0;b 1;c-other 0;");
 	CHECK(graphs_count(&gs) == 3);
 	CHECK_STREQ(graphs_at(&gs, 0)->id, "a/1");
 	CHECK_STREQ(graphs_at(&gs, 1)->id, "b");
 	CHECK_STREQ(graphs_at(&gs, 2)->id, "c-other");
-	CHECK(graphs_at(&gs, 1)->started);
+	CHECK(!graphs_at(&gs, 1)->started);
 	char want[1024];
 	snprintf(want, sizeof(want),
 		 "warn %s/c.json: graph c-other is saved as c-other.json, not here\n"
 		 "error %s/d.json: not a valid graph file\n",
 		 dir, dir);
 	CHECK_STREQ(logs, want);
-	teardown();
-}
-
-static void test_load_list(void)
-{
-	setup("list");
-	char a[PAL_PATH_MAX], b[PAL_PATH_MAX], list[3 * PAL_PATH_MAX];
-	snprintf(a, sizeof(a), "%s", join(gf.datadir, "one.json"));
-	snprintf(b, sizeof(b), "%s", join(gf.datadir, "two.json"));
-	put(a, jq("{'id':'one'}"));
-	put(b, jq("{'id':'two'}"));
-	size_t n = 0;
-	snprintf(list, sizeof(list), "%s:%s", b, a);
-	CHECK(graph_files_load_list(&gf, list, &n) == GRAPH_FILES_OK && n == 2);
-	CHECK_STREQ(graphs_at(&gs, 0)->id, "two"); /* in list order */
-	CHECK_STREQ(graphs_at(&gs, 1)->id, "one");
-	/* Errors: the first is returned, the rest still load. */
-	teardown();
-	setup("list2");
-	snprintf(a, sizeof(a), "%s", join(gf.datadir, "one.json"));
-	put(a, jq("{'id':'one'}"));
-	snprintf(list, sizeof(list), "%s/missing.json::%s", gf.datadir, a);
-	logs[0] = '\0';
-	CHECK(graph_files_load_list(&gf, list, &n) == GRAPH_FILES_ERR_NOT_FOUND && n == 1);
-	CHECK(strstr(logs, "invalid graph file name in list") != NULL);
-	CHECK(graphs_find(&gs, "one") != NULL);
-	CHECK(graph_files_load_list(&gf, "", &n) == GRAPH_FILES_ERR_INVALID && n == 0);
 	teardown();
 }
 
@@ -1115,7 +1114,6 @@ int main(void)
 	RUN(test_persist);
 	RUN(test_delete);
 	RUN(test_load_all);
-	RUN(test_load_list);
 
 	block_types_reset();
 	log_remove_sink(log_sink, NULL);

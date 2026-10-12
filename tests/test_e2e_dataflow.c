@@ -188,9 +188,9 @@ static void test_persist_restart(void)
 	/* The engine stopped and started again, `run daemon`. */
 	e2e_stop();
 	CHECK(e2e_start());
-	if (e2e_engine == NULL)
+	if (e2e_hakkas == NULL)
 		return;
-	CHECK(strstr(e2e_logs(), "1 graph loaded") != NULL);
+	CHECK(hakkas_process_count(e2e_hakkas) == 1);
 	CHECK(e2e_connect(&e) && e2e_login(&e, "bob"));
 	e2e_send(&e, "graph", "connect", "{'id':'flow'}");
 	char **after;

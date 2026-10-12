@@ -81,8 +81,14 @@ default 1024).
 ## Running
 
 `hakkas run daemon` starts the engine with every graph saved in `<basedir>/graphs/`;
-`hakkas run process a.json:b.json` with the given graph files instead (05 §1.2, §1.4). For a
-development setup in a scratch directory:
+`hakkas run process a.json:b.json` with the given graph files instead, and
+`hakkas run processes processes.json` with the processes of a process list: either a plain
+array of graph file paths, like `examples/processes.json`, or
+`{"processes":[{"graph":"a.json","start":true}]}`, the paths relative to the list's directory
+(05 §1.2). The engine itself starts no process: `run` is the host, which loads the processes
+through the local C API (`src/hakkas.h`, 02 §6) and starts those whose list entry says
+`"start": true` or, without one, whose graph file was persisted running. For a development
+setup in a scratch directory:
 
 ```sh
 mkdir -p conf data
@@ -102,7 +108,9 @@ only when a client persists it.
 
 ## Using the core from another project
 
-`add_subdirectory()` or `FetchContent` this repository and link `hakkas::core`. As a
+`add_subdirectory()` or `FetchContent` this repository and link `hakkas::core`; the embedding
+interface is `#include "hakkas.h"` (`src/hakkas.h`, 02 §6): create the runtime from a
+`Config`, load and start processes, edit them, and subscribe to their events. As a
 subproject, only the core library is built by default. A port with its own build integration,
 such as the future Zephyr module, can instead include `cmake/HakkasSources.cmake` and compile
 `HAKKAS_CORE_SOURCES` and `HAKKAS_THIRD_PARTY_SOURCES` (with the matching include directories

@@ -692,10 +692,12 @@ static enum graph_files_status load_entries(Loader *ld, const cJSON *root)
 }
 
 enum graph_files_status graph_files_load_text(GraphFiles *gf, const char *text, size_t len,
-					      const char *origin, Graph **out)
+					      const char *origin, Graph **out, bool *started)
 {
 	if (out != NULL)
 		*out = NULL;
+	if (started != NULL)
+		*started = false;
 	const char *end = NULL;
 	cJSON *root = cJSON_ParseWithLengthOpts(text, len, &end, false);
 	if (root != NULL && !only_whitespace(end, (size_t)(text + len - end))) {
@@ -708,7 +710,7 @@ enum graph_files_status graph_files_load_text(GraphFiles *gf, const char *text, 
 		return GRAPH_FILES_ERR_MALFORMED;
 	}
 	const char *id = string_of(root, "id");
-	bool started = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "started"));
+	bool flag = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "started"));
 	Graph *g;
 	GraphsMessage msg;
 	enum graph_status gst = graphs_new_graph(gf->gs, id, string_of(root, "name"),
@@ -729,9 +731,10 @@ enum graph_files_status graph_files_load_text(GraphFiles *gf, const char *text, 
 		graphs_delete_graph(gf->gs, g->id, g->name, NULL);
 		return st;
 	}
-	/* Started only once everything is loaded (05 §2.2). */
-	if (started)
-		graphs_start(gf->gs, g->id, NULL);
+	/* Never started here: the flag is information for the host, which
+	 * decides what to start (05 §2.1, 00-README open question 12). */
+	if (started != NULL)
+		*started = flag;
 	if (out != NULL)
 		*out = g;
 	return GRAPH_FILES_OK;
@@ -775,16 +778,19 @@ enum graph_files_status graph_files_read(const char *path, size_t max, char **te
 	return GRAPH_FILES_OK;
 }
 
-enum graph_files_status graph_files_load(GraphFiles *gf, const char *path, Graph **out)
+enum graph_files_status graph_files_load(GraphFiles *gf, const char *path, Graph **out,
+					 bool *started)
 {
 	if (out != NULL)
 		*out = NULL;
+	if (started != NULL)
+		*started = false;
 	char *buf;
 	size_t len;
 	enum graph_files_status st = graph_files_read(path, HAKKAS_GRAPH_FILE_MAX, &buf, &len);
 	if (st != GRAPH_FILES_OK)
 		return st;
-	st = graph_files_load_text(gf, buf, len, path, out);
+	st = graph_files_load_text(gf, buf, len, path, out, started);
 	free(buf);
 	return st;
 }
@@ -876,7 +882,8 @@ static void tally(enum graph_files_status st, enum graph_files_status *first, si
 		*first = st;
 }
 
-enum graph_files_status graph_files_load_all(GraphFiles *gf, size_t *loaded)
+enum graph_files_status graph_files_load_all(GraphFiles *gf, graph_files_loaded_fn fn, void *ctx,
+					     size_t *loaded)
 {
 	size_t count = 0;
 	if (loaded != NULL)
@@ -895,41 +902,19 @@ enum graph_files_status graph_files_load_all(GraphFiles *gf, size_t *loaded)
 			continue;
 		}
 		Graph *g;
-		enum graph_files_status st = graph_files_load(gf, path, &g);
+		bool started;
+		enum graph_files_status st = graph_files_load(gf, path, &g, &started);
 		tally(st, &first, &count);
+		if (st != GRAPH_FILES_OK)
+			continue;
 		char expected[FILE_NAME_ENCODED_MAX + 1];
-		if (st == GRAPH_FILES_OK && (!file_name_encode(g->id, expected, sizeof(expected)) ||
-					     strcmp(expected, names[i]) != 0))
+		if (!file_name_encode(g->id, expected, sizeof(expected)) ||
+		    strcmp(expected, names[i]) != 0)
 			log_warn("%s: graph %s is saved as %s, not here", path, g->id, expected);
+		if (fn != NULL)
+			fn(ctx, g, started);
 	}
 	graph_files_list_free(names, n);
-	if (loaded != NULL)
-		*loaded = count;
-	return first;
-}
-
-enum graph_files_status graph_files_load_list(GraphFiles *gf, const char *paths, size_t *loaded)
-{
-	size_t count = 0;
-	enum graph_files_status first = GRAPH_FILES_OK;
-	const char *p = paths != NULL ? paths : "";
-	for (;;) {
-		const char *end = strchr(p, ':');
-		size_t len = end != NULL ? (size_t)(end - p) : strlen(p);
-		if (len == 0 || len >= PAL_PATH_MAX) {
-			log_error("invalid graph file name in list: \"%.*s\"",
-				  (int)(len > 64 ? 64 : len), p);
-			tally(GRAPH_FILES_ERR_INVALID, &first, &count);
-		} else {
-			char path[PAL_PATH_MAX];
-			memcpy(path, p, len);
-			path[len] = '\0';
-			tally(graph_files_load(gf, path, NULL), &first, &count);
-		}
-		if (end == NULL)
-			break;
-		p = end + 1;
-	}
 	if (loaded != NULL)
 		*loaded = count;
 	return first;

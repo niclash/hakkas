@@ -355,7 +355,7 @@ static void test_envelope(void)
 
 static void test_runtime(void)
 {
-	const Config *cfg = engine_config(e2e_engine);
+	const Config *cfg = hakkas_config(e2e_hakkas);
 	char want[1200];
 	const char *rest = ",'type':'hakkas','namespace':'hakkas','repository':'',"
 			   "'repositoryVersion':''}";
@@ -921,7 +921,7 @@ int main(void)
 	static Config cfg;
 	e2e_config(&cfg);
 	CHECK(config_set(&cfg, "max_connections", "8", "test") == CONFIG_OK);
-	if (!e2e_start_with(&cfg, ENGINE_LOAD_ALL, NULL)) {
+	if (!e2e_start_with(&cfg, NULL)) {
 		e2e_teardown();
 		return 1;
 	}

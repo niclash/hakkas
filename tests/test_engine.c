@@ -1,16 +1,19 @@
 /*
  * Engine startup and shutdown (engine/engine.h, 05 §1.4) over the POSIX PAL,
- * in-process, in a fresh temporary confdir/basedir/webdir with the
- * provisioned test users of e2e.h and a saved, started graph. The engine
- * listens on ephemeral loopback ports (the test-only
- * EngineParams.ephemeral_ports); a small client checks over real sockets
+ * in-process through the C API (hakkas_create, hakkas.h), in a fresh
+ * temporary confdir/basedir/webdir with the provisioned test users of e2e.h
+ * and a saved, started graph. The engine starts no process by itself (05
+ * §1.4 step 7 is the host's): the test loads it through the C API, as the
+ * host does. The engine listens on ephemeral loopback ports (the test-only
+ * HakkasParams.ephemeral_ports); a small client checks over real sockets
  * that the web server serves index.html, that the WebSocket accepts the own
  * Origin, answers runtime:getruntime before login, takes a full SCRAM login
  * and answers graph:connect with the loaded graph's snapshot. Then a stop
- * request ends engine_run, and no descriptor is left open. The startup
+ * request ends hakkas_run, and no descriptor is left open. The startup
  * failures: a taken port (web and WebSocket), tls.enabled, a missing datadir
- * or confdir, a broken graph file in process mode (refused) and daemon mode
- * (skipped). The client and the waits are the end-to-end helpers (e2e.h).
+ * or confdir. A saved graph that does not load is skipped by the daemon
+ * mode. The client and the waits are the end-to-end helpers (e2e.h); the
+ * host's modes are tested through the command line (test_cli.c).
  */
 #include "e2e.h"
 
@@ -22,7 +25,6 @@
 
 #include "blocktypes/block_types.h"
 #include "cJSON.h"
-#include "engine/engine.h"
 #include "platform/pal.h"
 
 #define GOOD_GRAPH                                                                                 \
@@ -44,19 +46,19 @@ static int fd_count(void)
 	return n;
 }
 
-/* e2e_start_params with cfg, in the mode, on ephemeral ports unless
- * !ephemeral. */
-static bool start_with(const Config *cfg, enum engine_load load, const char *files, bool ephemeral)
+/* hakkas_create with cfg (e2e_start_params), on ephemeral ports unless
+ * !ephemeral: no process is loaded. */
+static bool start_with(const Config *cfg, bool ephemeral)
 {
-	EngineParams p = {.load = load, .graph_files = files, .ephemeral_ports = ephemeral};
+	HakkasParams p = {.ephemeral_ports = ephemeral};
 	return e2e_start_params(cfg, &p);
 }
 
-static bool start(enum engine_load load, const char *files)
+static void start_saved(void *ctx, const HakkasLoaded *l)
 {
-	static Config cfg;
-	e2e_config(&cfg);
-	return start_with(&cfg, load, files, true);
+	(void)ctx;
+	CHECK(l->started);
+	CHECK(hakkas_process_start(e2e_hakkas, l->id, NULL) == HAKKAS_OK);
 }
 
 /* ---- Tests ------------------------------------------------------------------ */
@@ -64,18 +66,25 @@ static bool start(enum engine_load load, const char *files)
 static void test_run(void)
 {
 	int fds = fd_count();
-	CHECK(start(ENGINE_LOAD_ALL, NULL));
-	if (e2e_engine == NULL)
+	static Config start_cfg;
+	e2e_config(&start_cfg);
+	CHECK(start_with(&start_cfg, true));
+	if (e2e_hakkas == NULL)
 		return;
-	const Config *cfg = engine_config(e2e_engine);
-	CHECK(engine_web_port(e2e_engine) != 0 && engine_ws_port(e2e_engine) != 0);
+	const Config *cfg = hakkas_config(e2e_hakkas);
+	CHECK(hakkas_web_port(e2e_hakkas) != 0 && hakkas_ws_port(e2e_hakkas) != 0);
 	CHECK(strlen(cfg->engine_id) == 36); /* a UUID: no engine_id configured */
 	char ready[256];
 	snprintf(ready, sizeof(ready),
 		 "engine %s ready: web server on 127.0.0.1 port %u, WebSocket on port %u",
-		 cfg->engine_id, engine_web_port(e2e_engine), engine_ws_port(e2e_engine));
+		 cfg->engine_id, hakkas_web_port(e2e_hakkas), hakkas_ws_port(e2e_hakkas));
 	CHECK(strstr(e2e_logs(), ready) != NULL);
-	CHECK(strstr(e2e_logs(), "1 graph loaded") != NULL);
+	/* The engine loads and starts no process itself (05 §1.4 step 7),
+	 * though g1.json is saved with started true: the host does, here. */
+	CHECK(hakkas_process_count(e2e_hakkas) == 0);
+	size_t loaded = 0;
+	CHECK(hakkas_process_load_saved(e2e_hakkas, start_saved, NULL, &loaded) == HAKKAS_OK);
+	CHECK(loaded == 1 && hakkas_process_count(e2e_hakkas) == 1);
 	/* The generated server secret is in the file, never in the log. */
 	CHECK(strlen(cfg->auth.server_secret) == 44);
 	char file[1024];
@@ -91,7 +100,7 @@ static void test_run(void)
 
 	/* The web server: GET / is index.html. */
 	E2eClient web;
-	CHECK(e2e_tcp_connect(&web, engine_web_port(e2e_engine), 0));
+	CHECK(e2e_tcp_connect(&web, hakkas_web_port(e2e_hakkas), 0));
 	const char *get = "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
 	e2e_send_bytes(&web, get, strlen(get));
 	char head[2048];
@@ -117,7 +126,7 @@ static void test_run(void)
 	       "{'graph':'g1','component':'math/Add2','id':'a','metadata':{'x':10,'y':20}}");
 	EXPECT(&ws, "graph", "addinitial",
 	       "{'graph':'g1','src':{'data':'2'},'tgt':{'node':'a','port':'in1'}}");
-	/* The graph was started at boot (05 §2.1 started). */
+	/* The graph was started by the host (05 §2.1 started). */
 	e2e_send(&ws, "network", "getstatus", "{'graph':'g1'}");
 	m = e2e_recv(&ws);
 	CHECK(e2e_match(m, "network", "status", NULL));
@@ -132,17 +141,17 @@ static void test_run(void)
 	CHECK(strstr(e2e_logs(), "engine loop stopping") != NULL);
 }
 
-/* engine_start fails with a log line containing what; nothing is left open. */
-static void refused(const Config *cfg, enum engine_load load, const char *files, bool ephemeral,
-		    const char *what)
+/* hakkas_create fails with a log line containing what; nothing is left
+ * open. */
+static void refused(const Config *cfg, bool ephemeral, const char *what)
 {
 	int fds = fd_count();
-	CHECK(!start_with(cfg, load, files, ephemeral));
+	CHECK(!start_with(cfg, ephemeral));
 	if (strstr(e2e_logs(), what) == NULL)
 		fprintf(stderr, "expected \"%s\" in:\n%s", what, e2e_logs());
 	CHECK(strstr(e2e_logs(), what) != NULL);
 	CHECK(strstr(e2e_logs(), "the engine did not start") != NULL);
-	CHECK(e2e_engine == NULL);
+	CHECK(e2e_hakkas == NULL);
 	CHECK(fd_count() == fds);
 }
 
@@ -174,7 +183,7 @@ static void test_port_in_use(void)
 	e2e_config(&cfg);
 	snprintf(port, sizeof(port), "%u", (unsigned)p);
 	CHECK(config_set(&cfg, "port", port, "test") == CONFIG_OK);
-	refused(&cfg, ENGINE_LOAD_ALL, NULL, false, "cannot open the web server on 127.0.0.1 port");
+	refused(&cfg, false, "cannot open the web server on 127.0.0.1 port");
 	close(held);
 
 	/* The WebSocket port (port + 1) taken, the web port free: a held port
@@ -194,7 +203,7 @@ static void test_port_in_use(void)
 	e2e_config(&cfg);
 	snprintf(port, sizeof(port), "%u", (unsigned)(p - 1));
 	CHECK(config_set(&cfg, "port", port, "test") == CONFIG_OK);
-	refused(&cfg, ENGINE_LOAD_ALL, NULL, false, "cannot open the WebSocket listener");
+	refused(&cfg, false, "cannot open the WebSocket listener");
 	close(held);
 }
 
@@ -203,11 +212,11 @@ static void test_other_failures(void)
 	static Config cfg;
 	e2e_config(&cfg);
 	CHECK(config_set(&cfg, "tls.enabled", "true", "test") == CONFIG_OK);
-	refused(&cfg, ENGINE_LOAD_ALL, NULL, true, "TLS (tls.enabled) is not supported yet");
+	refused(&cfg, true, "TLS (tls.enabled) is not supported yet");
 
 	e2e_config(&cfg);
 	CHECK(config_set(&cfg, "datadir", e2e_path(e2e_root, "missing"), "test") == CONFIG_OK);
-	refused(&cfg, ENGINE_LOAD_ALL, NULL, true, "cannot create directory");
+	refused(&cfg, true, "cannot create directory");
 
 	/* No secret yet and a confdir that does not exist: the file cannot be
 	 * written. */
@@ -217,38 +226,22 @@ static void test_other_failures(void)
 	CHECK(config_init(&cfg, &d) == CONFIG_OK);
 	CHECK(config_load(&cfg) == CONFIG_OK);
 	CHECK(config_set(&cfg, "log.level", "info", "test") == CONFIG_OK);
-	refused(&cfg, ENGINE_LOAD_ALL, NULL, true, "with the generated auth.server_secret");
+	refused(&cfg, true, "with the generated auth.server_secret");
 }
 
+/* A saved graph that does not load is skipped by `run daemon`, as the
+ * host loads them (hakkas_process_load_saved): the others load. */
 static void test_broken_graph(void)
 {
-	char graphs[PAL_PATH_MAX], bad[PAL_PATH_MAX], good[PAL_PATH_MAX];
-	snprintf(graphs, sizeof(graphs), "%s", e2e_path(e2e_basedir, "graphs"));
-	snprintf(bad, sizeof(bad), "%s", e2e_path(graphs, "bad.json"));
-	snprintf(good, sizeof(good), "%s", e2e_path(graphs, "g1.json"));
+	char bad[PAL_PATH_MAX];
+	snprintf(bad, sizeof(bad), "%s", e2e_path(e2e_path(e2e_basedir, "graphs"), "bad.json"));
 	e2e_put(bad, "{\"id\":");
-	char list[2 * PAL_PATH_MAX + 2];
-	snprintf(list, sizeof(list), "%s:%s", good, bad);
-
-	/* process: a file that does not load refuses startup. */
-	static Config cfg;
-	e2e_config(&cfg);
-	refused(&cfg, ENGINE_LOAD_LIST, list, true, "run process: a graph file did not load");
-	CHECK(strstr(e2e_logs(), "bad.json") != NULL);
-	e2e_config(&cfg);
-	refused(&cfg, ENGINE_LOAD_LIST, e2e_path(graphs, "none.json"), true, "did not load");
-
-	/* process with only the good file starts. */
 	int fds = fd_count();
-	CHECK(start(ENGINE_LOAD_LIST, good));
-	CHECK(strstr(e2e_logs(), "1 graph loaded") != NULL);
-	e2e_stop();
-
-	/* daemon: the broken file is logged and skipped. */
-	CHECK(start(ENGINE_LOAD_ALL, NULL));
-	CHECK(strstr(e2e_logs(), "bad.json") != NULL);
-	CHECK(strstr(e2e_logs(), "starting with the others") != NULL);
-	CHECK(strstr(e2e_logs(), "1 graph loaded") != NULL);
+	CHECK(e2e_start());
+	CHECK(strstr(e2e_logs(), "bad.json: not a valid graph file") != NULL);
+	CHECK(hakkas_process_count(e2e_hakkas) == 1);
+	HakkasProcessStatus st;
+	CHECK(hakkas_process_status(e2e_hakkas, "g1", &st, NULL) == HAKKAS_OK && st.started);
 	e2e_stop();
 	CHECK(fd_count() == fds);
 	CHECK(pal_storage_remove(bad) == PAL_OK);
@@ -282,15 +275,15 @@ static void test_types(void)
 		       "\"t/A\"}},\"connections\":[{\"src\":{\"data\":2},\"tgt\":{\"block\":\"c\","
 		       "\"port\":\"in\"}}]}");
 
-	CHECK(start(ENGINE_LOAD_ALL, NULL));
-	if (e2e_engine == NULL)
+	CHECK(e2e_start());
+	if (e2e_hakkas == NULL)
 		return;
 	CHECK(strstr(e2e_logs(), "2 composite types loaded") != NULL);
 	CHECK(strstr(e2e_logs(), "t%2FX.json: composite type skipped: Unknown component: t/Y") !=
 	      NULL);
 	CHECK(strstr(e2e_logs(), "t%2FY.json: composite type skipped: Unknown component: t/X") !=
 	      NULL);
-	CHECK(strstr(e2e_logs(), "2 graphs loaded") != NULL);
+	CHECK(hakkas_process_count(e2e_hakkas) == 2);
 	CHECK(strstr(e2e_logs(), "placeholder") == NULL);
 	CHECK(block_types_get("t/A") != NULL && block_types_get("t/X") == NULL);
 

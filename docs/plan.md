@@ -395,16 +395,58 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   in `test_linkable.c`, `test_graph_json.c`, `test_graph_files.c` (from a file),
   `test_dispatcher.c` (`graph:addinitial`) and `test_e2e_catalog.c`; the back-pressure
   tests in `test_e2e_clients.c` stream large values into a string port of a test type.
-- [ ] **21e. Host-managed lifetime + local C API** (open question 12, 02 §6, 05 §1.4): the
+- [x] **21e. Host-managed lifetime + local C API** (open question 12, 02 §6, 05 §1.4): the
   engine stops loading/starting graphs itself; the host (POSIX `main.c`, later the Zephyr
   app) does it through a local C API carrying the protocol's commands and events; the POSIX
   host reads `processes.json` (05 §1.2). The API is typed C functions + event structs over
   the same `graphs_*` command layer as the dispatcher (02 §6).
+  Done: the public header `src/hakkas.h` (code `src/engine/hakkas.c`): `hakkas_create`
+  (startup steps 1-6, 8 over `engine_start`), `_run`, `_run_once`, `_request_stop`,
+  `_destroy`, `_add_tick`; `hakkas_process_load` (stopped, returns the id and the file's
+  `started` flag), `_load_saved`, `_create`, `_delete`, `_rename`, `_start`, `_stop`,
+  `_persist`, `_status` (a read, no event), `_count`/`_at`; `hakkas_block_*`,
+  `_connection_*`, `_initial_*`, `_port_*`, `_group_*` (one per `graph:*` command, metadata
+  as JSON object text, typed initial values); `hakkas_subscribe` delivering a `HakkasEvent`
+  per `GraphEvent`, unscoped; refusals `HAKKAS_REFUSED` with the wire's messages
+  (`"Invalid field: <wire field>"` for a NULL argument); model-changing commands from an
+  event callback are `HAKKAS_ERR_BUSY`. `engine_start` no longer has step 7 (no
+  `EngineParams.load`/`graph_files`; `engine_graphs`/`engine_files` accessors);
+  `graph_files_load_text`/`_load` never start a graph and report the flag (`bool *started`),
+  `graph_files_load_all` takes a per-graph callback, `graph_files_load_list` is gone (the
+  host splits the list). The POSIX host `src/platform/posix/host.{h,c}`: `run process`,
+  the new `run processes <file>` and `run daemon` load through the C API, then start in load
+  order the processes whose list entry has `"start": true`, or without one whose file's
+  flag is set; lifecycle events logged at info. The process list parser
+  `src/app/process_list.{h,c}` (portable): both forms, paths relative to the list's
+  directory, strict validation, unknown members warned; `bindings` and `links` logged at
+  info and ignored. `describe topology` starts a graph whose flag is set, so it still prints
+  the canonical form. Decisions: 02 §6 (header, API shape, results, events, threading,
+  time), 05 §1.2 (`run processes`, process lifetime in the POSIX host, the process list
+  file), §1.3, §1.4 step 7 and its failures, §2.1, §2.2, §2.3; 01 §5, §6; 00-README open
+  questions 12, 13. Tests: `test_api` (every function's success and refusals with the exact
+  messages, the typed events rendered from their fields equal the frames a logged-in
+  WebSocket client receives, for commands through the C API and over the wire; busy
+  callbacks, subscribing from a callback, a tick hook, load/load_saved/persist/delete with
+  files), `test_process_list`, the host's modes in `test_cli` (`run process`, `run daemon`,
+  `run processes` in both forms with start flags, relative paths, a missing or malformed
+  list, a graph that does not load, `examples/example.json` through a list, the
+  bindings/links log lines), `test_engine` (the engine starts no process by itself; the e2e
+  helpers load processes through the C API), `test_graph_files` (the flag reported, nothing
+  started).
 - [ ] **21f. Links between processes** (open question 13, 01 §2.2, 05 §1.2): explicit links
   from one process's outport to another's inport, declared in `processes.json` and created by
   the host through the C API; values travel like edges; stopped source → last value kept,
   absent source or removed link → default. Runtime link commands for the UI (wire + C API)
   and persisting UI-made links are still to be designed.
+  From task 21e: `app/process_list.h` already parses `links` (an array of objects with
+  non-empty strings `from`, `to`; only the count is kept, `ProcessList.link_count`) and the
+  POSIX host (`platform/posix/host.c` `load_list`) logs `<file>: <n> link(s) ignored: links
+  between processes are not implemented yet` — keep the links (split `from`/`to` on the last
+  `.`, 01 §2.4) and create them through new C API functions after every process is loaded
+  and before any is started (the host loads all first, then starts). Links in `run process`
+  / `run daemon` mode have no source yet. The C API's events would need a link event type
+  (`HakkasEvent`), and 05 §1.2's "Not implemented yet" bullet and 00-README open question 13's
+  last sentence change.
 - [x] **21g. Hakkas terms in files + sister-project compatibility** (00-README Terminology,
   05 §2.1, 03 §5.1): graph files write `{"block","port"}` (connections and graph ports) and
   composite type files `"connections"`; the loaders also accept `"node"`, `"process"` (the
@@ -424,7 +466,13 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   From task 19: startup step 5 is a marked no-op in `engine_start` (`src/engine/engine.c`),
   after `loop_init` (the handoff exists) and the authorizer; the provider would be a platform
   part handed in through `EngineParams` like the start/stop hooks, stopped in `engine_stop`
-  before the loop.
+  before the loop. From task 21e: hosts create the engine through `hakkas_create`
+  (`src/hakkas.h`), so the provider also needs a field in `HakkasParams`, copied into
+  `EngineParams`. The process list's `bindings` member is parsed and resolved relative to the
+  list's directory (`ProcessListEntry.bindings`, `app/process_list.h`) and the POSIX host logs
+  `<graph>: bindings <path> ignored: environment bindings are not implemented yet` (`load_list`
+  in `platform/posix/host.c`): apply the bindings file there, after the process is loaded and
+  before it is started; update 05 §1.2's "Not implemented yet" bullet.
 - [ ] **23. `process/PID`** — behavior decided (03 §6.1); **waits for the user's PID code**: the
   implementation is to be based on the user's existing implementations, and the user adds the
   parameters `Pconst`, `Itime`, `Dtime`, `MaxD`. Don't start it without that code.
@@ -436,7 +484,12 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
   smaller `WS_OUT_CAP` (e.g. 16 KiB) for the WebSocket connections' outgoing buffers (02 §0,
   "Outgoing buffer": 64 KiB × `max_connections` is too much SRAM).
-  From task 19: the boot calls `engine_start` (`ENGINE_LOAD_ALL`, 05 §1.3), `engine_run`,
-  `engine_stop` with a `Config` built from `/lfs/config/hakkas.json`; LittleFS is mounted and
-  `pal_init` done before the configuration is read, and networking (which needs the `net.*`
-  keys) comes up after it — e.g. in the `platform_start` hook (05 §1.4).
+  From task 19: the boot builds a `Config` from `/lfs/config/hakkas.json`; LittleFS is mounted
+  and `pal_init` done before the configuration is read, and networking (which needs the
+  `net.*` keys) comes up after it — e.g. in the `platform_start` hook (05 §1.4). From task
+  21e: the Zephyr application is the host and uses the local C API (`src/hakkas.h`, 02 §6):
+  `hakkas_create(&cfg, &params, &h)`, then its processes — by default like `run daemon`
+  (05 §1.3): `hakkas_process_load_saved` with a callback that starts each process whose
+  `started` flag is set (`platform/posix/host.c` `on_saved` does the same) — or a process list
+  (`app/process_list.h` is portable), then `hakkas_run`, `hakkas_destroy`. The engine itself
+  loads no process.

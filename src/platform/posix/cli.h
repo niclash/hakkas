@@ -17,12 +17,13 @@
  *			user del <name>
  *			user list
  *			run [run options] process <file>[:<file>...]
+ *			run [run options] processes <file>
  *			run [run options] daemon
  *	run options:	--id <id>, --webdir <dir>, --host <addr>, --port <n>,
  *			--users <file>
  *
  * Global options come before the command, run options between "run" and
- * "process"/"daemon"; an option repeated takes its last value. Values follow
+ * "process"/"processes"/"daemon"; an option repeated takes its last value. Values follow
  * as the next argument (no "--opt=value"). Option paths are used as given,
  * i.e. relative to the working directory.
  *
@@ -49,10 +50,13 @@
  * go through the log, whose POSIX sink is stderr. JSON is printed compact, one
  * document per line.
  *
- * run process|daemon (05 §1.4, plan task 19) starts the engine
- * (engine/engine.h) with SIGINT/SIGTERM as its stop request
- * (platform/posix/signals.h) and runs it until one arrives; it exits 0 after
- * that clean stop and 1 if the engine refuses to start.
+ * run process|processes|daemon (05 §1.2, §1.4; plan tasks 19, 21e) is the
+ * POSIX host (platform/posix/host.h): it creates the runtime through the
+ * local C API (hakkas.h) with SIGINT/SIGTERM as its stop request
+ * (platform/posix/signals.h), loads and starts the processes of the mode
+ * (graph files, a process list, every saved graph) and runs the engine
+ * until a stop request; it exits 0 after that clean stop and 1 if the
+ * engine refuses to start or a named file does not load.
  *
  * Exit codes: CLI_EXIT_OK (0) success, CLI_EXIT_FAILURE (1) a runtime failure
  * (unreadable or invalid configuration file, unknown type, a graph file that
@@ -88,6 +92,7 @@ enum cli_command {
 	CLI_DESCRIBE_TOPOLOGY,
 	CLI_USER,
 	CLI_RUN_PROCESS,
+	CLI_RUN_PROCESSES,
 	CLI_RUN_DAEMON,
 };
 
@@ -99,7 +104,8 @@ typedef struct {
 	const char *basedir;
 	const char *confdir;
 	/* describe type: the type name; describe topology: the file; user: the
-	 * subcommand; run process: the colon-separated file list. */
+	 * subcommand; run process: the colon-separated file list; run
+	 * processes: the process list file. */
 	const char *arg;
 	/* user add, passwd, del: the user name; user add: the role. */
 	const char *user;

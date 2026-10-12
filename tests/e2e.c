@@ -21,7 +21,7 @@
 
 int test_failures;
 
-Engine *e2e_engine;
+Hakkas *e2e_hakkas;
 char e2e_root[PAL_PATH_MAX], e2e_confdir[PAL_PATH_MAX], e2e_basedir[PAL_PATH_MAX],
 	e2e_webdir[PAL_PATH_MAX];
 
@@ -141,44 +141,87 @@ static uint64_t short_tick(void *ctx, uint64_t now_ms)
 	return E2E_TICK_MS;
 }
 
-bool e2e_start_params(const Config *cfg, const EngineParams *params)
+bool e2e_start_params(const Config *cfg, const HakkasParams *params)
 {
 	e2e_logs_clear();
-	bool ok = engine_start(cfg, params, &e2e_engine);
-	CHECK(ok == (e2e_engine != NULL));
+	bool ok = hakkas_create(cfg, params, &e2e_hakkas);
+	CHECK(ok == (e2e_hakkas != NULL));
 	if (ok)
-		CHECK(loop_add_tick(engine_loop(e2e_engine), short_tick, NULL));
+		CHECK(hakkas_add_tick(e2e_hakkas, short_tick, NULL));
 	return ok;
 }
 
-bool e2e_start_with(const Config *cfg, enum engine_load load, const char *files)
+/* The processes to start, in load order (e2e_start_with). */
+static char starts[16][HAKKAS_ID_MAX + 1];
+static size_t start_count;
+
+static void note_loaded(void *ctx, const HakkasLoaded *l)
 {
-	EngineParams p = {.load = load, .graph_files = files, .ephemeral_ports = true};
-	return e2e_start_params(cfg, &p);
+	(void)ctx;
+	CHECK(start_count < sizeof(starts) / sizeof(starts[0]));
+	if (l->started && start_count < sizeof(starts) / sizeof(starts[0]))
+		memcpy(starts[start_count++], l->id, sizeof(l->id));
+}
+
+/* The colon-separated graph files: false if one does not load. */
+static bool load_files(const char *files)
+{
+	char list[4 * PAL_PATH_MAX];
+	CHECK(strlen(files) < sizeof(list));
+	snprintf(list, sizeof(list), "%s", files);
+	for (char *p = list, *end; p != NULL; p = end) {
+		end = strchr(p, ':');
+		if (end != NULL)
+			*end++ = '\0';
+		HakkasLoaded l;
+		if (hakkas_process_load(e2e_hakkas, p, &l, NULL) != HAKKAS_OK)
+			return false;
+		note_loaded(NULL, &l);
+	}
+	return true;
+}
+
+bool e2e_start_with(const Config *cfg, const char *files)
+{
+	HakkasParams p = {.ephemeral_ports = true};
+	if (!e2e_start_params(cfg, &p))
+		return false;
+	start_count = 0;
+	if (files == NULL) {
+		hakkas_process_load_saved(e2e_hakkas, note_loaded, NULL, NULL);
+	} else if (!load_files(files)) {
+		hakkas_remove_tick(e2e_hakkas, short_tick, NULL);
+		hakkas_destroy(e2e_hakkas);
+		e2e_hakkas = NULL;
+		return false;
+	}
+	for (size_t i = 0; i < start_count; i++)
+		CHECK(hakkas_process_start(e2e_hakkas, starts[i], NULL) == HAKKAS_OK);
+	return true;
 }
 
 bool e2e_start(void)
 {
 	static Config cfg;
 	e2e_config(&cfg);
-	return e2e_start_with(&cfg, ENGINE_LOAD_ALL, NULL);
+	return e2e_start_with(&cfg, NULL);
 }
 
 void e2e_stop(void)
 {
-	if (e2e_engine == NULL)
+	if (e2e_hakkas == NULL)
 		return;
 	pal_request_stop();
-	engine_run(e2e_engine);
-	loop_remove_tick(engine_loop(e2e_engine), short_tick, NULL);
-	engine_stop(e2e_engine);
-	e2e_engine = NULL;
+	hakkas_run(e2e_hakkas);
+	hakkas_remove_tick(e2e_hakkas, short_tick, NULL);
+	hakkas_destroy(e2e_hakkas);
+	e2e_hakkas = NULL;
 }
 
 void e2e_iterate(int n)
 {
 	for (int i = 0; i < n; i++)
-		loop_run_once(engine_loop(e2e_engine));
+		hakkas_run_once(e2e_hakkas);
 }
 
 bool e2e_run_until(bool (*pred)(void *arg), void *arg)
@@ -186,7 +229,7 @@ bool e2e_run_until(bool (*pred)(void *arg), void *arg)
 	for (int i = 0; i < E2E_WAIT_ITERS; i++) {
 		if (pred(arg))
 			return true;
-		loop_run_once(engine_loop(e2e_engine));
+		hakkas_run_once(e2e_hakkas);
 	}
 	return pred(arg);
 }
@@ -298,7 +341,7 @@ void e2e_send_bytes(E2eClient *c, const void *data, size_t len)
 			CHECK(++stalls < E2E_WAIT_ITERS);
 			if (stalls >= E2E_WAIT_ITERS)
 				return;
-			loop_run_once(engine_loop(e2e_engine));
+			hakkas_run_once(e2e_hakkas);
 			continue;
 		}
 		if (n <= 0)
@@ -370,7 +413,7 @@ int e2e_read_head(E2eClient *c, char head[2048])
  * with SO_RCVBUF rcvbuf (0: the default): the response's status. */
 static int upgrade(E2eClient *c, const char *origin, int rcvbuf)
 {
-	if (!e2e_tcp_connect(c, engine_ws_port(e2e_engine), rcvbuf))
+	if (!e2e_tcp_connect(c, hakkas_ws_port(e2e_hakkas), rcvbuf))
 		return 0;
 	char req[512], origin_field[256] = "", head[2048];
 	if (origin != NULL)
@@ -379,7 +422,7 @@ static int upgrade(E2eClient *c, const char *origin, int rcvbuf)
 		 "GET / HTTP/1.1\r\nHost: 127.0.0.1:%u\r\nUpgrade: websocket\r\n"
 		 "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
 		 "Sec-WebSocket-Version: 13\r\n%s\r\n",
-		 engine_ws_port(e2e_engine), origin_field);
+		 hakkas_ws_port(e2e_hakkas), origin_field);
 	e2e_send_bytes(c, req, strlen(req));
 	int status = e2e_read_head(c, head);
 	if (status == 101)
@@ -395,7 +438,7 @@ int e2e_upgrade(E2eClient *c, const char *origin)
 bool e2e_connect_rcvbuf(E2eClient *c, int rcvbuf)
 {
 	char origin[64];
-	snprintf(origin, sizeof(origin), "http://127.0.0.1:%u", engine_web_port(e2e_engine));
+	snprintf(origin, sizeof(origin), "http://127.0.0.1:%u", hakkas_web_port(e2e_hakkas));
 	int status = upgrade(c, origin, rcvbuf);
 	CHECK(status == 101);
 	return status == 101;
@@ -671,7 +714,7 @@ void e2e_free_msgs(char **msgs, int n)
 bool e2e_silent(E2eClient *c, int n)
 {
 	for (int i = 0; i < n; i++) {
-		loop_run_once(engine_loop(e2e_engine));
+		hakkas_run_once(e2e_hakkas);
 		client_poll(c);
 		if (c->len > 0)
 			return false;

@@ -600,7 +600,7 @@ static void test_oversized(void)
 	connect_login(&a, "alice");
 	CHECK(e2e_connect(&x));
 	/* One byte over max_message_bytes (16 KiB): close 1009. */
-	size_t max = engine_config(e2e_engine)->max_message_bytes;
+	size_t max = hakkas_config(e2e_hakkas)->max_message_bytes;
 	char *big = malloc(max + 2);
 	CHECK(big != NULL);
 	memset(big, ' ', max + 1);
@@ -795,8 +795,8 @@ static void test_log_mirror(void)
 	static Config cfg;
 	e2e_config(&cfg);
 	CHECK(config_set(&cfg, "log.mirror", "true", "test") == CONFIG_OK);
-	CHECK(e2e_start_with(&cfg, ENGINE_LOAD_ALL, NULL));
-	if (e2e_engine == NULL)
+	CHECK(e2e_start_with(&cfg, NULL));
+	if (e2e_hakkas == NULL)
 		return;
 	E2eClient a, b, u;
 	connect_login(&a, "alice");
@@ -830,7 +830,7 @@ int main(void)
 	static Config cfg;
 	e2e_config(&cfg);
 	CHECK(config_set(&cfg, "max_connections", "8", "test") == CONFIG_OK);
-	if (!e2e_start_with(&cfg, ENGINE_LOAD_ALL, NULL)) {
+	if (!e2e_start_with(&cfg, NULL)) {
 		e2e_teardown();
 		return 1;
 	}

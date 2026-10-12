@@ -1946,7 +1946,7 @@ static size_t snapshot_bytes(void)
 static void load_snap(void)
 {
 	const char *text = jq(snap_file);
-	CHECK(graph_files_load_text(&gf, text, strlen(text), "snap", NULL) == GRAPH_FILES_OK);
+	CHECK(graph_files_load_text(&gf, text, strlen(text), "snap", NULL, NULL) == GRAPH_FILES_OK);
 }
 
 static void test_connect_snapshot(void)

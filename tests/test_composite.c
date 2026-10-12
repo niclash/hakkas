@@ -754,7 +754,12 @@ static void test_graph_file(void)
 			     "'inports':[{'name':'x','block':'c','port':'b'}],'outports':[]}"));
 	CHECK(graphs_delete_graph(&gs, "g1", "G", NULL) == GRAPH_OK);
 	Graph *g;
-	CHECK(graph_files_load_text(&gf, text, strlen(text), "test", &g) == GRAPH_FILES_OK);
+	bool started = false;
+	CHECK(graph_files_load_text(&gf, text, strlen(text), "test", &g, &started) ==
+	      GRAPH_FILES_OK);
+	/* Loading leaves it stopped; started as its flag says, it saves the same. */
+	CHECK(started && !g->started);
+	CHECK(graphs_start(&gs, "g1", NULL) == GRAPH_OK);
 	char *again = graph_files_serialize(g, NULL);
 	CHECK_STREQ(again, text);
 	CHECK(!block_is_placeholder(graph_find_block(g, "c")));

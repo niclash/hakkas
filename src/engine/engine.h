@@ -1,9 +1,10 @@
 /*
  * Engine startup and shutdown (05 §1.4, 01 §5): the startup sequence wired
  * end to end, written once against the PAL and the core modules, for every
- * platform. The POSIX command line's `run process|daemon` calls it
- * (platform/posix/cli.c); the Zephyr port will call it like `run daemon`
- * (05 §1.3).
+ * platform. The host reaches it through the local C API (hakkas.h:
+ * hakkas_create, hakkas_run, hakkas_destroy), which the POSIX command
+ * line's `run` uses (platform/posix/host.c) and the Zephyr application
+ * will (05 §1.3).
  *
  * Naming: functions are prefixed engine_, the types are Engine and
  * EngineParams.
@@ -30,11 +31,10 @@
  *  6. the composite block types of <datadir>/types, in dependency order
  *     (type_files_load_all; a type that does not load is logged and skipped,
  *     never fatal);
- *  7. the graphs: ENGINE_LOAD_LIST (`run process`) loads the given files,
- *     and any file that does not load refuses startup; ENGINE_LOAD_ALL
- *     (`run daemon`, Zephyr) loads every graph in <datadir>/graphs, and a
- *     file that does not load is logged and skipped. Graphs whose started
- *     flag is true are started after loading (graph_files_load);
+ *  7. nothing: loading and starting processes is the host's job (decided,
+ *     plan task 21e; 05 §1.4 step 7), through the C API (hakkas.h) after
+ *     engine_start and before engine_run. The engine starts no process by
+ *     itself and does not act on a graph file's started flag;
  *  8. the protocol layer (protocol_create), the web server on port
  *     (web_server_open_config) and the WebSocket listener on port + 1
  *     (ws_server_open_config, which refuses tls.enabled); any failure
@@ -63,17 +63,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "app/graph_files.h"
 #include "engine/loop.h"
+#include "graphs/graphs.h"
 #include "system/config.h"
 
-enum engine_load {
-	ENGINE_LOAD_ALL,  /* every graph in <datadir>/graphs (`run daemon`) */
-	ENGINE_LOAD_LIST, /* the colon-separated files of graph_files (`run process`) */
-};
-
 typedef struct {
-	enum engine_load load;
-	const char *graph_files; /* ENGINE_LOAD_LIST: "<file>[:<file>...]" */
 	/* The platform's hooks, either may be NULL: start is called right
 	 * after the loop is created (startup step 2; POSIX installs its stop
 	 * signal handlers, posix_stop_signals_install), and a false return
@@ -108,6 +103,10 @@ const Config *engine_config(const Engine *e);
 
 /* The engine loop, e.g. for tests driving loop_run_once. */
 Loop *engine_loop(Engine *e);
+
+/* The graphs registry and the graph files (for the C API, hakkas.h). */
+Graphs *engine_graphs(Engine *e);
+GraphFiles *engine_files(Engine *e);
 
 /* The ports the web server and the WebSocket listener listen on (0 once
  * closed). */

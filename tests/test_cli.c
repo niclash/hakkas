@@ -3,8 +3,11 @@
  * parsing every command and option, usage errors, the configuration's
  * precedence (defaults < file < options), and the output of list types,
  * describe type (the 02 §3.5 component:component payload) and describe
- * topology. Configuration and graph files live in a fresh temporary
- * directory that is removed afterwards.
+ * topology, and run as the POSIX host (platform/posix/host.h): which
+ * processes `run process`, `run processes` (a process list in both forms)
+ * and `run daemon` load and start, and their failures. Configuration and
+ * graph files live in a fresh temporary directory that is removed
+ * afterwards.
  */
 #define _XOPEN_SOURCE 700
 
@@ -41,7 +44,7 @@ static void append(char *buf, size_t size, const char *fmt, ...)
 }
 
 /* Log lines, without the "<level> <file>:<line>: " prefix, one per line. */
-static char logs[8192];
+static char logs[32768];
 
 static void log_sink(void *ctx, enum log_level level, const char *line, size_t len)
 {
@@ -263,13 +266,15 @@ static void test_parse_usage_errors(void)
 		    "admin", NULL);
 	usage_error("user del: unexpected argument 'b'", "user", "del", "a", "b", NULL);
 	usage_error("user list: unexpected argument 'x'", "user", "list", "x", NULL);
-	usage_error("run: expected 'process <files>' or 'daemon'", "run", NULL);
+	usage_error("run: expected 'process <files>', 'processes <file>' or 'daemon'", "run", NULL);
 	usage_error("run: expected", "run", "--port", "1", NULL);
 	usage_error("run: expected", "run", "start", NULL);
 	usage_error("run: unknown option '--fine'", "run", "--fine", "daemon", NULL);
 	usage_error("option --port needs a value", "run", "--port", NULL);
 	usage_error("option --id needs a value", "run", "--id", "", "daemon", NULL);
 	usage_error("run process: missing the graph file list", "run", "process", NULL);
+	usage_error("run processes: missing the process list file", "run", "processes", NULL);
+	usage_error("run processes: unexpected argument 'b'", "run", "processes", "a", "b", NULL);
 	usage_error("run process: unexpected argument 'b'", "run", "process", "a", "b", NULL);
 	usage_error("run daemon: unexpected argument 'x'", "run", "daemon", "x", NULL);
 	usage_error("list types: unexpected argument '--fine'", "list", "types", "--fine", NULL);
@@ -485,7 +490,6 @@ static void test_run(void)
 	CHECK(run("--confdir", conf, "--basedir", base, "run", "--host", "127.0.0.1", "process",
 		  join(base, "missing.json"), NULL) == CLI_EXIT_FAILURE);
 	CHECK(strstr(logs, "error run process: a graph file did not load") != NULL);
-	CHECK(strstr(logs, "error the engine did not start") != NULL);
 	/* Step 1 has generated the server secret (05 §1.1). */
 	CHECK(pal_storage_exists(join(conf, "hakkas.json")));
 
@@ -508,6 +512,159 @@ static void test_run(void)
 	CHECK(run("--confdir", conf, "run", "daemon", NULL) == CLI_EXIT_FAILURE);
 	CHECK(strstr(logs, "not a valid configuration file") != NULL);
 	CHECK(strstr(logs, "ready") == NULL);
+}
+
+/* ---- run as the host (05 §1.2, platform/posix/host.h) ------------------------------ */
+
+#define G_STARTED                                                                                  \
+	"{\"id\":\"g1\",\"started\":true,\"blocks\":{\"a\":{\"component\":\"math/Add2\"}}}"
+#define G_STOPPED "{\"id\":\"g2\",\"started\":false}"
+#define G_NOFLAG "{\"id\":\"g3\"}"
+
+static const char *host_conf, *host_base;
+
+/* run --info ... run --host 127.0.0.1 --port <free> <mode> [arg], stopped
+ * before the loop runs (01 §0.2): the processes are loaded and started,
+ * then the engine stops at once. */
+static int run_host(const char *mode, const char *arg)
+{
+	uint16_t port = free_port_pair();
+	CHECK(port != 0);
+	char ports[16];
+	snprintf(ports, sizeof(ports), "%u", (unsigned)port);
+	pal_request_stop();
+	/* A failed startup clears the request with the loop (pal_loop_close). */
+	return run("--info", "--confdir", host_conf, "--basedir", host_base, "run", "--host",
+		   "127.0.0.1", "--port", ports, mode, arg, NULL);
+}
+
+static bool logged(const char *text)
+{
+	if (strstr(logs, text) != NULL)
+		return true;
+	fprintf(stderr, "expected \"%s\" in:\n%s", text, logs);
+	return false;
+}
+
+static void host_setup(void)
+{
+	host_conf = subdir("host-conf");
+	host_base = subdir("host-base");
+	subdir("host-base/graphs");
+	subdir("host-files");
+	subdir("host-files/sub");
+	put(join(root, "host-files/g1.json"), G_STARTED);
+	put(join(root, "host-files/sub/g2.json"), G_STOPPED);
+	put(join(root, "host-files/g3.json"), G_NOFLAG);
+	put(join(root, "host-files/bad.json"), "{\"id\":");
+}
+
+/* run process <files>: in order, the started flag decides; any file that
+ * does not load refuses startup. */
+static void test_run_process(void)
+{
+	host_setup();
+	char list[3 * PAL_PATH_MAX];
+	snprintf(list, sizeof(list), "%s/host-files/g1.json:%s/host-files/sub/g2.json", root, root);
+	CHECK(run_host("process", list) == CLI_EXIT_OK);
+	CHECK(logged("info process g1 started\n"));
+	CHECK(strstr(logs, "process g2 started") == NULL);
+	CHECK(logged("info 2 processes loaded, 1 started\n"));
+	CHECK(logged("info engine stopped"));
+
+	snprintf(list, sizeof(list), "%s/host-files/g1.json:%s/host-files/bad.json", root, root);
+	CHECK(run_host("process", list) == CLI_EXIT_FAILURE);
+	CHECK(logged("host-files/bad.json: not a valid graph file"));
+	CHECK(logged("error run process: a graph file did not load (malformed graph file): "
+		     "not starting"));
+	CHECK(strstr(logs, "started") == NULL); /* nothing is started before all loaded */
+
+	snprintf(list, sizeof(list), "%s/host-files/g1.json::%s/host-files/g3.json", root, root);
+	CHECK(run_host("process", list) == CLI_EXIT_FAILURE);
+	CHECK(logged("invalid graph file name in list"));
+	snprintf(list, sizeof(list), "%s/host-files/g1.json:%s/host-files/g1.json", root, root);
+	CHECK(run_host("process", list) == CLI_EXIT_FAILURE);
+	CHECK(logged("Graph exists: g1"));
+	CHECK(logged("a graph file did not load (process exists)"));
+}
+
+/* run daemon: every saved process, the flag decides; a file that does not
+ * load is skipped. */
+static void test_run_daemon(void)
+{
+	host_setup();
+	put(join(host_base, "graphs/g1.json"), G_STARTED);
+	put(join(host_base, "graphs/g2.json"), G_STOPPED);
+	put(join(host_base, "graphs/bad.json"), "nonsense");
+	CHECK(run_host("daemon", NULL) == CLI_EXIT_OK);
+	CHECK(logged("graphs/bad.json: not a valid graph file"));
+	CHECK(logged("warn not every process in "));
+	CHECK(logged("info process g1 started\n"));
+	CHECK(strstr(logs, "process g2 started") == NULL);
+	CHECK(logged("info 2 processes loaded, 1 started\n"));
+	CHECK(pal_storage_remove(join(host_base, "graphs/bad.json")) == PAL_OK);
+}
+
+/* run processes <file> (05 §1.2 "Process list"): both forms, paths relative
+ * to the list's directory, "start" over the file's flag, bindings and links
+ * logged and ignored; every failure refuses startup. */
+static void test_run_processes(void)
+{
+	host_setup();
+	const char *dir = join(root, "host-files");
+	char path[PAL_PATH_MAX];
+	snprintf(path, sizeof(path), "%s/plain.json", dir);
+	/* The sister project's form: an array of paths; the flags decide. */
+	put(path, "[\"g1.json\", \"./sub/g2.json\", \"g3.json\"]");
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(logged("info process g1 started\n"));
+	CHECK(strstr(logs, "process g2 started") == NULL && strstr(logs, "process g3") == NULL);
+	CHECK(logged("info 3 processes loaded, 1 started\n"));
+
+	/* The object form: start over the flag; bindings and links ignored. */
+	snprintf(path, sizeof(path), "%s/object.json", dir);
+	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":false},"
+		  "{\"graph\":\"sub/g2.json\",\"start\":true,\"bindings\":\"emu.json\"},"
+		  "{\"graph\":\"g3.json\",\"start\":null,\"note\":1}],"
+		  "\"links\":[{\"from\":\"g1.out\",\"to\":\"g2.in\"}],\"version\":2}");
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	char want[2 * PAL_PATH_MAX];
+	snprintf(want, sizeof(want),
+		 "info %s/sub/g2.json: bindings %s/emu.json ignored: environment bindings are "
+		 "not implemented yet\n",
+		 dir, dir);
+	CHECK(logged(want));
+	CHECK(logged("object.json: 1 link ignored: links between processes are not implemented "
+		     "yet\n"));
+	CHECK(logged("object.json: unknown member \"version\" ignored"));
+	CHECK(logged("object.json: processes[2]: unknown member \"note\" ignored"));
+	CHECK(logged("info process g2 started\n"));
+	CHECK(strstr(logs, "process g1 started") == NULL && strstr(logs, "process g3") == NULL);
+	CHECK(logged("info 3 processes loaded, 1 started\n"));
+
+	/* The sister project's example graph through a process list. */
+	snprintf(path, sizeof(path), "%s/example.json", dir);
+	put(path, "{\"processes\":[{\"graph\":\"" HAKKAS_EXAMPLES_DIR "/example.json\","
+		  "\"start\":true}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(logged("info process 0826152e-3014-4c89-9380-ec4991a76af2 started\n"));
+	CHECK(logged("info 1 process loaded, 1 started\n"));
+
+	/* Failures: no such list, a malformed one, a process that does not
+	 * load. */
+	snprintf(path, sizeof(path), "%s/none.json", dir);
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(logged("none.json: not found: not starting"));
+	snprintf(path, sizeof(path), "%s/bad-list.json", dir);
+	put(path, "{\"processes\":[{\"graph\":3}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(logged("bad-list.json: processes[0]: expected an object with a graph file path"));
+	CHECK(logged("bad-list.json: malformed graph file: not starting"));
+	put(path, "[\"g1.json\", \"bad.json\"]");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	snprintf(want, sizeof(want), "run processes: %s/bad.json did not load", dir);
+	CHECK(logged(want));
+	CHECK(strstr(logs, "started") == NULL);
 }
 
 /* ---- user add|passwd|del|list (02 §2.2) ------------------------------------------- */
@@ -717,6 +874,9 @@ int main(void)
 	RUN(test_describe_type);
 	RUN(test_describe_topology);
 	RUN(test_run);
+	RUN(test_run_process);
+	RUN(test_run_daemon);
+	RUN(test_run_processes);
 	RUN(test_user_commands);
 	RUN(test_help_and_version);
 
