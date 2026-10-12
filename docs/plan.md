@@ -344,7 +344,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   check order and messages, fan-in, canonical form, registry operations, description/icon
   changes allowed while in use), §5.2 (order, default names, what is left out); 01 §2.3,
   §3.3; 02 §3.4.2, §3.5; 05 §1.4 step 6 and shutdown, §2.3 (type files).
-  For the group commands (once open question 4 is decided): `graph:addgroup` is
+  For the group commands (task 21b): `graph:addgroup` is
   `composite_types_assemble` + `composite_types_register` + `type_files_save`;
   `removegroup` `composite_types_unregister` + `type_files_delete`; `renamegroup`
   `composite_types_rename` + `type_files_save` (new) + `type_files_delete` (old);
@@ -352,6 +352,10 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   needs a `component:component` broadcast to every connection with a live session (as the
   log mirror iterates them), built with `proto_msg_component`; the provisional messages of
   03 §5.1 become the `network:error` texts.
+- [ ] **21b. Group wire commands** (02 §3.4.2): `graph:addgroup`/`removegroup`/`renamegroup`/
+  `changegroup` on the task-21 model functions, with their broadcasts and a `component:component`
+  broadcast for new/changed types. Open question 4 is decided: "save as component" — the
+  selected nodes are left unchanged.
 - [ ] **22. Simulated IO provider + `io/*` blocks + binding table** — **blocked** (open
   questions 3, 6). IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
   `WORK_IO_EVENT` in `runtime_drain`.
