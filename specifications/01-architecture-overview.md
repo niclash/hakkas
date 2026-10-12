@@ -141,7 +141,7 @@ struct BlockCtx {
 
 `compute` returns, for `TIMER_SCHEDULED` types only, the delay in milliseconds until it wants to be called again with `reason = TIMER` (a negative value means "no timer armed"); every call re-arms or cancels the block's single one-shot timer, except the `STOP` call, whose return value is ignored (decided, plan task 8: a stopped block has no timer, §3.2 timer decisions). For other timer modes the return value is ignored.
 
-A block *instance* is this type-definition pointer plus an array of current input/output values, its own optional change-threshold override (§3.3), and, when `state_size > 0`, a per-instance state blob the `compute` function reads and writes across invocations. This single mechanism covers every block type in `03-block-types.md`:
+A block *instance* is this type-definition pointer plus an array of current input/output values and, when `state_size > 0`, a per-instance state blob the `compute` function reads and writes across invocations. This single mechanism covers every block type in `03-block-types.md`:
 - **Event-driven** (`compute_on_input = true`, `TIMER_NONE`): the arithmetic/comparison blocks, the linear-transform block. `state_size = 0`, `compute` is a pure function of its inputs.
 - **Scheduled** (`TIMER_SCHEDULED`, usually also `compute_on_input`): the block decides when it next runs — the pulse/PWM generator (`03-block-types.md` §3.1) arms its timer for the next edge; schedule blocks (`03-block-types.md` §6.2) arm for the next schedule boundary.
 - **Cyclic** (`TIMER_PERIODIC`, usually also `compute_on_input`): the block runs at a fixed sample period and additionally reacts to input changes — the PID regulator (`03-block-types.md` §6.1).
@@ -240,7 +240,7 @@ An inner block of a composite instance (`03-block-types.md` §5) uses its own ty
 Decisions (plan task 6):
 - **Equal values never propagate**, whatever the threshold: a number changes when it is not equal to `last_propagated` (so `0` and `-0` are equal) **and** `|new − last_propagated| >= threshold`; at exactly the threshold it propagates. An `i64` distance is computed without overflow. Infinities follow IEEE-754 (`+Infinity` to `+Infinity` is no change).
 - **"Any change of value type"** is any change of the `Linkable` tag, including `i64` ↔ `f64`, even when the magnitudes are equal. Strings compare by content; unset → unset is no change.
-- **Valid thresholds** are `>= 0`, `+Infinity` included (numbers then propagate only on start, a NaN transition or a type change). NaN or a negative value is refused, both for the engine-wide setting and for an instance override; an instance override of NaN internally means "none".
+- **Valid thresholds** are `>= 0`, `+Infinity` included (numbers then propagate only on start, a NaN transition or a type change). NaN or a negative value is refused for the engine-wide setting; a type default of NaN means "none" (use the engine-wide default).
 - **"The very first value after `start`"** is the unconditional push of `start` (§2.2): a block computes and propagates only while started, so `start` always produces the first value.
 - A changed threshold applies from the next `output_set`; nothing is re-propagated.
 

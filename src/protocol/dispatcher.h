@@ -59,10 +59,10 @@
  *
  * Graph commands (02 §3.4, decided in plan task 18): payload fields are
  * mapped onto the graphs_ commands (graphs/graphs.h), whose refusal messages
- * are sent as they are. Node metadata whose x, y or change_threshold is
- * invalid is "Invalid field: metadata" (for changenode checked before the
- * node is looked up); an initial's data is parsed for the target input's
- * declared type (graph_json_to_initial).
+ * are sent as they are. Node metadata whose x or y is invalid is "Invalid
+ * field: metadata" (for changenode checked before the node is looked up); an
+ * initial's data is parsed for the target input's declared type
+ * (graph_json_to_initial).
  *
  * graph:connect (02 §4.1.1): the snapshot (graph:clear, the blocks, the
  * inports and outports, the initials, the edges; never the retained entries

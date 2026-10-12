@@ -129,7 +129,7 @@ static void test_full(void)
 
 struct expected_type {
 	const char *name, *icon, *description;
-	int inputs;	     /* in1..inN; 0 for process/Linear's in, k, m */
+	int inputs; /* in1..inN; 0 for process/Linear's in, k, m; -1 for Deadband's in, threshold */
 	const char *out_type;
 };
 
@@ -153,6 +153,8 @@ static const struct expected_type table[] = {
 	{"math/LessEqual", "compare", "out = in1 <= in2", 2, "bool"},
 	{"math/GreaterEqual", "compare", "out = in1 >= in2", 2, "bool"},
 	{"process/Linear", "function", "out = k*in+m", 0, "number"},
+	{"process/Deadband", "filter", "out follows in only when it moves by at least threshold",
+	 -1, "number"},
 };
 
 #define EXPECTED_COUNT (sizeof(table) / sizeof(table[0]))
@@ -195,11 +197,19 @@ static void test_builtins(void)
 		CHECK(t->period_ms == 0);
 		CHECK(t->compute != NULL);
 		CHECK(t->state_size == 0);
-		CHECK(isnan(t->change_threshold));
+		if (e->inputs < 0)
+			CHECK(t->change_threshold == 0); /* the engine adds no filtering */
+		else
+			CHECK(isnan(t->change_threshold));
 		CHECK(!t->subgraph);
 		CHECK(t->composite == NULL);
 
-		if (e->inputs == 0) {
+		if (e->inputs < 0) {
+			static const char *const deadband_ins[] = {"in", "threshold"};
+			CHECK(t->input_count == 2);
+			for (uint32_t j = 0; j < 2 && j < t->input_count; j++)
+				check_port(&t->inputs[j], deadband_ins[j], "number");
+		} else if (e->inputs == 0) {
 			static const char *const linear_ins[] = {"in", "k", "m"};
 			CHECK(t->input_count == 3);
 			for (uint32_t j = 0; j < 3 && j < t->input_count; j++)

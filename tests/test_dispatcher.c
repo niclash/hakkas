@@ -1486,6 +1486,16 @@ static void test_graph_commands(void)
 	edit1(&k, "changenode", "{'id':'n3','metadata':{'y':null},'graph':'g1'}",
 	      "{'protocol':'graph','command':'changenode','payload':{'id':'n3','graph':'g1',"
 	      "'metadata':{'x':1,'y':50,'extra':[1,2]}}}");
+	/* change_threshold is an ordinary opaque key (plan task 21c): any value
+	 * is accepted, kept at the end, and has no effect on the block. */
+	edit1(&k, "changenode", "{'id':'n3','metadata':{'change_threshold':-1},'graph':'g1'}",
+	      "{'protocol':'graph','command':'changenode','payload':{'id':'n3','graph':'g1',"
+	      "'metadata':{'x':1,'y':50,'extra':[1,2],'change_threshold':-1}}}");
+	CHECK(block_change_threshold(graph_find_block(graphs_find(&gs, "g1"), "n3")) ==
+	      RUNTIME_DEFAULT_CHANGE_THRESHOLD);
+	edit1(&k, "changenode", "{'id':'n3','metadata':{'change_threshold':null},'graph':'g1'}",
+	      "{'protocol':'graph','command':'changenode','payload':{'id':'n3','graph':'g1',"
+	      "'metadata':{'x':1,'y':50,'extra':[1,2]}}}");
 	/* Edges and their metadata. */
 	edit1(&k, "addedge",
 	      "{'src':{'node':'n1','port':'out'},'tgt':{'node':'n3','port':'in1'},'graph':'g1',"
@@ -1743,10 +1753,6 @@ static void test_graph_refusals(void)
 	refused_cmd(&k, "graph", "addnode",
 		    "{'id':'x','graph':'zz','component':'math/Add2','metadata':[]}",
 		    "Invalid field: metadata", "zz");
-	refused_cmd(&k, "graph", "addnode",
-		    "{'id':'x','graph':'g1','component':'math/Add2','metadata':"
-		    "{'change_threshold':-1}}",
-		    "Invalid field: metadata", "g1");
 	refused_cmd(&k, "graph", "removenode", "{'id':7,'graph':'g1'}", "Invalid field: id", "g1");
 	refused_cmd(&k, "graph", "renamenode", "{'from':'n1','graph':'g1'}", "Invalid field: to",
 		    "g1");

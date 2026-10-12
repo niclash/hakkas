@@ -80,6 +80,13 @@ The `timing/` family is expected to grow: `timing/Interval` covers periodic puls
 
 **`process/Deadband`** (decided, `00-README.md` open question 7): inputs `in` (number) and `threshold` (number, default `0`), output `out` (number). On every input change, `out` is set to `in` only if `|in − out| >= threshold` (or on a NaN transition, or the first value after `start`); otherwise `out` keeps its value. It is the graph-visible way to filter a signal more (or less) than the engine-wide change threshold; its type default change threshold is `0`, so the engine adds no filtering of its own on its output. A `relative` (bool) input for percentage deadbands may be added later if needed.
 
+Decisions (plan task 21c):
+- **The first value after `start`** is the `START` compute: it sets `out` to the current `in` unconditionally, and the runtime pushes it (§2). A value arriving after that is compared with it like any other, so after a restart `out` may hold a stale `in` that is within `threshold` of the upstream's first pushed value.
+- **A change of `threshold` alone** re-evaluates: the current `in` is compared with `out` under the new threshold, so lowering it lets a held `out` catch up at once; raising it never moves `out`.
+- **A NaN or negative `threshold`** counts as `0` (every distinct value passes); `+Infinity` holds every finite move, so only a NaN transition or a restart moves `out`.
+- **NaN**: a transition into or out of NaN always moves `out`; NaN → NaN does not. Equal infinities (`|∞ − ∞|` is NaN) do not move it.
+- `STOP` changes nothing. The type keeps no state of its own: the held value is its current output. `out` is always an f64 (`to_f64(in)`). Port descriptions: `in` → `"Input value"`, `threshold` → `"Smallest change of in that moves out"`, `out` → `"in, held while it moves less than threshold"`. Registration order: after `process/Linear`, as in the table.
+
 ### 3.1 `timing/Interval` — periodic pulse generator (PWM / edge generator)
 
 A scheduled block (`compute_on_input = true`, `TIMER_SCHEDULED`, per-instance state: the start time of the current cycle and the cycle's latched parameters). It outputs a boolean square wave with a given period and duty cycle. With a small period it is a PWM source. With a longer period it is an edge generator: for example, `milliseconds = 1000`, `duty-cycle = 50` gives a rising edge every second and a falling edge half a second later.

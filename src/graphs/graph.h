@@ -56,7 +56,7 @@
  * runtime (graphs/runtime.h "Timers").
  *
  * Opaque metadata (decided, plan task 10, 01 §2.2): node metadata keys other
- * than x, y and change_threshold (BlockMetadata.extra) and an edge's metadata
+ * than x and y (BlockMetadata.extra) and an edge's metadata
  * (Input.edge_metadata, on the destination input, which has at most one edge)
  * are kept as compact JSON object text, never interpreted here. Converting
  * them from and to JSON, and merging a changenode patch, is
@@ -103,16 +103,15 @@
  *  - start/stop apply to every inner block (in definition order), removal
  *    and graph destruction free them (watches detached, timers cancelled,
  *    queued entries stale).
- * The change threshold of an inner block (01 §3.3) is the override of the
- * nearest enclosing instance that has one, else its own type's default, else
- * the engine-wide one (block_change_threshold).
+ * The change threshold of an inner block (01 §3.3) is its own type's
+ * default, else the engine-wide one (block_change_threshold), like any
+ * block's: there is no per-instance override (decided, plan task 21c).
  *
  * Not yet here: IO (task 22).
  */
 #ifndef HAKKAS_GRAPHS_GRAPH_H
 #define HAKKAS_GRAPHS_GRAPH_H
 
-#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -137,9 +136,8 @@ enum graph_status {
 	GRAPH_ERR_INPUT_CONNECTED = -5,	       /* "Input already connected: <node>.<port>" */
 	GRAPH_ERR_NO_SUCH_CONNECTION = -6,     /* "No such connection" */
 	GRAPH_ERR_INVALID_ID = -7,	       /* "Invalid id" */
-	/* Not wire refusal cases: a NULL type or value, or a change threshold
-	 * that is NaN or negative (a protocol-level validation error), and an
-	 * allocation failure. */
+	/* Not wire refusal cases: a NULL type or value (a protocol-level
+	 * validation error), and an allocation failure. */
 	GRAPH_ERR_INVALID_ARGUMENT = -8,
 	GRAPH_ERR_NO_MEMORY = -9,
 	/* Refusals of the Graphs registry (graphs/graphs.h), 02 §3.4.1. */
@@ -205,21 +203,20 @@ typedef struct {
 	uint32_t link_cap;
 } Output;
 
-/* Node metadata (05 §2.1). change_threshold is the instance override of
- * 01 §3.3, NAN when absent. extra holds every other metadata key, opaque, as
+/* Node metadata (05 §2.1): the canvas position x, y. extra holds every other
+ * metadata key, opaque, as
  * compact JSON object text ("{...}"), or NULL if there are none. A block owns
  * its metadata's extra; a BlockMetadata passed to graph_create_block is only
  * read (the block takes a copy). graphs/graph_json.h converts metadata from
  * and to JSON. */
 typedef struct {
 	double x, y;
-	double change_threshold;
 	char *extra;
 } BlockMetadata;
 
 static inline BlockMetadata block_metadata_default(void)
 {
-	return (BlockMetadata){BLOCK_DEFAULT_POSITION, BLOCK_DEFAULT_POSITION, (double)NAN, NULL};
+	return (BlockMetadata){BLOCK_DEFAULT_POSITION, BLOCK_DEFAULT_POSITION, NULL};
 }
 
 /* Free md->extra (when the caller owns it) and set it NULL. */
@@ -400,16 +397,14 @@ Block *graph_find_block(const Graph *g, const char *name);
  * (NULL: block_metadata_default(); md->extra is copied); it is started at once
  * if g is started. A composite type's instance builds its inner blocks first
  * (see "Composite instances" above). Refused: INVALID_ID, NODE_EXISTS,
- * INVALID_ARGUMENT (NULL type, or a metadata change_threshold that is
- * negative), NO_MEMORY. On success *out (if not NULL) is the block. Reports
+ * INVALID_ARGUMENT (NULL type), NO_MEMORY. On success *out (if not NULL) is the block. Reports
  * BLOCK_ADDED (only the block: inner blocks are not reported). */
 enum graph_status graph_create_block(Graph *g, const char *name, const BlockTypeDef *type,
 				     const BlockMetadata *md, Block **out);
 
 /* Create a placeholder block (05 §2.2) for the unregistered type component:
  * as graph_create_block, but with no type, ports or compute. Refused:
- * INVALID_ID, NODE_EXISTS, INVALID_ARGUMENT (component NULL, or a bad
- * change_threshold), NO_MEMORY. Reports BLOCK_ADDED. */
+ * INVALID_ID, NODE_EXISTS, INVALID_ARGUMENT (component NULL), NO_MEMORY. Reports BLOCK_ADDED. */
 enum graph_status graph_create_placeholder(Graph *g, const char *name, const char *component,
 					   const BlockMetadata *md, Block **out);
 
@@ -430,17 +425,9 @@ enum graph_status graph_remove_block(Graph *g, const char *name);
 enum graph_status graph_rename_block(Graph *g, const char *from, const char *to);
 
 /* A metadata change (02 §3.4 changenode): the fields to merge. */
-enum threshold_change {
-	THRESHOLD_KEEP = 0,
-	THRESHOLD_SET,	 /* set the instance override to change_threshold */
-	THRESHOLD_CLEAR, /* remove the instance override ("change_threshold": null) */
-};
-
 typedef struct {
 	bool set_x, set_y;
 	double x, y;
-	enum threshold_change threshold;
-	double change_threshold;
 	/* set_extra: replace the opaque keys with extra (JSON object text, or
 	 * NULL for none), which is copied. graph_json_to_change
 	 * (graphs/graph_json.h) computes it from a changenode patch. */
@@ -448,10 +435,9 @@ typedef struct {
 	char *extra;
 } BlockChange;
 
-/* Merge chg into the block's metadata. Refused: INVALID_ID, UNKNOWN_NODE,
- * INVALID_ARGUMENT (THRESHOLD_SET with NaN or a negative value), NO_MEMORY.
- * Reports BLOCK_CHANGED. A new threshold applies from the next output_set
- * on. */
+/* Merge chg into the block's metadata. Metadata is UI-only (01 §2.2): it
+ * never affects behavior. Refused: INVALID_ID, UNKNOWN_NODE, INVALID_ARGUMENT
+ * (chg NULL), NO_MEMORY. Reports BLOCK_CHANGED. */
 enum graph_status graph_change_block(Graph *g, const char *name, const BlockChange *chg);
 
 /* Free chg->extra (when the caller owns it) and set it NULL. */
@@ -625,10 +611,8 @@ const Linkable *block_input_value(const Block *b, uint32_t input);
  * for a composite instance). */
 const Linkable *block_output_value(const Block *b, uint32_t output);
 
-/* The change threshold in effect for b (01 §3.3): the instance override, else
- * (for an inner block, 03 §5) the override of the nearest enclosing composite
- * instance that has one, else the type default, else the engine-wide
- * default. */
+/* The change threshold in effect for b (01 §3.3): its type default, else the
+ * engine-wide default (also for an inner block of a composite, 03 §5). */
 double block_change_threshold(const Block *b);
 
 /* Whether next differs from last enough to propagate under threshold

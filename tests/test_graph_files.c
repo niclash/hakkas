@@ -360,7 +360,8 @@ static Graph *build_canonical(void)
 {
 	Graph *g;
 	CHECK(graphs_new_graph(&gs, "g1", "Test", "d", "cog", &g, NULL) == GRAPH_OK);
-	cJSON *md_json = cJSON_Parse(jq("{'label':'a','x':10,'y':20.5,'change_threshold':0.5,"
+	/* change_threshold is an opaque key (plan task 21c), kept in its place. */
+	cJSON *md_json = cJSON_Parse(jq("{'change_threshold':0.5,'x':10,'label':'a','y':20.5,"
 					"'color':[1,2,0.30000000000000004]}"));
 	BlockMetadata md;
 	CHECK(graph_json_to_metadata(md_json, &md) == GRAPH_OK);
@@ -441,8 +442,11 @@ static void test_round_trip(void)
 	CHECK(s->inputs[2].initial.type == LINKABLE_BOOL && s->inputs[2].initial.as.b);
 	CHECK(s->inputs[1].initial.type == LINKABLE_STRING);
 	const Block *a = graph_find_block(g, "A");
-	CHECK(a->metadata.x == 10 && a->metadata.y == 20.5 && a->metadata.change_threshold == 0.5);
-	CHECK_STREQ(a->metadata.extra, "{\"label\":\"a\",\"color\":[1,2,0.30000000000000004]}");
+	CHECK(a->metadata.x == 10 && a->metadata.y == 20.5);
+	CHECK_STREQ(a->metadata.extra, "{\"change_threshold\":0.5,\"label\":\"a\","
+				       "\"color\":[1,2,0.30000000000000004]}");
+	/* An old file's change_threshold key has no effect (plan task 21c). */
+	CHECK(block_change_threshold(a) == RUNTIME_DEFAULT_CHANGE_THRESHOLD);
 
 	CHECK(graph_files_persist(&gf, "g1", NULL) == GRAPH_FILES_OK);
 	char *second = slurp(graph_path("g1"));
@@ -566,7 +570,8 @@ static void test_placeholders(void)
 	CHECK(p != NULL && block_is_placeholder(p) && p->input_count == 0 &&
 	      p->output_count == 0);
 	CHECK_STREQ(block_component(p), "vendor/Gizmo");
-	CHECK(p->metadata.change_threshold == 0.25);
+	CHECK_STREQ(p->metadata.extra,
+		    "{\"change_threshold\":0.25,\"knob\":{\"v\":0.30000000000000004}}");
 	CHECK(g->retained_count == 5);
 	CHECK(g->retained_port_count[GRAPH_INPORT] == 1 &&
 	      g->retained_port_count[GRAPH_OUTPORT] == 1);

@@ -356,10 +356,20 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `changegroup` on the task-21 model functions, with their broadcasts and a `component:component`
   broadcast for new/changed types. Open question 4 is decided: "save as component" — the
   selected nodes are left unchanged.
-- [ ] **21c. Drop the change-threshold override; add `process/Deadband`** (open question 7,
+- [x] **21c. Drop the change-threshold override; add `process/Deadband`** (open question 7,
   01 §3.3, 03 §3, 02 §3.4, 05 §2.1): remove the per-instance `change_threshold` from node
   metadata handling (validation, merge, composites, snapshots, files — an old key becomes an
   ordinary opaque key) and add the `process/Deadband` block with type default threshold 0.
+  Done: `BlockMetadata.change_threshold`, `BlockChange.threshold`/`change_threshold` and
+  `enum threshold_change` are gone; `block_change_threshold` is type default → engine-wide
+  (inner blocks alike); `graph_json` treats `change_threshold` as an opaque key (no
+  validation, kept in its order after `x`, `y`). `process/Deadband` in
+  `src/blocktypes/process.c` (after `process/Linear`, icon `filter`, no state, type default
+  threshold 0). Decisions in 03 §3: START sets `out = in`; a `threshold` change alone
+  re-evaluates; a NaN or negative `threshold` counts as 0; STOP changes nothing. Tests:
+  `test_deadband`/`test_deadband_zero` and the opaque-key checks in `test_graph.c`,
+  `test_graph_json.c`, `test_graphs.c`, `test_composite.c`, `test_graph_files.c`,
+  `test_dispatcher.c`; the descriptor in `test_block_types.c`.
 - [ ] **21d. Remove `Metric`** (open question 9, 01 §2.1): drop the `Metric` value type,
   its parsing (`"<number> <unit>"` now gives 0.0 like any invalid number text), stringify,
   JSON/file forms and the `BlockCtx.error` flag, from the code and the tests.

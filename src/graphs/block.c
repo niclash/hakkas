@@ -13,13 +13,8 @@
 
 double block_change_threshold(const Block *b)
 {
-	/* An inner block's own override (it never has one: the authoring
-	 * format has no inner metadata), then the enclosing instances',
-	 * innermost first (decided, plan task 21, 03 §5). */
-	for (const Block *p = b; p != NULL; p = p->parent) {
-		if (!isnan(p->metadata.change_threshold))
-			return p->metadata.change_threshold;
-	}
+	/* No per-instance override (decided, plan task 21c): an inner block of
+	 * a composite resolves the same way, from its own type (03 §5). */
 	if (b->type != NULL && !isnan(b->type->change_threshold))
 		return b->type->change_threshold;
 	return b->graph->rt->change_threshold;

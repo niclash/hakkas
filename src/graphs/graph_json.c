@@ -94,8 +94,7 @@ static bool add(cJSON *obj, const char *key, cJSON *item)
 
 static bool is_model_key(const char *key)
 {
-	return strcmp(key, "x") == 0 || strcmp(key, "y") == 0 ||
-	       strcmp(key, "change_threshold") == 0;
+	return strcmp(key, "x") == 0 || strcmp(key, "y") == 0;
 }
 
 /* A position value: a finite number, or null for the default. */
@@ -106,19 +105,6 @@ static bool read_position(const cJSON *v, double *out)
 		return true;
 	}
 	if (!cJSON_IsNumber(v) || !isfinite(v->valuedouble))
-		return false;
-	*out = v->valuedouble;
-	return true;
-}
-
-/* A threshold value (01 §3.3): a number >= 0, or null for none (NAN). */
-static bool read_threshold(const cJSON *v, double *out)
-{
-	if (cJSON_IsNull(v)) {
-		*out = (double)NAN;
-		return true;
-	}
-	if (!cJSON_IsNumber(v) || isnan(v->valuedouble) || v->valuedouble < 0)
 		return false;
 	*out = v->valuedouble;
 	return true;
@@ -149,9 +135,7 @@ enum graph_status graph_json_to_metadata(const cJSON *obj, BlockMetadata *md)
 	BlockMetadata m = block_metadata_default();
 	const cJSON *v;
 	if (((v = cJSON_GetObjectItemCaseSensitive(obj, "x")) != NULL && !read_position(v, &m.x)) ||
-	    ((v = cJSON_GetObjectItemCaseSensitive(obj, "y")) != NULL && !read_position(v, &m.y)) ||
-	    ((v = cJSON_GetObjectItemCaseSensitive(obj, "change_threshold")) != NULL &&
-	     !read_threshold(v, &m.change_threshold)))
+	    ((v = cJSON_GetObjectItemCaseSensitive(obj, "y")) != NULL && !read_position(v, &m.y)))
 		return GRAPH_ERR_INVALID_ARGUMENT;
 
 	cJSON *extra = cJSON_CreateObject();
@@ -178,9 +162,7 @@ cJSON *graph_json_from_metadata(const BlockMetadata *md)
 	cJSON *obj = cJSON_CreateObject();
 	if (obj == NULL)
 		return NULL;
-	if (!add(obj, "x", graph_json_number(md->x)) || !add(obj, "y", graph_json_number(md->y)) ||
-	    (!isnan(md->change_threshold) &&
-	     !add(obj, "change_threshold", graph_json_number(md->change_threshold)))) {
+	if (!add(obj, "x", graph_json_number(md->x)) || !add(obj, "y", graph_json_number(md->y))) {
 		cJSON_Delete(obj);
 		return NULL;
 	}
@@ -251,11 +233,6 @@ enum graph_status graph_json_to_change(const BlockMetadata *cur, const cJSON *pa
 		if (!read_position(v, &c.y))
 			return GRAPH_ERR_INVALID_ARGUMENT;
 		c.set_y = true;
-	}
-	if ((v = cJSON_GetObjectItemCaseSensitive(patch, "change_threshold")) != NULL) {
-		if (!read_threshold(v, &c.change_threshold))
-			return GRAPH_ERR_INVALID_ARGUMENT;
-		c.threshold = isnan(c.change_threshold) ? THRESHOLD_CLEAR : THRESHOLD_SET;
 	}
 	if (opaque) {
 		enum graph_status st = merge_extra(cur->extra, patch, &c.extra);

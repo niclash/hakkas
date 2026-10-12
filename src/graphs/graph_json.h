@@ -8,8 +8,8 @@
  * Naming: functions are prefixed graph_json_. JSON values are cJSON trees
  * (third_party/cjson, 01 §6).
  *
- * Opaque metadata (decided, plan task 10): node metadata keys other than x, y
- * and change_threshold, and edge metadata, are kept in the model as compact
+ * Opaque metadata (decided, plan task 10): node metadata keys other than x
+ * and y, and edge metadata, are kept in the model as compact
  * JSON object text (BlockMetadata.extra, Input.edge_metadata): one heap
  * string per node or edge, sized exactly, with no cJSON tree kept alive
  * (01 §2.2 "Memory"). It is printed by graph_json_print, so its numbers are
@@ -45,28 +45,27 @@ cJSON *graph_json_number(double v);
 /* ---- Node metadata (05 §2.1, 02 §3.4 addnode / changenode) ------------- */
 
 /* Read a node metadata object into *md: x and y (finite numbers; absent or
- * null: BLOCK_DEFAULT_POSITION), change_threshold (a number >= 0, +Infinity
- * included; absent or null: no override, NAN) and every other key, kept in
- * order as md->extra (NULL if there are none; the caller owns it, release
- * with block_metadata_release). obj NULL gives block_metadata_default().
- * Refused, with *md the default: INVALID_ARGUMENT (obj is no object, or x, y
- * or change_threshold has another type or value), NO_MEMORY. */
+ * null: BLOCK_DEFAULT_POSITION) and every other key (change_threshold
+ * included: it is no longer special, plan task 21c), kept in order as
+ * md->extra (NULL if there are none; the caller owns it, release with
+ * block_metadata_release). obj NULL gives block_metadata_default(). Refused,
+ * with *md the default: INVALID_ARGUMENT (obj is no object, or x or y has
+ * another type or value), NO_MEMORY. */
 enum graph_status graph_json_to_metadata(const cJSON *obj, BlockMetadata *md);
 
-/* The metadata object for md: "x", "y", "change_threshold" if set, then the
- * keys of md->extra in their order. NULL if memory runs out or md->extra is
+/* The metadata object for md: "x", "y", then the keys of md->extra in their
+ * order. NULL if memory runs out or md->extra is
  * not a JSON object. */
 cJSON *graph_json_from_metadata(const BlockMetadata *md);
 
 /* The changenode merge (02 §3.4): the change that merges the keys of patch
  * (an object) into cur. "x", "y": a finite number sets it, null resets it to
- * BLOCK_DEFAULT_POSITION; "change_threshold": a number >= 0 sets the
- * override, null removes it (THRESHOLD_CLEAR); any other key: null removes
- * it, any other value adds it (at the end) or replaces it (in its place).
+ * BLOCK_DEFAULT_POSITION; any other key: null removes it, any other value
+ * adds it (at the end) or replaces it (in its place).
  * Keys not in patch are kept. *chg is the change to pass to
  * graph_change_block / graphs_change_node; chg->extra is owned by the caller
  * (block_change_release). Refused, with *chg empty: INVALID_ARGUMENT (patch
- * is no object, or a bad x, y or change_threshold), NO_MEMORY. */
+ * is no object, or a bad x or y), NO_MEMORY. */
 enum graph_status graph_json_to_change(const BlockMetadata *cur, const cJSON *patch,
 				       BlockChange *chg);
 

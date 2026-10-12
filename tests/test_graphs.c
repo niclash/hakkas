@@ -60,9 +60,10 @@ static void describe(char *log, size_t size, const GraphEvent *ev)
 	switch (ev->type) {
 	case GRAPH_EVENT_BLOCK_ADDED:
 	case GRAPH_EVENT_BLOCK_CHANGED:
-		append(log, size, "%s:%s %s(%g,%g,%g);", id,
+		append(log, size, "%s:%s %s(%g,%g,%s);", id,
 		       ev->type == GRAPH_EVENT_BLOCK_ADDED ? "+node" : "changenode", b->name,
-		       b->metadata.x, b->metadata.y, b->metadata.change_threshold);
+		       b->metadata.x, b->metadata.y,
+		       b->metadata.extra != NULL ? b->metadata.extra : "-");
 		break;
 	case GRAPH_EVENT_BLOCK_REMOVED:
 		append(log, size, "%s:-node %s;", id, b->name);
@@ -546,12 +547,12 @@ static void test_scoping(void)
 			   "g2:error(g2,Unable to save graph: g2 (g2));-:error(-,boom);";
 	char expect[1024];
 	snprintf(expect, sizeof(expect),
-		 "g1:+node A(50,50,nan);g2:started@0+0;g1:rename g1>One;g1:+inport p=A.in1;%s"
+		 "g1:+node A(50,50,-);g2:started@0+0;g1:rename g1>One;g1:+inport p=A.in1;%s"
 		 "g2:stopped@0+0;g3:-graph(g3);",
 		 wide);
 	CHECK_STREQ(all.log, expect);
 	snprintf(expect, sizeof(expect),
-		 "g1:+node A(50,50,nan);g1:rename g1>One;g1:+inport p=A.in1;%sg3:-graph(g3);",
+		 "g1:+node A(50,50,-);g1:rename g1>One;g1:+inport p=A.in1;%sg3:-graph(g3);",
 		 wide);
 	CHECK_STREQ(s1.log, expect);
 	snprintf(expect, sizeof(expect), "g2:started@0+0;%sg2:stopped@0+0;g3:-graph(g3);", wide);
@@ -563,8 +564,8 @@ static void test_scoping(void)
 	CHECK(graphs_subscriber_scope(&s1.sub, NULL));
 	add("g1", "B");
 	add("g2", "C");
-	CHECK_STREQ(s1.log, "g1:+node B(50,50,nan);g2:+node C(50,50,nan);");
-	CHECK_STREQ(s2.log, "g1:+node B(50,50,nan);");
+	CHECK_STREQ(s1.log, "g1:+node B(50,50,-);g2:+node C(50,50,-);");
+	CHECK_STREQ(s2.log, "g1:+node B(50,50,-);");
 
 	/* Unsubscribed: nothing more. */
 	graphs_unsubscribe(&gs, &s1.sub);
@@ -572,7 +573,7 @@ static void test_scoping(void)
 	s1.log[0] = '\0';
 	add("g1", "D");
 	CHECK_STREQ(s1.log, "");
-	CHECK_STREQ(s2.log, "g1:+node B(50,50,nan);g1:+node D(50,50,nan);");
+	CHECK_STREQ(s2.log, "g1:+node B(50,50,-);g1:+node D(50,50,-);");
 	teardown();
 }
 
@@ -647,20 +648,21 @@ static void test_applied_state(void)
 	clear();
 	BlockMetadata md = block_metadata_default();
 	md.x = 10;
-	md.change_threshold = 0.5;
+	md.extra = (char *)"{\"change_threshold\":0.5}"; /* opaque (plan task 21c) */
 	CHECK(graphs_add_node(&gs, "g1", "A", "math/Add2", NULL, NULL) == GRAPH_OK);
 	CHECK(graphs_add_node(&gs, "g1", "B", "math/Add2", &md, NULL) == GRAPH_OK);
 	BlockChange chg = {.set_y = true, .y = 7};
 	CHECK(graphs_change_node(&gs, "g1", "B", &chg, NULL) == GRAPH_OK);
-	chg = (BlockChange){.threshold = THRESHOLD_CLEAR};
+	chg = (BlockChange){.set_extra = true, .extra = NULL};
 	CHECK(graphs_change_node(&gs, "g1", "B", &chg, NULL) == GRAPH_OK);
 	Linkable s = {0};
 	CHECK(linkable_from_string(&s, "12.5", 4));
 	CHECK(graphs_add_initial(&gs, "g1", "A", "in1", &s, NULL) == GRAPH_OK);
 	linkable_clear(&s);
 	CHECK(graphs_remove_initial(&gs, "g1", "A", "in1", NULL) == GRAPH_OK);
-	CHECK_STREQ(all.log, "g1:+node A(50,50,nan);g1:+node B(10,50,0.5);"
-			     "g1:changenode B(10,7,0.5);g1:changenode B(10,7,nan);"
+	CHECK_STREQ(all.log, "g1:+node A(50,50,-);g1:+node B(10,50,{\"change_threshold\":0.5});"
+			     "g1:changenode B(10,7,{\"change_threshold\":0.5});"
+			     "g1:changenode B(10,7,-);"
 			     "g1:+init 12.5>A.in1;g1:-init 12.5>A.in1;");
 	teardown();
 }
@@ -718,9 +720,9 @@ static void test_subscribers_during_notification(void)
 	CHECK(calls == 1);
 	CHECK_STREQ(late.log, "");
 	add("g1", "C");
-	CHECK_STREQ(late.log, "g1:+node C(50,50,nan);");
-	CHECK_STREQ(all.log, "g1:+graph(g1,,);g1:+node A(50,50,nan);g1:+node B(50,50,nan);"
-			     "g1:+node C(50,50,nan);");
+	CHECK_STREQ(late.log, "g1:+node C(50,50,-);");
+	CHECK_STREQ(all.log, "g1:+graph(g1,,);g1:+node A(50,50,-);g1:+node B(50,50,-);"
+			     "g1:+node C(50,50,-);");
 	teardown();
 }
 
@@ -779,7 +781,6 @@ static void test_command_refusals(void)
 	Linkable v = linkable_from_f64(3);
 	CHECK(graphs_add_initial(&gs, "g1", "B", "in2", &v, NULL) == GRAPH_OK);
 	BlockChange chg = {.set_x = true, .x = 1};
-	BlockChange bad_chg = {.threshold = THRESHOLD_SET, .change_threshold = -1};
 
 	/* Ids before the graph, the graph before nodes. */
 	REFUSED(graphs_add_node(&gs, "nope", "", "math/Add2", NULL, &m_), GRAPH_ERR_INVALID_ID,
@@ -822,7 +823,7 @@ static void test_command_refusals(void)
 		"Node exists: A");
 	REFUSED(graphs_change_node(&gs, "g1", "X", &chg, &m_), GRAPH_ERR_UNKNOWN_NODE,
 		"Unknown node: X");
-	REFUSED(graphs_change_node(&gs, "g1", "A", &bad_chg, &m_), GRAPH_ERR_INVALID_ARGUMENT,
+	REFUSED(graphs_change_node(&gs, "g1", "A", NULL, &m_), GRAPH_ERR_INVALID_ARGUMENT,
 		"Invalid argument");
 
 	/* Edges: the failing endpoint is named. */

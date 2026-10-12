@@ -51,41 +51,45 @@ static void test_metadata(void)
 {
 	BlockMetadata md;
 	CHECK(graph_json_to_metadata(NULL, &md) == GRAPH_OK);
-	CHECK(md.x == 50 && md.y == 50 && isnan(md.change_threshold) && md.extra == NULL);
+	CHECK(md.x == 50 && md.y == 50 && md.extra == NULL);
 
 	cJSON *obj = cJSON_Parse("{\"route\":3,\"x\":10.5,\"label\":{\"t\":\"a\"},\"y\":-2,"
 				 "\"change_threshold\":0.1,\"z\":null}");
 	CHECK(graph_json_to_metadata(obj, &md) == GRAPH_OK);
 	cJSON_Delete(obj);
-	CHECK(md.x == 10.5 && md.y == -2 && md.change_threshold == 0.1);
-	/* Opaque keys in their order, null values kept as they are. */
-	CHECK_STREQ(md.extra, "{\"route\":3,\"label\":{\"t\":\"a\"},\"z\":null}");
-	/* Back to JSON: x, y, change_threshold first, then the opaque keys. */
+	CHECK(md.x == 10.5 && md.y == -2);
+	/* Opaque keys in their order, null values kept as they are;
+	 * change_threshold is an ordinary opaque key (plan task 21c). */
+	CHECK_STREQ(md.extra, "{\"route\":3,\"label\":{\"t\":\"a\"},\"change_threshold\":0.1,"
+			      "\"z\":null}");
+	/* Back to JSON: x, y first, then the opaque keys. */
 	check_print(graph_json_from_metadata(&md),
-		    "{\"x\":10.5,\"y\":-2,\"change_threshold\":0.1,\"route\":3,"
-		    "\"label\":{\"t\":\"a\"},\"z\":null}");
+		    "{\"x\":10.5,\"y\":-2,\"route\":3,\"label\":{\"t\":\"a\"},"
+		    "\"change_threshold\":0.1,\"z\":null}");
 	block_metadata_release(&md);
 	CHECK(md.extra == NULL);
 
-	/* No opaque keys, null position and threshold: the defaults. */
-	obj = cJSON_Parse("{\"x\":null,\"change_threshold\":null}");
+	/* No opaque keys, null position: the defaults. */
+	obj = cJSON_Parse("{\"x\":null}");
 	CHECK(graph_json_to_metadata(obj, &md) == GRAPH_OK);
 	cJSON_Delete(obj);
-	CHECK(md.x == 50 && isnan(md.change_threshold) && md.extra == NULL);
+	CHECK(md.x == 50 && md.extra == NULL);
 	check_print(graph_json_from_metadata(&md), "{\"x\":50,\"y\":50}");
 
-	/* An infinite threshold is valid (01 §3.3) and round-trips. */
-	md.change_threshold = INFINITY;
-	check_print(graph_json_from_metadata(&md),
-		    "{\"x\":50,\"y\":50,\"change_threshold\":1e999}");
-	obj = cJSON_Parse("{\"change_threshold\":1e999}");
-	CHECK(graph_json_to_metadata(obj, &md) == GRAPH_OK && isinf(md.change_threshold));
-	cJSON_Delete(obj);
+	/* change_threshold values that used to be refused or special (null,
+	 * negative, a string, 1e999) are kept as they are. */
+	const char *opaque[] = {"{\"change_threshold\":null}", "{\"change_threshold\":-1}",
+				"{\"change_threshold\":\"0.1\"}", "{\"change_threshold\":1e999}"};
+	for (size_t i = 0; i < sizeof(opaque) / sizeof(opaque[0]); i++) {
+		obj = cJSON_Parse(opaque[i]);
+		CHECK(graph_json_to_metadata(obj, &md) == GRAPH_OK);
+		cJSON_Delete(obj);
+		CHECK_STREQ(md.extra, opaque[i]);
+		block_metadata_release(&md);
+	}
 
 	/* Refused, with the default left in *md. */
-	const char *bad[] = {"{\"x\":\"1\"}", "{\"y\":true}", "{\"x\":1e999}",
-			     "{\"change_threshold\":-1}", "{\"change_threshold\":\"0.1\"}", "[]",
-			     "3"};
+	const char *bad[] = {"{\"x\":\"1\"}", "{\"y\":true}", "{\"x\":1e999}", "[]", "3"};
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
 		obj = cJSON_Parse(bad[i]);
 		CHECK(obj != NULL);
@@ -111,10 +115,6 @@ static void apply(BlockMetadata *md, const char *patch, enum graph_status want)
 		md->x = chg.x;
 	if (chg.set_y)
 		md->y = chg.y;
-	if (chg.threshold == THRESHOLD_SET)
-		md->change_threshold = chg.change_threshold;
-	else if (chg.threshold == THRESHOLD_CLEAR)
-		md->change_threshold = NAN;
 	if (chg.set_extra) {
 		free(md->extra);
 		md->extra = chg.extra; /* a move */
@@ -134,6 +134,7 @@ static void test_change_merge(void)
 	/* Only the given keys change. */
 	apply(&md, "{\"x\":7}", GRAPH_OK);
 	check_metadata(&md, "{\"x\":7,\"y\":50}");
+	/* change_threshold is an ordinary opaque key (plan task 21c). */
 	apply(&md, "{\"change_threshold\":0.25,\"a\":1,\"b\":[1,2]}", GRAPH_OK);
 	check_metadata(&md, "{\"x\":7,\"y\":50,\"change_threshold\":0.25,\"a\":1,\"b\":[1,2]}");
 	/* An opaque key is replaced in place (a nested object as a whole), a new
@@ -147,9 +148,12 @@ static void test_change_merge(void)
 	apply(&md, "{\"b\":null,\"nope\":null}", GRAPH_OK);
 	check_metadata(&md, "{\"x\":7,\"y\":3,\"change_threshold\":0.25,\"a\":\"one\","
 			    "\"c\":{\"e\":2}}");
-	/* change_threshold null removes the override (02 §3.4). */
+	/* Any value of it is kept (no validation); null removes it like any
+	 * opaque key. */
+	apply(&md, "{\"change_threshold\":-0.5}", GRAPH_OK);
+	check_metadata(&md, "{\"x\":7,\"y\":3,\"change_threshold\":-0.5,\"a\":\"one\","
+			    "\"c\":{\"e\":2}}");
 	apply(&md, "{\"change_threshold\":null}", GRAPH_OK);
-	CHECK(isnan(md.change_threshold));
 	check_metadata(&md, "{\"x\":7,\"y\":3,\"a\":\"one\",\"c\":{\"e\":2}}");
 	/* x / y null reset the default position. */
 	apply(&md, "{\"x\":null}", GRAPH_OK);
@@ -162,7 +166,6 @@ static void test_change_merge(void)
 	check_metadata(&md, "{\"x\":50,\"y\":3}");
 	/* Refused as a whole: nothing applied. */
 	apply(&md, "{\"x\":1,\"y\":\"2\",\"q\":1}", GRAPH_ERR_INVALID_ARGUMENT);
-	apply(&md, "{\"change_threshold\":-0.5}", GRAPH_ERR_INVALID_ARGUMENT);
 	apply(&md, "[1]", GRAPH_ERR_INVALID_ARGUMENT);
 	check_metadata(&md, "{\"x\":50,\"y\":3}");
 	block_metadata_release(&md);

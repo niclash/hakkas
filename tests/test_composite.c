@@ -691,8 +691,9 @@ static void test_timer(void)
 	teardown();
 }
 
-/* The instance's change threshold override applies to its inner blocks
- * (decided, plan task 21, 01 §3.3). Inner initials (t/Lin). */
+/* An inner block's change threshold is its own type's default, else the
+ * engine-wide one; there is no instance override (plan task 21c, 01 §3.3).
+ * Inner initials (t/Lin). */
 static void test_threshold(void)
 {
 	setup();
@@ -708,20 +709,21 @@ static void test_threshold(void)
 	CHECK(in_f64("g1", "d", "in1") == 10.1); /* 2*5 + 0.1, from the inner initials */
 	Block *l = node("g1", "l");
 	CHECK(block_change_threshold(l->inner[0]) == RUNTIME_DEFAULT_CHANGE_THRESHOLD);
-	BlockChange chg = {.threshold = THRESHOLD_SET, .change_threshold = 5};
+	/* A change_threshold metadata key on the instance is opaque: the inner
+	 * block keeps its own type's default (plan task 21c). */
+	BlockChange chg = {.set_extra = true, .extra = (char *)"{\"change_threshold\":5}"};
 	CHECK(graphs_change_node(&gs, "g1", "l", &chg, NULL) == GRAPH_OK);
-	CHECK(block_change_threshold(l->inner[0]) == 5);
+	CHECK_STREQ(l->metadata.extra, "{\"change_threshold\":5}");
+	CHECK(block_change_threshold(l->inner[0]) == RUNTIME_DEFAULT_CHANGE_THRESHOLD);
 	set_initial("g1", "l", "in", 2.5); /* out 12.6: a change of 2.5 */
 	drain();
-	CHECK(in_f64("g1", "d", "in1") == 10.1);
-	set_initial("g1", "l", "in", 3.1); /* out 15.6: 5.5 from the last propagated */
+	CHECK(fabs(in_f64("g1", "d", "in1") - 12.6) < 1e-9);
+	set_initial("g1", "l", "in", 2.52); /* out 12.7: a change of 0.1 >= 0.05 */
 	drain();
-	CHECK(fabs(in_f64("g1", "d", "in1") - 15.6) < 1e-9);
-	chg.threshold = THRESHOLD_CLEAR;
-	CHECK(graphs_change_node(&gs, "g1", "l", &chg, NULL) == GRAPH_OK);
-	set_initial("g1", "l", "in", 3.2);
+	CHECK(fabs(in_f64("g1", "d", "in1") - 12.7) < 1e-9);
+	set_initial("g1", "l", "in", 2.525); /* out 12.725: 0.025 < 0.05, held */
 	drain();
-	CHECK(fabs(in_f64("g1", "d", "in1") - 16.1) < 1e-9);
+	CHECK(fabs(in_f64("g1", "d", "in1") - 12.7) < 1e-9);
 	teardown();
 }
 

@@ -505,25 +505,24 @@ static void test_threshold_precedence(void)
 	CHECK(!runtime_set_change_threshold(&rt, NAN));
 	CHECK(runtime_change_threshold(&rt) == 0.25);
 
-	/* The instance override beats both; clearing it falls back. */
-	BlockChange chg = {.threshold = THRESHOLD_SET, .change_threshold = 2.0};
+	/* There is no instance override (plan task 21c): a change_threshold
+	 * metadata key is opaque and changes nothing. */
+	BlockChange chg = {.set_extra = true, .extra = (char *)"{\"change_threshold\":2}"};
 	CHECK(graph_change_block(gr, "C", &chg) == GRAPH_OK);
-	CHECK(block_change_threshold(c) == 2.0);
 	CHECK(graph_change_block(gr, "P", &chg) == GRAPH_OK);
-	CHECK(block_change_threshold(p) == 2.0);
-	chg = (BlockChange){.threshold = THRESHOLD_CLEAR};
-	CHECK(graph_change_block(gr, "C", &chg) == GRAPH_OK);
 	CHECK(block_change_threshold(c) == 1.0);
-	CHECK(isnan(c->metadata.change_threshold));
-	CHECK_STREQ(events, "+node P;+node C;change C;change P;change C;");
+	CHECK(block_change_threshold(p) == 0.25);
+	CHECK_STREQ(c->metadata.extra, "{\"change_threshold\":2}");
+	CHECK_STREQ(events, "+node P;+node C;change C;change P;");
 
-	/* At creation, from the metadata; 0 is a valid override. */
+	/* Nor at creation. */
 	BlockMetadata md = block_metadata_default();
-	md.change_threshold = 0;
+	md.extra = (char *)"{\"change_threshold\":0}";
 	Block *z = NULL;
 	CHECK(graph_create_block(gr, "Z", &coarse_def, &md, &z) == GRAPH_OK);
-	CHECK(block_change_threshold(z) == 0);
+	CHECK(block_change_threshold(z) == 1.0);
 	CHECK(z->metadata.x == 50 && z->metadata.y == 50);
+	CHECK_STREQ(z->metadata.extra, "{\"change_threshold\":0}");
 
 	/* Behavior: C (type default 1.0) feeding Q. */
 	Block *q = add("Q", "test/Probe");
@@ -540,13 +539,137 @@ static void test_threshold_precedence(void)
 	initial("C", "in", 1.0);
 	drain();
 	CHECK_STREQ(trace, "Q.in=1;");
-	chg = (BlockChange){.threshold = THRESHOLD_SET, .change_threshold = 0};
+	chg = (BlockChange){.set_extra = true, .extra = (char *)"{\"change_threshold\":0}"};
 	CHECK(graph_change_block(gr, "C", &chg) == GRAPH_OK);
 	initial("C", "in", 1.25);
 	drain();
-	CHECK_STREQ(trace, "Q.in=1;Q.in=1.25;");
+	CHECK_STREQ(trace, "Q.in=1;"); /* still filtered by the type default 1.0 */
+	initial("C", "in", 2.0);
+	drain();
+	CHECK_STREQ(trace, "Q.in=1;Q.in=2;");
 	teardown();
 	CHECK(block_types_unregister("test/Coarse"));
+}
+
+/* process/Deadband (03 §3, plan task 21c) in a chain A → D → Q, A a
+ * math/Add2 under the engine-wide threshold, D's threshold an initial. */
+static void test_deadband(void)
+{
+	setup();
+	add("A", "math/Add2");
+	Block *d = add("D", "process/Deadband");
+	Block *q = add("Q", "test/Probe");
+	wire("A", "out", "D", "in");
+	wire("D", "out", "Q", "in");
+	CHECK(block_change_threshold(d) == 0); /* the type default: no engine filtering */
+	initial("A", "in1", 10);
+	initial("D", "threshold", 1);
+	graph_start(gr);
+	drain();
+	/* The first value after start passes whatever the threshold. */
+	CHECK(out_f64(d) == 10 && in_f64(q, "in") == 10);
+	Rec r = rec_new();
+	watch(q, "in", &r);
+	clear_logs();
+
+	/* Below the threshold out holds; at it, out follows. */
+	initial("A", "in1", 10.5);
+	drain();
+	CHECK(out_f64(d) == 10);
+	CHECK_STREQ(trace, "");
+	initial("A", "in1", 11);
+	drain();
+	CHECK_STREQ(trace, "Q.in=11;");
+	/* Drift is measured from the held out, so it accumulates past the
+	 * threshold; downwards too. */
+	clear_logs();
+	initial("A", "in1", 11.4);
+	initial("A", "in1", 11.8);
+	initial("A", "in1", 12);
+	drain();
+	CHECK_STREQ(trace, "Q.in=12;");
+	initial("A", "in1", 11.25);
+	initial("A", "in1", 10.75);
+	drain();
+	CHECK_STREQ(trace, "Q.in=12;Q.in=10.75;");
+
+	/* A change of threshold alone re-evaluates the current in. */
+	clear_logs();
+	initial("A", "in1", 11.5);
+	drain();
+	CHECK_STREQ(trace, "");
+	initial("D", "threshold", 0.75);
+	drain();
+	CHECK_STREQ(trace, "Q.in=11.5;");
+	initial("D", "threshold", 2); /* raising it moves nothing */
+	drain();
+	CHECK_STREQ(trace, "Q.in=11.5;");
+
+	/* NaN transitions pass even under an infinite threshold; NaN → NaN
+	 * does not. */
+	clear_logs();
+	initial("D", "threshold", INFINITY);
+	initial("A", "in1", 1000);
+	drain();
+	CHECK_STREQ(trace, "");
+	initial("A", "in1", NAN);
+	drain();
+	CHECK_STREQ(trace, "Q.in=NaN;");
+	initial("A", "in2", 1); /* NaN + 1: D's in stays NaN */
+	drain();
+	CHECK_STREQ(trace, "Q.in=NaN;");
+	initial("A", "in1", 4);
+	drain();
+	CHECK_STREQ(trace, "Q.in=NaN;Q.in=5;");
+
+	/* A negative or NaN threshold counts as 0. */
+	clear_logs();
+	initial("D", "threshold", -3);
+	initial("A", "in1", 4.5);
+	drain();
+	initial("D", "threshold", NAN);
+	initial("A", "in1", 5);
+	drain();
+	CHECK_STREQ(trace, "Q.in=5.5;Q.in=6;");
+
+	graph_stop(gr);
+	CHECK(out_f64(d) == 6); /* STOP changes nothing */
+	teardown();
+}
+
+/* Deadband with threshold 0 passes every distinct value, also changes below
+ * the engine-wide threshold: its type default is 0. */
+static void test_deadband_zero(void)
+{
+	setup();
+	CHECK(runtime_set_change_threshold(&rt, 1.0));
+	Block *d = add("D", "process/Deadband");
+	Block *q = add("Q", "test/Probe");
+	wire("D", "out", "Q", "in");
+	graph_start(gr);
+	drain();
+	Rec r = rec_new();
+	watch(q, "in", &r);
+	clear_logs();
+	initial("D", "in", 0.25);
+	initial("D", "in", 0.5);
+	initial("D", "in", 0.5);
+	initial("D", "in", 0.51);
+	drain();
+	CHECK_STREQ(trace, "Q.in=0.25;Q.in=0.5;Q.in=0.51;");
+
+	/* After a restart, START sets out to the current in whatever the
+	 * threshold (the first value after start). */
+	clear_logs();
+	initial("D", "threshold", 100);
+	graph_stop(gr);
+	initial("D", "in", 7);
+	CHECK(out_f64(d) == 0.51); /* stopped: only stored */
+	graph_start(gr);
+	drain();
+	CHECK(out_f64(d) == 7);
+	CHECK_STREQ(trace, "Q.in=7;");
+	teardown();
 }
 
 static void test_change_block_position(void)
@@ -555,11 +678,10 @@ static void test_change_block_position(void)
 	Block *p = add("P", "test/Probe");
 	BlockChange chg = {.set_x = true, .x = 10};
 	CHECK(graph_change_block(gr, "P", &chg) == GRAPH_OK);
-	CHECK(p->metadata.x == 10 && p->metadata.y == 50 && isnan(p->metadata.change_threshold));
-	chg = (BlockChange){.set_y = true, .y = -3, .threshold = THRESHOLD_SET,
-			    .change_threshold = 0.5};
+	CHECK(p->metadata.x == 10 && p->metadata.y == 50 && p->metadata.extra == NULL);
+	chg = (BlockChange){.set_y = true, .y = -3};
 	CHECK(graph_change_block(gr, "P", &chg) == GRAPH_OK);
-	CHECK(p->metadata.x == 10 && p->metadata.y == -3 && p->metadata.change_threshold == 0.5);
+	CHECK(p->metadata.x == 10 && p->metadata.y == -3);
 	teardown();
 }
 
@@ -1038,10 +1160,9 @@ static void fingerprint(char *buf, size_t size)
 	append(buf, size, "started=%d q=%zu;", gr->started, queued());
 	for (uint32_t k = 0; k < gr->block_count; k++) {
 		const Block *b = gr->blocks[k];
-		append(buf, size, "%s[%s x=%g y=%g t=%g %s h=%u/%u]", b->name, block_component(b),
-		       b->metadata.x, b->metadata.y, b->metadata.change_threshold,
-		       b->metadata.extra ? b->metadata.extra : "-", (unsigned)b->handle.slot,
-		       (unsigned)b->handle.gen);
+		append(buf, size, "%s[%s x=%g y=%g %s h=%u/%u]", b->name, block_component(b),
+		       b->metadata.x, b->metadata.y, b->metadata.extra ? b->metadata.extra : "-",
+		       (unsigned)b->handle.slot, (unsigned)b->handle.gen);
 		for (uint32_t i = 0; i < b->input_count; i++) {
 			const Input *in = &b->inputs[i];
 			append(buf, size, " in%u=%s src=%d:%s.%u init=%s gen=%u", (unsigned)i,
@@ -1091,10 +1212,6 @@ static void test_refusals(void)
 	long_id[GRAPH_ID_MAX + 1] = '\0'; /* 65 bytes */
 	Linkable v = linkable_from_f64(1);
 	const BlockTypeDef *add2 = block_types_get("math/Add2");
-	BlockMetadata bad_md = block_metadata_default();
-	bad_md.change_threshold = -1;
-	BlockChange bad_chg = {.threshold = THRESHOLD_SET, .change_threshold = -0.5};
-	BlockChange nan_chg = {.threshold = THRESHOLD_SET, .change_threshold = NAN};
 	BlockChange ok_chg = {.set_x = true, .x = 1};
 
 	/* Ids. */
@@ -1166,9 +1283,6 @@ static void test_refusals(void)
 
 	/* Invalid arguments. */
 	REFUSED(graph_create_block(gr, "N", NULL, NULL, NULL), GRAPH_ERR_INVALID_ARGUMENT);
-	REFUSED(graph_create_block(gr, "N", add2, &bad_md, NULL), GRAPH_ERR_INVALID_ARGUMENT);
-	REFUSED(graph_change_block(gr, "A", &bad_chg), GRAPH_ERR_INVALID_ARGUMENT);
-	REFUSED(graph_change_block(gr, "A", &nan_chg), GRAPH_ERR_INVALID_ARGUMENT);
 	REFUSED(graph_change_block(gr, "A", NULL), GRAPH_ERR_INVALID_ARGUMENT);
 	REFUSED(graph_add_initial(gr, "C", "in1", NULL), GRAPH_ERR_INVALID_ARGUMENT);
 	static Block dummy;
@@ -1276,6 +1390,8 @@ int main(void)
 	RUN(test_threshold_zero);
 	RUN(test_threshold_nan_transitions);
 	RUN(test_threshold_precedence);
+	RUN(test_deadband);
+	RUN(test_deadband_zero);
 	RUN(test_change_block_position);
 	RUN(test_start_pushes_all);
 	RUN(test_stopped_graph);

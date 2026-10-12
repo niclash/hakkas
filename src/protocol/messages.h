@@ -104,8 +104,8 @@ char *proto_msg_trace(const char *command, const char *graph);
 char *proto_msg_graph_clear(const Graph *g);
 
 /* graph:addnode {"graph","component","id","metadata"}: the block's full
- * metadata (x, y, change_threshold if set, the opaque keys); a placeholder's
- * original component name. */
+ * metadata (x, y, the opaque keys); a placeholder's original component
+ * name. */
 char *proto_msg_addnode(const Graph *g, const Block *b);
 
 /* graph:addedge {"graph","src","tgt"[,"metadata"]} for the link from

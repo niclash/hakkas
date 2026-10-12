@@ -5,7 +5,6 @@
  */
 #include "graphs/graph.h"
 
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -53,12 +52,6 @@ void block_change_release(BlockChange *chg)
 {
 	free(chg->extra);
 	chg->extra = NULL;
-}
-
-/* A threshold is NaN (no override) or a non-negative number (01 §3.3). */
-static bool threshold_valid_or_absent(double t)
-{
-	return isnan(t) || t >= 0;
 }
 
 /* Whether blocks of type have a timer (01 §2.3). */
@@ -396,7 +389,7 @@ static enum graph_status create_block(Graph *g, const char *name, const BlockTyp
 	if (graph_find_block(g, name) != NULL)
 		return GRAPH_ERR_NODE_EXISTS;
 	BlockMetadata m = md != NULL ? *md : block_metadata_default();
-	if ((type == NULL && component == NULL) || !threshold_valid_or_absent(m.change_threshold))
+	if (type == NULL && component == NULL)
 		return GRAPH_ERR_INVALID_ARGUMENT;
 	if (!blocks_reserve(g) || !runtime_slot_reserve(g->rt) ||
 	    (has_timer(type) && !deadline_heap_reserve(&g->rt->timers, g->rt->timer_blocks + 1)))
@@ -572,9 +565,6 @@ enum graph_status graph_change_block(Graph *g, const char *name, const BlockChan
 		return GRAPH_ERR_UNKNOWN_NODE;
 	if (chg == NULL)
 		return GRAPH_ERR_INVALID_ARGUMENT;
-	if (chg->threshold == THRESHOLD_SET &&
-	    (isnan(chg->change_threshold) || chg->change_threshold < 0))
-		return GRAPH_ERR_INVALID_ARGUMENT;
 	bool ok = true;
 	char *extra = chg->set_extra ? str_dup_opt(chg->extra, &ok) : NULL;
 	if (!ok)
@@ -587,10 +577,6 @@ enum graph_status graph_change_block(Graph *g, const char *name, const BlockChan
 		b->metadata.x = chg->x;
 	if (chg->set_y)
 		b->metadata.y = chg->y;
-	if (chg->threshold == THRESHOLD_SET)
-		b->metadata.change_threshold = chg->change_threshold;
-	else if (chg->threshold == THRESHOLD_CLEAR)
-		b->metadata.change_threshold = (double)NAN;
 	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_BLOCK_CHANGED, .block = b});
 	return GRAPH_OK;
 }
