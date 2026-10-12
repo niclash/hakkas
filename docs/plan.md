@@ -356,6 +356,10 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `changegroup` on the task-21 model functions, with their broadcasts and a `component:component`
   broadcast for new/changed types. Open question 4 is decided: "save as component" — the
   selected nodes are left unchanged.
+- [ ] **21c. Drop the change-threshold override; add `process/Deadband`** (open question 7,
+  01 §3.3, 03 §3, 02 §3.4, 05 §2.1): remove the per-instance `change_threshold` from node
+  metadata handling (validation, merge, composites, snapshots, files — an old key becomes an
+  ordinary opaque key) and add the `process/Deadband` block with type default threshold 0.
 - [ ] **22. Environment SPI + simulated environment + bindings** (04 §1, §4; 03 §4) — no
   `io/*` blocks (open question 6 decided: outputs keep their last value); the bindings-file
   format waits for open question 3, which is to be settled while implementing this task. IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch

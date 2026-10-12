@@ -62,6 +62,7 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `math/LessEqual` | compare | `out = in1 <= in2` | `to_f64(in1) <= to_f64(in2)` (bool result) |
 | `math/GreaterEqual` | compare | `out = in1 >= in2` | `to_f64(in1) >= to_f64(in2)` (bool result) |
 | `process/Linear` | function | `out = k*in+m` | `(to_f64(in)*to_f64(k))+to_f64(m)`; ports named `in`, `k`, `m` → `out` |
+| `process/Deadband` | filter | `out` follows `in` only when it moves by at least `threshold` | see below |
 | `timing/Interval` | timer | periodic pulse generator: PWM or edge generator | see §3.1 |
 
 **Results and edge cases** (decided, plan task 5):
@@ -76,6 +77,8 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 **Metric inputs**: the formulas above show the plain-number computation. When inputs carry `Metric` values, the arithmetic and comparison blocks also apply the unit rules in `01-architecture-overview.md` §2.1 (category preserved for same-category addition, error flag on mismatch, dimensional multiplication). These rules are provisional, and not implemented yet (`00-README.md`, open question 9): a `Metric` input converts to its magnitude via `to_f64`/`to_i64`, the result is a plain number, and the error flag is never set.
 
 The `timing/` family is expected to grow: `timing/Interval` covers periodic pulses, and other timing behaviors (one-shot/monostable, delay-on/delay-off, debounce, …) will be separate block types rather than modes of one block.
+
+**`process/Deadband`** (decided, `00-README.md` open question 7): inputs `in` (number) and `threshold` (number, default `0`), output `out` (number). On every input change, `out` is set to `in` only if `|in − out| >= threshold` (or on a NaN transition, or the first value after `start`); otherwise `out` keeps its value. It is the graph-visible way to filter a signal more (or less) than the engine-wide change threshold; its type default change threshold is `0`, so the engine adds no filtering of its own on its output. A `relative` (bool) input for percentage deadbands may be added later if needed.
 
 ### 3.1 `timing/Interval` — periodic pulse generator (PWM / edge generator)
 
@@ -137,7 +140,7 @@ Decisions (plan task 21; `src/graphs/graph.h` "Composite instances", `src/graphs
 - **Inner blocks are not graph nodes**: they are kept in the instance (in the definition's order), not in the graph, are found by no graph command and reported by no event (an instance is one `graph:addnode`). Their names are the definition's, in the instance's own namespace: they can never clash with a graph node name and never change (a rename of the instance renames only the instance).
 - **Lifecycle**: the instance's `start()`/`stop()` start/stop every inner block in the definition's order (each by the rules above: `START` pushes, timers armed and cancelled); removing the instance (or destroying its graph) frees every inner block like a removed block — watches detached, timers cancelled, queued entries stale. Building an instance creates the inner blocks, wires the internal edges, then stores the inner initials (nothing computes until it starts).
 - **Exposed port defaults**: an exposed port's descriptor carries the mapped inner port's effective default (its default, or `default_value` of its type), so a severed exposed input reverts to exactly the inner default.
-- **Change threshold**: an instance override (`change_threshold` in the instance's node metadata) applies to every inner block of the instance, nested ones included; without one each inner block uses its own type's default, then the engine-wide default (`01-architecture-overview.md` §3.3).
+- **Change threshold**: each inner block uses its own type's default, then the engine-wide default (`01-architecture-overview.md` §3.3); there is no per-instance override (open question 7).
 
 ### 5.1 Authoring and persistence format
 
@@ -187,7 +190,7 @@ Creating a group from selected nodes in a graph assembles the authoring format a
 Decisions (plan task 21; the assembly is the model function `composite_types_assemble`, `src/blocktypes/composite_types.h`, reachable from the wire through `graph:addgroup` once plan task 21b implements it; the selected nodes are not replaced — open question 4, "save as component"):
 - **Order**: `blocks` in the graph's creation order whatever the selection's order (a node named twice counts once); `edges` and `initials` per target node (creation order) and input (port order), as in a graph file (`05-app-lifecycle-persistence.md` §2.1). `inports`: first every graph-level inport mapped to a selected node, in creation order, under its public name — only the first of several mapped to the same input, since two would feed it twice (§5.1) — then one per input of a selected node fed by an edge from outside the selection, per node and input, unless a graph-level inport exposes it already. `outports`: first every graph-level outport mapped to a selected node (several may share an output), then one per output of a selected node with an edge to a node outside the selection, in the order those edges are met (per target node and input), each output once, unless a graph-level outport exposes it already.
 - **Default names**: a port without a public name is named after its inner port. If that name is a public name of the same direction, or another default-named port of that direction has the same inner port name, it is `<block>_<port>` instead (every one of the clashing ports, so none is privileged); if that is taken too, contains a `.` or is longer than 64 bytes, `<port>_<n>` (or `port_<n>` if that is too long) with the smallest free `n >= 2`. A name supplied at creation time would replace these (part of the open wire design).
-- **Left out**: node metadata (positions and `change_threshold` overrides), edge metadata and a placeholder's retained connections are not part of a type. A selected placeholder node goes into `blocks` with its component name, so registering the result is refused as an unknown type. `description` and `icon` come from the request (`""` if none).
+- **Left out**: node metadata (positions and other UI keys), edge metadata and a placeholder's retained connections are not part of a type. A selected placeholder node goes into `blocks` with its component name, so registering the result is refused as an unknown type. `description` and `icon` come from the request (`""` if none).
 - **Refusals**: an empty selection is `"Invalid field: nodes"`, a name that is no node of the graph `"Unknown node: <name>"`; everything else is refused, if at all, when the result is registered (§5.1).
 
 ## 6. Planned block types — interface sketch, pending exact specification
