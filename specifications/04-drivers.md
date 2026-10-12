@@ -72,7 +72,7 @@ The user can then type `http://<hostname>.local:<port>/` instead of an IP addres
 
 **TLS**: optional, via Zephyr's mbedTLS-backed TLS sockets (`02-wire-protocol.md` §2.5 item 9); off by default.
 
-**Wall clock**: SNTP (`CONFIG_SNTP`) is the natural future source of UTC time (`00-README.md`, open question 11).
+**Wall clock**: the environment provides UTC (`04-drivers.md` §1); on Zephyr, SNTP (`CONFIG_SNTP`) or an RTC is the natural source — the firmware's business. Local time for calendar blocks comes from the `time_zone` setting (`00-README.md`, open question 11).
 
 **Sizing**: socket count and network buffer Kconfig options (`CONFIG_NET_MAX_CONN`, buffer pools, …) are sized from `max_connections` + 1 listener per port + DNS/mDNS/DHCP. Web assets are stored pre-gzipped (`05-app-lifecycle-persistence.md` §3).
 

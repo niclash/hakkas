@@ -246,7 +246,7 @@ Decisions (plan task 6):
 
 ### 3.4 Time
 
-All engine timing uses a monotonic millisecond clock starting at boot (engine **uptime**), obtained from the PAL. The wall clock is provided by the environment through its interface (`04-drivers.md` §1; `00-README.md`, open question 11). Until it is implemented, timestamps on the wire are derived from uptime (`02-wire-protocol.md` §3.3). Once a wall clock exists, it is always **UTC** — there is no time-zone handling anywhere in the system.
+All engine timing uses a monotonic millisecond clock starting at boot (engine **uptime**), obtained from the PAL. The wall clock is provided by the environment through its interface (`04-drivers.md` §1; `00-README.md`, open question 11). Until it is implemented, timestamps on the wire are derived from uptime (`02-wire-protocol.md` §3.3). The wall clock is **UTC**, and so is everything the engine stores or sends (wire timestamps, files). The one exception is the calendar blocks (`03-block-types.md` §6.2), which evaluate in **local time** given by the engine-wide `time_zone` setting, a POSIX TZ string (`05-app-lifecycle-persistence.md` §1.1; decided, `00-README.md` open question 11). Converting UTC to local time is done by the portable core from that string, with no time-zone database.
 
 ### 3.5 Futures collapse to direct calls
 

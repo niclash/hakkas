@@ -22,6 +22,7 @@ Every key is optional; a missing key takes the default below, and a missing file
 | `max_message_bytes` | `16384` | Maximum WebSocket message size (all fragments of a message together; `02-wire-protocol.md` §0). |
 | `allowed_origins` | `[]` | Extra `Origin` values accepted on the WebSocket upgrade, besides the device's own (`02-wire-protocol.md` §0). |
 | `change_threshold` | `0.05` | Engine-wide default change threshold (`01-architecture-overview.md` §3.3). |
+| `time_zone` | `"UTC0"` | Local time for the calendar blocks, as a POSIX TZ string — e.g. `"CET-1CEST,M3.5.0,M10.5.0/3"` for Sweden — which encodes the daylight-saving rules without a time-zone database (`01-architecture-overview.md` §3.4, `03-block-types.md` §6.2). Everything else stays UTC. |
 | `log.level` | `"warn"` | `fine`, `info`, `warn`, or `error` (§4). |
 | `log.mirror` | `false` | Mirror log output to authenticated clients as `network:output`/`network:error` (§4). |
 | `auth.users_file` | POSIX: `<confdir>/users.json`; Zephyr: `/lfs/config/users.json` | Credential store (`02-wire-protocol.md` §2.2). |

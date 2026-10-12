@@ -232,4 +232,4 @@ Calendar primitives — each a scheduled block (`TIMER_SCHEDULED`) that reads th
 
 **Standard schedule types** (day, week, month schedules, …) are composites of the primitives and logic blocks. They are **not built into hakkas**: they are supplied separately as a **standard library** of composite type files (§5.1), which a deployment installs into its `types/` directory if it wants them. Once installed they are ordinary user types.
 
-Time zone: all of this is UTC unless open question 11 decides otherwise.
+**Local time** (decided, `00-README.md` open question 11): the calendar primitives evaluate the wall clock in local time from the engine-wide `time_zone` POSIX TZ string (`05-app-lifecycle-persistence.md` §1.1). Daylight-saving edges: in spring the skipped local hour does not exist, and a range starting inside it begins at the jump; in autumn the repeated hour is evaluated on local wall-clock time, so a range covering it can be true twice.
