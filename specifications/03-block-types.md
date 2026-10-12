@@ -155,7 +155,9 @@ Decisions (plan task 21; `src/graphs/graph.h` "Composite instances", `src/graphs
 }
 ```
 
-The member is `"connections"` (hakkas' term, `00-README.md` Terminology); the loader also accepts the former `"edges"`, and a save writes `"connections"`.  and are taken from the mapped inner port when omitted.
+The member is `"connections"` (hakkas' term, `00-README.md` Terminology); the loader also accepts the former `"edges"`, and a save writes `"connections"`.
+
+`type` and `description` on `inports`/`outports` are optional and are taken from the mapped inner port when omitted.
 
 Registering a new composite type from this JSON:
 1. Resolve each inner `{name,type}` entry against the block type registry. A type may itself reference another previously registered composite type.
