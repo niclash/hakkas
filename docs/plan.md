@@ -368,6 +368,11 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   app) does it through a local C API carrying the protocol's commands and events; the POSIX
   host reads `processes.json` (05 §1.2). The API is typed C functions + event structs over
   the same `graphs_*` command layer as the dispatcher (02 §6).
+- [ ] **21f. Links between processes** (open question 13, 01 §2.2, 05 §1.2): explicit links
+  from one process's outport to another's inport, declared in `processes.json` and created by
+  the host through the C API; values travel like edges; stopped source → last value kept,
+  absent source or removed link → default. Runtime link commands for the UI (wire + C API)
+  and persisting UI-made links are still to be designed.
 - [ ] **22. Environment SPI + simulated environment + bindings** (04 §1, §4; 03 §4) — no
   `io/*` blocks (open question 6 decided: outputs keep their last value); the bindings-file
   format waits for open question 3, which is to be settled while implementing this task. IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch

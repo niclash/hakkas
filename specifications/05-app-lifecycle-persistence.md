@@ -58,7 +58,10 @@ A command-line tree configures and starts the runtime:
 - `user add <name> --role <role>`, `user passwd <name>`, `user del <name>`, `user list` — manage the credential store (`02-wire-protocol.md` §2.2).
 - `run [options] process <filenames>` — start the engine and load the given colon-separated list of graph files, in order.
 - `run [options] daemon` — start the engine and load every graph in `<datadir>/graphs/`.
-- **Process list** (requirement, to be implemented): a JSON file listing the processes (graphs) to load into memory and run, in the shape of the sister project's `examples/processes.json` (an array of graph file paths). It is also where each process will be paired with its bindings file (`00-README.md`, open question 3). Its location, path resolution and relation to `run daemon` are decided when it is implemented.
+- **Process list** (`processes.json`, to be implemented, plan task 21e): read by the host (`00-README.md` open question 12), it lists the processes (graphs) to load and run on this deployment, and the **links between processes** (open question 13). Two accepted forms:
+  - the sister project's plain array of graph file paths, e.g. `["./docs/example.json"]`;
+  - an object: `{"processes": [{"graph": "<path>", "bindings": "<path>"?}, …], "links": [{"from": "<process>.<outport>", "to": "<process>.<inport>"}, …]}`, where a process is named by its graph id and a port by its graph-level public name (split on the last `.`, `01-architecture-overview.md` §2.4). The `bindings` member pairs a process with its environment bindings file (open question 3, its form still deferred).
+  Its location, path resolution and relation to `run daemon` are decided when it is implemented.
 - `run`'s own options override the corresponding configuration-file keys: `--id <id>` (`engine_id`), `--webdir <dir>`, `--host <addr>`, `--port <n>`, `--users <file>` (`auth.users_file`).
 
 Implementation decisions (plan task 11, `src/platform/posix/cli.h`):
