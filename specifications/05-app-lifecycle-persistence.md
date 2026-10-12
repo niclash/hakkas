@@ -57,6 +57,7 @@ A command-line tree configures and starts the runtime:
 - `user add <name> --role <role>`, `user passwd <name>`, `user del <name>`, `user list` — manage the credential store (`02-wire-protocol.md` §2.2).
 - `run [options] process <filenames>` — start the engine and load the given colon-separated list of graph files, in order.
 - `run [options] daemon` — start the engine and load every graph in `<datadir>/graphs/`.
+- **Process list** (requirement, to be implemented): a JSON file listing the processes (graphs) to load into memory and run, in the shape of the sister project's `examples/processes.json` (an array of graph file paths). It is also where each process will be paired with its bindings file (`00-README.md`, open question 3). Its location, path resolution and relation to `run daemon` are decided when it is implemented.
 - `run`'s own options override the corresponding configuration-file keys: `--id <id>` (`engine_id`), `--webdir <dir>`, `--host <addr>`, `--port <n>`, `--users <file>` (`auth.users_file`).
 
 Implementation decisions (plan task 11, `src/platform/posix/cli.h`):
