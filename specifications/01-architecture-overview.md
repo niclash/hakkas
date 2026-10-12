@@ -39,38 +39,29 @@ Users wire "blocks" — components with named, typed input/output ports — into
 
 ### 2.1 Value type — `Linkable`
 
-Every port holds exactly one dynamically-typed value: a string, a signed 64-bit integer, a double, a boolean, a physical-unit-tagged `Metric` value, or "unset." There is no array/list value type. Type name strings used in port descriptors are `"bool"`, `"number"`, `"string"`. (`"link"` appears in the frontend's type list for inter-graph port placeholders; it is reserved and never produced by this implementation.) A `Metric` travels through `"number"` ports.
+Every port holds exactly one dynamically-typed value: a string, a signed 64-bit integer, a double, a boolean, or "unset." There is no array/list value type. Type name strings used in port descriptors are `"bool"`, `"number"`, `"string"`. (`"link"` appears in the frontend's type list for inter-graph port placeholders; it is reserved and never produced by this implementation.)
 
-**`Metric`** — *provisional; this may be reworked or dropped once tried in practice (`00-README.md`, open question 9)*: a tagged physical-unit value — a magnitude (double) plus a unit, organized into categories (acceleration, angle, area, current, density, distance, energy, flow, force, frequency, gravity, humidity, mass, periodicity, power, pressure, ratio, resistance, temperature, velocity, voltage, volume). Parsing a metric from text splits on the first space into `(value, unit)` and matches the unit against per-category unit tables (not yet defined). **C model**: `struct { double value; const char *unit; enum metric_category category; }`.
-
-Intent:
-- **Origin**: IO modules produce `Metric` values (a temperature, a voltage, …), not bare numbers (`04-drivers.md`).
-- **Mapping**: the user can re-map a measured metric into what it physically represents — e.g. a sensor that measures 0–10 V is mapped to a level sensor reading 0–300 mm (`distance`). Where this mapping lives (a channel setting or a dedicated mapping block type) is not decided.
-- **Arithmetic preserves units**: adding/subtracting/comparing metrics of the same category preserves the category (two temperatures add to a temperature). Combining mismatched categories in an additive operation sets the block's **error flag** (a per-block-instance boolean; how it is shown on the wire is not yet specified) and the numeric result is still computed from the magnitudes. Multiplication/division follow physical dimensions where a known relation exists (mass × acceleration → force); otherwise the result is a plain number.
-- Mixing a metric with a plain number is not yet specified.
+**No unit-tagged values** (decided, `00-README.md` open question 9): the former provisional `Metric` type — a number tagged with a physical unit and category, with unit-preserving arithmetic and a per-block error flag — is dropped. Port values are plain numbers. Units are descriptive information for the user interface: the environment can describe the unit of each of its ports (`04-drivers.md` §1), and remapping a measurement (e.g. 0–10 V to 0–300 mm) is done by a block such as `process/Linear`.
 
 **Type conversions**, used throughout block computation:
 ```
-to_f64(v):  f64→v; i64→(double)v; metric→v.value; bool→1.0:0.0; string→parse as f64, else 0; unset→0.0
-to_i64(v):  f64→(int64_t)v; i64→v; metric→(int64_t)v.value; bool→1:0; string→parse as i64, else 0; unset→0
-to_u64(v):  f64→(uint64_t)v; i64→(v<0 ? 0 : (uint64_t)v); metric→(uint64_t)v.value; bool→1:0; string→parse as u64, else 0; unset→0
-to_bool(v): bool→v; f64→v!=0.0; metric→v.value!=0.0; i64→v!=0; string→(v=="true") [exact match only]; unset→false
+to_f64(v):  f64→v; i64→(double)v; bool→1.0:0.0; string→parse as f64, else 0; unset→0.0
+to_i64(v):  f64→(int64_t)v; i64→v; bool→1:0; string→parse as i64, else 0; unset→0
+to_u64(v):  f64→(uint64_t)v; i64→(v<0 ? 0 : (uint64_t)v); bool→1:0; string→parse as u64, else 0; unset→0
+to_bool(v): bool→v; f64→v!=0.0; i64→v!=0; string→(v=="true") [exact match only]; unset→false
 default_value(typename): "bool"→false; "number"→0.0; "string"→""; else→0.0
 ```
 **String parsing** ("parse as f64 / i64 / u64" above) is strict: the whole string must match, with no surrounding whitespace and no trailing characters, otherwise the result is the `0` of the table (so `"12abc"`, `" 12"` and `""` all give `0`).
 - f64: `[+-]? (digits [. digits*] | . digits) [(e|E) [+-]? digits]`, or exactly `NaN`, `Infinity`, `+Infinity`, `-Infinity`. Hexadecimal and the C library's `inf`/`nan` spellings are not accepted. Decimal text beyond the double range gives ±Infinity.
 - i64: `[+-]? digits`, within the `int64_t` range; u64: `[+]? digits`, within the `uint64_t` range. Integer parsing does not go through f64: `"12.5"` and `"1e3"` are not integers and give `0`, as does an out-of-range integer string.
 
-**Double → integer** (NaN, ±Infinity, out-of-range — decided, `00-README.md` open question 8): `to_i64`/`to_u64` of a double (an f64, a `Metric` magnitude) **saturate**. NaN → `0`; a value at or beyond the target type's upper bound → `INT64_MAX`/`UINT64_MAX` (+Infinity included); below the lower bound → `INT64_MIN`/`0` (−Infinity and every negative value ≤ −1 for `to_u64`); everything else truncates toward zero as the C cast does. This costs a NaN test and two comparisons, is well-defined C (a plain cast of such a value is undefined behavior), and matches what common FPUs' conversion instructions do. `to_u64` of a negative **i64** saturates to `0` as well (decided, open question 8), so every negative value gives `0` whatever its type.
+**Double → integer** (NaN, ±Infinity, out-of-range — decided, `00-README.md` open question 8): `to_i64`/`to_u64` of a double **saturate**. NaN → `0`; a value at or beyond the target type's upper bound → `INT64_MAX`/`UINT64_MAX` (+Infinity included); below the lower bound → `INT64_MIN`/`0` (−Infinity and every negative value ≤ −1 for `to_u64`); everything else truncates toward zero as the C cast does. This costs a NaN test and two comparisons, is well-defined C (a plain cast of such a value is undefined behavior), and matches what common FPUs' conversion instructions do. `to_u64` of a negative **i64** saturates to `0` as well (decided, open question 8), so every negative value gives `0` whatever its type.
 
 **Stringifying** a value for display/wire transport uses each type's natural string representation; a value with no natural string form — "unset" — renders as `"<not stringable>"`. The forms:
 - string: as-is; i64: decimal; bool: `"true"`/`"false"` (so `to_bool` reads it back);
 - f64: the shortest of C's `"%.15g"`, `"%.16g"`, `"%.17g"` that parses back to the identical double, so every finite double round-trips through text while common values stay short (`0.1`, `5`, `1e+20`); non-finite values are `NaN`, `Infinity`, `-Infinity` (JavaScript's spellings, also accepted by the f64 parser);
-- `Metric`: `"<value as f64> <unit>"`, the form a `"number"` port parses back into a `Metric` (`02-wire-protocol.md` §3.4).
 
 Number text is always in the C locale (`.` decimal point).
-
-Until unit tables exist (open question 9), a `Metric` parsed from text keeps its unit string verbatim and gets the category **unclassified**, an extra category value besides the list above.
 
 There is no "error" behavior in value computation — as in electronics, every operation has well-defined limits and a well-defined result when they are exceeded (e.g. IEEE-754 `±Infinity`/`NaN` for division by zero). Blocks never reject a value.
 
@@ -141,7 +132,6 @@ struct BlockCtx {
     uint64_t now_ms;         // engine monotonic time (§3.4)
     Reason   reason;         // START | INPUT | TIMER | STOP
     int      changed_input;  // index of the input that changed, when reason == INPUT
-    bool    *error;          // the block's error flag (§2.1, Metric)
 };
 ```
 
@@ -235,7 +225,7 @@ Sockets are pluggable, so the HTTP server and the WebSocket layer (`05-app-lifec
 ### 3.3 Change threshold — only changes propagate
 
 An output is pushed downstream only when its value has **changed** since it was last propagated:
-- **Numbers** (`i64`, `f64`, `Metric` magnitude): changed when `|new − last_propagated| >= threshold`. Comparing against `last_propagated` (not the previous computed value) means slow drift still propagates once it accumulates past the threshold. A transition into or out of NaN counts as a change; NaN → NaN does not. A change of `Metric` category/unit always counts as a change.
+- **Numbers** (`i64`, `f64`): changed when `|new − last_propagated| >= threshold`. Comparing against `last_propagated` (not the previous computed value) means slow drift still propagates once it accumulates past the threshold. A transition into or out of NaN counts as a change; NaN → NaN does not.
 - **Booleans, strings, unset, and any change of value type** (e.g. number → string): changed on any difference.
 - The very first value after `start` is always propagated (§2.2).
 
@@ -249,7 +239,7 @@ An inner block of a composite instance (`03-block-types.md` §5) uses its own ty
 
 Decisions (plan task 6):
 - **Equal values never propagate**, whatever the threshold: a number changes when it is not equal to `last_propagated` (so `0` and `-0` are equal) **and** `|new − last_propagated| >= threshold`; at exactly the threshold it propagates. An `i64` distance is computed without overflow. Infinities follow IEEE-754 (`+Infinity` to `+Infinity` is no change).
-- **"Any change of value type"** is any change of the `Linkable` tag, including `i64` ↔ `f64` and a plain number ↔ `Metric`, even when the magnitudes are equal. Strings compare by content; unset → unset is no change.
+- **"Any change of value type"** is any change of the `Linkable` tag, including `i64` ↔ `f64`, even when the magnitudes are equal. Strings compare by content; unset → unset is no change.
 - **Valid thresholds** are `>= 0`, `+Infinity` included (numbers then propagate only on start, a NaN transition or a type change). NaN or a negative value is refused, both for the engine-wide setting and for an instance override; an instance override of NaN internally means "none".
 - **"The very first value after `start`"** is the unconditional push of `start` (§2.2): a block computes and propagates only while started, so `start` always produces the first value.
 - A changed threshold applies from the next `output_set`; nothing is re-propagated.

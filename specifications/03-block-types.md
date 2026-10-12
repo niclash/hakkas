@@ -2,7 +2,7 @@
 
 ## 1. Value model
 
-Every port holds exactly one `Linkable` value: a string, a signed 64-bit integer, a double, a boolean, a physical-unit-tagged `Metric`, or "unset." There is no list/array value type. See `01-architecture-overview.md` §2.1 for the full value model and type-conversion rules (`to_f64`/`to_i64`/`to_u64`/`to_bool`/`default_value`), which every block type's computation uses to normalize its inputs.
+Every port holds exactly one `Linkable` value: a string, a signed 64-bit integer, a double, a boolean, or "unset." There is no list/array value type. See `01-architecture-overview.md` §2.1 for the full value model and type-conversion rules (`to_f64`/`to_i64`/`to_u64`/`to_bool`/`default_value`), which every block type's computation uses to normalize its inputs.
 
 Port descriptors carry `name`, `description`, `type` (`"bool"`/`"number"`/`"string"`), `default` (the value an input holds when nothing is wired to it — defaults to `default_value(type)` when not stated), and `addressable` (reserved metadata). Composite block types (§5) additionally carry a `target`/`source` reference into their inner block graph.
 
@@ -74,7 +74,7 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 - Port descriptions: `inN` → `"Operand N"`, `out` → `"Result"`; for `process/Linear`, `in` → `"Input value"`, `k` → `"Gain"`, `m` → `"Offset"`, `out` → `"k*in+m"`. `addressable` is `false`. An output's default (its value before the first compute) is `0`, or `false` for a bool output.
 - Every compute ignores `reason` (`START`, `INPUT` and `STOP` compute the same result; the runtime decides what propagates, §2).
 
-**Metric inputs**: the formulas above show the plain-number computation. When inputs carry `Metric` values, the arithmetic and comparison blocks also apply the unit rules in `01-architecture-overview.md` §2.1 (category preserved for same-category addition, error flag on mismatch, dimensional multiplication). These rules are provisional, and not implemented yet (`00-README.md`, open question 9): a `Metric` input converts to its magnitude via `to_f64`/`to_i64`, the result is a plain number, and the error flag is never set.
+Values are plain numbers; there are no unit rules (`Metric` was dropped, `00-README.md` open question 9).
 
 The `timing/` family is expected to grow: `timing/Interval` covers periodic pulses, and other timing behaviors (one-shot/monostable, delay-on/delay-off, debounce, …) will be separate block types rather than modes of one block.
 
