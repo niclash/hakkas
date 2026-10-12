@@ -10,16 +10,18 @@
  * registry (no heap), default 128; a port's build may define the macro to
  * change it. The registry does not own the definitions: built-ins are static
  * const data (block_types_register_builtins registers them at startup);
- * composite types (03 §5, plan task 21) are registered at runtime and their
- * owner keeps each definition alive while it is registered.
+ * composite types (03 §5) are registered at runtime by
+ * blocktypes/composite_types.h, which owns each definition while it is
+ * registered.
  *
  * Lookup is a linear scan with strcmp: the table is small, and lookups happen
  * on graph edits and loads, never while values propagate.
  *
  * Removing a composite type (02 §3.4.2 removegroup) uses
- * block_types_unregister; the caller checks first that no graph or composite
- * still uses it. Renaming (renamegroup) is unregister followed by registering
- * the renamed definition, which moves the type to the end of the order.
+ * block_types_unregister; composite_types_unregister checks first that no
+ * graph or composite still uses it. Renaming (renamegroup) is unregister
+ * followed by registering the renamed definition, which moves the type to the
+ * end of the order.
  *
  * Threading: engine-thread only (01 §3.2), no locking.
  */

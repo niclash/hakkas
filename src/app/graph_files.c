@@ -718,10 +718,10 @@ enum graph_files_status graph_files_load_text(GraphFiles *gf, const char *text, 
 	return GRAPH_FILES_OK;
 }
 
-enum graph_files_status graph_files_load(GraphFiles *gf, const char *path, Graph **out)
+enum graph_files_status graph_files_read(const char *path, size_t max, char **text, size_t *len)
 {
-	if (out != NULL)
-		*out = NULL;
+	*text = NULL;
+	*len = 0;
 	struct pal_stat info;
 	enum pal_err err = pal_storage_stat(path, &info);
 	if (err == PAL_OK && info.is_dir)
@@ -731,27 +731,41 @@ enum graph_files_status graph_files_load(GraphFiles *gf, const char *path, Graph
 		return err == PAL_ERR_NOT_FOUND ? GRAPH_FILES_ERR_NOT_FOUND
 						: GRAPH_FILES_ERR_STORAGE;
 	}
-	if (info.size > HAKKAS_GRAPH_FILE_MAX) {
+	if (info.size > max) {
 		log_error("cannot load %s: %llu bytes, more than the limit of %lu", path,
-			  (unsigned long long)info.size, (unsigned long)HAKKAS_GRAPH_FILE_MAX);
+			  (unsigned long long)info.size, (unsigned long)max);
 		return GRAPH_FILES_ERR_TOO_BIG;
 	}
 	size_t cap = (size_t)info.size;
-	char *buf = malloc(cap > 0 ? cap : 1);
+	char *buf = malloc(cap + 1);
 	if (buf == NULL) {
 		log_error("cannot load %s: out of memory", path);
 		return GRAPH_FILES_ERR_NO_MEMORY;
 	}
-	size_t len = 0;
-	err = pal_storage_read(path, buf, cap, &len);
+	err = pal_storage_read(path, buf, cap, len);
 	if (err != PAL_OK) {
 		/* PAL_ERR_TOO_BIG: the file grew since stat; nothing writes
-		 * graph files concurrently, so it is a storage problem. */
+		 * these files concurrently, so it is a storage problem. */
 		free(buf);
+		*len = 0;
 		log_error("cannot read %s: %s", path, pal_err_str(err));
 		return GRAPH_FILES_ERR_STORAGE;
 	}
-	enum graph_files_status st = graph_files_load_text(gf, buf, len, path, out);
+	buf[*len] = '\0';
+	*text = buf;
+	return GRAPH_FILES_OK;
+}
+
+enum graph_files_status graph_files_load(GraphFiles *gf, const char *path, Graph **out)
+{
+	if (out != NULL)
+		*out = NULL;
+	char *buf;
+	size_t len;
+	enum graph_files_status st = graph_files_read(path, HAKKAS_GRAPH_FILE_MAX, &buf, &len);
+	if (st != GRAPH_FILES_OK)
+		return st;
+	st = graph_files_load_text(gf, buf, len, path, out);
 	free(buf);
 	return st;
 }
@@ -802,6 +816,38 @@ static int compare_names(const void *a, const void *b)
 	return strcmp(*(char *const *)a, *(char *const *)b);
 }
 
+enum graph_files_status graph_files_list(const char *dir, char ***names, size_t *count)
+{
+	NameList list = {0};
+	enum pal_err err = pal_storage_list(dir, collect_name, &list);
+	enum graph_files_status st = GRAPH_FILES_OK;
+	if (err != PAL_OK) {
+		log_error("cannot list %s: %s", dir, pal_err_str(err));
+		st = err == PAL_ERR_NOT_FOUND ? GRAPH_FILES_ERR_NOT_FOUND : GRAPH_FILES_ERR_STORAGE;
+	} else if (list.no_memory) {
+		log_error("cannot list %s: out of memory", dir);
+		st = GRAPH_FILES_ERR_NO_MEMORY;
+	}
+	if (st != GRAPH_FILES_OK) {
+		graph_files_list_free(list.names, list.count);
+		*names = NULL;
+		*count = 0;
+		return st;
+	}
+	if (list.count > 1) /* names is NULL for an empty directory */
+		qsort(list.names, list.count, sizeof(*list.names), compare_names);
+	*names = list.names;
+	*count = list.count;
+	return GRAPH_FILES_OK;
+}
+
+void graph_files_list_free(char **names, size_t count)
+{
+	for (size_t i = 0; i < count; i++)
+		free(names[i]);
+	free(names);
+}
+
 /* Count one load's result into *first (the first failure) and *loaded. */
 static void tally(enum graph_files_status st, enum graph_files_status *first, size_t *loaded)
 {
@@ -819,41 +865,25 @@ enum graph_files_status graph_files_load_all(GraphFiles *gf, size_t *loaded)
 	char dir[PAL_PATH_MAX];
 	if (graph_files_dir(gf, GRAPH_FILES_GRAPHS_DIR, dir, sizeof(dir)) != GRAPH_FILES_OK)
 		return GRAPH_FILES_ERR_INVALID;
-	NameList list = {0};
-	enum pal_err err = pal_storage_list(dir, collect_name, &list);
-	enum graph_files_status first = GRAPH_FILES_OK;
-	if (err != PAL_OK) {
-		log_error("cannot list %s: %s", dir, pal_err_str(err));
-		first = err == PAL_ERR_NOT_FOUND ? GRAPH_FILES_ERR_NOT_FOUND
-						 : GRAPH_FILES_ERR_STORAGE;
-	} else if (list.no_memory) {
-		log_error("cannot list %s: out of memory", dir);
-		first = GRAPH_FILES_ERR_NO_MEMORY;
-	} else {
-		if (list.count > 1) /* names is NULL for an empty directory */
-			qsort(list.names, list.count, sizeof(*list.names), compare_names);
-		for (size_t i = 0; i < list.count; i++) {
-			char path[PAL_PATH_MAX];
-			if (!fits(snprintf(path, sizeof(path), "%s/%s", dir, list.names[i]),
-				  sizeof(path))) {
-				log_error("cannot load %s/%s: path too long", dir, list.names[i]);
-				tally(GRAPH_FILES_ERR_INVALID, &first, &count);
-				continue;
-			}
-			Graph *g;
-			enum graph_files_status st = graph_files_load(gf, path, &g);
-			tally(st, &first, &count);
-			char expected[FILE_NAME_ENCODED_MAX + 1];
-			if (st == GRAPH_FILES_OK &&
-			    (!file_name_encode(g->id, expected, sizeof(expected)) ||
-			     strcmp(expected, list.names[i]) != 0))
-				log_warn("%s: graph %s is saved as %s, not here", path, g->id,
-					 expected);
+	char **names;
+	size_t n;
+	enum graph_files_status first = graph_files_list(dir, &names, &n);
+	for (size_t i = 0; i < n; i++) {
+		char path[PAL_PATH_MAX];
+		if (!fits(snprintf(path, sizeof(path), "%s/%s", dir, names[i]), sizeof(path))) {
+			log_error("cannot load %s/%s: path too long", dir, names[i]);
+			tally(GRAPH_FILES_ERR_INVALID, &first, &count);
+			continue;
 		}
+		Graph *g;
+		enum graph_files_status st = graph_files_load(gf, path, &g);
+		tally(st, &first, &count);
+		char expected[FILE_NAME_ENCODED_MAX + 1];
+		if (st == GRAPH_FILES_OK && (!file_name_encode(g->id, expected, sizeof(expected)) ||
+					     strcmp(expected, names[i]) != 0))
+			log_warn("%s: graph %s is saved as %s, not here", path, g->id, expected);
 	}
-	for (size_t i = 0; i < list.count; i++)
-		free(list.names[i]);
-	free(list.names);
+	graph_files_list_free(names, n);
 	if (loaded != NULL)
 		*loaded = count;
 	return first;

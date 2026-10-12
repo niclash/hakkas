@@ -16,8 +16,9 @@
  * Built-in types are static const data (no heap): port arrays, their default
  * values (LINKABLE_*_INIT from graphs/linkable.h: scalars or the static empty
  * string) and the record itself. A composite type (03 §5, plan task 21) is
- * built at runtime from its JSON and may own heap data; it stays alive while
- * registered and while any instance refers to it.
+ * built at runtime from its JSON (blocktypes/composite_types.h) and owns heap
+ * data; it stays alive while registered, and it cannot be unregistered while
+ * any instance or other composite type refers to it.
  */
 #ifndef HAKKAS_GRAPHS_BLOCK_TYPE_H
 #define HAKKAS_GRAPHS_BLOCK_TYPE_H
@@ -80,6 +81,8 @@ typedef struct {
  * other types return 0 (01 §2.3). */
 typedef int64_t (*ComputeFn)(BlockCtx *ctx);
 
+typedef struct CompositeDef CompositeDef;
+
 typedef struct {
 	const char *name; /* e.g. "math/Add2"; unique in the registry */
 	const char *icon;
@@ -98,8 +101,50 @@ typedef struct {
 	 * and its definition (inner blocks, edges, initials) is reached through
 	 * composite. Reported as "subgraph" by component:component (02 §3.5). */
 	bool subgraph;
-	const void *composite; /* the composite definition (task 21); NULL for built-ins */
+	const CompositeDef *composite; /* the composite definition; NULL for built-ins */
 } BlockTypeDef;
+
+/*
+ * A composite type's definition as the generic runtime instantiates it
+ * (03 §5 "Runtime behavior"), every reference already resolved: inner blocks
+ * by index into blocks, ports by index into the inner type's inputs or
+ * outputs. Built and validated by blocktypes/composite_types.h from the
+ * authoring format (03 §5.1); the runtime trusts it (no fan-in, every index
+ * in range, no recursion).
+ */
+typedef struct {
+	uint32_t block; /* index into CompositeDef.blocks */
+	uint32_t port;	/* input or output index of that block's type */
+} CompositeRef;
+
+typedef struct {
+	const char *name; /* unique within the definition */
+	const BlockTypeDef *type;
+} CompositeBlockDef;
+
+typedef struct {
+	CompositeRef src; /* an output */
+	CompositeRef tgt; /* an input */
+} CompositeEdge;
+
+typedef struct {
+	CompositeRef tgt; /* an input */
+	Linkable value;	  /* the literal, parsed for the input's port type */
+} CompositeInitial;
+
+struct CompositeDef {
+	const CompositeBlockDef *blocks;
+	uint32_t block_count;
+	const CompositeEdge *edges;
+	uint32_t edge_count;
+	const CompositeInitial *initials;
+	uint32_t initial_count;
+	/* The inner input of each of the type's inputs and the inner output of
+	 * each of its outputs, in the type's port order (input_count and
+	 * output_count entries). */
+	const CompositeRef *inports;
+	const CompositeRef *outports;
+};
 
 /* Replace output i with v, taking ownership of v (a move) and releasing the
  * previous value. */

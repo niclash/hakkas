@@ -347,6 +347,8 @@ Further decisions (plan task 7): the graph id is checked first, together with th
 | `renamegroup` | `{"graph":String,"from":String,"to":String}` | Renames the type. Refused while the type is in use (instances refer to their type by name). `graph:renamegroup` broadcast `{"graph","from","to"}`. |
 | `changegroup` | `{"graph":String,"name":String,"metadata":{"description":String,"icon"?:String}}` | Updates the type's description/icon. `graph:changegroup` broadcast `{"graph","name","metadata":{...}}`, followed by a refreshed `component:component`. |
 
+The model side of these commands exists (plan task 21, `src/blocktypes/composite_types.h`, `src/app/type_files.h`): building a type from a selection (`03-block-types.md` §5.2), registering, unregistering and renaming with the refusals and provisional messages of `03-block-types.md` §5.1 (refused while in use), changing the description and icon (allowed while in use), saving and deleting the type file (`05-app-lifecycle-persistence.md` §2.3). The commands themselves still answer the generic error (§3.4 "Groups") until open question 4 is decided.
+
 ### 3.5 `component`
 
 | command | payload | reply |
@@ -365,7 +367,7 @@ Further decisions (plan task 7): the graph id is checked first, together with th
 ```
 `subgraph` is `true` for composite (group) block types, `false` otherwise.
 
-Decided (plan task 17): `getsource` without a string `name` is `"Invalid field: name"` (§1.2); composite types and their `code` arrive with plan task 21.
+Decided (plan task 17): `getsource` without a string `name` is `"Invalid field: name"` (§1.2). Decided (plan task 21): composite types are listed by `component:list` like any type, in registration order (the built-ins, then the composites, `01-architecture-overview.md` §2.3), with `subgraph: true` and their exposed ports (a port's description, type and `addressable` from the authoring JSON, else from the mapped inner port, `03-block-types.md` §5.1); `getsource`'s `code` for a composite is its authoring JSON in canonical form (`03-block-types.md` §5.1), the same text its type file holds. Composite types loaded at startup are not broadcast: no client is connected yet (`05-app-lifecycle-persistence.md` §1.4). The `component:component` broadcast of a new or changed type belongs to the group commands (§3.4.2), which are not implemented.
 
 **`component:componentsready`**: bare-integer payload, see §1.
 

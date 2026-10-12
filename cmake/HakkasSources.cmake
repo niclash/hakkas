@@ -13,7 +13,9 @@ cmake_path(NORMAL_PATH HAKKAS_SOURCE_ROOT)
 set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/app/file_names.c
   ${HAKKAS_SOURCE_ROOT}/app/graph_files.c
+  ${HAKKAS_SOURCE_ROOT}/app/type_files.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/block_types.c
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/composite_types.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c

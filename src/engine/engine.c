@@ -7,7 +7,9 @@
 #include <string.h>
 
 #include "app/graph_files.h"
+#include "app/type_files.h"
 #include "blocktypes/block_types.h"
+#include "blocktypes/composite_types.h"
 #include "engine/web_server.h"
 #include "engine/ws_server.h"
 #include "graphs/graphs.h"
@@ -232,8 +234,16 @@ bool engine_start(const Config *cfg, const EngineParams *params, Engine **out)
 	/* Step 5: the IO provider (04 §0-§1): not implemented yet (plan task
 	 * 22). */
 
-	/* Step 6: the composite block types of <datadir>/types (03 §5.1): not
-	 * implemented yet (plan task 21). */
+	/* Step 6: the composite block types of <datadir>/types (03 §5.1), in
+	 * dependency order; a type that does not load is logged and skipped
+	 * (05 §1.4), it never refuses startup. No client exists yet, so
+	 * nothing is broadcast. */
+	size_t types = 0;
+	if (type_files_load_all(&e->gf, &types) != GRAPH_FILES_OK)
+		log_warn("not every composite type in %s/" GRAPH_FILES_TYPES_DIR
+			 " loaded: starting with the others",
+			 e->gf.datadir);
+	log_info("%zu composite type%s loaded", types, types == 1 ? "" : "s");
 
 	/* Step 7: the graphs. Started graphs start with the engine time of now
 	 * (01 §3.4), which the loop takes over. */
@@ -284,8 +294,10 @@ void engine_stop(Engine *e)
 		graphs_deinit(&e->gs);
 		runtime_deinit(&e->rt);
 	}
-	if (e->types_registered)
+	if (e->types_registered) {
+		composite_types_reset(); /* no instance is left (graphs_deinit) */
 		block_types_reset();
+	}
 	crypto_zeroize(e, sizeof(*e)); /* the server secret, the users' keys */
 	free(e);
 }

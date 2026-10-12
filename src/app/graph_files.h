@@ -8,7 +8,7 @@
  *
  * Storage goes through the PAL only (platform/pal.h, 01 §0.1). Files live in
  * <datadir>/graphs/<encoded id>.json (05 §2.3, app/file_names.h); composite
- * types in <datadir>/types/ are plan task 21's.
+ * types in <datadir>/types/ are app/type_files.h's.
  *
  * The format (05 §2.1, decisions of plan task 10 recorded there): a compact
  * JSON object with the keys id, name, description, icon, started, blocks,
@@ -182,6 +182,23 @@ enum graph_files_status graph_files_load_all(GraphFiles *gf, size_t *loaded);
  * empty element or one longer than PAL_PATH_MAX - 1 is
  * GRAPH_FILES_ERR_INVALID. */
 enum graph_files_status graph_files_load_list(GraphFiles *gf, const char *paths, size_t *loaded);
+
+/* ---- Reading and listing (shared with app/type_files.h) -------------------- */
+
+/* Read the file at path, at most max bytes (else GRAPH_FILES_ERR_TOO_BIG
+ * before anything is read), into a new heap buffer *text (free with free())
+ * of *len bytes plus a NUL. Through the PAL, sized by pal_storage_stat.
+ * GRAPH_FILES_ERR_NOT_FOUND, _STORAGE (also for a directory), _NO_MEMORY;
+ * every failure is logged. */
+enum graph_files_status graph_files_read(const char *path, size_t max, char **text, size_t *len);
+
+/* The names of the regular files ending in ".json" in dir, in byte order: a
+ * heap array *names of *count heap strings (graph_files_list_free; NULL and
+ * 0 for none). GRAPH_FILES_ERR_NOT_FOUND (no such directory), _STORAGE,
+ * _NO_MEMORY, logged, with *names NULL and *count 0. */
+enum graph_files_status graph_files_list(const char *dir, char ***names, size_t *count);
+
+void graph_files_list_free(char **names, size_t count);
 
 /* ---- Deleting (02 §3.2) ---------------------------------------------------- */
 

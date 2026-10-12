@@ -20,6 +20,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "blocktypes/block_types.h"
+#include "cJSON.h"
 #include "engine/engine.h"
 #include "platform/pal.h"
 
@@ -252,6 +254,82 @@ static void test_broken_graph(void)
 	CHECK(pal_storage_remove(bad) == PAL_OK);
 }
 
+/* Startup step 6 (05 §1.4): the composite types of <datadir>/types in
+ * dependency order, the leftovers logged and skipped; a graph using one
+ * loads with a real instance; the types are gone after the shutdown. */
+static void test_types(void)
+{
+	char types[PAL_PATH_MAX], graphs[PAL_PATH_MAX], graph[PAL_PATH_MAX];
+	snprintf(types, sizeof(types), "%s", e2e_path(e2e_basedir, "types"));
+	snprintf(graphs, sizeof(graphs), "%s", e2e_path(e2e_basedir, "graphs"));
+	snprintf(graph, sizeof(graph), "%s", e2e_path(graphs, "g2.json"));
+	CHECK(pal_storage_mkdir(types) == PAL_OK);
+	/* t/A needs t/B, which sorts after it; t/X and t/Y need each other. */
+	e2e_put(e2e_path(types, "t%2FA.json"),
+		"{\"name\":\"t/A\",\"blocks\":[{\"name\":\"b\",\"type\":\"t/B\"}],"
+		"\"inports\":[{\"name\":\"in\",\"tgt\":\"b.in\"}],"
+		"\"outports\":[{\"name\":\"out\",\"src\":\"b.out\"}]}");
+	e2e_put(e2e_path(types, "t%2FB.json"),
+		"{\"name\":\"t/B\",\"blocks\":[{\"name\":\"a\",\"type\":\"math/Add2\"}],"
+		"\"initials\":[{\"src\":1,\"tgt\":\"a.in2\"}],"
+		"\"inports\":[{\"name\":\"in\",\"tgt\":\"a.in1\"}],"
+		"\"outports\":[{\"name\":\"out\",\"src\":\"a.out\"}]}");
+	e2e_put(e2e_path(types, "t%2FX.json"),
+		"{\"name\":\"t/X\",\"blocks\":[{\"name\":\"y\",\"type\":\"t/Y\"}]}");
+	e2e_put(e2e_path(types, "t%2FY.json"),
+		"{\"name\":\"t/Y\",\"blocks\":[{\"name\":\"x\",\"type\":\"t/X\"}]}");
+	e2e_put(graph, "{\"id\":\"g2\",\"started\":true,\"blocks\":{\"c\":{\"component\":"
+		       "\"t/A\"}},\"connections\":[{\"src\":{\"data\":2},\"tgt\":{\"node\":\"c\","
+		       "\"port\":\"in\"}}]}");
+
+	CHECK(start(ENGINE_LOAD_ALL, NULL));
+	if (e2e_engine == NULL)
+		return;
+	CHECK(strstr(e2e_logs(), "2 composite types loaded") != NULL);
+	CHECK(strstr(e2e_logs(), "t%2FX.json: composite type skipped: Unknown component: t/Y") !=
+	      NULL);
+	CHECK(strstr(e2e_logs(), "t%2FY.json: composite type skipped: Unknown component: t/X") !=
+	      NULL);
+	CHECK(strstr(e2e_logs(), "2 graphs loaded") != NULL);
+	CHECK(strstr(e2e_logs(), "placeholder") == NULL);
+	CHECK(block_types_get("t/A") != NULL && block_types_get("t/X") == NULL);
+
+	/* Over the wire: the instance (two levels deep) is one node, and the
+	 * type's source is its file's canonical form. */
+	E2eClient a;
+	CHECK(e2e_connect(&a));
+	CHECK(e2e_login(&a, "alice"));
+	e2e_send(&a, "graph", "connect", "{'id':'g2'}");
+	EXPECT(&a, "graph", "clear", NULL);
+	EXPECT(&a, "graph", "addnode",
+	       "{'graph':'g2','component':'t/A','id':'c','metadata':{'x':50,'y':50}}");
+	EXPECT(&a, "graph", "addinitial",
+	       "{'graph':'g2','src':{'data':'2'},'tgt':{'node':'c','port':'in'}}");
+	QUIET(&a);
+	e2e_send(&a, "component", "getsource", "{'name':'t/B'}");
+	const char *r = e2e_recv(&a);
+	CHECK(r != NULL && e2e_match(r, "component", "source",
+				     "{'name':'t/B','language':'json','library':'hakkas',"
+				     "'code':'*','tests':''}"));
+	cJSON *m = cJSON_Parse(r != NULL ? r : "");
+	const cJSON *code =
+		cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(m, "payload"),
+						 "code");
+	CHECK(cJSON_IsString(code));
+	if (cJSON_IsString(code))
+		CHECK_STREQ(code->valuestring,
+			    "{\"name\":\"t/B\",\"icon\":\"\",\"description\":\"\",\"blocks\":"
+			    "[{\"name\":\"a\",\"type\":\"math/Add2\"}],\"edges\":[],\"initials\":"
+			    "[{\"src\":1,\"tgt\":\"a.in2\"}],\"inports\":[{\"name\":\"in\","
+			    "\"tgt\":\"a.in1\"}],\"outports\":[{\"name\":\"out\",\"src\":"
+			    "\"a.out\"}]}");
+	cJSON_Delete(m);
+	e2e_close(&a);
+	e2e_stop();
+	CHECK(block_types_get("t/A") == NULL && block_types_get("t/B") == NULL);
+	CHECK(pal_storage_remove(graph) == PAL_OK);
+}
+
 /* ---- Setup ------------------------------------------------------------------ */
 
 int main(void)
@@ -266,6 +344,7 @@ int main(void)
 	RUN(test_port_in_use);
 	RUN(test_other_failures);
 	RUN(test_broken_graph);
+	RUN(test_types);
 
 	e2e_teardown();
 	return test_result();

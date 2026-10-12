@@ -310,8 +310,9 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
 
 ## Phase 4 — Provisional / blocked areas
 
-- [ ] **21. Composite block types — runtime + `types/` persistence** (03 §5–§5.1). The
-  `graph:*group` wire commands are blocked (open question 4).
+- [x] **21. Composite block types — runtime + `types/` persistence** (03 §5–§5.1). The
+  `graph:*group` wire commands are blocked (open question 4) and still answer the generic
+  error: only their model side is done.
   From task 17: `component:getsource` returns `code: ""` for every type (`cmd_getsource` in
   `src/protocol/dispatcher.c`): give a composite its authoring JSON there; the
   `component:component` broadcast of a new or changed type (02 §3.4.2, system-wide per §4.1)
@@ -320,6 +321,37 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   From task 19: startup step 6 is a marked no-op in `engine_start` (`src/engine/engine.c`),
   between the built-in block types (step 4) and the graphs (step 7); `<datadir>/types/` exists
   by then (created in step 2) and its `.tmp` leftovers are gone.
+  Done: `CompositeDef` in `src/graphs/block_type.h` (resolved inner blocks, edges, initials,
+  port mappings; `BlockTypeDef.composite` is typed now); composite instances on the one
+  generic runtime (`src/graphs/graph.c`, `block.c`: an instance is an ordinary block whose
+  inner blocks are real blocks kept in the instance, `Block.inner`/`parent`; the structure
+  stays on the instance, the dataflow maps through `block_input_target`/
+  `block_output_source`; `block_input_value`/`block_output_value` read through it, used by
+  the dispatcher's coalesced `network:data`); `src/blocktypes/composite_types.h` (parse,
+  validate and register the 03 §5.1 JSON with every refusal and its message, the canonical
+  document and `composite_types_source`, unregister/rename refused while in use, change
+  description/icon, `composite_types_reset`, and `composite_types_assemble`, the 03 §5.2
+  assembly from a selection); `src/app/type_files.h` (save, delete, startup loading in
+  dependency order; `graph_files_read`/`graph_files_list` shared from `graph_files.c`);
+  startup step 6 and the shutdown in `engine.c`; `component:getsource` returns a composite's
+  canonical JSON. Tests: `tests/test_composite.c` (refusals, round trip through text and
+  files, nesting, instances: values, initials, defaults, stale queued values, watches,
+  rename, removal, a `timing/Interval` inside, the threshold override, a graph file with
+  an instance, registry operations, loading `types/` with leftovers, the assembly),
+  `test_composite` in `test_dispatcher.c` (list, getsource, snapshot, `network:edges`),
+  `test_types` in `test_engine.c` (startup step 6 through `engine_start`). Decisions: 03 §5
+  (runtime: mapping, inner naming, lifecycle, defaults, change threshold), §5.1 (shape,
+  check order and messages, fan-in, canonical form, registry operations, description/icon
+  changes allowed while in use), §5.2 (order, default names, what is left out); 01 §2.3,
+  §3.3; 02 §3.4.2, §3.5; 05 §1.4 step 6 and shutdown, §2.3 (type files).
+  For the group commands (once open question 4 is decided): `graph:addgroup` is
+  `composite_types_assemble` + `composite_types_register` + `type_files_save`;
+  `removegroup` `composite_types_unregister` + `type_files_delete`; `renamegroup`
+  `composite_types_rename` + `type_files_save` (new) + `type_files_delete` (old);
+  `changegroup` `composite_types_change` + `type_files_save`; each new or changed type then
+  needs a `component:component` broadcast to every connection with a live session (as the
+  log mirror iterates them), built with `proto_msg_component`; the provisional messages of
+  03 §5.1 become the `network:error` texts.
 - [ ] **22. Simulated IO provider + `io/*` blocks + binding table** — **blocked** (open
   questions 3, 6). IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
   `WORK_IO_EVENT` in `runtime_drain`.

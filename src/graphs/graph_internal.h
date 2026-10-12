@@ -58,12 +58,14 @@ void graph_retained_free(Graph *g);
 /* update(input, value): store value (taking ownership) in input i, fire the
  * input's watches, then run the compute step if b is started and its type
  * computes on input. The one path every input change takes: queued input
- * updates from the drain loop and the direct deliveries of graph.c. */
+ * updates from the drain loop and the direct deliveries of graph.c. For a
+ * composite instance, the mapped inner input is updated (03 §5). */
 void block_update(Block *b, uint32_t input, Linkable value);
 
 /* start(): mark started, arm a TIMER_PERIODIC type's timer, compute with
  * REASON_START (whose return value arms a TIMER_SCHEDULED type's timer), push
- * every output unconditionally. No-op if started. */
+ * every output unconditionally. A composite instance starts its inner blocks
+ * instead (stop likewise). No-op if started. */
 void block_start(Block *b);
 
 /* stop(): cancel the timer, compute with REASON_STOP without propagating,
@@ -84,7 +86,8 @@ void block_timer_cancel(Block *b);
  * REASON_TIMER (03 §2). */
 void block_timer_expired(Block *b);
 
-/* Detach every watch of every input, calling on_detach. */
+/* Detach every watch of every input, calling on_detach (a composite
+ * instance's inner blocks' first). */
 void block_detach_watches(Block *b);
 
 #endif

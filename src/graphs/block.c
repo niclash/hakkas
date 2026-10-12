@@ -13,8 +13,13 @@
 
 double block_change_threshold(const Block *b)
 {
-	if (!isnan(b->metadata.change_threshold))
-		return b->metadata.change_threshold;
+	/* An inner block's own override (it never has one: the authoring
+	 * format has no inner metadata), then the enclosing instances',
+	 * innermost first (decided, plan task 21, 03 §5). */
+	for (const Block *p = b; p != NULL; p = p->parent) {
+		if (!isnan(p->metadata.change_threshold))
+			return p->metadata.change_threshold;
+	}
 	if (b->type != NULL && !isnan(b->type->change_threshold))
 		return b->type->change_threshold;
 	return b->graph->rt->change_threshold;
@@ -64,10 +69,47 @@ bool block_value_changed(const Linkable *last, const Linkable *next, double thre
 	return true;
 }
 
+/* ---- Composite mapping (03 §5) ----------------------------------------- */
+
+Block *block_input_target(Block *b, uint32_t *input)
+{
+	while (block_is_composite(b)) {
+		const CompositeRef *r = &b->type->composite->inports[*input];
+		*input = r->port;
+		b = b->inner[r->block];
+	}
+	return b;
+}
+
+Block *block_output_source(Block *b, uint32_t *output)
+{
+	while (block_is_composite(b)) {
+		const CompositeRef *r = &b->type->composite->outports[*output];
+		*output = r->port;
+		b = b->inner[r->block];
+	}
+	return b;
+}
+
+const Linkable *block_input_value(const Block *b, uint32_t input)
+{
+	/* The mapping only reads; b itself is not changed. */
+	const Block *t = block_input_target((Block *)b, &input);
+	return &t->in_values[input];
+}
+
+const Linkable *block_output_value(const Block *b, uint32_t output)
+{
+	const Block *s = block_output_source((Block *)b, &output);
+	return &s->out_values[output];
+}
+
 /* ---- Propagation (01 §3.2) ---------------------------------------------- */
 
 /* Set last_propagated and queue an input update for every link, carrying the
- * destination input's current source generation. */
+ * destination input's current source generation. A link's block is its
+ * structural destination; a composite instance's input is delivered to the
+ * mapped inner input (03 §5), with that input's generation. */
 static void push_output(Block *b, uint32_t i)
 {
 	Output *o = &b->outputs[i];
@@ -77,8 +119,10 @@ static void push_output(Block *b, uint32_t i)
 	linkable_assign(&o->last_propagated, v);
 	for (uint32_t k = 0; k < o->link_count; k++) {
 		const Link *l = &o->links[k];
-		work_queue_push_input(q, l->block->handle, l->input,
-				      l->block->inputs[l->input].source_gen, linkable_copy(v));
+		uint32_t in = l->input;
+		Block *t = block_input_target(l->block, &in);
+		work_queue_push_input(q, t->handle, in, t->inputs[in].source_gen,
+				      linkable_copy(v));
 	}
 }
 
@@ -196,6 +240,7 @@ static void fire_watches(Block *b, uint32_t i)
 
 void block_update(Block *b, uint32_t input, Linkable value)
 {
+	b = block_input_target(b, &input); /* a composite's inner input (03 §5) */
 	linkable_clear(&b->in_values[input]);
 	b->in_values[input] = value;
 	fire_watches(b, input);
@@ -208,6 +253,13 @@ void block_start(Block *b)
 	if (b->started)
 		return;
 	b->started = true;
+	if (block_is_composite(b)) {
+		/* 03 §5: the instance itself computes nothing; its inner
+		 * blocks start in the definition's order. */
+		for (uint32_t j = 0; j < b->inner_count; j++)
+			block_start(b->inner[j]);
+		return;
+	}
 	/* 03 §2 start: the periodic timer is armed before the START compute;
 	 * its first tick is one period after the start. A scheduled type arms
 	 * from START's return value (compute_step). */
@@ -223,6 +275,12 @@ void block_stop(Block *b)
 {
 	if (!b->started)
 		return;
+	if (block_is_composite(b)) {
+		for (uint32_t j = 0; j < b->inner_count; j++)
+			block_stop(b->inner[j]);
+		b->started = false;
+		return;
+	}
 	/* A stopped block has no armed timer; a queued expiry goes stale.
 	 * STOP's return value is ignored (decided, plan task 8). */
 	block_timer_cancel(b);
@@ -249,6 +307,7 @@ Linkable block_input_default(const Block *b, uint32_t input)
 
 void block_watch_input(Block *b, uint32_t input, InputWatch *w)
 {
+	b = block_input_target(b, &input); /* a composite's inner input (03 §5) */
 	Input *in = &b->inputs[input];
 	/* Appended, so watches fire in attach order. */
 	InputWatch **pp = &in->watches;
@@ -261,6 +320,7 @@ void block_watch_input(Block *b, uint32_t input, InputWatch *w)
 
 void block_unwatch_input(Block *b, uint32_t input, InputWatch *w)
 {
+	b = block_input_target(b, &input);
 	for (InputWatch **pp = &b->inputs[input].watches; *pp != NULL; pp = &(*pp)->next) {
 		if (*pp == w) {
 			*pp = w->next;
@@ -272,6 +332,9 @@ void block_unwatch_input(Block *b, uint32_t input, InputWatch *w)
 
 void block_detach_watches(Block *b)
 {
+	/* A composite instance's watches are on its inner blocks' inputs. */
+	for (uint32_t j = 0; j < b->inner_count; j++)
+		block_detach_watches(b->inner[j]);
 	for (uint32_t i = 0; i < b->input_count; i++) {
 		InputWatch *w = b->inputs[i].watches;
 		b->inputs[i].watches = NULL;

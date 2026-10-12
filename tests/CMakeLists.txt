@@ -24,6 +24,7 @@ hakkas_add_test(test_timers)
 hakkas_add_test(test_json)
 hakkas_add_test(test_graph_json)
 hakkas_add_test(test_graph_files LIBS hakkas_pal_posix)
+hakkas_add_test(test_composite LIBS hakkas_pal_posix)
 hakkas_add_test(test_config LIBS hakkas_pal_posix)
 # The command line calls the engine (engine/engine.c, in the core), which
 # calls the PAL: the core again after the command line, then the PAL.

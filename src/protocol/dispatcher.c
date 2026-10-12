@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "blocktypes/block_types.h"
+#include "blocktypes/composite_types.h"
 #include "cJSON.h"
 #include "graphs/graph_json.h"
 #include "protocol/messages.h"
@@ -540,16 +541,23 @@ static void cmd_getsource(ProtoConn *c, const Envelope *env)
 		invalid_field(c, "name", NULL);
 		return;
 	}
-	if (block_types_get(name) == NULL) {
+	const BlockTypeDef *def = block_types_get(name);
+	if (def == NULL) {
 		char text[GRAPHS_MESSAGE_MAX];
 		GraphRefusal r = {.name = name};
 		graph_refusal_message(GRAPH_ERR_UNKNOWN_COMPONENT, &r, text, sizeof(text));
 		reply_error(c, text, NULL);
 		return;
 	}
-	/* A built-in type has no source; a composite's authoring JSON is plan
-	 * task 21's. */
-	reply(c, proto_msg_source(name, ""));
+	if (!def->subgraph) {
+		reply(c, proto_msg_source(name, "")); /* a built-in type has no source */
+		return;
+	}
+	/* A composite type: its authoring JSON as a string (02 §3.5, 03 §5.1,
+	 * in canonical form). */
+	char *code = composite_types_source(def, NULL);
+	reply(c, code != NULL ? proto_msg_source(name, code) : NULL);
+	free(code);
 }
 
 /* ---- trace (02 §3.6): no-ops ------------------------------------------------------- */
@@ -1131,7 +1139,7 @@ static void send_dirty(ProtoConn *c)
 	for (size_t i = 0; i < c->watch_count && !c->closing; i++) {
 		EdgeWatch *ew = &c->watches[i];
 		if (ew->dirty && ew->block != NULL)
-			send_data(ew, &ew->block->in_values[ew->input]);
+			send_data(ew, block_input_value(ew->block, ew->input));
 	}
 }
 

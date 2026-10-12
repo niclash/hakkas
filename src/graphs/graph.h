@@ -77,7 +77,37 @@
  * port's name (graph_add_port, graph_rename_port), replaces the retained
  * entry, which is dropped silently.
  *
- * Not yet here: composite instances (task 21), IO (task 22).
+ * Composite instances (03 §5; decided, plan task 21): a block whose type is a
+ * composite (type->subgraph) is one ordinary block to the graph: it is in
+ * g->blocks, reported, renamed, changed, removed, saved and snapshotted as
+ * any block, and its Input records hold the sources of its exposed inputs
+ * (edge, initial, edge metadata) like any block's. On creation it builds its
+ * inner blocks (Block.inner, in the definition's order, each with parent set
+ * to the instance), wires the definition's edges and initials between them,
+ * and does nothing else itself: it has no compute, no timer, and its own
+ * value arrays are never read. Inner blocks are real blocks of the same
+ * generic runtime (slots, timers, the queue) but are not in g->blocks: no
+ * graph operation finds them by name, no event reports them, so their names
+ * (the definition's) cannot clash with graph node names and never change.
+ * The dataflow maps straight through, with no extra hop:
+ *  - a value for an exposed input goes to the mapped inner input
+ *    (block_input_target, followed through nested composites), so an edge
+ *    into the instance is a link to the inner input, and an initial or a
+ *    severed input's default (the inner port's default, which the exposed
+ *    port descriptor carries) is delivered there;
+ *  - a link from an exposed output is registered on the mapped inner output
+ *    (block_output_source), keeping the outer block as its structural
+ *    destination's source, so the inner block pushes to it through the queue
+ *    like to any other link;
+ *  - watches on an exposed input attach to the inner input;
+ *  - start/stop apply to every inner block (in definition order), removal
+ *    and graph destruction free them (watches detached, timers cancelled,
+ *    queued entries stale).
+ * The change threshold of an inner block (01 §3.3) is the override of the
+ * nearest enclosing instance that has one, else its own type's default, else
+ * the engine-wide one (block_change_threshold).
+ *
+ * Not yet here: IO (task 22).
  */
 #ifndef HAKKAS_GRAPHS_GRAPH_H
 #define HAKKAS_GRAPHS_GRAPH_H
@@ -219,6 +249,13 @@ struct Block {
 	 * destroy included), so a queued expiry of an older timer is stale
 	 * (01 §3.2). A periodic timer's own continuation keeps it. */
 	uint32_t timer_gen;
+	/* A composite instance (03 §5, "Composite instances" above): its inner
+	 * blocks, owned, in the definition's order; NULL and 0 otherwise. */
+	Block **inner;
+	uint32_t inner_count;
+	/* An inner block: the composite instance it belongs to; NULL for a
+	 * block of the graph itself. */
+	Block *parent;
 };
 
 /* A graph-level port's direction: an inport maps to an inner block's input,
@@ -361,9 +398,11 @@ Block *graph_find_block(const Graph *g, const char *name);
 
 /* Create a block of type named name (02 §3.4 addnode), with metadata md
  * (NULL: block_metadata_default(); md->extra is copied); it is started at once
- * if g is started. Refused: INVALID_ID, NODE_EXISTS, INVALID_ARGUMENT (NULL
- * type, or a metadata change_threshold that is negative), NO_MEMORY. On
- * success *out (if not NULL) is the block. Reports BLOCK_ADDED. */
+ * if g is started. A composite type's instance builds its inner blocks first
+ * (see "Composite instances" above). Refused: INVALID_ID, NODE_EXISTS,
+ * INVALID_ARGUMENT (NULL type, or a metadata change_threshold that is
+ * negative), NO_MEMORY. On success *out (if not NULL) is the block. Reports
+ * BLOCK_ADDED (only the block: inner blocks are not reported). */
 enum graph_status graph_create_block(Graph *g, const char *name, const BlockTypeDef *type,
 				     const BlockMetadata *md, Block **out);
 
@@ -562,8 +601,34 @@ static inline const PortDescriptor *block_output_port(const Block *b, uint32_t i
 	return &b->type->outputs[i];
 }
 
+/* Whether b is a composite instance (03 §5). */
+static inline bool block_is_composite(const Block *b)
+{
+	return b->type != NULL && b->type->subgraph;
+}
+
+/* The block and input that a value for input *input of b is delivered to: b
+ * itself, or for a composite instance the mapped inner input, followed
+ * through nested composites (03 §5). Updates *input. */
+Block *block_input_target(Block *b, uint32_t *input);
+
+/* The block and output whose links carry output *output of b: b itself, or
+ * for a composite instance the mapped inner output, followed through nested
+ * composites. Updates *output. */
+Block *block_output_source(Block *b, uint32_t *output);
+
+/* The current value of input i of b (get_input, 03 §5: the mapped inner
+ * input's for a composite instance). */
+const Linkable *block_input_value(const Block *b, uint32_t input);
+
+/* The current value of output i of b (get_output; the mapped inner output's
+ * for a composite instance). */
+const Linkable *block_output_value(const Block *b, uint32_t output);
+
 /* The change threshold in effect for b (01 §3.3): the instance override, else
- * the type default, else the engine-wide default. */
+ * (for an inner block, 03 §5) the override of the nearest enclosing composite
+ * instance that has one, else the type default, else the engine-wide
+ * default. */
 double block_change_threshold(const Block *b);
 
 /* Whether next differs from last enough to propagate under threshold

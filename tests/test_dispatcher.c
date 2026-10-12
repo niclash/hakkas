@@ -24,6 +24,7 @@
 
 #include "app/graph_files.h"
 #include "blocktypes/block_types.h"
+#include "blocktypes/composite_types.h"
 #include "cJSON.h"
 #include "engine/version.h"
 #include "graphs/graph_json.h"
@@ -2517,6 +2518,118 @@ static void test_data_reserve(void)
 	teardown();
 }
 
+/* Composite types over the dispatcher (plan task 21): component:list with
+ * subgraph true, getsource with the authoring JSON as a string (02 §3.5),
+ * the snapshot showing an instance as one node, network:edges on an exposed
+ * input. The group commands stay unimplemented (open question 4). */
+static void test_composite(void)
+{
+	setup();
+	static const char sum3[] =
+		"{'name':'t/Sum3','icon':'add','description':'a+b+c','blocks':[{'name':'A',"
+		"'type':'math/Add2'},{'name':'B','type':'math/Add2'}],'edges':[{'src':'A.out',"
+		"'tgt':'B.in1'}],'initials':[{'src':0.5,'tgt':'B.in2'}],'inports':[{'name':'a',"
+		"'tgt':'A.in1'},{'name':'b','tgt':'A.in2','description':'Second'}],'outports':["
+		"{'name':'sum','src':'B.out'}]}";
+	char text[1024];
+	snprintf(text, sizeof(text), "%s", jq(sum3));
+	CompositeMessage cm;
+	CHECK(composite_types_register_text(text, strlen(text), &cm, NULL) == COMPOSITE_OK);
+	FakeConn f;
+	conn_open(&f);
+	const char *s = login_as(&f, USER_ROLE_EDITOR);
+
+	command(&f, "component", "list", "{}", s);
+	size_t types = block_types_count();
+	CHECK(f.count == types + 1);
+	CHECK(json_equal(msg(&f, types - 1),
+			 "{'protocol':'component','command':'component','payload':{'name':"
+			 "'t/Sum3','description':'a+b+c','subgraph':true,'icon':'add','inPorts':["
+			 "{'id':'a','description':'Operand 1','type':'number','addressable':false},"
+			 "{'id':'b','description':'Second','type':'number','addressable':false}],"
+			 "'outPorts':[{'id':'sum','description':'Result','type':'number',"
+			 "'addressable':false}]}}"));
+	clear(&f);
+
+	/* getsource: the canonical authoring JSON, as a string. */
+	command(&f, "component", "getsource", "{'name':'t/Sum3'}", s);
+	CHECK(f.count == 1);
+	cJSON *m = cJSON_Parse(msg(&f, 0));
+	const cJSON *code =
+		cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(m, "payload"),
+						 "code");
+	CHECK(cJSON_IsString(code));
+	if (cJSON_IsString(code))
+		CHECK_STREQ(code->valuestring, text);
+	cJSON_Delete(m);
+	clear(&f);
+
+	/* A graph with an instance: one node in the snapshot. */
+	CHECK(graphs_new_graph(&gs, "g1", "G", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	clear(&f); /* runtime:new_graph */
+	command(&f, "graph", "addnode", "{'id':'n','graph':'g1','component':'math/Add2'}", s);
+	command(&f, "graph", "addnode", "{'id':'c','graph':'g1','component':'t/Sum3'}", s);
+	command(&f, "graph", "addedge",
+		"{'src':{'node':'n','port':'out'},'tgt':{'node':'c','port':'a'},'graph':'g1'}", s);
+	command(&f, "graph", "addinitial",
+		"{'src':{'data':'2'},'tgt':{'node':'c','port':'b'},'graph':'g1'}", s);
+	command(&f, "graph", "addinport", "{'graph':'g1','node':'c','port':'b','public':'x'}", s);
+	CHECK(f.count == 5);
+	CHECK(json_equal(msg(&f, 1), "{'protocol':'graph','command':'addnode','payload':{"
+				     "'graph':'g1','component':'t/Sum3','id':'c','metadata':{"
+				     "'x':50,'y':50}}}"));
+	clear(&f);
+	command(&f, "graph", "connect", "{'id':'g1'}", s);
+	FakeConn *one[] = {&f};
+	const char *snap[] = {
+		"{'protocol':'graph','command':'clear','payload':{'id':'g1','name':'G','main':"
+		"true,'description':'','icon':''}}",
+		"{'protocol':'graph','command':'addnode','payload':{'graph':'g1','component':"
+		"'math/Add2','id':'n','metadata':{'x':50,'y':50}}}",
+		"{'protocol':'graph','command':'addnode','payload':{'graph':'g1','component':"
+		"'t/Sum3','id':'c','metadata':{'x':50,'y':50}}}",
+		"{'protocol':'graph','command':'addinport','payload':{'graph':'g1','name':'x',"
+		"'node':'c','port':'b'}}",
+		"{'protocol':'graph','command':'addinitial','payload':{'graph':'g1','src':{"
+		"'data':'2'},'tgt':{'node':'c','port':'b'}}}",
+		"{'protocol':'graph','command':'addedge','payload':{'graph':'g1','src':{'node':"
+		"'n','port':'out'},'tgt':{'node':'c','port':'a'}}}",
+	};
+	expect_all(one, 1, snap, sizeof(snap) / sizeof(snap[0]));
+
+	/* network:edges on an exposed input: its value is the inner input's. */
+	command(&f, "network", "start", "{'graph':'g1'}", s);
+	runtime_drain(&rt, SIZE_MAX);
+	clear(&f);
+	command(&f, "network", "edges",
+		"{'graph':'g1','edges':[{'src':{'node':'n','port':'out'},'tgt':{'node':'c',"
+		"'port':'a'}}]}",
+		s);
+	CHECK(f.count == 2);
+	CHECK(json_equal(msg(&f, 1), data_json("g1", "n", "out", "c", "a", "0")));
+	clear(&f);
+	set_initial("n", "in1", 4);
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 2); /* graph:addinitial, then the value */
+	CHECK(json_equal(msg(&f, 1), data_json("g1", "n", "out", "c", "a", "4")));
+	clear(&f);
+	/* Removing the instance ends the subscription silently. */
+	command(&f, "graph", "removenode", "{'id':'c','graph':'g1'}", s);
+	clear(&f);
+	set_initial("n", "in1", 5);
+	runtime_drain(&rt, SIZE_MAX);
+	CHECK(f.count == 1); /* graph:addinitial only */
+	clear(&f);
+
+	/* The group commands are still unknown (open question 4). */
+	command(&f, "graph", "addgroup",
+		"{'graph':'g1','name':'t/G','nodes':['n'],'metadata':{'description':''}}", s);
+	expect_error(&f, "Unknown command: graph:addgroup");
+	conn_close(&f);
+	teardown();
+	composite_types_reset();
+}
+
 /* ---- The users file re-read at every challenge (02 §2.2; plan task 18) ------------- */
 
 static struct {
@@ -2682,6 +2795,7 @@ int main(void)
 	RUN(test_network_edges);
 	RUN(test_data_reserve);
 	RUN(test_users_reload);
+	RUN(test_composite);
 
 	block_types_reset();
 	if (nftw(root, remove_entry, 16, FTW_DEPTH | FTW_PHYS) != 0)

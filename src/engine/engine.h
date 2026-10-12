@@ -27,8 +27,9 @@
  *     users_loader), its tick hook (auth_tick);
  *  4. the built-in block types (block_types_register_builtins);
  *  5. the IO provider: not implemented yet (plan task 22);
- *  6. the composite block types of <datadir>/types: not implemented yet
- *     (plan task 21);
+ *  6. the composite block types of <datadir>/types, in dependency order
+ *     (type_files_load_all; a type that does not load is logged and skipped,
+ *     never fatal);
  *  7. the graphs: ENGINE_LOAD_LIST (`run process`) loads the given files,
  *     and any file that does not load refuses startup; ENGINE_LOAD_ALL
  *     (`run daemon`, Zephyr) loads every graph in <datadir>/graphs, and a
@@ -44,8 +45,8 @@
  * connections), the protocol layer, the authorizer's tick hook and the
  * authorizer, the platform's stop hook (before loop_deinit, which closes the
  * PAL's wakeup a signal handler writes to), the loop, the graphs (nothing is
- * saved: graphs are persisted only by network:persist), the runtime and the
- * block types.
+ * saved: graphs are persisted only by network:persist), the runtime, the
+ * composite block types and the built-in ones.
  *
  * A failing step logs why and releases everything made before it, so
  * engine_start returns false with nothing left over.

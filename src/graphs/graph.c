@@ -86,8 +86,24 @@ Graph *graph_create(Runtime *rt)
 	return g;
 }
 
+static void block_free(Block *b);
+
+/* Free inner block c of a composite instance with everything it owns: its
+ * watches detached, its timer's room given back, its slot freed (queued
+ * entries for it go stale), its own inner blocks likewise. */
+static void inner_dispose(Block *c)
+{
+	block_detach_watches(c);
+	block_release_timer(c);
+	runtime_slot_free(c->graph->rt, c->handle);
+	block_free(c);
+}
+
 static void block_free(Block *b)
 {
+	for (uint32_t j = 0; j < b->inner_count; j++)
+		inner_dispose(b->inner[j]);
+	free(b->inner);
 	for (uint32_t i = 0; i < b->input_count; i++) {
 		linkable_clear(&b->in_values[i]);
 		linkable_clear(&b->inputs[i].initial);
@@ -113,7 +129,8 @@ void graph_destroy(Graph *g)
 	if (g == NULL)
 		return;
 	graph_stop(g);
-	/* Every link ends in this graph, so the blocks go without severing. */
+	/* Every link ends in this graph, so the blocks go without severing
+	 * (a composite instance's inner blocks with it, block_free). */
 	for (uint32_t i = 0; i < g->block_count; i++) {
 		Block *b = g->blocks[i];
 		block_detach_watches(b);
@@ -284,6 +301,90 @@ static bool blocks_reserve(Graph *g)
 	return true;
 }
 
+/* Make input i of b sourced or unsourced: increment its source generation,
+ * and for a composite instance the mapped inner input's, the one queued
+ * values are sent under (03 §5), so they go stale. */
+static void input_source_changed(Block *b, uint32_t i)
+{
+	b->inputs[i].source_gen++;
+	uint32_t k = i;
+	Block *t = block_input_target(b, &k);
+	if (t != b)
+		t->inputs[k].source_gen++;
+}
+
+/* The output whose links carry output out of b (block_output_source). */
+static Output *link_output(Block *b, uint32_t out)
+{
+	Block *s = block_output_source(b, &out);
+	return &s->outputs[out];
+}
+
+static bool links_reserve(Output *o);
+
+/* Build the inner blocks of the composite instance outer (03 §5 "Runtime
+ * behavior" steps 1-5): create each inner block (with a slot, and room for
+ * its timer), nested composites recursively, then wire the internal edges
+ * and initials. Nothing is started and nothing is reported: inner blocks are
+ * not graph nodes. On failure (NO_MEMORY) the inner blocks made so far are
+ * in outer->inner, freed with outer (block_free). */
+static enum graph_status composite_build(Block *outer)
+{
+	const CompositeDef *def = outer->type->composite;
+	Graph *g = outer->graph;
+	if (def->block_count > 0) {
+		outer->inner = calloc(def->block_count, sizeof(*outer->inner));
+		if (outer->inner == NULL)
+			return GRAPH_ERR_NO_MEMORY;
+	}
+	for (uint32_t j = 0; j < def->block_count; j++) {
+		const BlockTypeDef *type = def->blocks[j].type;
+		BlockMetadata md = block_metadata_default();
+		if (!runtime_slot_reserve(g->rt) ||
+		    (has_timer(type) &&
+		     !deadline_heap_reserve(&g->rt->timers, g->rt->timer_blocks + 1)))
+			return GRAPH_ERR_NO_MEMORY;
+		Block *c = block_alloc(g, def->blocks[j].name, type, NULL, &md);
+		if (c == NULL)
+			return GRAPH_ERR_NO_MEMORY;
+		if (has_timer(type))
+			g->rt->timer_blocks++;
+		c->handle = runtime_slot_alloc(g->rt, c);
+		c->parent = outer;
+		outer->inner[outer->inner_count++] = c;
+		if (block_is_composite(c)) {
+			enum graph_status st = composite_build(c);
+			if (st != GRAPH_OK)
+				return st;
+		}
+	}
+	for (uint32_t k = 0; k < def->edge_count; k++) {
+		const CompositeEdge *e = &def->edges[k];
+		Block *sb = outer->inner[e->src.block];
+		Block *tb = outer->inner[e->tgt.block];
+		Output *o = link_output(sb, e->src.port);
+		if (!links_reserve(o))
+			return GRAPH_ERR_NO_MEMORY;
+		o->links[o->link_count++] = (Link){tb, e->tgt.port};
+		Input *in = &tb->inputs[e->tgt.port];
+		in->source = INPUT_SOURCE_EDGE;
+		in->src_block = sb;
+		in->src_output = e->src.port;
+		input_source_changed(tb, e->tgt.port);
+	}
+	for (uint32_t k = 0; k < def->initial_count; k++) {
+		const CompositeInitial *init = &def->initials[k];
+		Block *tb = outer->inner[init->tgt.block];
+		Input *in = &tb->inputs[init->tgt.port];
+		linkable_assign(&in->initial, &init->value);
+		in->source = INPUT_SOURCE_INITIAL;
+		input_source_changed(tb, init->tgt.port);
+		/* Not started: the value is only stored (03 §2). */
+		block_update(tb, init->tgt.port, linkable_copy(&in->initial));
+	}
+	return GRAPH_OK;
+}
+
 /* graph_create_block (type set) and graph_create_placeholder (type NULL). */
 static enum graph_status create_block(Graph *g, const char *name, const BlockTypeDef *type,
 				      const char *component, const BlockMetadata *md, Block **out)
@@ -307,6 +408,11 @@ static enum graph_status create_block(Graph *g, const char *name, const BlockTyp
 	if (has_timer(type))
 		g->rt->timer_blocks++; /* its deadline's room in the heap */
 	b->handle = runtime_slot_alloc(g->rt, b);
+	if (block_is_composite(b) && composite_build(b) != GRAPH_OK) {
+		runtime_slot_free(g->rt, b->handle);
+		block_free(b); /* and the inner blocks made so far */
+		return GRAPH_ERR_NO_MEMORY;
+	}
 	g->blocks[g->block_count++] = b;
 	if (g->started)
 		block_start(b); /* 01 §2.2: a block added to a started graph starts at once */
@@ -350,7 +456,7 @@ static void input_clear_source(Block *b, uint32_t i)
 	linkable_clear(&in->initial);
 	free(in->edge_metadata);
 	in->edge_metadata = NULL;
-	in->source_gen++;
+	input_source_changed(b, i);
 }
 
 /* Severing (01 §2.2): the input reverts to its port default at once, which
@@ -381,7 +487,7 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 		if (in->source == INPUT_SOURCE_EDGE) {
 			Block *src = in->src_block;
 			uint32_t out = in->src_output;
-			output_unlink(&src->outputs[out], b, i);
+			output_unlink(link_output(src, out), b, i);
 			input_clear_source(b, i);
 			graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
 						   .block = b,
@@ -400,11 +506,20 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 		}
 	}
 
-	/* Outbound links: each downstream input is severed and reverts. */
+	/* Outbound links: each downstream input is severed and reverts. A
+	 * composite instance's links are on its inner outputs (03 §5), next
+	 * to the inner links, which stay: only those whose destination's
+	 * source is b's output o are b's. */
 	for (uint32_t o = 0; o < b->output_count; o++) {
-		Output *out = &b->outputs[o];
-		while (out->link_count > 0) {
-			Link l = out->links[0];
+		Output *out = link_output(b, o);
+		uint32_t k = 0;
+		while (k < out->link_count) {
+			Link l = out->links[k];
+			const Input *dst = &l.block->inputs[l.input];
+			if (dst->src_block != b || dst->src_output != o) {
+				k++;
+				continue;
+			}
 			output_unlink(out, l.block, l.input);
 			input_clear_source(l.block, l.input);
 			graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
@@ -518,7 +633,7 @@ enum graph_status graph_connect(Graph *g, const char *src, const char *src_port,
 		return st;
 	if (tb->inputs[in].source != INPUT_SOURCE_NONE)
 		return GRAPH_ERR_INPUT_CONNECTED; /* no fan-in (01 §2.2) */
-	Output *o = &sb->outputs[out];
+	Output *o = link_output(sb, out); /* a composite's inner output (03 §5) */
 	bool ok = true;
 	char *md = str_dup_opt(metadata, &ok);
 	if (!ok || !links_reserve(o)) {
@@ -533,7 +648,7 @@ enum graph_status graph_connect(Graph *g, const char *src, const char *src_port,
 	dst->source = INPUT_SOURCE_EDGE;
 	dst->src_block = sb;
 	dst->src_output = out;
-	dst->source_gen++;
+	input_source_changed(tb, in);
 	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_ADDED,
 				   .block = tb,
 				   .input = in,
@@ -588,7 +703,7 @@ enum graph_status graph_disconnect(Graph *g, const char *src, const char *src_po
 	if (st != GRAPH_OK)
 		return st;
 
-	output_unlink(&sb->outputs[out], tb, in);
+	output_unlink(link_output(sb, out), tb, in);
 	input_clear_source(tb, in);
 	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
 				   .block = tb,
@@ -644,7 +759,7 @@ enum graph_status graph_add_initial(Graph *g, const char *node, const char *port
 	graph_retained_remove_input(g, b, port); /* the live initial takes its place */
 	linkable_assign(&in->initial, value);
 	in->source = INPUT_SOURCE_INITIAL;
-	in->source_gen++;
+	input_source_changed(b, i);
 	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_INITIAL_ADDED,
 				   .block = b,
 				   .input = i,
