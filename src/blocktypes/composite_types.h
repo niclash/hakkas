@@ -2,7 +2,7 @@
  * Composite block types — groups (03 §5): building a composite type from its
  * authoring JSON (03 §5.1), registering it in the block type registry
  * (blocktypes/block_types.h), the registry operations the group commands of
- * 02 §3.4.2 will use (unregister, rename, change description/icon), the
+ * 02 §3.4.2 use (unregister, rename, change description/icon), the
  * canonical authoring JSON for component:getsource (02 §3.5) and the type
  * file (05 §2.3, app/type_files.h), and assembling the authoring JSON from a
  * selection of graph nodes (03 §5.2).
@@ -115,8 +115,8 @@ size_t composite_types_count(void);
  * may exist any more. */
 void composite_types_reset(void);
 
-/* ---- Registry operations (02 §3.4.2; the wire commands are not implemented,
- * open question 4) ----------------------------------------------------------- */
+/* ---- Registry operations (02 §3.4.2; the wire commands are
+ * app/type_files.h's group commands) ------------------------------------------ */
 
 /* Whether a graph of gs has an instance of def (a block of the graph whose
  * type is def) or another registered composite type contains it as an inner
@@ -137,6 +137,13 @@ enum composite_status composite_types_unregister(const Graphs *gs, const char *n
  * name), EXISTS (to is registered, from itself included), NO_MEMORY. */
 enum composite_status composite_types_rename(const Graphs *gs, const char *from, const char *to,
 					     CompositeMessage *msg);
+
+/* The checks of composite_types_rename alone, in its order, changing
+ * nothing: COMPOSITE_OK if the rename would be applied (it can then fail
+ * only with NO_MEMORY). renamegroup writes the renamed type's file before
+ * the model changes (app/type_files.h). */
+enum composite_status composite_types_rename_check(const Graphs *gs, const char *from,
+						   const char *to, CompositeMessage *msg);
 
 /* changegroup: set the description and/or icon (NULL keeps one) of the
  * composite type called name. Allowed while the type is in use: no instance

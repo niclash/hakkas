@@ -451,6 +451,55 @@ static char *port_removed(const char *command, const GraphEvent *ev)
 	return finish("graph", command, p, ok);
 }
 
+/* A group's {"description","icon"} (02 §3.4.2: always both, as applied). */
+static cJSON *group_metadata(const BlockTypeDef *def)
+{
+	cJSON *m = object();
+	if (m == NULL || !add_str(m, "description", def->description) ||
+	    !add_str(m, "icon", def->icon)) {
+		cJSON_Delete(m);
+		return NULL;
+	}
+	return m;
+}
+
+/* The names of a composite type's inner blocks, in its order. */
+static cJSON *group_nodes(const BlockTypeDef *def)
+{
+	cJSON *arr = cJSON_CreateArray();
+	const CompositeDef *c = def->composite;
+	for (uint32_t i = 0; arr != NULL && c != NULL && i < c->block_count; i++) {
+		cJSON *name = cJSON_CreateString(c->blocks[i].name);
+		if (name == NULL || !cJSON_AddItemToArray(arr, name)) {
+			cJSON_Delete(name);
+			cJSON_Delete(arr);
+			return NULL;
+		}
+	}
+	return arr;
+}
+
+/* graph:addgroup {"graph","name","nodes","metadata"}; graph:changegroup
+ * {"graph","name","metadata"}. */
+static char *group_event(const char *command, const GraphEvent *ev, bool with_nodes)
+{
+	const BlockTypeDef *def = ev->block_type;
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", ev->graph->id) && add_str(p, "name", def->name);
+	if (ok && with_nodes)
+		ok = add(p, "nodes", group_nodes(def));
+	ok = ok && add(p, "metadata", group_metadata(def));
+	return finish("graph", command, p, ok);
+}
+
+static char *group_removed(const GraphEvent *ev)
+{
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", ev->graph->id) &&
+		  add_str(p, "name", ev->old_name);
+	return finish("graph", "removegroup", p, ok);
+}
+
 char *proto_msg_event(const GraphEvent *ev)
 {
 	switch (ev->type) {
@@ -499,6 +548,16 @@ char *proto_msg_event(const GraphEvent *ev)
 		return port_removed("removeoutport", ev);
 	case GRAPH_EVENT_OUTPORT_RENAMED:
 		return renamed("renameoutport", ev, ev->port->name);
+	case GRAPH_EVENT_GROUP_ADDED:
+		return group_event("addgroup", ev, true);
+	case GRAPH_EVENT_GROUP_REMOVED:
+		return group_removed(ev);
+	case GRAPH_EVENT_GROUP_RENAMED:
+		return renamed("renamegroup", ev, ev->block_type->name);
+	case GRAPH_EVENT_GROUP_CHANGED:
+		return group_event("changegroup", ev, false);
+	case GRAPH_EVENT_COMPONENT:
+		return proto_msg_component(ev->block_type);
 	}
 	return NULL;
 }

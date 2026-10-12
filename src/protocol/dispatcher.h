@@ -37,10 +37,7 @@
  *     <protocol>:<command>" (the command cut to PROTO_COMMAND_ECHO_MAX
  *     bytes, "..." appended).
  *  5. Capabilities (02 §2.4): "Not permitted: <protocol>:<command>".
- *  6. The command. A known command this layer does not implement yet (the
- *     provisional group commands graph:addgroup, removegroup, renamegroup,
- *     changegroup, 02 §3.4.2, blocked by open question 4) gets the generic
- *     error. A missing or mistyped payload field is "Invalid field: <name>"
+ *  6. The command. A missing or mistyped payload field is "Invalid field: <name>"
  *     (checked in the order 02 lists the fields, before any refusal of
  *     02 §3.4.1); of environment:challenge and login it is "Login failed"
  *     (02 §2.3).
@@ -56,6 +53,12 @@
  * broadcasts; network:persist has no reply on success (a failed save is a
  * broadcast network:error). getruntime, component:*, trace:*,
  * environment:*, graph:connect and network:edges reply to the sender.
+ *
+ * Group commands (02 §3.4.2, plan task 21b): graph:addgroup, removegroup,
+ * renamegroup and changegroup run app/type_files.h's group commands with the
+ * Protocol's GraphFiles; their events are the graph-specific graph:*group
+ * broadcast, then the system-wide component:component of a new, renamed or
+ * changed type.
  *
  * Graph commands (02 §3.4, decided in plan task 18): payload fields are
  * mapped onto the graphs_ commands (graphs/graphs.h), whose refusal messages
@@ -162,7 +165,7 @@ typedef struct {
 
 typedef struct {
 	Graphs *graphs;	   /* borrowed, must outlive the Protocol */
-	GraphFiles *files; /* borrowed: delete_graph removes the graph's file */
+	GraphFiles *files; /* borrowed: delete_graph, persist and the group commands */
 	/* Read at creation: engine_id (must be set, config_generate_engine_id),
 	 * label, log.mirror. */
 	const Config *cfg;

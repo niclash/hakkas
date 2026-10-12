@@ -311,8 +311,8 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
 ## Phase 4 — Provisional / blocked areas
 
 - [x] **21. Composite block types — runtime + `types/` persistence** (03 §5–§5.1). The
-  `graph:*group` wire commands are blocked (open question 4) and still answer the generic
-  error: only their model side is done.
+  `graph:*group` wire commands were blocked (open question 4); only their model side is done
+  here (the wire commands: task 21b).
   From task 17: `component:getsource` returns `code: ""` for every type (`cmd_getsource` in
   `src/protocol/dispatcher.c`): give a composite its authoring JSON there; the
   `component:component` broadcast of a new or changed type (02 §3.4.2, system-wide per §4.1)
@@ -352,10 +352,25 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   needs a `component:component` broadcast to every connection with a live session (as the
   log mirror iterates them), built with `proto_msg_component`; the provisional messages of
   03 §5.1 become the `network:error` texts.
-- [ ] **21b. Group wire commands** (02 §3.4.2): `graph:addgroup`/`removegroup`/`renamegroup`/
+- [x] **21b. Group wire commands** (02 §3.4.2): `graph:addgroup`/`removegroup`/`renamegroup`/
   `changegroup` on the task-21 model functions, with their broadcasts and a `component:component`
   broadcast for new/changed types. Open question 4 is decided: "save as component" — the
   selected nodes are left unchanged.
+  Done: the commands are `type_files_add_group`/`_remove_group`/`_rename_group`/`_change_group`
+  in `src/app/type_files.h` (model + type file + events, like `graph_files_persist`), called by
+  the dispatcher's `cmd_*group` (field checks); new events `GRAPH_EVENT_GROUP_ADDED/REMOVED/
+  RENAMED/CHANGED` (graph-specific) and `GRAPH_EVENT_COMPONENT` (system-wide) through
+  `graphs_notify_group`/`graphs_notify_component`, mapped in `proto_msg_event`;
+  `composite_types_rename_check` (the rename's checks alone). Decisions in 02 §3.4.2 (scope,
+  field order, refusal order, applied event shapes, no `component:*` for a removal, a failed
+  save refuses the command and rolls back: `addgroup` unregisters, `renamegroup`/`changegroup`
+  write the file before the model changes; a failed deletion is logged and stands), §1.2,
+  §3.4, §3.5; 03 §5.1 (the messages are the documented texts), §5.2 (no explicit port
+  names); 05 §2.3. Tests: `test_groups`, `test_group_refusals`, `test_group_storage` in
+  `test_dispatcher.c` (broadcasts on a, b, v and the system-wide `component:component` on a
+  connection scoped to another graph, every refusal to the sender only, the selected nodes
+  unchanged, the files written/renamed/deleted, the rollback of a failed save),
+  the group events' scoping in `test_graphs.c`, `test_groups` in `test_e2e_catalog.c`.
 - [x] **21c. Drop the change-threshold override; add `process/Deadband`** (open question 7,
   01 §3.3, 03 §3, 02 §3.4, 05 §2.1): remove the per-instance `change_threshold` from node
   metadata handling (validation, merge, composites, snapshots, files — an old key becomes an

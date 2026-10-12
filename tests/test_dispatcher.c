@@ -11,7 +11,9 @@
  * task 18) every graph:* and network:* command with its broadcasts on
  * several connections and its refusals, scoping, the graph:connect snapshot
  * and the outgoing buffer, initial value encoding, network:edges with its
- * network:data stream, and the users file re-read at every challenge.
+ * network:data stream, and the users file re-read at every challenge; and
+ * (plan task 21b) the group commands with their broadcasts, refusals, type
+ * files and the rollback of a failed save.
  */
 #define _XOPEN_SOURCE 700
 
@@ -21,8 +23,11 @@
 #include <math.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "app/graph_files.h"
+#include "app/type_files.h"
 #include "blocktypes/block_types.h"
 #include "blocktypes/composite_types.h"
 #include "cJSON.h"
@@ -1794,11 +1799,6 @@ static void test_graph_refusals(void)
 	refused_cmd(&k, "network", "edges",
 		    "{'graph':'g1','edges':[{'src':{'node':'n1','port':'out'}}]}",
 		    "Invalid field: edges", "g1");
-	/* The provisional group commands (02 §3.4.2) are not implemented. */
-	refused_cmd(&k, "graph", "addgroup", "{'graph':'g1','name':'x','nodes':[]}",
-		    "Unknown command: graph:addgroup", NULL);
-	refused_cmd(&k, "graph", "changegroup", "{'graph':'g1','name':'x','metadata':{}}",
-		    "Unknown command: graph:changegroup", NULL);
 
 	/* Nothing changed. */
 	CHECK(g->block_count == 2 && g->port_count[GRAPH_INPORT] == 1 &&
@@ -2528,7 +2528,7 @@ static void test_data_reserve(void)
 /* Composite types over the dispatcher (plan task 21): component:list with
  * subgraph true, getsource with the authoring JSON as a string (02 §3.5),
  * the snapshot showing an instance as one node, network:edges on an exposed
- * input. The group commands stay unimplemented (open question 4). */
+ * input. */
 static void test_composite(void)
 {
 	setup();
@@ -2628,13 +2628,418 @@ static void test_composite(void)
 	CHECK(f.count == 1); /* graph:addinitial only */
 	clear(&f);
 
-	/* The group commands are still unknown (open question 4). */
-	command(&f, "graph", "addgroup",
-		"{'graph':'g1','name':'t/G','nodes':['n'],'metadata':{'description':''}}", s);
-	expect_error(&f, "Unknown command: graph:addgroup");
 	conn_close(&f);
 	teardown();
 	composite_types_reset();
+}
+
+/* ---- Groups (02 §3.4.2; plan task 21b) --------------------------------------------- */
+
+/* The path of the type file of name in the fixture's datadir. */
+static const char *type_path(const char *name)
+{
+	static char buf[2][PAL_PATH_MAX];
+	static int next;
+	char *p = buf[next++ % 2];
+	CHECK(graph_files_path(&gf, GRAPH_FILES_TYPES_DIR, name, p, PAL_PATH_MAX) ==
+	      GRAPH_FILES_OK);
+	return p;
+}
+
+/* The type file of name holds the registered type's canonical source. */
+static void expect_type_file(const char *name)
+{
+	const BlockTypeDef *def = block_types_get(name);
+	CHECK(def != NULL);
+	char *want = def != NULL ? composite_types_source(def, NULL) : NULL;
+	char *text = NULL;
+	size_t len = 0;
+	CHECK(graph_files_read(type_path(name), 1u << 16, &text, &len) == GRAPH_FILES_OK);
+	CHECK(text != NULL && want != NULL && strcmp(text, want) == 0);
+	free(text);
+	free(want);
+}
+
+/* g1: n1 -> n2 -> n3 (Add2), an initial on n2.in2; g2 empty. The clients a,
+ * b, v connected to g1, o logged in and scoped to g2. */
+static void groups_setup(Clients *k, FakeConn *o, const char **so)
+{
+	setup();
+	CHECK(graphs_new_graph(&gs, "g1", "One", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_new_graph(&gs, "g2", "Two", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	for (int i = 1; i <= 3; i++) {
+		char n[4];
+		snprintf(n, sizeof(n), "n%d", i);
+		CHECK(graphs_add_node(&gs, "g1", n, "math/Add2", NULL, NULL) == GRAPH_OK);
+	}
+	CHECK(graphs_add_edge(&gs, "g1", "n1", "out", "n2", "in1", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_edge(&gs, "g1", "n2", "out", "n3", "in1", NULL, NULL) == GRAPH_OK);
+	Linkable three = linkable_from_f64(3);
+	CHECK(graphs_add_initial(&gs, "g1", "n2", "in2", &three, NULL) == GRAPH_OK);
+	clients_open(k, "g1");
+	conn_open(o);
+	*so = login_as(o, USER_ROLE_EDITOR);
+	CHECK(protocol_conn_scope(o->pc, "g2"));
+}
+
+static void groups_teardown(Clients *k, FakeConn *o)
+{
+	conn_close(o);
+	clients_close(k);
+	teardown();
+	composite_types_reset();
+}
+
+/* The selected nodes are as they were: three Add2 blocks, n1 -> n2 -> n3,
+ * the initial on n2. */
+static void expect_g1_unchanged(void)
+{
+	Graph *g = graphs_find(&gs, "g1");
+	CHECK(g->block_count >= 3);
+	for (uint32_t i = 0; i < 3; i++)
+		CHECK(g->blocks[i]->type == block_types_get("math/Add2"));
+	Block *n2 = graph_find_block(g, "n2"), *n3 = graph_find_block(g, "n3");
+	CHECK(n2->inputs[0].source == INPUT_SOURCE_EDGE &&
+	      n2->inputs[0].src_block == graph_find_block(g, "n1"));
+	CHECK(n2->inputs[1].source == INPUT_SOURCE_INITIAL);
+	CHECK(n3->inputs[0].source == INPUT_SOURCE_EDGE && n3->inputs[0].src_block == n2);
+}
+
+static const char pair_component[] =
+	"{'protocol':'component','command':'component','payload':{'name':'t/Pair',"
+	"'description':'Two','subgraph':true,'icon':'add','inPorts':[],'outPorts':[{'id':"
+	"'out','description':'Result','type':'number','addressable':false}]}}";
+
+static void test_groups(void)
+{
+	Clients k;
+	FakeConn o;
+	const char *so;
+	groups_setup(&k, &o, &so);
+	FakeConn *g1[] = {&k.a, &k.b, &k.v};
+	FakeConn *other[] = {&o};
+
+	/* addgroup: graph:addgroup to g1's subscribers (the applied nodes in
+	 * creation order, a node named twice once), the new type's
+	 * component:component to every authenticated connection. */
+	size_t before = block_types_count();
+	command(&k.a, "graph", "addgroup",
+		"{'graph':'g1','name':'t/Pair','nodes':['n2','n1','n2'],'metadata':{"
+		"'description':'Two','icon':'add'}}",
+		k.sa);
+	const char *added[] = {
+		"{'protocol':'graph','command':'addgroup','payload':{'graph':'g1','name':"
+		"'t/Pair','nodes':['n1','n2'],'metadata':{'description':'Two','icon':'add'}}}",
+		pair_component,
+	};
+	expect_all(g1, 3, added, 2);
+	expect_all(other, 1, &added[1], 1);
+	CHECK(block_types_count() == before + 1);
+	expect_g1_unchanged();
+	expect_type_file("t/Pair");
+	/* The authoring JSON (03 §5.2). */
+	command(&o, "component", "getsource", "{'name':'t/Pair'}", so);
+	CHECK(o.count == 1);
+	cJSON *m = cJSON_Parse(msg(&o, 0));
+	const cJSON *code =
+		cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(m, "payload"),
+						 "code");
+	CHECK(cJSON_IsString(code) &&
+	      json_same(code->valuestring,
+			"{'name':'t/Pair','icon':'add','description':'Two','blocks':[{'name':"
+			"'n1','type':'math/Add2'},{'name':'n2','type':'math/Add2'}],"
+			"'connections':[{'src':'n1.out','tgt':'n2.in1'}],'initials':[{'src':3,"
+			"'tgt':'n2.in2'}],'inports':[],'outports':[{'name':'out','src':"
+			"'n2.out'}]}"));
+	cJSON_Delete(m);
+	clear(&o);
+
+	/* An icon that is null is absent: the event carries the applied "". */
+	edit(&k, "addgroup",
+	     "{'graph':'g1','name':'t/One','nodes':['n3'],'metadata':{'description':'',"
+	     "'icon':null}}",
+	     (const char *const[]){
+		     "{'protocol':'graph','command':'addgroup','payload':{'graph':'g1','name':"
+		     "'t/One','nodes':['n3'],'metadata':{'description':'','icon':''}}}",
+		     "{'protocol':'component','command':'component','payload':{'name':'t/One',"
+		     "'description':'','subgraph':true,'icon':'','inPorts':[{'id':'in1',"
+		     "'description':'Operand 1','type':'number','addressable':false}],"
+		     "'outPorts':[]}}"},
+	     2);
+	clear(&o);
+
+	/* An instance: the type is in use. */
+	edit1(&k, "addnode", "{'id':'c','graph':'g1','component':'t/Pair'}",
+	      "{'protocol':'graph','command':'addnode','payload':{'graph':'g1','component':"
+	      "'t/Pair','id':'c','metadata':{'x':50,'y':50}}}");
+	refused_cmd(&k, "graph", "removegroup", "{'graph':'g1','name':'t/Pair'}",
+		    "Component in use: t/Pair", "g1");
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'g1','from':'t/Pair','to':'t/Duo'}",
+		    "Component in use: t/Pair", "g1");
+	expect_type_file("t/Pair");
+
+	/* changegroup is allowed while in use; the icon is kept when absent. */
+	command(&k.a, "graph", "changegroup",
+		"{'graph':'g1','name':'t/Pair','metadata':{'description':'A pair'}}", k.sa);
+	const char *changed[] = {
+		"{'protocol':'graph','command':'changegroup','payload':{'graph':'g1','name':"
+		"'t/Pair','metadata':{'description':'A pair','icon':'add'}}}",
+		"{'protocol':'component','command':'component','payload':{'name':'t/Pair',"
+		"'description':'A pair','subgraph':true,'icon':'add','inPorts':[],'outPorts':[{"
+		"'id':'out','description':'Result','type':'number','addressable':false}]}}",
+	};
+	expect_all(g1, 3, changed, 2);
+	expect_all(other, 1, &changed[1], 1);
+	expect_type_file("t/Pair");
+	command(&k.a, "graph", "changegroup",
+		"{'graph':'g1','name':'t/Pair','metadata':{'description':'Two','icon':'sum'}}",
+		k.sa);
+	CHECK(k.a.count == 2 && json_equal(msg(&k.a, 0),
+					   "{'protocol':'graph','command':'changegroup','payload':{"
+					   "'graph':'g1','name':'t/Pair','metadata':{'description':"
+					   "'Two','icon':'sum'}}}"));
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	clear(&o);
+	expect_type_file("t/Pair");
+
+	/* renamegroup once unused: the new file, the old one gone. */
+	edit1(&k, "removenode", "{'id':'c','graph':'g1'}",
+	      "{'protocol':'graph','command':'removenode','payload':{'id':'c','graph':'g1'}}");
+	command(&k.a, "graph", "renamegroup", "{'graph':'g1','from':'t/Pair','to':'t/Duo'}",
+		k.sa);
+	const char *renamed[] = {
+		"{'protocol':'graph','command':'renamegroup','payload':{'graph':'g1','from':"
+		"'t/Pair','to':'t/Duo'}}",
+		"{'protocol':'component','command':'component','payload':{'name':'t/Duo',"
+		"'description':'Two','subgraph':true,'icon':'sum','inPorts':[],'outPorts':[{"
+		"'id':'out','description':'Result','type':'number','addressable':false}]}}",
+	};
+	expect_all(g1, 3, renamed, 2);
+	expect_all(other, 1, &renamed[1], 1);
+	CHECK(block_types_get("t/Pair") == NULL);
+	CHECK(block_types_at(block_types_count() - 1) == block_types_get("t/Duo"));
+	expect_type_file("t/Duo");
+	CHECK(!pal_storage_exists(type_path("t/Pair")));
+
+	/* removegroup: graph:removegroup only (no component:* message). */
+	edit1(&k, "removegroup", "{'graph':'g1','name':'t/Duo'}",
+	      "{'protocol':'graph','command':'removegroup','payload':{'graph':'g1','name':"
+	      "'t/Duo'}}");
+	CHECK(o.count == 0);
+	CHECK(block_types_get("t/Duo") == NULL);
+	CHECK(!pal_storage_exists(type_path("t/Duo")));
+	CHECK(block_types_count() == before + 1); /* t/One */
+	expect_g1_unchanged();
+
+	/* A viewer may not (02 §2.4). */
+	command(&k.v, "graph", "removegroup", "{'graph':'g1','name':'t/One'}", k.sv);
+	expect_error(&k.v, "Not permitted: graph:removegroup");
+	CHECK(k.a.count == 0 && k.b.count == 0);
+	groups_teardown(&k, &o);
+}
+
+/* Every refusal goes to the sender only, with "graph", and changes nothing
+ * (02 §1.1, §1.2, §3.4.2). */
+static void test_group_refusals(void)
+{
+	Clients k;
+	FakeConn o;
+	const char *so;
+	groups_setup(&k, &o, &so);
+	Graph *g = graphs_find(&gs, "g1");
+	CHECK(graph_create_placeholder(g, "ph", "x/Gone", NULL, NULL) == GRAPH_OK);
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	size_t before = block_types_count();
+	char long_id[80], payload[256];
+	memset(long_id, 'x', 65);
+	long_id[65] = '\0';
+
+	/* addgroup: the fields in order, then the graph, the name, the nodes,
+	 * the registration. */
+	refused_cmd(&k, "graph", "addgroup", "{}", "Invalid field: graph", NULL);
+	refused_cmd(&k, "graph", "addgroup", "{'graph':'g1'}", "Invalid field: name", "g1");
+	refused_cmd(&k, "graph", "addgroup", "{'graph':'g1','name':'t/X'}", "Invalid field: nodes",
+		    "g1");
+	refused_cmd(&k, "graph", "addgroup", "{'graph':'g1','name':'t/X','nodes':[]}",
+		    "Invalid field: nodes", "g1");
+	refused_cmd(&k, "graph", "addgroup", "{'graph':'g1','name':'t/X','nodes':['n1',2]}",
+		    "Invalid field: nodes", "g1");
+	refused_cmd(&k, "graph", "addgroup", "{'graph':'g1','name':'t/X','nodes':'n1'}",
+		    "Invalid field: nodes", "g1");
+	refused_cmd(&k, "graph", "addgroup", "{'graph':'g1','name':'t/X','nodes':['n1']}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "addgroup",
+		    "{'graph':'g1','name':'t/X','nodes':['n1'],'metadata':{}}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "addgroup",
+		    "{'graph':'g1','name':'t/X','nodes':['n1'],'metadata':{'description':'',"
+		    "'icon':5}}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "addgroup",
+		    "{'graph':'zz','name':'t/X','nodes':['nope'],'metadata':{'description':''}}",
+		    "Unknown graph: zz", "zz");
+	snprintf(payload, sizeof(payload),
+		 "{'graph':'%s','name':'t/X','nodes':['n1'],'metadata':{'description':''}}",
+		 long_id);
+	refused_cmd(&k, "graph", "addgroup", payload, "Invalid id", NULL);
+	snprintf(payload, sizeof(payload),
+		 "{'graph':'g1','name':'%s','nodes':['nope'],'metadata':{'description':''}}",
+		 long_id);
+	refused_cmd(&k, "graph", "addgroup", payload, "Invalid field: name", "g1");
+	refused_cmd(&k, "graph", "addgroup",
+		    "{'graph':'g1','name':'','nodes':['n1'],'metadata':{'description':''}}",
+		    "Invalid field: name", "g1");
+	refused_cmd(&k, "graph", "addgroup",
+		    "{'graph':'g1','name':'math/Add2','nodes':['nope'],'metadata':{"
+		    "'description':''}}",
+		    "Component exists: math/Add2", "g1");
+	refused_cmd(&k, "graph", "addgroup",
+		    "{'graph':'g1','name':'t/X','nodes':['n1','nope'],'metadata':{"
+		    "'description':''}}",
+		    "Unknown node: nope", "g1");
+	/* A selected placeholder: refused when the result is registered. */
+	refused_cmd(&k, "graph", "addgroup",
+		    "{'graph':'g1','name':'t/X','nodes':['n1','ph'],'metadata':{"
+		    "'description':''}}",
+		    "Unknown component: x/Gone", "g1");
+	CHECK(block_types_count() == before);
+	CHECK(!pal_storage_exists(type_path("t/X")));
+
+	/* A type to refuse the other commands on. */
+	CHECK(type_files_add_group(&gf, "g1",
+				   &(CompositeSelection){.name = "t/Y",
+							 .nodes = (const char *[]){"n1"},
+							 .node_count = 1},
+				   NULL) == GRAPH_FILES_OK);
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	clear(&o);
+
+	refused_cmd(&k, "graph", "removegroup", "{'name':'t/Y'}", "Invalid field: graph", NULL);
+	refused_cmd(&k, "graph", "removegroup", "{'graph':'g1'}", "Invalid field: name", "g1");
+	refused_cmd(&k, "graph", "removegroup", "{'graph':'zz','name':'t/Y'}",
+		    "Unknown graph: zz", "zz");
+	refused_cmd(&k, "graph", "removegroup", "{'graph':'g1','name':'t/Nope'}",
+		    "Unknown component: t/Nope", "g1");
+	refused_cmd(&k, "graph", "removegroup", "{'graph':'g1','name':'math/Add2'}",
+		    "Unknown component: math/Add2", "g1");
+
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'g1','from':'t/Y'}",
+		    "Invalid field: to", "g1");
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'g1','to':'t/Z'}",
+		    "Invalid field: from", "g1");
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'zz','from':'t/Y','to':'t/Z'}",
+		    "Unknown graph: zz", "zz");
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'g1','from':'math/Add2','to':'t/Z'}",
+		    "Unknown component: math/Add2", "g1");
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'g1','from':'t/Y','to':''}",
+		    "Invalid field: to", "g1");
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'g1','from':'t/Y','to':'math/Add2'}",
+		    "Component exists: math/Add2", "g1");
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'g1','from':'t/Y','to':'t/Y'}",
+		    "Component exists: t/Y", "g1");
+
+	refused_cmd(&k, "graph", "changegroup", "{'graph':'g1','name':'t/Y'}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "changegroup",
+		    "{'graph':'g1','name':'t/Y','metadata':{'icon':'x'}}",
+		    "Invalid field: metadata", "g1");
+	refused_cmd(&k, "graph", "changegroup",
+		    "{'graph':'zz','name':'t/Y','metadata':{'description':''}}",
+		    "Unknown graph: zz", "zz");
+	refused_cmd(&k, "graph", "changegroup",
+		    "{'graph':'g1','name':'math/Add2','metadata':{'description':''}}",
+		    "Unknown component: math/Add2", "g1");
+	refused_cmd(&k, "graph", "changegroup",
+		    "{'graph':'g1','name':'t/Nope','metadata':{'description':''}}",
+		    "Unknown component: t/Nope", "g1");
+
+	/* Nothing changed, nothing reached the others. */
+	CHECK(o.count == 0);
+	const BlockTypeDef *y = block_types_get("t/Y");
+	CHECK(y != NULL && strcmp(y->description, "") == 0);
+	CHECK(block_types_count() == before + 1);
+	expect_type_file("t/Y");
+	expect_g1_unchanged();
+	groups_teardown(&k, &o);
+}
+
+/* A type file that cannot be written refuses the command as a whole: the
+ * registration, rename or change is not applied (plan task 21b). */
+static void test_group_storage(void)
+{
+	Clients k;
+	FakeConn o;
+	const char *so;
+	groups_setup(&k, &o, &so);
+	char types[PAL_PATH_MAX];
+	CHECK(graph_files_dir(&gf, GRAPH_FILES_TYPES_DIR, types, sizeof(types)) ==
+	      GRAPH_FILES_OK);
+	size_t before = block_types_count();
+
+	/* types/ is a file: addgroup is rolled back. */
+	CHECK(pal_storage_write(types, "x", 1) == PAL_OK);
+	refused_cmd(&k, "graph", "addgroup",
+		    "{'graph':'g1','name':'t/Pair','nodes':['n1','n2'],'metadata':{"
+		    "'description':'Two'}}",
+		    "Unable to save component: t/Pair", "g1");
+	CHECK(block_types_get("t/Pair") == NULL && block_types_count() == before);
+	CHECK(composite_types_count() == 0);
+	CHECK(pal_storage_remove(types) == PAL_OK);
+	command(&k.a, "graph", "addgroup",
+		"{'graph':'g1','name':'t/Pair','nodes':['n1','n2'],'metadata':{"
+		"'description':'Two'}}",
+		k.sa);
+	CHECK(k.a.count == 2);
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	clear(&o);
+	const BlockTypeDef *pair = block_types_get("t/Pair");
+	CHECK(pair != NULL);
+
+	/* The new name's file cannot be written (a directory is in the way):
+	 * the type keeps its name, its place and its file. */
+	CHECK(mkdir(type_path("t/Duo"), 0700) == 0);
+	refused_cmd(&k, "graph", "renamegroup", "{'graph':'g1','from':'t/Pair','to':'t/Duo'}",
+		    "Unable to save component: t/Duo", "g1");
+	CHECK(block_types_get("t/Pair") == pair && block_types_get("t/Duo") == NULL);
+	CHECK(block_types_at(block_types_count() - 1) == pair);
+	expect_type_file("t/Pair");
+	CHECK(rmdir(type_path("t/Duo")) == 0);
+
+	/* The file cannot be rewritten: the description stays. */
+	CHECK(pal_storage_remove(type_path("t/Pair")) == PAL_OK);
+	CHECK(mkdir(type_path("t/Pair"), 0700) == 0);
+	refused_cmd(&k, "graph", "changegroup",
+		    "{'graph':'g1','name':'t/Pair','metadata':{'description':'New','icon':'i'}}",
+		    "Unable to save component: t/Pair", "g1");
+	CHECK(strcmp(pair->description, "Two") == 0 && strcmp(pair->icon, "") == 0);
+	CHECK(rmdir(type_path("t/Pair")) == 0);
+	CHECK(o.count == 0);
+
+	/* With the obstacles gone the commands are applied. */
+	command(&k.a, "graph", "changegroup",
+		"{'graph':'g1','name':'t/Pair','metadata':{'description':'New','icon':'i'}}",
+		k.sa);
+	CHECK(k.a.count == 2);
+	expect_type_file("t/Pair");
+	clear(&k.a);
+	command(&k.a, "graph", "renamegroup", "{'graph':'g1','from':'t/Pair','to':'t/Duo'}",
+		k.sa);
+	CHECK(k.a.count == 2);
+	expect_type_file("t/Duo");
+	CHECK(!pal_storage_exists(type_path("t/Pair")));
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	clear(&o);
+	groups_teardown(&k, &o);
 }
 
 /* ---- The users file re-read at every challenge (02 §2.2; plan task 18) ------------- */
@@ -2803,6 +3208,9 @@ int main(void)
 	RUN(test_data_reserve);
 	RUN(test_users_reload);
 	RUN(test_composite);
+	RUN(test_groups);
+	RUN(test_group_refusals);
+	RUN(test_group_storage);
 
 	block_types_reset();
 	if (nftw(root, remove_entry, 16, FTW_DEPTH | FTW_PHYS) != 0)

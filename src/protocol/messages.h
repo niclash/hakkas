@@ -27,7 +27,13 @@
  * graph:addinitial, removeinitial, and the in/outport events ->
  * graph:add/remove/rename{in,out}port, with the broadcast shapes of 02 §3.4
  * (the request's "public" is the broadcast's "name"; an initial's data and a
- * network:data value as a string, linkable_stringify).
+ * network:data value as a string, linkable_stringify). Plan task 21b maps
+ * the group events (02 §3.4.2): GROUP_ADDED -> graph:addgroup {"graph",
+ * "name","nodes","metadata":{"description","icon"}} (nodes: the type's
+ * inner blocks), GROUP_REMOVED -> graph:removegroup {"graph","name"},
+ * GROUP_RENAMED -> graph:renamegroup {"graph","from","to"}, GROUP_CHANGED ->
+ * graph:changegroup {"graph","name","metadata"}, and COMPONENT ->
+ * component:component.
  *
  * Every function returns a heap string to free with free(), or NULL when
  * memory runs out (or, for proto_msg_event, when the event has no wire

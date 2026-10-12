@@ -11,16 +11,17 @@
 #include "blocktypes/block_types.h"
 #include "blocktypes/composite_types.h"
 #include "cJSON.h"
+#include "graphs/graph_json.h"
 #include "system/log.h"
 
-enum graph_files_status type_files_save(const GraphFiles *gf, const BlockTypeDef *def)
+/* Write doc, a type's canonical document, to the file of name, atomically,
+ * creating types/ if missing. */
+static enum graph_files_status write_doc(const GraphFiles *gf, const char *name, cJSON *doc)
 {
-	if (def == NULL || !composite_types_owns(def))
-		return GRAPH_FILES_ERR_INVALID;
 	char path[PAL_PATH_MAX];
-	if (graph_files_path(gf, GRAPH_FILES_TYPES_DIR, def->name, path, sizeof(path)) !=
+	if (graph_files_path(gf, GRAPH_FILES_TYPES_DIR, name, path, sizeof(path)) !=
 	    GRAPH_FILES_OK) {
-		log_error("cannot save type %s: its file path is too long", def->name);
+		log_error("cannot save type %s: its file path is too long", name);
 		return GRAPH_FILES_ERR_INVALID;
 	}
 	char dir[PAL_PATH_MAX];
@@ -31,19 +32,28 @@ enum graph_files_status type_files_save(const GraphFiles *gf, const BlockTypeDef
 		log_error("cannot create directory %s: %s", dir, pal_err_str(err));
 		return GRAPH_FILES_ERR_STORAGE;
 	}
-	size_t len;
-	char *text = composite_types_source(def, &len);
+	char *text = doc != NULL ? graph_json_print(doc) : NULL;
 	if (text == NULL) {
-		log_error("cannot save type %s: out of memory", def->name);
+		log_error("cannot save type %s: out of memory", name);
 		return GRAPH_FILES_ERR_NO_MEMORY;
 	}
-	err = pal_storage_write(path, text, len);
+	err = pal_storage_write(path, text, strlen(text));
 	free(text);
 	if (err != PAL_OK) {
 		log_error("cannot write %s: %s", path, pal_err_str(err));
 		return GRAPH_FILES_ERR_STORAGE;
 	}
 	return GRAPH_FILES_OK;
+}
+
+enum graph_files_status type_files_save(const GraphFiles *gf, const BlockTypeDef *def)
+{
+	if (def == NULL || !composite_types_owns(def))
+		return GRAPH_FILES_ERR_INVALID;
+	cJSON *doc = composite_types_document(def);
+	enum graph_files_status st = write_doc(gf, def->name, doc);
+	cJSON_Delete(doc);
+	return st;
 }
 
 enum graph_files_status type_files_delete(const GraphFiles *gf, const char *name)
@@ -217,4 +227,189 @@ enum graph_files_status type_files_load_all(const GraphFiles *gf, size_t *loaded
 	if (loaded != NULL)
 		*loaded = count;
 	return first;
+}
+
+/* ---- The group commands (02 §3.4.2) ----------------------------------------------- */
+
+static void set_message(GraphsMessage *msg, const char *text)
+{
+	if (msg != NULL)
+		snprintf(msg->text, sizeof(msg->text), "%s", text);
+}
+
+/* The graph a group command is issued in, or NULL with "Invalid id" or
+ * "Unknown graph: <id>" in msg. */
+static Graph *group_graph(const GraphFiles *gf, const char *id, GraphsMessage *msg)
+{
+	enum graph_status st = GRAPH_ERR_INVALID_ID;
+	Graph *g = NULL;
+	if (graph_id_valid(id)) {
+		g = graphs_find(gf->gs, id);
+		st = g != NULL ? GRAPH_OK : GRAPH_ERR_UNKNOWN_GRAPH;
+	}
+	if (g == NULL && msg != NULL) {
+		GraphRefusal r = {.graph = id};
+		graph_refusal_message(st, &r, msg->text, sizeof(msg->text));
+	}
+	return g;
+}
+
+/* A refusal of the composite registry, its message in msg. */
+static enum graph_files_status refused(GraphsMessage *msg, enum composite_status st,
+				       const CompositeMessage *cm)
+{
+	set_message(msg, cm->text);
+	return st == COMPOSITE_ERR_NO_MEMORY ? GRAPH_FILES_ERR_NO_MEMORY : GRAPH_FILES_ERR_INVALID;
+}
+
+/* The type file of name could not be written (st, logged). */
+static enum graph_files_status unsaved(GraphsMessage *msg, enum graph_files_status st,
+				       const char *name)
+{
+	if (msg != NULL)
+		snprintf(msg->text, sizeof(msg->text), "Unable to save component: %.64s", name);
+	return st;
+}
+
+/* The composite type called name, or NULL. */
+static const BlockTypeDef *composite_named(const char *name)
+{
+	const BlockTypeDef *def = name != NULL ? block_types_get(name) : NULL;
+	return def != NULL && composite_types_owns(def) ? def : NULL;
+}
+
+/* doc's string member key set to value; false if memory runs out. */
+static bool replace_str(cJSON *doc, const char *key, const char *value)
+{
+	cJSON *item = cJSON_CreateString(value);
+	if (item == NULL)
+		return false;
+	if (!cJSON_ReplaceItemInObjectCaseSensitive(doc, key, item)) {
+		cJSON_Delete(item);
+		return false;
+	}
+	return true;
+}
+
+enum graph_files_status type_files_add_group(GraphFiles *gf, const char *graph,
+					     const CompositeSelection *sel, GraphsMessage *msg)
+{
+	Graph *g = group_graph(gf, graph, msg);
+	if (g == NULL)
+		return GRAPH_FILES_ERR_INVALID;
+	CompositeMessage cm;
+	if (!graph_id_valid(sel->name)) {
+		set_message(msg, "Invalid field: name");
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	if (block_types_get(sel->name) != NULL) {
+		if (msg != NULL)
+			snprintf(msg->text, sizeof(msg->text), "Component exists: %s", sel->name);
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	cJSON *doc;
+	enum composite_status st = composite_types_assemble(g, sel, &doc, &cm);
+	if (st != COMPOSITE_OK)
+		return refused(msg, st, &cm);
+	const BlockTypeDef *def;
+	st = composite_types_register(doc, &cm, &def);
+	cJSON_Delete(doc);
+	if (st != COMPOSITE_OK)
+		return refused(msg, st, &cm);
+	enum graph_files_status fs = type_files_save(gf, def);
+	if (fs != GRAPH_FILES_OK) {
+		/* Just registered, so not in use: this cannot fail. */
+		(void)composite_types_unregister(gf->gs, sel->name, NULL);
+		return unsaved(msg, fs, sel->name);
+	}
+	graphs_notify_group(gf->gs, g, GRAPH_EVENT_GROUP_ADDED, def, NULL);
+	graphs_notify_component(gf->gs, def);
+	set_message(msg, "");
+	return GRAPH_FILES_OK;
+}
+
+enum graph_files_status type_files_remove_group(GraphFiles *gf, const char *graph,
+						const char *name, GraphsMessage *msg)
+{
+	Graph *g = group_graph(gf, graph, msg);
+	if (g == NULL)
+		return GRAPH_FILES_ERR_INVALID;
+	CompositeMessage cm;
+	enum composite_status st = composite_types_unregister(gf->gs, name, &cm);
+	if (st != COMPOSITE_OK)
+		return refused(msg, st, &cm);
+	(void)type_files_delete(gf, name); /* a failure is logged; the removal stands */
+	graphs_notify_group(gf->gs, g, GRAPH_EVENT_GROUP_REMOVED, NULL, name);
+	set_message(msg, "");
+	return GRAPH_FILES_OK;
+}
+
+enum graph_files_status type_files_rename_group(GraphFiles *gf, const char *graph,
+						const char *from, const char *to,
+						GraphsMessage *msg)
+{
+	Graph *g = group_graph(gf, graph, msg);
+	if (g == NULL)
+		return GRAPH_FILES_ERR_INVALID;
+	CompositeMessage cm;
+	enum composite_status st = composite_types_rename_check(gf->gs, from, to, &cm);
+	if (st != COMPOSITE_OK)
+		return refused(msg, st, &cm);
+	const BlockTypeDef *def = composite_named(from);
+	/* The file under the new name first: the model changes only once it is
+	 * written. */
+	cJSON *doc = composite_types_document(def);
+	enum graph_files_status fs = GRAPH_FILES_ERR_NO_MEMORY;
+	if (doc != NULL && replace_str(doc, "name", to))
+		fs = write_doc(gf, to, doc);
+	cJSON_Delete(doc);
+	if (fs != GRAPH_FILES_OK)
+		return unsaved(msg, fs, to);
+	st = composite_types_rename(gf->gs, from, to, &cm);
+	if (st != COMPOSITE_OK) {
+		(void)type_files_delete(gf, to);
+		return refused(msg, st, &cm);
+	}
+	(void)type_files_delete(gf, from); /* a failure is logged; the rename stands */
+	graphs_notify_group(gf->gs, g, GRAPH_EVENT_GROUP_RENAMED, def, from);
+	graphs_notify_component(gf->gs, def);
+	set_message(msg, "");
+	return GRAPH_FILES_OK;
+}
+
+enum graph_files_status type_files_change_group(GraphFiles *gf, const char *graph,
+						const char *name, const char *description,
+						const char *icon, GraphsMessage *msg)
+{
+	Graph *g = group_graph(gf, graph, msg);
+	if (g == NULL)
+		return GRAPH_FILES_ERR_INVALID;
+	const BlockTypeDef *def = composite_named(name);
+	if (def == NULL) {
+		if (msg != NULL) {
+			GraphRefusal r = {.name = name};
+			graph_refusal_message(GRAPH_ERR_UNKNOWN_COMPONENT, &r, msg->text,
+					      sizeof(msg->text));
+		}
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	/* The file with the new values first, as for a rename. */
+	cJSON *doc = composite_types_document(def);
+	enum graph_files_status fs = GRAPH_FILES_ERR_NO_MEMORY;
+	if (doc != NULL && (description == NULL || replace_str(doc, "description", description)) &&
+	    (icon == NULL || replace_str(doc, "icon", icon)))
+		fs = write_doc(gf, name, doc);
+	cJSON_Delete(doc);
+	if (fs != GRAPH_FILES_OK)
+		return unsaved(msg, fs, name);
+	CompositeMessage cm;
+	enum composite_status st = composite_types_change(name, description, icon, &cm);
+	if (st != COMPOSITE_OK) {
+		(void)type_files_save(gf, def); /* the previous values again */
+		return refused(msg, st, &cm);
+	}
+	graphs_notify_group(gf->gs, g, GRAPH_EVENT_GROUP_CHANGED, def, NULL);
+	graphs_notify_component(gf->gs, def);
+	set_message(msg, "");
+	return GRAPH_FILES_OK;
 }

@@ -345,10 +345,17 @@ enum graph_event_type {
 	GRAPH_EVENT_GRAPH_STOPPED,
 	GRAPH_EVENT_GRAPH_STATUS, /* system-wide */
 	GRAPH_EVENT_ERROR,	  /* system-wide */
+	/* The group commands (02 §3.4.2), reported by app/type_files.h through
+	 * graphs_notify_group / graphs_notify_component. */
+	GRAPH_EVENT_GROUP_ADDED,
+	GRAPH_EVENT_GROUP_REMOVED,
+	GRAPH_EVENT_GROUP_RENAMED,
+	GRAPH_EVENT_GROUP_CHANGED,
+	GRAPH_EVENT_COMPONENT, /* system-wide: a new or changed block type */
 };
 
-/* Pointers are valid only during the callback. Every event but ERROR has a
- * graph, whose identity fields are the applied state. */
+/* Pointers are valid only during the callback. Every event but ERROR and
+ * COMPONENT has a graph, whose identity fields are the applied state. */
 struct GraphEvent {
 	enum graph_event_type type;
 	Graph *graph;
@@ -357,8 +364,12 @@ struct GraphEvent {
 	const Block *src_block; /* edge: the source block */
 	uint32_t src_output;	/* edge: its output */
 	const Linkable *value;	/* initial: the literal added or removed */
-	/* BLOCK_RENAMED, *PORT_RENAMED, GRAPH_RENAMED: the previous name */
+	/* BLOCK_RENAMED, *PORT_RENAMED, GRAPH_RENAMED, GROUP_RENAMED: the
+	 * previous name; GROUP_REMOVED: the removed type's name */
 	const char *old_name;
+	/* GROUP_ADDED, GROUP_RENAMED (with its new name), GROUP_CHANGED,
+	 * COMPONENT: the composite (or any) block type, as applied */
+	const BlockTypeDef *block_type;
 	const GraphPort *port; /* *PORT_*: the port (with its new name if renamed) */
 	/* GRAPH_STARTED: time_ms = the run's start, uptime_ms = its uptime so far.
 	 * GRAPH_STOPPED: the start and duration of the run that just ended (0 and

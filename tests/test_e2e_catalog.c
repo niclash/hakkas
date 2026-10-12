@@ -2,7 +2,8 @@
  * End-to-end catalog tests (plan task 20, 05 §5): the 02 message catalog as
  * the assertion basis, over real WebSocket connections to the whole engine
  * started in-process (e2e.h). For each request/response pair of 02 §3 —
- * runtime, network, graph, component, trace, environment — at least one case
+ * runtime, network, graph (the group commands of §3.4.2 included), component,
+ * trace, environment — at least one case
  * asserting the documented reply or broadcast; each refusal case of 02
  * §3.4.1 as its own case (the error to the sender only, with "graph", and no
  * event anywhere); the envelope errors of §1 and the authentication errors
@@ -335,9 +336,6 @@ static void test_envelope(void)
 		e2e_send(&c, protocols[i], "nope", "{}");
 		EXPECT_ERROR(&c, message, NULL);
 	}
-	/* The provisional group commands are not implemented (02 §1.2). */
-	e2e_send(&c, "graph", "addgroup", "{'graph':'g','name':'x','nodes':[]}");
-	EXPECT_ERROR(&c, "Unknown command: graph:addgroup", NULL);
 	/* Members a command does not use are ignored, an upstream requestId
 	 * among them. */
 	e2e_send_text(&c, "{\"protocol\":\"trace\",\"command\":\"stop\",\"payload\":{\"graph\":"
@@ -737,6 +735,83 @@ static void test_graph(void)
 	close_clients();
 }
 
+/* ---- Groups (02 §3.4.2) ----------------------------------------------------------- */
+
+static const char chain_out[] =
+	"[{'id':'out','description':'Result','type':'number','addressable':false}]";
+
+static void test_groups(void)
+{
+	open_clients();
+	event1("runtime", "new_graph", "{'id':'gg','name':'GG'}", NULL);
+	static const char *const nodes[] = {"p", "q", "r"};
+	for (int i = 0; i < 3; i++) {
+		char payload[128];
+		snprintf(payload, sizeof(payload),
+			 "{'id':'%s','graph':'gg','component':'math/Add2'}", nodes[i]);
+		event1("graph", "addnode", payload, NULL);
+	}
+	event1("graph", "addedge",
+	       "{'src':{'node':'p','port':'out'},'tgt':{'node':'q','port':'in1'},'graph':'gg'}",
+	       NULL);
+	event1("graph", "addedge",
+	       "{'src':{'node':'q','port':'out'},'tgt':{'node':'r','port':'in1'},'graph':'gg'}",
+	       NULL);
+
+	/* addgroup: graph:addgroup, then the new type's component:component,
+	 * to every connection alike; the type file is written. */
+	e2e_send(&a, "graph", "addgroup",
+		 "{'graph':'gg','name':'e2e/Chain','nodes':['q','p'],'metadata':{"
+		 "'description':'Chain','icon':'link'}}");
+	expect_all(&b, &v, "graph", "addgroup",
+		   "{'graph':'gg','name':'e2e/Chain','nodes':['p','q'],'metadata':{"
+		   "'description':'Chain','icon':'link'}}");
+	char component[512];
+	snprintf(component, sizeof(component),
+		 "{'name':'e2e/Chain','description':'Chain','subgraph':true,'icon':'link',"
+		 "'inPorts':[],'outPorts':%s}",
+		 chain_out);
+	expect_all(&b, &v, "component", "component", component);
+	CHECK(pal_storage_exists(e2e_path(e2e_path(e2e_basedir, "types"), "e2e%2FChain.json")));
+
+	/* component:list has it, last (the registration order). */
+	e2e_send(&v, "component", "list", "{}");
+	size_t types = block_types_count();
+	for (size_t i = 0; i + 1 < types; i++)
+		CHECK(e2e_match(e2e_recv(&v), "component", "component", NULL));
+	EXPECT(&v, "component", "component", component);
+	char count[16];
+	snprintf(count, sizeof(count), "%zu", types);
+	EXPECT(&v, "component", "componentsready", count);
+
+	/* getsource: the canonical authoring JSON. */
+	e2e_send(&v, "component", "getsource", "{'name':'e2e/Chain'}");
+	const char *m = e2e_recv(&v);
+	CHECK(e2e_match(m, "component", "source",
+			"{'name':'e2e/Chain','language':'json','library':'hakkas','code':'*',"
+			"'tests':''}"));
+	CHECK(e2e_json_eq(e2e_payload_str(m, "code"),
+			  "{'name':'e2e/Chain','icon':'link','description':'Chain','blocks':[{"
+			  "'name':'p','type':'math/Add2'},{'name':'q','type':'math/Add2'}],"
+			  "'connections':[{'src':'p.out','tgt':'q.in1'}],'initials':[],"
+			  "'inports':[],'outports':[{'name':'out','src':'q.out'}]}"));
+
+	/* An instance; while it exists the type cannot be removed. */
+	event1("graph", "addnode", "{'id':'c','graph':'gg','component':'e2e/Chain'}",
+	       "{'graph':'gg','component':'e2e/Chain','id':'c','metadata':{'x':50,'y':50}}");
+	e2e_send(&a, "graph", "removegroup", "{'graph':'gg','name':'e2e/Chain'}");
+	EXPECT_ERROR(&a, "Component in use: e2e/Chain", "gg");
+	all_quiet();
+
+	event1("graph", "removenode", "{'id':'c','graph':'gg'}", NULL);
+	event1("graph", "removegroup", "{'graph':'gg','name':'e2e/Chain'}",
+	       "{'graph':'gg','name':'e2e/Chain'}");
+	CHECK(!pal_storage_exists(e2e_path(e2e_path(e2e_basedir, "types"), "e2e%2FChain.json")));
+	all_quiet();
+	event1("runtime", "delete_graph", "{'id':'gg','name':'GG'}", NULL);
+	close_clients();
+}
+
 /* ---- Refusals (02 §3.4.1) ------------------------------------------------------------- */
 
 typedef struct {
@@ -861,6 +936,7 @@ int main(void)
 	RUN(test_trace);
 	RUN(test_network);
 	RUN(test_graph);
+	RUN(test_groups);
 	RUN(test_refusals);
 	e2e_stop();
 	e2e_teardown();

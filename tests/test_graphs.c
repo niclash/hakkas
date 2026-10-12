@@ -134,6 +134,20 @@ static void describe(char *log, size_t size, const GraphEvent *ev)
 		append(log, size, "%s:error(%s,%s);", id, ev->graph_id ? ev->graph_id : "-",
 		       ev->message);
 		break;
+	case GRAPH_EVENT_GROUP_ADDED:
+	case GRAPH_EVENT_GROUP_CHANGED:
+		append(log, size, "%s:%sgroup %s;", id,
+		       ev->type == GRAPH_EVENT_GROUP_ADDED ? "+" : "change", ev->block_type->name);
+		break;
+	case GRAPH_EVENT_GROUP_REMOVED:
+		append(log, size, "%s:-group %s;", id, ev->old_name);
+		break;
+	case GRAPH_EVENT_GROUP_RENAMED:
+		append(log, size, "%s:renamegroup %s>%s;", id, ev->old_name, ev->block_type->name);
+		break;
+	case GRAPH_EVENT_COMPONENT:
+		append(log, size, "%s:component %s;", id, ev->block_type->name);
+		break;
 	}
 }
 
@@ -574,6 +588,22 @@ static void test_scoping(void)
 	add("g1", "D");
 	CHECK_STREQ(s1.log, "");
 	CHECK_STREQ(s2.log, "g1:+node B(50,50,-);g1:+node D(50,50,-);");
+
+	/* The group events (02 §3.4.2) are graph-specific, COMPONENT is
+	 * system-wide (02 §4.1). */
+	CHECK(graphs_subscriber_scope(&s2.sub, "g2"));
+	s2.log[0] = '\0';
+	clear();
+	const BlockTypeDef *t = block_types_get("math/Add2");
+	Graph *g1 = graphs_find(&gs, "g1");
+	graphs_notify_group(&gs, g1, GRAPH_EVENT_GROUP_ADDED, t, NULL);
+	graphs_notify_group(&gs, g1, GRAPH_EVENT_GROUP_CHANGED, t, NULL);
+	graphs_notify_group(&gs, g1, GRAPH_EVENT_GROUP_RENAMED, t, "old");
+	graphs_notify_group(&gs, g1, GRAPH_EVENT_GROUP_REMOVED, NULL, "gone");
+	graphs_notify_component(&gs, t);
+	CHECK_STREQ(all.log, "g1:+group math/Add2;g1:changegroup math/Add2;"
+			     "g1:renamegroup old>math/Add2;g1:-group gone;-:component math/Add2;");
+	CHECK_STREQ(s2.log, "-:component math/Add2;");
 	teardown();
 }
 

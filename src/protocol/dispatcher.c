@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "app/type_files.h"
 #include "blocktypes/block_types.h"
 #include "blocktypes/composite_types.h"
 #include "cJSON.h"
@@ -1025,6 +1026,112 @@ static void cmd_renameoutport(ProtoConn *c, const Envelope *env)
 	rename_port(c, env, GRAPH_OUTPORT);
 }
 
+/* ---- Groups (02 §3.4.2; app/type_files.h) ------------------------------------------- */
+
+/* A group's "metadata" {"description":String,"icon"?:String}: false if it is
+ * no such object (icon may be null, the same as absent). */
+static bool group_metadata(const cJSON *pl, const char **description, const char **icon)
+{
+	const cJSON *md = cJSON_GetObjectItemCaseSensitive(pl, "metadata");
+	*description = cJSON_IsObject(md) ? str_field(md, "description") : NULL;
+	*icon = NULL;
+	return *description != NULL && opt_str_field(md, "icon", icon);
+}
+
+/* addgroup's "nodes": a non-empty array of strings, collected into *out (a
+ * heap array, *count entries); false if it is none (*out NULL) or memory runs
+ * out (*out NULL, *count non-zero). */
+static bool group_nodes(const cJSON *pl, const char ***out, size_t *count)
+{
+	*out = NULL;
+	*count = 0;
+	const cJSON *nodes = cJSON_GetObjectItemCaseSensitive(pl, "nodes");
+	const cJSON *e;
+	if (!cJSON_IsArray(nodes) || nodes->child == NULL)
+		return false;
+	cJSON_ArrayForEach(e, nodes)
+	{
+		if (!cJSON_IsString(e))
+			return false;
+	}
+	*count = (size_t)cJSON_GetArraySize(nodes);
+	*out = malloc(*count * sizeof(**out));
+	if (*out == NULL)
+		return false;
+	size_t i = 0;
+	cJSON_ArrayForEach(e, nodes)
+	{
+		(*out)[i++] = e->valuestring;
+	}
+	return true;
+}
+
+static void cmd_addgroup(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *name;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "name", graph, &name))
+		return;
+	const char **nodes;
+	size_t count;
+	if (!group_nodes(pl, &nodes, &count)) {
+		if (count > 0)
+			reply(c, NULL); /* out of memory */
+		else
+			invalid_field(c, "nodes", graph);
+		return;
+	}
+	CompositeSelection sel = {.name = name, .nodes = nodes, .node_count = count};
+	if (!group_metadata(pl, &sel.description, &sel.icon)) {
+		free(nodes);
+		invalid_field(c, "metadata", graph);
+		return;
+	}
+	GraphsMessage msg;
+	if (type_files_add_group(c->p->files, graph, &sel, &msg) != GRAPH_FILES_OK)
+		refused(c, &msg, graph);
+	free(nodes);
+}
+
+static void cmd_removegroup(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *name;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "name", graph, &name))
+		return;
+	GraphsMessage msg;
+	if (type_files_remove_group(c->p->files, graph, name, &msg) != GRAPH_FILES_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_renamegroup(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *from, *to;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "from", graph, &from) ||
+	    !need_str(c, pl, "to", graph, &to))
+		return;
+	GraphsMessage msg;
+	if (type_files_rename_group(c->p->files, graph, from, to, &msg) != GRAPH_FILES_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_changegroup(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *name, *description, *icon;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "name", graph, &name))
+		return;
+	if (!group_metadata(pl, &description, &icon)) {
+		invalid_field(c, "metadata", graph);
+		return;
+	}
+	GraphsMessage msg;
+	if (type_files_change_group(c->p->files, graph, name, description, icon, &msg) !=
+	    GRAPH_FILES_OK)
+		refused(c, &msg, graph);
+}
+
 /* ---- network (02 §3.3) ----------------------------------------------------------------- */
 
 static void cmd_start(ProtoConn *c, const Envelope *env)
@@ -1246,9 +1353,7 @@ typedef struct {
 	void (*fn)(ProtoConn *c, const Envelope *env);
 } ProtoCommand;
 
-/* The commands this layer runs. The provisional group commands of 02 §3.4.2
- * (graph:addgroup, removegroup, renamegroup, changegroup) have no handler
- * yet (open question 4): they get the generic error. */
+/* The commands this layer runs: every command of 02 §3. */
 static const ProtoCommand commands[] = {
 	{"environment", "challenge", cmd_challenge},
 	{"environment", "login", cmd_login},
@@ -1279,6 +1384,10 @@ static const ProtoCommand commands[] = {
 	{"graph", "addoutport", cmd_addoutport},
 	{"graph", "removeoutport", cmd_removeoutport},
 	{"graph", "renameoutport", cmd_renameoutport},
+	{"graph", "addgroup", cmd_addgroup},
+	{"graph", "removegroup", cmd_removegroup},
+	{"graph", "renamegroup", cmd_renamegroup},
+	{"graph", "changegroup", cmd_changegroup},
 	{"component", "list", cmd_component_list},
 	{"component", "getsource", cmd_getsource},
 	{"trace", "start", cmd_trace},
@@ -1326,7 +1435,7 @@ static void dispatch(ProtoConn *c, const Envelope *env)
 	}
 	const ProtoCommand *cmd = find_command(env->protocol, env->command);
 	if (cmd == NULL)
-		unknown_command(c, env); /* the group commands (02 §3.4.2) */
+		unknown_command(c, env); /* not reached: every known command has one */
 	else
 		cmd->fn(c, env);
 }

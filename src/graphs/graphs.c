@@ -22,7 +22,8 @@
 static bool system_wide(enum graph_event_type type)
 {
 	return type == GRAPH_EVENT_GRAPH_CREATED || type == GRAPH_EVENT_GRAPH_DELETED ||
-	       type == GRAPH_EVENT_GRAPH_STATUS || type == GRAPH_EVENT_ERROR;
+	       type == GRAPH_EVENT_GRAPH_STATUS || type == GRAPH_EVENT_ERROR ||
+	       type == GRAPH_EVENT_COMPONENT;
 }
 
 static bool in_scope(const GraphsSubscriber *s, const GraphEvent *ev)
@@ -434,6 +435,17 @@ void graphs_notify_error(Graphs *gs, const char *graph_id, const char *message)
 	     (GraphEvent){.type = GRAPH_EVENT_ERROR,
 			  .graph_id = graph_id,
 			  .message = or_empty(message)});
+}
+
+void graphs_notify_group(Graphs *gs, Graph *g, enum graph_event_type type,
+			 const BlockTypeDef *def, const char *old_name)
+{
+	emit(gs, g, (GraphEvent){.type = type, .block_type = def, .old_name = old_name});
+}
+
+void graphs_notify_component(Graphs *gs, const BlockTypeDef *def)
+{
+	emit(gs, NULL, (GraphEvent){.type = GRAPH_EVENT_COMPONENT, .block_type = def});
 }
 
 /* ---- Graph commands (02 §3.4) ------------------------------------------- */

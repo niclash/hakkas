@@ -21,9 +21,9 @@
  * Events (01 §4, 02 §1.1): every applied change is reported synchronously,
  * after the mutation is complete, in applied order, to every subscriber
  * whose scope admits it: graph-specific events (blocks, edges, initials,
- * ports, graph renamed/started/stopped) go to subscribers with no scope or
- * scoped to that graph; system-wide events (graph created/deleted, status,
- * errors) go to every subscriber (02 §4.1). Events are GraphEvents
+ * ports, groups, graph renamed/started/stopped) go to subscribers with no
+ * scope or scoped to that graph; system-wide events (graph created/deleted,
+ * status, errors, component) go to every subscriber (02 §4.1). Events are GraphEvents
  * (graphs/graph.h); turning them into wire messages is the protocol layer's
  * job, and so is withholding them from connections that are not
  * authenticated (02 §2.5 item 6).
@@ -217,6 +217,17 @@ void graphs_status_all(Graphs *gs);
 /* Report ERROR, a system-wide error event (02 §1 error format, e.g. the
  * persist failure of 02 §3.3), about graph_id (NULL for none). */
 void graphs_notify_error(Graphs *gs, const char *graph_id, const char *message);
+
+/* Report a group command's event (02 §3.4.2; the commands are
+ * app/type_files.h's), graph-specific to g: type is GRAPH_EVENT_GROUP_ADDED,
+ * _CHANGED (def the type), _RENAMED (def the renamed type, old_name its
+ * previous name) or _REMOVED (def NULL, old_name the removed type's name). */
+void graphs_notify_group(Graphs *gs, Graph *g, enum graph_event_type type,
+			 const BlockTypeDef *def, const char *old_name);
+
+/* Report COMPONENT, a system-wide event (02 §4.1): the block type def was
+ * added or changed (component:component, 02 §3.5). */
+void graphs_notify_component(Graphs *gs, const BlockTypeDef *def);
 
 /* ---- Graph commands (02 §3.4) ------------------------------------------- */
 

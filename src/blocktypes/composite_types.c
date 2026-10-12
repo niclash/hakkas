@@ -699,17 +699,35 @@ enum composite_status composite_types_unregister(const Graphs *gs, const char *n
 	return COMPOSITE_OK;
 }
 
-enum composite_status composite_types_rename(const Graphs *gs, const char *from, const char *to,
-					     CompositeMessage *msg)
+/* The checks of a rename: *out the type called from. */
+static enum composite_status rename_check(const Graphs *gs, const char *from, const char *to,
+					  CompositeMessage *msg, CompositeType **out)
 {
-	CompositeType *t;
-	enum composite_status st = operand(gs, from, true, msg, &t, NULL);
+	enum composite_status st = operand(gs, from, true, msg, out, NULL);
 	if (st != COMPOSITE_OK)
 		return st;
 	if (!graph_id_valid(to))
 		return fail(msg, COMPOSITE_ERR_INVALID, "Invalid field: to");
 	if (block_types_get(to) != NULL)
 		return fail(msg, COMPOSITE_ERR_EXISTS, "Component exists: %s", to);
+	ok(msg);
+	return COMPOSITE_OK;
+}
+
+enum composite_status composite_types_rename_check(const Graphs *gs, const char *from,
+						   const char *to, CompositeMessage *msg)
+{
+	CompositeType *t;
+	return rename_check(gs, from, to, msg, &t);
+}
+
+enum composite_status composite_types_rename(const Graphs *gs, const char *from, const char *to,
+					     CompositeMessage *msg)
+{
+	CompositeType *t;
+	enum composite_status st = rename_check(gs, from, to, msg, &t);
+	if (st != COMPOSITE_OK)
+		return st;
 	char *name = dup_str(to);
 	if (name == NULL)
 		return no_memory(msg);
