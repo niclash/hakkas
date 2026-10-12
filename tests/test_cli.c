@@ -11,8 +11,10 @@
 #include "test.h"
 
 #include <ftw.h>
+#include <netinet/in.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "blocktypes/block_types.h"
@@ -441,17 +443,71 @@ static void test_describe_topology(void)
 	CHECK(strstr(logs, "not a valid graph file") != NULL);
 }
 
-static void test_not_implemented(void)
+/* A free loopback port whose successor is free too (the WebSocket's,
+ * port + 1); 0 if none was found. */
+static uint16_t free_port_pair(void)
 {
-	const char *conf = subdir("ni-conf");
-	CHECK(run("--confdir", conf, "run", "--port", "9000", "daemon", NULL) == CLI_EXIT_FAILURE);
-	CHECK(strstr(logs, "error run: not implemented yet") != NULL);
-	CHECK(run("--confdir", conf, "run", "process", "a.json", NULL) == CLI_EXIT_FAILURE);
-	CHECK(strstr(logs, "error run: not implemented yet") != NULL);
-	/* run validates its options before that. */
+	for (int i = 0; i < 50; i++) {
+		int a = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+		int b = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+		struct sockaddr_in sa = {.sin_family = AF_INET};
+		sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		socklen_t len = sizeof(sa);
+		uint16_t port = 0;
+		if (a >= 0 && b >= 0 && bind(a, (struct sockaddr *)&sa, sizeof(sa)) == 0 &&
+		    getsockname(a, (struct sockaddr *)&sa, &len) == 0) {
+			port = ntohs(sa.sin_port);
+			sa.sin_port = htons((uint16_t)(port + 1));
+			if (port >= 65534 || bind(b, (struct sockaddr *)&sa, sizeof(sa)) != 0)
+				port = 0;
+		}
+		if (a >= 0)
+			close(a);
+		if (b >= 0)
+			close(b);
+		if (port != 0)
+			return port;
+	}
+	return 0;
+}
+
+/* run (05 §1.2, §1.4): the engine through the command line. Its startup
+ * and shutdown are tested in test_engine.c; here the exit codes. */
+static void test_run(void)
+{
+	const char *conf = subdir("run-conf");
+	const char *base = subdir("run-base");
+	/* run validates its options first. */
 	CHECK(run("--confdir", conf, "run", "--port", "0", "daemon", NULL) == CLI_EXIT_USAGE);
-	CHECK(strstr(logs, "not implemented") == NULL);
+	CHECK(!pal_storage_exists(join(conf, "hakkas.json")));
+
+	/* A graph file that does not load refuses run process. */
+	CHECK(run("--confdir", conf, "--basedir", base, "run", "--host", "127.0.0.1", "process",
+		  join(base, "missing.json"), NULL) == CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "error run process: a graph file did not load") != NULL);
+	CHECK(strstr(logs, "error the engine did not start") != NULL);
+	/* Step 1 has generated the server secret (05 §1.1). */
+	CHECK(pal_storage_exists(join(conf, "hakkas.json")));
+
+	/* A clean stop: requested before the loop runs, it stops it at once
+	 * (01 §0.2), and run exits 0. */
+	uint16_t port = free_port_pair();
+	CHECK(port != 0);
+	char ports[16];
+	snprintf(ports, sizeof(ports), "%u", (unsigned)port);
+	pal_request_stop();
+	CHECK(run("--info", "--confdir", conf, "--basedir", base, "run", "--host", "127.0.0.1",
+		  "--port", ports, "daemon", NULL) == CLI_EXIT_OK);
+	CHECK(strstr(logs, " ready: web server on 127.0.0.1 port ") != NULL);
+	CHECK(strstr(logs, "info engine stopped") != NULL);
+	CHECK(pal_storage_exists(join(base, "graphs")) && pal_storage_exists(join(base, "types")));
 	CHECK_STREQ(output, "");
+
+	/* A malformed configuration file refuses every command, run too. */
+	put(join(conf, "hakkas.json"), "{\"port\": 8080,}");
+	CHECK(run("--confdir", conf, "run", "daemon", NULL) == CLI_EXIT_FAILURE);
+	CHECK(strstr(logs, "not a valid configuration file") != NULL);
+	CHECK(strstr(logs, "ready") == NULL);
 }
 
 /* ---- user add|passwd|del|list (02 §2.2) ------------------------------------------- */
@@ -660,7 +716,7 @@ int main(void)
 	RUN(test_list_types);
 	RUN(test_describe_type);
 	RUN(test_describe_topology);
-	RUN(test_not_implemented);
+	RUN(test_run);
 	RUN(test_user_commands);
 	RUN(test_help_and_version);
 

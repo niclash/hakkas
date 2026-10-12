@@ -826,12 +826,21 @@ enum pal_err ws_server_open_config(Loop *loop, const Config *cfg, const WsHandle
 				   void *ctx, WsServer **out)
 {
 	*out = NULL;
+	if (cfg->port < CONFIG_PORT_MIN || cfg->port > CONFIG_PORT_MAX)
+		return PAL_ERR_INVALID;
+	return ws_server_open_config_at(loop, cfg, (uint16_t)(cfg->port + 1), (uint16_t)cfg->port,
+					handler, ctx, out);
+}
+
+enum pal_err ws_server_open_config_at(Loop *loop, const Config *cfg, uint16_t port,
+				      uint16_t web_port, const WsHandler *handler, void *ctx,
+				      WsServer **out)
+{
+	*out = NULL;
 	if (cfg->tls.enabled) {
 		log_error("ws: TLS (tls.enabled) is not supported yet");
 		return PAL_ERR_UNAVAILABLE;
 	}
-	if (cfg->port < CONFIG_PORT_MIN || cfg->port > CONFIG_PORT_MAX)
-		return PAL_ERR_INVALID;
 	const char *origins[HAKKAS_CONFIG_ORIGINS_MAX];
 	size_t n = cfg->allowed_origin_count;
 	if (n > HAKKAS_CONFIG_ORIGINS_MAX)
@@ -839,8 +848,8 @@ enum pal_err ws_server_open_config(Loop *loop, const Config *cfg, const WsHandle
 	for (size_t i = 0; i < n; i++)
 		origins[i] = cfg->allowed_origins[i];
 	WsServerConfig wc;
-	ws_server_config_defaults(&wc, cfg->host, (uint16_t)(cfg->port + 1));
-	wc.web_port = (uint16_t)cfg->port;
+	ws_server_config_defaults(&wc, cfg->host, port);
+	wc.web_port = web_port;
 	wc.max_connections = cfg->max_connections;
 	wc.max_message_bytes = cfg->max_message_bytes;
 	wc.allowed_origins = origins;

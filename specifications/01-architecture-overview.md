@@ -12,7 +12,7 @@ The PAL surface is small and deliberate: open/close/read/write/poll (with a time
 ### 0.1 PAL clock, random source and storage
 
 The interface is `src/platform/pal.h`; every call returns `PAL_OK` (0) or a negative `pal_err` code (`PAL_ERR_NOT_FOUND`, `PAL_ERR_TOO_BIG`, `PAL_ERR_NAME_TOO_LONG`, `PAL_ERR_NO_SPACE`, `PAL_ERR_DENIED`, `PAL_ERR_IO`, ...). Decisions:
-- **Initialization**: `pal_init()` initializes clock, random source and storage (`05-app-lifecycle-persistence.md` §1.4 step 2).
+- **Initialization**: `pal_init()` initializes clock, random source and storage (`05-app-lifecycle-persistence.md` §1.4 step 2). The platform calls it once, before the configuration is read in step 1, since that read goes through the PAL (decided, plan task 19).
 - **Clock**: `pal_uptime_ms()` is engine uptime (§3.4) — monotonic `uint64_t` milliseconds since the engine started: since boot on Zephyr, since `pal_init()` on POSIX (`CLOCK_MONOTONIC`, so not since host boot).
 - **Random**: `pal_random_bytes()` fills a buffer from the platform CSPRNG (POSIX: `getrandom()`); on failure it reports an error and never falls back to a weaker source.
 - **Paths**: storage calls take platform paths used as given, built by the core by joining a configured directory (`datadir`, `confdir`, … — `05-app-lifecycle-persistence.md` §1.1) with relative names using `/`. The PAL resolves no root of its own (`/lfs/graphs/x.json` on Zephyr, `<basedir>/graphs/x.json` on POSIX). A path, including the `.tmp` suffix of an atomic write, must fit `PAL_PATH_MAX` (256 bytes with the NUL, overridable per build).
@@ -280,6 +280,8 @@ Configuration → SystemContext (file locations, log level, auth)
              → load each configured/discovered graph file
 ```
 
+The sequence is implemented once, in portable code, by `src/engine/engine.h` (plan task 19); its order and decisions are in `05-app-lifecycle-persistence.md` §1.4 (graphs are loaded before the protocol layer and the listeners open, so no client sees the loading).
+
 ## 6. Module map
 
 | Module | Responsibility | Platform-specific? | Spec reference |
@@ -292,7 +294,7 @@ Configuration → SystemContext (file locations, log level, auth)
 | **`platform/zephyr/`** | PAL implementation: Zephyr sockets and `zsock_poll`, `k_work`, LittleFS, the Zephyr IO provider (device driver subsystem access) | **Yes — isolated here** | this doc, §0 |
 | **`platform/posix/`** | PAL implementation: POSIX sockets and `poll`, a POSIX filesystem tree, the simulated IO provider | **Yes — isolated here** | this doc, §0 |
 | `drivers/` | The platform-independent side of the IO layer: channel table, logical-id binding, delivering IO events to `io/*` blocks; later the generic descriptor-driven module driver | No — talks only to the PAL's IO-provider interface | `04-drivers.md` |
-| `engine/` | Top-level wiring/startup sequence; the engine loop (`engine/loop.h`); the static web server on it (`engine/web_server.h`) | No | `05-app-lifecycle-persistence.md` §1.4, §3; this doc, §3.2.1 |
+| `engine/` | Top-level wiring/startup sequence (`engine/engine.h`, plan task 19); the engine loop (`engine/loop.h`); the static web server (`engine/web_server.h`) and the WebSocket server (`engine/ws_server.h`) on it | No | `05-app-lifecycle-persistence.md` §1.4, §3; this doc, §3.2.1 |
 
 **Source layout and build**: each module above lives under `src/<module>/`; each PAL implementation lives under `src/platform/<port>/` (`src/platform/posix/` now, `src/platform/zephyr/` later). The repository is a plain CMake project with no RTOS dependency: it builds the portable core as a library (`hakkas_core`), the POSIX runtime, and the unit tests, all on a desktop host. Zephyr is integrated later as a separate layer (e.g. a Zephyr module) that compiles the same portable-core source list under Zephyr's toolchain, adding only `src/platform/zephyr/`. The code is C17.
 

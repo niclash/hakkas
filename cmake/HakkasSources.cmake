@@ -17,6 +17,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c
+  ${HAKKAS_SOURCE_ROOT}/engine/engine.c
   ${HAKKAS_SOURCE_ROOT}/engine/loop.c
   ${HAKKAS_SOURCE_ROOT}/engine/version.c
   ${HAKKAS_SOURCE_ROOT}/engine/web_server.c

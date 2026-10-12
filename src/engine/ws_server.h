@@ -172,6 +172,15 @@ enum pal_err ws_server_open(Loop *loop, const WsServerConfig *cfg, WsServer **ou
 enum pal_err ws_server_open_config(Loop *loop, const Config *cfg, const WsHandler *handler,
 				   void *ctx, WsServer **out);
 
+/* As ws_server_open_config, but listening on port (0: an ephemeral port)
+ * with web_port as the Origin's port (0: the listener's port - 1) instead of
+ * cfg->port + 1 and cfg->port; tls.enabled is refused the same way. For the
+ * engine's test-only ephemeral ports (engine/engine.h); a real startup uses
+ * ws_server_open_config. */
+enum pal_err ws_server_open_config_at(Loop *loop, const Config *cfg, uint16_t port,
+				      uint16_t web_port, const WsHandler *handler, void *ctx,
+				      WsServer **out);
+
 /* Closes its listener and connections (on_close is called for each upgraded
  * one; unless the loop's shutdown closed them already) and removes its tick
  * hook. After loop_run returns and before loop_deinit, or between

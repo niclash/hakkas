@@ -49,10 +49,15 @@
  * go through the log, whose POSIX sink is stderr. JSON is printed compact, one
  * document per line.
  *
+ * run process|daemon (05 §1.4, plan task 19) starts the engine
+ * (engine/engine.h) with SIGINT/SIGTERM as its stop request
+ * (platform/posix/signals.h) and runs it until one arrives; it exits 0 after
+ * that clean stop and 1 if the engine refuses to start.
+ *
  * Exit codes: CLI_EXIT_OK (0) success, CLI_EXIT_FAILURE (1) a runtime failure
  * (unreadable or invalid configuration file, unknown type, a graph file that
  * does not load, an unknown or existing user, a refused password, a
- * malformed or unwritable users file, a command not implemented yet),
+ * malformed or unwritable users file, an engine that refuses to start),
  * CLI_EXIT_USAGE (2) a usage
  * error (unknown command or option, a missing or extra argument, an invalid
  * option value).
@@ -117,16 +122,17 @@ int cli_parse(int argc, char *const argv[], CliOptions *opts);
 int cli_config(const CliOptions *opts, Config *cfg);
 
 /* Run the parsed command with cfg (unused for --help/--version). The block
- * types must be registered (block_types_register_builtins). in is where
- * passwords are read from (stdin). */
+ * types must be registered (block_types_register_builtins), except for run,
+ * whose engine registers them (05 §1.4 step 4) and must not find them
+ * registered. in is where passwords are read from (stdin). */
 int cli_execute(const CliOptions *opts, const Config *cfg, FILE *in, FILE *out);
 
 /* The usage text. */
 void cli_usage(FILE *out);
 
 /* The whole command line: parse, configure (setting the log threshold),
- * register the built-in block types, execute, unregister them. Returns the
- * exit code. */
+ * register the built-in block types (not for run), execute, unregister them.
+ * Returns the exit code. */
 int cli_main(int argc, char *const argv[], FILE *in, FILE *out);
 
 #endif

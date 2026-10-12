@@ -830,7 +830,8 @@ enum graph_files_status graph_files_load_all(GraphFiles *gf, size_t *loaded)
 		log_error("cannot list %s: out of memory", dir);
 		first = GRAPH_FILES_ERR_NO_MEMORY;
 	} else {
-		qsort(list.names, list.count, sizeof(*list.names), compare_names);
+		if (list.count > 1) /* names is NULL for an empty directory */
+			qsort(list.names, list.count, sizeof(*list.names), compare_names);
 		for (size_t i = 0; i < list.count; i++) {
 			char path[PAL_PATH_MAX];
 			if (!fits(snprintf(path, sizeof(path), "%s/%s", dir, list.names[i]),

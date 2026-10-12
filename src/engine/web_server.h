@@ -106,6 +106,12 @@ enum pal_err web_server_open(Loop *loop, const WebServerConfig *cfg, WebServer *
  * startup. */
 enum pal_err web_server_open_config(Loop *loop, const Config *cfg, WebServer **out);
 
+/* As web_server_open_config, but on port (0: an ephemeral port) instead of
+ * cfg->port. For the engine's test-only ephemeral ports (engine/engine.h);
+ * a real startup uses web_server_open_config. */
+enum pal_err web_server_open_config_at(Loop *loop, const Config *cfg, uint16_t port,
+				       WebServer **out);
+
 /* Closes its listener and connections (unless the loop's shutdown closed
  * them already, as loop_run does) and removes its tick hook. Call it after
  * loop_run returns and before loop_deinit, or between iterations; not from a

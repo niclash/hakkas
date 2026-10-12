@@ -10,11 +10,13 @@
 
 #include "app/graph_files.h"
 #include "blocktypes/block_types.h"
+#include "engine/engine.h"
 #include "engine/version.h"
 #include "graphs/graph_json.h"
 #include "graphs/graphs.h"
 #include "platform/pal.h"
 #include "platform/posix/password.h"
+#include "platform/posix/signals.h"
 #include "protocol/users.h"
 #include "system/crypto.h"
 
@@ -430,6 +432,42 @@ static int user_command(const CliOptions *o, const Config *cfg, FILE *in, FILE *
 	return rc;
 }
 
+/* The engine's platform hooks (engine/engine.h): the SIGINT/SIGTERM stop
+ * handlers while the loop exists (01 §0.2, 05 §1.4 step 2). */
+static bool signals_start(void *ctx)
+{
+	(void)ctx;
+	enum pal_err err = posix_stop_signals_install();
+	if (err != PAL_OK)
+		log_error("cannot install the stop signal handlers: %s", pal_err_str(err));
+	return err == PAL_OK;
+}
+
+static void signals_stop(void *ctx)
+{
+	(void)ctx;
+	posix_stop_signals_restore();
+}
+
+/* run process|daemon (05 §1.2, §1.4): start the engine, run it until a stop
+ * request (SIGINT/SIGTERM), shut it down. */
+static int run_engine(const CliOptions *o, const Config *cfg)
+{
+	EngineParams p = {
+		.load = o->command == CLI_RUN_PROCESS ? ENGINE_LOAD_LIST : ENGINE_LOAD_ALL,
+		.graph_files = o->arg,
+		.platform_start = signals_start,
+		.platform_stop = signals_stop,
+	};
+	Engine *e;
+	if (!engine_start(cfg, &p, &e))
+		return CLI_EXIT_FAILURE;
+	engine_run(e);
+	engine_stop(e);
+	log_info("engine stopped");
+	return CLI_EXIT_OK;
+}
+
 int cli_execute(const CliOptions *o, const Config *cfg, FILE *in, FILE *out)
 {
 	switch (o->command) {
@@ -451,9 +489,7 @@ int cli_execute(const CliOptions *o, const Config *cfg, FILE *in, FILE *out)
 		return user_command(o, cfg, in, out);
 	case CLI_RUN_PROCESS:
 	case CLI_RUN_DAEMON:
-		/* The startup sequence (05 §1.4) is plan task 19. */
-		log_error("run: not implemented yet (plan task 19)");
-		return CLI_EXIT_FAILURE;
+		return run_engine(o, cfg);
 	}
 	return CLI_EXIT_FAILURE;
 }
@@ -472,6 +508,9 @@ int cli_main(int argc, char *const argv[], FILE *in, FILE *out)
 	rc = cli_config(&o, &cfg);
 	if (rc != CLI_EXIT_OK)
 		return rc;
+	/* run's engine registers them itself (05 §1.4 step 4). */
+	if (o.command == CLI_RUN_PROCESS || o.command == CLI_RUN_DAEMON)
+		return cli_execute(&o, &cfg, in, out);
 	if (block_types_register_builtins() != BLOCK_TYPES_OK) {
 		log_error("cannot register the built-in block types");
 		block_types_reset();

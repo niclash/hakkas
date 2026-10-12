@@ -74,6 +74,28 @@ In-source builds (`cmake .`) are refused. Options: `-DHAKKAS_WERROR=ON`,
 `-DHAKKAS_BUILD_POSIX_RUNTIME=OFF`, `-DHAKKAS_QUEUE_CAPACITY=<entries>` (work queue size,
 default 1024).
 
+## Running
+
+`hakkas run daemon` starts the engine with every graph saved in `<basedir>/graphs/`;
+`hakkas run process a.json:b.json` with the given graph files instead (05 §1.2, §1.4). For a
+development setup in a scratch directory:
+
+```sh
+mkdir -p conf data
+./build/debug/hakkas --confdir conf user add alice --role editor   # asks for a password
+./build/debug/hakkas --info --confdir conf --basedir data run daemon
+```
+
+Then open `http://localhost:8080/`; the FBP WebSocket is on port 8081 (`port + 1`). The first
+`run` writes a generated `auth.server_secret` into `conf/hakkas.json`, so the configuration
+directory must be writable. `run`'s options override the file: `--host <addr>` (a numeric
+address, default `0.0.0.0`), `--port <n>`, `--webdir <dir>`, `--users <file>`, `--id <id>`.
+The frontend is a separate artifact: `webdir` defaults to `<working directory>/frontend/src`,
+so point `--webdir` at a frontend build (any directory with an `index.html` will do for a quick
+check). `SIGINT` (Ctrl-C) or `SIGTERM` stops the engine cleanly (exit code 0); a failed startup
+exits 1 with the cause logged. Running graphs are not saved at shutdown: a graph's file changes
+only when a client persists it.
+
 ## Using the core from another project
 
 `add_subdirectory()` or `FetchContent` this repository and link `hakkas::core`. As a

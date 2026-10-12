@@ -207,7 +207,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   (`AuthConfig.load_users`, `users_loader`, read into the borrowed store, now non-const).
   Decisions: 02 §1.1 (getstatus wording), §1.2, §2.2 ("When it is read"), §3.3, §3.4 (request
   handling, `changeedge` metadata `{}`), §4.1, §4.1.1, §4.2; 05 §1.2, §1.4 step 3.
-- [ ] **19. Engine startup + `run`**: the startup sequence of 05 §1.4 wired end to end. Task 11
+- [x] **19. Engine startup + `run`**: the startup sequence of 05 §1.4 wired end to end. Task 11
   parses `run process|daemon` and its options and applies them to the `Config` (`cli_config`),
   then refuses with "not implemented yet" (`cli_execute`): complete `run` here, including
   `config_generate_engine_id` and `config_ensure_server_secret` (05 §1.1) after the overrides.
@@ -237,6 +237,21 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   sink when `log.mirror` is on; a failure refuses startup), then `ws_server_open_config(&loop,
   &cfg, protocol_ws_handler(), proto, &ws)`. After `loop_run`: `ws_server_close(ws)`, then
   `protocol_destroy(proto)`, then `loop_remove_tick`/`auth_destroy`.
+  Done: the portable startup `src/engine/engine.h` (`engine_start` = steps 1-8 with a copy of
+  the `Config` and `EngineParams` — the load mode, the platform's start/stop hooks around the
+  loop, a test-only `ephemeral_ports` —, `engine_run` = step 9, `engine_stop` = the shutdown,
+  also of a partial startup; `engine_web_port`/`_ws_port`/`_loop`/`_config`), the servers'
+  `web_server_open_config_at`/`ws_server_open_config_at` (an explicit port, 0 = ephemeral, for
+  that test parameter), `run` in `platform/posix/cli.c` (the POSIX stop signals as the hooks;
+  the engine registers the block types, so `cli_main` no longer does for `run`),
+  `tests/test_engine.c` (real loopback sockets: `GET /`, the upgrade with the own Origin,
+  getruntime before login, a SCRAM login, the `graph:connect` snapshot of a graph started at
+  boot, the stop, no descriptor leaked; the startup failures) and `run`'s exit codes in
+  `tests/test_cli.c`. Decisions: 05 §1.2 (`run`, exit codes), §1.4 (the implementation
+  decisions: the PAL initialized before step 1, `graphs/`/`types/` created or startup refused,
+  the `.tmp` cleanup, `run process` refuses a graph file that does not load while `run daemon`
+  skips it, the ready line, the shutdown order, nothing saved at shutdown), §2.3; 01 §0.1, §5,
+  §6.
 - [ ] **20. End-to-end protocol tests**: real WebSocket client tests from the 02 message
   catalog, refusal cases, multi-client command → event checks (05 §5).
   From task 18: `tests/test_dispatcher.c` covers every command in-process with the fake
@@ -247,6 +262,12 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   buffer: `"Graph too large to send: <id>"`, connection open), the deferred snapshot after a
   burst that filled the buffer (`on_drained`), `network:data` coalescing while the client does
   not read, and a users-file edit while the engine runs (next login).
+  From task 19: start the whole engine in-process as `tests/test_engine.c` does
+  (`engine_start` with `EngineParams.ephemeral_ports`, a temporary confdir/basedir/webdir, a
+  test user with a low iteration count), drive it with `loop_run_once(engine_loop(e))` while
+  the clients use non-blocking sockets, and end with `pal_request_stop`, `engine_run`,
+  `engine_stop`; its WebSocket client, SCRAM login and frame helpers can move into a shared
+  test header.
 
 ## Phase 4 — Provisional / blocked areas
 
@@ -257,11 +278,22 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `component:component` broadcast of a new or changed type (02 §3.4.2, system-wide per §4.1)
   needs a broadcast to every connection with a live session (as the log mirror iterates
   them), built with `proto_msg_component`.
+  From task 19: startup step 6 is a marked no-op in `engine_start` (`src/engine/engine.c`),
+  between the built-in block types (step 4) and the graphs (step 7); `<datadir>/types/` exists
+  by then (created in step 2) and its `.tmp` leftovers are gone.
 - [ ] **22. Simulated IO provider + `io/*` blocks + binding table** — **blocked** (open
   questions 3, 6). IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
   `WORK_IO_EVENT` in `runtime_drain`.
+  From task 19: startup step 5 is a marked no-op in `engine_start` (`src/engine/engine.c`),
+  after `loop_init` (the handoff exists) and the authorizer; the provider would be a platform
+  part handed in through `EngineParams` like the start/stop hooks, stopped in `engine_stop`
+  before the loop.
 - [ ] **23. `process/PID`** — **blocked** (open question 5).
 - [ ] **24. Schedule blocks** — **blocked** (open questions 5, 11).
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
   smaller `WS_OUT_CAP` (e.g. 16 KiB) for the WebSocket connections' outgoing buffers (02 §0,
   "Outgoing buffer": 64 KiB × `max_connections` is too much SRAM).
+  From task 19: the boot calls `engine_start` (`ENGINE_LOAD_ALL`, 05 §1.3), `engine_run`,
+  `engine_stop` with a `Config` built from `/lfs/config/hakkas.json`; LittleFS is mounted and
+  `pal_init` done before the configuration is read, and networking (which needs the `net.*`
+  keys) comes up after it — e.g. in the `platform_start` hook (05 §1.4).

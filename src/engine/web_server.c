@@ -573,12 +573,18 @@ enum pal_err web_server_open(Loop *loop, const WebServerConfig *cfg, WebServer *
 
 enum pal_err web_server_open_config(Loop *loop, const Config *cfg, WebServer **out)
 {
-	WebServerConfig wc;
 	if (cfg->port < CONFIG_PORT_MIN || cfg->port > CONFIG_PORT_MAX) {
 		*out = NULL;
 		return PAL_ERR_INVALID;
 	}
-	web_server_config_defaults(&wc, cfg->host, (uint16_t)cfg->port, cfg->webdir);
+	return web_server_open_config_at(loop, cfg, (uint16_t)cfg->port, out);
+}
+
+enum pal_err web_server_open_config_at(Loop *loop, const Config *cfg, uint16_t port,
+				       WebServer **out)
+{
+	WebServerConfig wc;
+	web_server_config_defaults(&wc, cfg->host, port, cfg->webdir);
 	return web_server_open(loop, &wc, out);
 }
 
