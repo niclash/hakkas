@@ -321,6 +321,12 @@ static inline size_t loop_conn_space(const LoopConn *c)
 	return c->out_cap - c->out_len;
 }
 
+/* The outgoing buffer's size. */
+static inline size_t loop_conn_out_cap(const LoopConn *c)
+{
+	return c->out_cap;
+}
+
 /* Bytes waiting in the outgoing buffer. */
 static inline size_t loop_conn_pending(const LoopConn *c)
 {

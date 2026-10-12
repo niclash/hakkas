@@ -81,6 +81,7 @@ typedef struct {
 	size_t count;
 	size_t space;	/* what send_space says, and the largest message accepted */
 	size_t pending; /* what send_pending says */
+	size_t capacity; /* what send_capacity says */
 	bool closed;
 	uint16_t close_code;
 	bool log_on_send; /* log a line from inside send_text (recursion test) */
@@ -117,6 +118,11 @@ static size_t f_send_space(void *conn)
 	return ((FakeConn *)conn)->space;
 }
 
+static size_t f_send_capacity(void *conn)
+{
+	return ((FakeConn *)conn)->capacity;
+}
+
 static size_t f_send_pending(void *conn)
 {
 	return ((FakeConn *)conn)->pending;
@@ -131,7 +137,8 @@ static void f_close(void *conn, uint16_t code, const char *reason)
 	f->close_code = code;
 }
 
-static const ProtoTransport fake_transport = {f_send_text, f_send_space, f_send_pending, f_close};
+static const ProtoTransport fake_transport = {f_send_text, f_send_space, f_send_capacity,
+					      f_send_pending, f_close};
 
 static void clear(FakeConn *f)
 {
@@ -345,6 +352,7 @@ static void conn_open(FakeConn *f)
 {
 	memset(f, 0, sizeof(*f));
 	f->space = 1u << 20;
+	f->capacity = 1u << 20;
 	f->pc = protocol_conn_open(proto, &fake_transport, f, "192.0.2.7");
 	CHECK(f->pc != NULL);
 }
@@ -1159,7 +1167,12 @@ static void test_mirror(void)
 	f.space = 30;
 	log_warn("too long for the buffer");
 	CHECK(f.count == 0 && !f.closed);
-	f.space = 1u << 20;
+	/* So is one that would take the reserve (plan task 20 fix). */
+	f.capacity = 4000;
+	f.space = 4000 / PROTO_DATA_RESERVE_DIV + 20;
+	log_warn("fits, but only into the reserve");
+	CHECK(f.count == 0 && !f.closed);
+	f.space = f.capacity = 1u << 20;
 	conn_close(&f);
 	conn_close(&anon);
 	teardown();
@@ -2426,6 +2439,84 @@ static void test_network_edges(void)
 	teardown();
 }
 
+/* The reserve of the outgoing buffer (02 §0, §4.2; plan task 20 fix): a
+ * network:data goes out only if it leaves the reserve free, replies and
+ * events may use the reserve, and a deferred burst goes before any value. */
+static void test_data_reserve(void)
+{
+	setup();
+	CHECK(graphs_new_graph(&gs, "g1", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "g1", "n1", "math/Add2", NULL, NULL) == GRAPH_OK);
+	FakeConn f;
+	conn_open(&f);
+	const char *s = login_as(&f, USER_ROLE_VIEWER);
+	CHECK(protocol_conn_scope(f.pc, "elsewhere"));
+	command(&f, "network", "edges",
+		"{'graph':'g1','edges':[{'src':{'node':'a','port':'b'},'tgt':{'node':'n1','port':"
+		"'in1'}}]}",
+		s);
+	CHECK(f.count == 2);
+	size_t len = strlen(msg(&f, 1)); /* every value below is one digit */
+	clear(&f);
+	f.capacity = 4000;
+	size_t reserve = 4000 / PROTO_DATA_RESERVE_DIV;
+	f.pending = 100;
+
+	/* Exactly the reserve left after it: sent. */
+	f.space = len + reserve;
+	set_initial("n1", "in1", 1);
+	expect_one(&f, data_json("g1", "a", "b", "n1", "in1", "1"));
+	/* One byte into the reserve: coalesced, not sent, not closed. */
+	f.space = len + reserve - 1;
+	set_initial("n1", "in1", 2);
+	set_initial("n1", "in1", 3);
+	CHECK(f.count == 0 && !f.closed);
+	/* A reply may use the reserve. */
+	f.space = reserve;
+	command(&f, "trace", "stop", "{'graph':'g'}", s);
+	CHECK(f.count == 1 && !f.closed && strstr(msg(&f, 0), "\"trace\"") != NULL);
+	clear(&f);
+	/* So may an event (system-wide, so it reaches the scoped f). */
+	CHECK(graphs_new_graph(&gs, "g2", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(f.count == 1 && !f.closed && strstr(msg(&f, 0), "new_graph") != NULL);
+	clear(&f);
+	/* At the drain, the latest value. */
+	f.space = 4000;
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	expect_one(&f, data_json("g1", "a", "b", "n1", "in1", "3"));
+	/* A value too large to leave the reserve free even in an empty buffer
+	 * is dropped. */
+	f.capacity = f.space = len;
+	set_initial("n1", "in1", 4);
+	CHECK(f.count == 0 && !f.closed);
+	protocol_conn_drained(f.pc);
+	CHECK(f.count == 0);
+
+	/* A deferred burst goes first: values wait for it even when they would
+	 * fit, then follow it at the drain. */
+	size_t types = block_types_count();
+	f.capacity = f.space = 2000;
+	f.pending = 100;
+	command(&f, "component", "list", "{}", s);
+	CHECK(f.count == 0);
+	f.capacity = f.space = 1u << 20;
+	set_initial("n1", "in1", 5);
+	set_initial("n1", "in1", 6);
+	CHECK(f.count == 0 && !f.closed);
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	CHECK(f.count == types + 2);
+	CHECK(strstr(msg(&f, types), "componentsready") != NULL);
+	CHECK(json_equal(msg(&f, types + 1), data_json("g1", "a", "b", "n1", "in1", "6")));
+	clear(&f);
+	/* Afterwards values go out at once again. */
+	set_initial("n1", "in1", 7);
+	expect_one(&f, data_json("g1", "a", "b", "n1", "in1", "7"));
+	conn_close(&f);
+	teardown();
+}
+
 /* ---- The users file re-read at every challenge (02 §2.2; plan task 18) ------------- */
 
 static struct {
@@ -2589,6 +2680,7 @@ int main(void)
 	RUN(test_initial_encoding);
 	RUN(test_network_commands);
 	RUN(test_network_edges);
+	RUN(test_data_reserve);
 	RUN(test_users_reload);
 
 	block_types_reset();

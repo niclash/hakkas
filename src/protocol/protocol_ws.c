@@ -16,6 +16,11 @@ static size_t t_send_space(void *conn)
 	return ws_send_space(conn);
 }
 
+static size_t t_send_capacity(void *conn)
+{
+	return ws_send_capacity(conn);
+}
+
 static size_t t_send_pending(void *conn)
 {
 	return ws_send_pending(conn);
@@ -26,7 +31,8 @@ static void t_close(void *conn, uint16_t code, const char *reason)
 	ws_close(conn, code, reason);
 }
 
-static const ProtoTransport ws_transport = {t_send_text, t_send_space, t_send_pending, t_close};
+static const ProtoTransport ws_transport = {t_send_text, t_send_space, t_send_capacity,
+						t_send_pending, t_close};
 
 static void h_open(void *ctx, WsConn *conn)
 {

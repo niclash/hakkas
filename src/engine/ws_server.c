@@ -175,11 +175,9 @@ bool ws_send_text(WsConn *w, const char *text, size_t len)
 	return send_frame(w, WS_OP_TEXT, text, len);
 }
 
-size_t ws_send_space(const WsConn *w)
+/* The longest text message whose frame takes at most space bytes. */
+static size_t frame_payload_max(size_t space)
 {
-	if (w->state != S_OPEN)
-		return 0;
-	size_t space = loop_conn_space(w->conn);
 	if (space < 2)
 		return 0;
 	if (space - 2 <= 125)
@@ -187,6 +185,20 @@ size_t ws_send_space(const WsConn *w)
 	if (space - 4 <= 0xFFFF)
 		return space - 4 > 125 ? space - 4 : 125;
 	return space - 10;
+}
+
+size_t ws_send_space(const WsConn *w)
+{
+	if (w->state != S_OPEN)
+		return 0;
+	return frame_payload_max(loop_conn_space(w->conn));
+}
+
+size_t ws_send_capacity(const WsConn *w)
+{
+	if (w->state != S_OPEN)
+		return 0;
+	return frame_payload_max(loop_conn_out_cap(w->conn));
 }
 
 size_t ws_send_pending(const WsConn *w)

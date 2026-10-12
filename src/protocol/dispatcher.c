@@ -21,6 +21,9 @@ enum {
 	PENDING_DATA = 1u << 3,	      /* network:data of a dirty link-value watch */
 };
 
+/* The deferred bursts, which take precedence over lossy messages. */
+#define PENDING_BURSTS (PENDING_RUNTIME | PENDING_COMPONENTS | PENDING_CONNECT)
+
 /* One network:edges subscription (02 §4.2): a live watch on the input
  * tgt_node.tgt_port of the connection's watch_graph. */
 typedef struct {
@@ -107,6 +110,19 @@ static bool send_raw(ProtoConn *c, const char *text, size_t len)
 	if (!ok)
 		c->closing = true;
 	return ok;
+}
+
+/* Whether a lossy message of len bytes (network:data, a mirrored log line)
+ * may go out now: no burst is deferred (it goes first, at on_drained) and it
+ * leaves the reserve free for replies and events (decided, plan task 20
+ * fix; 02 §4.2 "Back-pressure"). */
+static bool lossy_fits(const ProtoConn *c, size_t len)
+{
+	if (c->pending & PENDING_BURSTS)
+		return false;
+	size_t reserve = c->t->send_capacity(c->conn) / PROTO_DATA_RESERVE_DIV;
+	size_t space = c->t->send_space(c->conn);
+	return space >= reserve && len <= space - reserve;
 }
 
 static void close_conn(ProtoConn *c, uint16_t code, const char *reason)
@@ -218,7 +234,7 @@ static void mirror_sink(void *ctx, enum log_level level, const char *line, size_
 				break; /* out of memory: the line is not mirrored */
 			msg_len = strlen(msg);
 		}
-		if (c->t->send_space(c->conn) >= msg_len)
+		if (lossy_fits(c, msg_len))
 			send_raw(c, msg, msg_len);
 	}
 	free(msg);
@@ -1049,10 +1065,12 @@ static void cmd_persist(ProtoConn *c, const Envelope *env)
 /* ---- network:edges, link-value subscriptions (02 §4.2) ------------------------------- */
 
 /* Sends the watch's network:data with v, if the session is live. A message
- * that does not fit the free space is not sent: the watch turns dirty and
- * the input's value at the next on_drained goes out instead (decided, plan
- * task 18: a value stream coalesces under back-pressure rather than closing
- * the connection); one that would not fit even an empty buffer is dropped. */
+ * that does not fit the free space above the reserve, or comes while a burst
+ * is deferred (lossy_fits), is not sent: the watch turns dirty and the
+ * input's value at the next on_drained goes out instead (decided, plan task
+ * 18: a value stream coalesces under back-pressure rather than closing the
+ * connection); one that would not fit even an empty buffer above the
+ * reserve is dropped. */
 static void send_data(EdgeWatch *ew, const Linkable *v)
 {
 	ProtoConn *c = ew->c;
@@ -1065,12 +1083,14 @@ static void send_data(EdgeWatch *ew, const Linkable *v)
 		return;
 	}
 	size_t len = strlen(m);
-	if (len <= c->t->send_space(c->conn)) {
+	if (lossy_fits(c, len)) {
 		ew->dirty = false;
 		send_raw(c, m, len);
-	} else if (c->t->send_pending(c->conn) > 0) {
-		ew->dirty = true;
+	} else if (c->t->send_pending(c->conn) > 0 || (c->pending & PENDING_BURSTS)) {
+		ew->dirty = true; /* an on_drained follows */
 		c->pending |= PENDING_DATA;
+	} else {
+		ew->dirty = false; /* too large for any buffer: dropped */
 	}
 	free(m);
 }

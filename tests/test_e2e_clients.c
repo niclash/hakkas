@@ -13,7 +13,8 @@
  *    real outgoing buffer (a snapshot exactly as large as an empty buffer
  *    takes, and one byte more: "Graph too large to send"), the snapshot
  *    deferred behind a reply in the buffer, network:data coalescing while
- *    the client does not read, a users file edited while the engine runs;
+ *    the client does not read, and its replies and events still arriving
+ *    meanwhile (the reserve), a users file edited while the engine runs;
  *  - robustness: an oversized message (1009), a message split across TCP
  *    writes and WebSocket fragments (with a ping between them), many
  *    messages pipelined in one TCP write, clients disconnecting mid-burst
@@ -45,6 +46,15 @@ static const char *same_next(E2eClient *x, E2eClient *y)
 		fprintf(stderr, "  frames differ: %s / %s\n", m ? m : "-", y->text ? y->text : "-");
 	CHECK(same);
 	return m;
+}
+
+/* Whether msg is protocol:command (quietly, unlike e2e_match). */
+static bool is(const char *msg, const char *protocol, const char *command)
+{
+	char expected[128];
+	snprintf(expected, sizeof(expected), "{'protocol':'%s','command':'%s','payload':'*'}",
+		 protocol, command);
+	return e2e_json_eq(msg, expected);
 }
 
 static bool connect_login(E2eClient *c, const char *user)
@@ -361,6 +371,72 @@ static void test_snapshot_buffer(void)
 	e2e_close(&m);
 }
 
+/* Changes from to to of co's n.in1 from e while the watcher does not read:
+ * batches of initials, each a Metric with a unit of unit_len characters
+ * (02 §3.4 "Initial value encoding"). With UNIT, every network:data takes
+ * about 1 KiB and the socket's and the engine's buffers fill after a few
+ * thousand. */
+enum { VALUES = 4000, BATCH = 200, UNIT = 900 };
+
+static void stream_values(E2eClient *e, int from, int to, int unit_len)
+{
+	char unit[UNIT + 1];
+	memset(unit, 'u', (size_t)unit_len);
+	unit[unit_len] = '\0';
+	for (int i = from; i <= to; i += BATCH) {
+		size_t sent = 0;
+		uint8_t *batch = malloc((size_t)BATCH * (UNIT + 256));
+		CHECK(batch != NULL);
+		for (int k = i; k < i + BATCH && k <= to; k++) {
+			char payload[UNIT + 128];
+			snprintf(payload, sizeof(payload),
+				 "{'tgt':{'node':'n','port':'in1'},'src':{'data':'%d %s'},"
+				 "'graph':'co'}",
+				 k, unit);
+			char *msg = e2e_envelope("graph", "addinitial", payload, e->secret);
+			sent += e2e_frame(batch + sent, WS_OP_TEXT, true, msg, strlen(msg));
+			free(msg);
+		}
+		e2e_send_bytes(e, batch, sent);
+		free(batch);
+		QUIET(e);
+	}
+}
+
+/* Graphs co (node n) and co-quiet (node q), e and w scoped to co-quiet (so
+ * neither gets co's events), w watching n.in1 (its first value read). */
+static void stream_setup(E2eClient *e, E2eClient *w)
+{
+	e2e_send(e, "runtime", "new_graph", "{'id':'co','name':'Co'}");
+	same_next(e, w);
+	e2e_send(e, "runtime", "new_graph", "{'id':'co-quiet','name':'Q'}");
+	same_next(e, w);
+	scope(e, "co-quiet");
+	scope(w, "co-quiet");
+	e2e_send(e, "graph", "addnode", "{'id':'n','graph':'co','component':'math/Add2'}");
+	QUIET(e);
+	e2e_send(e, "graph", "addnode", "{'id':'q','graph':'co-quiet','component':'math/Add2'}");
+	CHECK(e2e_match(same_next(e, w), "graph", "addnode", NULL));
+	e2e_send(w, "network", "edges",
+		 "{'graph':'co','edges':[{'src':{'node':'s','port':'out'},'tgt':{'node':'n',"
+		 "'port':'in1'}}]}");
+	CHECK(e2e_expect(w, "network", "edges", NULL));
+	EXPECT(w, "network", "data",
+	       "{'id':'unknown','graph':'co','src':{'node':'s','port':'out'},'tgt':{'node':'n',"
+	       "'port':'in1'},'data':'0'}");
+}
+
+static void stream_teardown(E2eClient *e, E2eClient *w)
+{
+	QUIET(w);
+	e2e_send(e, "runtime", "delete_graph", "{'id':'co','name':'Co'}");
+	CHECK(e2e_match(same_next(e, w), "runtime", "delete_graph", NULL));
+	e2e_send(e, "runtime", "delete_graph", "{'id':'co-quiet','name':'Q'}");
+	CHECK(e2e_match(same_next(e, w), "runtime", "delete_graph", NULL));
+	e2e_close(e);
+	e2e_close(w);
+}
+
 /* network:data under back-pressure (02 §4.2): a watcher that does not read
  * misses intermediate values but ends with the current one, and stays
  * connected. */
@@ -369,56 +445,14 @@ static void test_data_coalescing(void)
 	E2eClient e, w;
 	connect_login(&e, "alice");
 	CHECK(e2e_connect_rcvbuf(&w, 4096) && e2e_login(&w, "vera"));
-	e2e_send(&e, "runtime", "new_graph", "{'id':'co','name':'Co'}");
-	same_next(&e, &w);
-	e2e_send(&e, "runtime", "new_graph", "{'id':'co-quiet','name':'Q'}");
-	same_next(&e, &w);
-	scope(&e, "co-quiet");
-	scope(&w, "co-quiet");
-	e2e_send(&e, "graph", "addnode", "{'id':'n','graph':'co','component':'math/Add2'}");
-	QUIET(&e);
-	e2e_send(&w, "network", "edges",
-		 "{'graph':'co','edges':[{'src':{'node':'s','port':'out'},'tgt':{'node':'n',"
-		 "'port':'in1'}}]}");
-	CHECK(e2e_expect(&w, "network", "edges", NULL));
-	EXPECT(&w, "network", "data",
-	       "{'id':'unknown','graph':'co','src':{'node':'s','port':'out'},'tgt':{'node':'n',"
-	       "'port':'in1'},'data':'0'}");
-
-	/* Many changes while w does not read: batches of initials from e,
-	 * each a Metric with a long unit (02 §3.4 "Initial value encoding"),
-	 * so that every network:data takes about 1 KiB and the socket's and
-	 * the engine's buffers fill after a few thousand. */
-	enum { CHANGES = 4000, BATCH = 200, UNIT = 900 };
-	char unit[UNIT + 1];
-	memset(unit, 'u', UNIT);
-	unit[UNIT] = '\0';
-	for (int i = 1; i <= CHANGES; i += BATCH) {
-		size_t sent = 0;
-		uint8_t *batch = malloc((size_t)BATCH * (UNIT + 256));
-		CHECK(batch != NULL);
-		for (int k = i; k < i + BATCH; k++) {
-			char payload[UNIT + 128];
-			snprintf(payload, sizeof(payload),
-				 "{'tgt':{'node':'n','port':'in1'},'src':{'data':'%d %s'},"
-				 "'graph':'co'}",
-				 k, unit);
-			char *msg = e2e_envelope("graph", "addinitial", payload, e.secret);
-			sent += e2e_frame(batch + sent, WS_OP_TEXT, true, msg, strlen(msg));
-			free(msg);
-		}
-		e2e_send_bytes(&e, batch, sent);
-		free(batch);
-		QUIET(&e);
-	}
-	/* Now w reads (sending nothing: its outgoing buffer is full, and a
-	 * reply that does not fit would close the connection, 02 §0):
-	 * increasing values, fewer than the changes, until the current one,
-	 * sent when the buffer has drained. */
+	stream_setup(&e, &w);
+	stream_values(&e, 1, VALUES, UNIT);
+	/* Now w reads: increasing values, fewer than the changes, until the
+	 * current one, sent when the buffer has drained. */
 	int n = 0;
 	long last = 0;
 	bool increasing = true;
-	while (last != CHANGES && n <= CHANGES) {
+	while (last != VALUES && n <= VALUES) {
 		const char *m = e2e_recv(&w);
 		if (!e2e_match(m, "network", "data", NULL))
 			break;
@@ -428,15 +462,70 @@ static void test_data_coalescing(void)
 		n++;
 	}
 	CHECK(increasing);
-	CHECK(last == CHANGES);
-	CHECK(n < CHANGES);
-	QUIET(&w);
-	e2e_send(&e, "runtime", "delete_graph", "{'id':'co','name':'Co'}");
+	CHECK(last == VALUES);
+	CHECK(n < VALUES);
+	stream_teardown(&e, &w);
+}
+
+/* Replies and events while values stream into a watcher that does not read
+ * (02 §0, §4.2 "Back-pressure", plan task 20 fix): the values leave the
+ * outgoing buffer's reserve free, so w's own commands and an unrelated
+ * event still fit; w stays connected, gets every reply and event, then the
+ * current value. */
+static void test_data_stream_replies(void)
+{
+	E2eClient e, w;
+	connect_login(&e, "alice");
+	CHECK(e2e_connect_rcvbuf(&w, 4096) && e2e_login(&w, "bob"));
+	stream_setup(&e, &w);
+	/* The buffers filled with large values, then the rest of the engine's
+	 * buffer with small ones (about 150 bytes each): without the reserve,
+	 * less free space would be left than the replies and the event below
+	 * take together, and the first that did not fit would close w. */
+	stream_values(&e, 1, VALUES - 1000, UNIT);
+	stream_values(&e, VALUES - 1000 + 1, VALUES, 1);
+	/* w, still not reading, sends commands; e makes an unrelated event. */
+	e2e_send(&w, "network", "getstatus", "{'graph':'co'}");
+	e2e_send(&w, "graph", "changenode", "{'id':'q','metadata':{'x':5},'graph':'co-quiet'}");
+	EXPECT(&e, "network", "status", NULL);	 /* a broadcast */
+	EXPECT(&e, "graph", "changenode", NULL); /* e is scoped to co-quiet too */
+	e2e_send(&e, "runtime", "new_graph", "{'id':'co-other','name':'O'}");
+	EXPECT(&e, "runtime", "new_graph", NULL);
+	QUIET(&e);
+	/* Now w reads: values, the replies and events, the current value. */
+	int n = 0, status = 0, changed = 0, created = 0, others = 0;
+	long last = 0;
+	bool increasing = true;
+	while (!(last == VALUES && status && changed && created) && n <= VALUES + 3) {
+		const char *m = e2e_recv(&w);
+		if (m == NULL)
+			break;
+		n++;
+		if (is(m, "network", "data")) {
+			long value = strtol(e2e_payload_str(m, "data"), NULL, 10);
+			increasing = increasing && value > last;
+			last = value;
+		} else if (is(m, "network", "status") &&
+			   strcmp(e2e_payload_str(m, "graph"), "co") == 0) {
+			status++;
+		} else if (is(m, "graph", "changenode") &&
+			   strcmp(e2e_payload_str(m, "id"), "q") == 0) {
+			changed++;
+		} else if (is(m, "runtime", "new_graph")) {
+			created++;
+		} else {
+			fprintf(stderr, "  unexpected: %s\n", m);
+			others++;
+		}
+	}
+	CHECK(!w.closed && !w.eof);
+	CHECK(status == 1 && changed == 1 && created == 1 && others == 0);
+	CHECK(increasing);
+	CHECK(last == VALUES);
+	CHECK(n < VALUES); /* the values were coalesced: the buffer was full */
+	e2e_send(&e, "runtime", "delete_graph", "{'id':'co-other','name':'O'}");
 	CHECK(e2e_match(same_next(&e, &w), "runtime", "delete_graph", NULL));
-	e2e_send(&e, "runtime", "delete_graph", "{'id':'co-quiet','name':'Q'}");
-	CHECK(e2e_match(same_next(&e, &w), "runtime", "delete_graph", NULL));
-	e2e_close(&e);
-	e2e_close(&w);
+	stream_teardown(&e, &w);
 }
 
 /* ---- Users file (02 §2.2 "When it is read") ---------------------------------------- */
@@ -719,6 +808,7 @@ int main(void)
 	RUN(test_scoping);
 	RUN(test_snapshot_buffer);
 	RUN(test_data_coalescing);
+	RUN(test_data_stream_replies);
 	RUN(test_users_edit);
 	RUN(test_oversized);
 	RUN(test_fragmented);

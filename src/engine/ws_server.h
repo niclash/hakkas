@@ -204,6 +204,10 @@ bool ws_send_text(WsConn *conn, const char *text, size_t len);
 /* The longest text message ws_send_text takes now without closing. */
 size_t ws_send_space(const WsConn *conn);
 
+/* The longest text message ws_send_text takes into the empty outgoing
+ * buffer (out_cap less its frame header); 0 unless open. */
+size_t ws_send_capacity(const WsConn *conn);
+
 /* Bytes of the outgoing buffer not written out yet; 0 when it is empty (no
  * on_drained follows then) or the connection is not open. */
 size_t ws_send_pending(const WsConn *conn);

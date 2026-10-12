@@ -293,6 +293,20 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   start and a removed edge; a 20 ms `timing/Interval` toggling on the real clock;
   `network:persist`, a restart in daemon mode and the same snapshot, started, values flowing).
   No engine bug found. Decisions: 05 §5 (implementation note).
+  Fix afterwards (found by a probe during task 20): a fast `network:data` stream filled the
+  outgoing buffer to within one value of full, so the client's next reply or the next event no
+  longer fit and closed the connection (02 §0). Lossy messages (`network:data`, the log
+  mirror) now leave a **reserve** free — a quarter of the buffer (`send_capacity /
+  PROTO_DATA_RESERVE_DIV`, 16 KiB of the default 64 KiB, a per-build override) — that replies
+  and events may use; and while a burst is deferred no lossy message is sent, so a stream
+  cannot keep the buffer from draining (the burst goes first at `on_drained`, the coalesced
+  values after it). `ProtoTransport` gains `send_capacity` (`ws_send_capacity`). Tests:
+  `test_data_reserve` in `test_dispatcher.c` (the boundary at the reserve and one byte into it,
+  a reply and an event using the reserve, a value too large for any buffer dropped, the
+  burst's precedence) and `test_data_stream_replies` in `test_e2e_clients.c` (a watcher that
+  stops reading while values stream sends `network:getstatus` and `graph:changenode` and gets
+  an unrelated `runtime:new_graph`: it stays connected and gets all of them, then the current
+  value; without the reserve it is closed). Decisions: 02 §0, §1.2, §4.2.
 
 ## Phase 4 — Provisional / blocked areas
 

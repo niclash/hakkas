@@ -78,9 +78,20 @@
  * of live watches (graphs/graph.h InputWatch) on existing tgt inputs; the
  * payload is echoed, then each watch sends network:data with the current
  * value and again on every update. A network:data that does not fit the
- * free space marks its watch dirty; the value at on_drained is sent then
- * (coalesced). The set ends on replacement, logout, expiry and close; a
- * watch ends with its block.
+ * free space above the reserve, or comes while a burst is deferred, marks
+ * its watch dirty; the value at on_drained is sent then (coalesced). The
+ * set ends on replacement, logout, expiry and close; a watch ends with its
+ * block.
+ *
+ * Reserve (02 §0 "Outgoing buffer", §4.2; decided, plan task 20 fix): the
+ * lossy messages, network:data and the log mirror's lines, are sent only if
+ * they leave at least the reserve free (send_capacity /
+ * PROTO_DATA_RESERVE_DIV, a quarter: 16 KiB of the default 64 KiB). Replies
+ * and events may use it, so a client that stops reading while values
+ * stream is not closed by its own next reply or the next event. While a
+ * burst is deferred, no lossy message is sent at all (values coalesce, log
+ * lines are dropped), so a stream cannot keep the buffer from draining:
+ * at on_drained the deferred burst goes first, the dirty values after it.
  *
  * Event delivery (02 §2.5 item 6, §4.1): a connection is a graphs subscriber
  * from its login until its logout, expiry or close, and an event is only
@@ -100,7 +111,8 @@
  * line, as formatted, to every authenticated connection: network:error
  * {"stack":"","message"} for error, else network:output {"type":"message",
  * "message"}. A line is dropped for a connection whose outgoing buffer
- * cannot hold it (mirroring never closes a connection). A line logged while
+ * cannot hold it above the reserve, or while a burst is deferred
+ * (mirroring never closes a connection). A line logged while
  * the layer is sending (from inside the transport) or mirroring is dropped,
  * so mirroring never recurses.
  *
@@ -126,6 +138,12 @@
 /* What a burst reserves per message beyond its text (a WebSocket frame
  * header is at most 10 bytes). */
 #define PROTO_FRAME_OVERHEAD 10
+/* The reserve of the outgoing buffer that lossy traffic (network:data, the
+ * log mirror) never takes: send_capacity / PROTO_DATA_RESERVE_DIV (see
+ * "Reserve" above). A per-build override. */
+#ifndef PROTO_DATA_RESERVE_DIV
+#define PROTO_DATA_RESERVE_DIV 4
+#endif
 
 /* A connection, as the dispatcher sees it; conn is the transport's own. */
 typedef struct {
@@ -134,6 +152,8 @@ typedef struct {
 	bool (*send_text)(void *conn, const char *text, size_t len);
 	/* The longest message send_text takes now. */
 	size_t (*send_space)(void *conn);
+	/* The longest message send_text takes into the empty buffer. */
+	size_t (*send_capacity)(void *conn);
 	/* Bytes waiting to be written; 0 means no on_drained will follow. */
 	size_t (*send_pending)(void *conn);
 	/* Starts closing with a WebSocket close code and reason. */
