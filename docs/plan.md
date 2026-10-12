@@ -373,6 +373,12 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   the host through the C API; values travel like edges; stopped source → last value kept,
   absent source or removed link → default. Runtime link commands for the UI (wire + C API)
   and persisting UI-made links are still to be designed.
+- [ ] **21g. Hakkas terms in files + sister-project compatibility** (00-README Terminology,
+  05 §2.1, 03 §5.1): graph files write `{"block","port"}` (connections and graph ports) and
+  composite type files `"connections"`; the loaders also accept `"node"`, `"process"` (the
+  sister project's `examples/example.json`) and `"edges"`, and ignore an extra `"data"` in a
+  connection's `tgt`. Test with the files in `examples/`. Non-wire C identifiers may follow
+  the same terms (process/block/connection) where that improves clarity.
 - [ ] **22. Environment SPI + simulated environment + bindings** (04 §1, §4; 03 §4) — no
   `io/*` blocks (open question 6 decided: outputs keep their last value); the bindings-file
   format waits for open question 3, which is to be settled while implementing this task. IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch

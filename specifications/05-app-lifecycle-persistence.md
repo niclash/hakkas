@@ -116,17 +116,18 @@ One canonical JSON schema is used for both loading and saving a graph. Saving a 
     "<instance-name>": { "component": "<type-name>", "metadata": { "x": 0, "y": 0 } }
   },
   "connections": [
-    { "src": {"node":"<block>","port":"<port>"}, "tgt": {"node":"<block>","port":"<port>"}, "metadata": { "route": 3 } },
-    { "src": {"data": <value>}, "tgt": {"node":"<block>","port":"<port>"} }
+    { "src": {"block":"<block>","port":"<port>"}, "tgt": {"block":"<block>","port":"<port>"}, "metadata": { "route": 3 } },
+    { "src": {"data": <value>}, "tgt": {"block":"<block>","port":"<port>"} }
   ],
-  "inports":  [ { "name": "...", "node": "...", "port": "..." } ],
-  "outports": [ { "name": "...", "node": "...", "port": "..." } ]
+  "inports":  [ { "name": "...", "block": "...", "port": "..." } ],
+  "outports": [ { "name": "...", "block": "...", "port": "..." } ]
 }
 ```
 
 - `started` is the graph's started/stopped state when it was persisted. The engine does not act on it; it is information for the host, which decides what to start (`00-README.md`, open question 12). It defaults to `false` if absent.
 - `blocks` is an object keyed by instance name; each value's `component` names a registered block type. `metadata.x`/`metadata.y` are the canvas position (default `50,50`). Any other metadata keys are preserved as-is (metadata is UI-only; a `change_threshold` key from older files is an ordinary opaque key, `01-architecture-overview.md` §3.3).
-- `connections` entries are either a normal edge (`src`/`tgt` both reference `{node, port}`, with optional opaque UI `metadata`) or an initial (`src` is `{"data": <value>}`, stored as a native JSON string, number, or boolean — `02-wire-protocol.md` §3.4).
+- **Terms** (decided, `00-README.md` Terminology): the file uses hakkas' terms — process, block, connection — never the FBP protocol's node/edge. A block reference is `{"block", "port"}`. For compatibility the loader also accepts `"node"` (earlier hakkas files) and `"process"` (the sister project's files, e.g. `examples/example.json`) in place of `"block"`, and ignores an extra `"data"` member in a connection's `tgt`; a save always writes the canonical form with `"block"`.
+- `connections` entries are either a normal connection (`src`/`tgt` both reference `{block, port}`, with optional opaque UI `metadata`) or an initial (`src` is `{"data": <value>}`, stored as a native JSON string, number, or boolean — `02-wire-protocol.md` §3.4).
 - `inports`/`outports` declare the graph-level named ports that a group built from this graph would expose (`01-architecture-overview.md` §2.2).
 - Groups are not stored in the graph file: a group is a block type, stored in `types/` (§2.3, `03-block-types.md` §5.1).
 
