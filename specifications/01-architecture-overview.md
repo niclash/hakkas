@@ -117,6 +117,8 @@ Engine
 - **Uptime is computed, not counted**: a graph records the engine time when it starts (`time_started`); its uptime is the runtime's current engine time minus that, 0 when stopped. There is no once-per-second uptime timer — it would only approximate the same number. The engine loop sets the runtime's time from `pal_uptime_ms()` before it dispatches commands as well as before draining (§3.4). On stop the run's duration is kept, so `network:stopped` reports the start and duration of the run that ended (`02-wire-protocol.md` §3.3). Events carry milliseconds; the wire floors uptime to whole seconds.
 - **Delete**: deleting a started graph stops it first and reports the stop (`network:stopped`) before the deletion (`02-wire-protocol.md` §1.1, compound effects); the graph's blocks go without events. Removing the persisted file is graph persistence's part: `runtime:delete_graph` goes through `graph_files_delete` (`src/app/graph_files.h`, plan task 10), which deletes the graph and then its file.
 
+**Metadata is for the user interface only** (decided, `00-README.md` open question 5): node and edge metadata support UI interactions (positions, routing, …) and must never drive the live function of a block. Anything that affects behavior is an input port. *Known conflict*: the per-block `change_threshold` override is currently kept in node metadata (§3.3); resolving it is part of open question 7.
+
 ### 2.3 One generic block runtime, not one implementation per block type
 
 Almost all of a block type's logic is identical event-handling plumbing — react to an input changing, recompute, propagate the output. The only real per-type difference is *which function* does the computing. The engine should reflect that directly: implement the entire `Block` contract **once**, as shared generic code, driven by a per-block-type data record:
@@ -255,7 +257,7 @@ Decisions (plan task 6):
 
 ### 3.4 Time
 
-All engine timing uses a monotonic millisecond clock starting at boot (engine **uptime**), obtained from the PAL. Until a wall-clock source is worked out (`00-README.md`, open question 11), timestamps on the wire are derived from uptime (`02-wire-protocol.md` §3.3). Once a wall clock exists, it is always **UTC** — there is no time-zone handling anywhere in the system.
+All engine timing uses a monotonic millisecond clock starting at boot (engine **uptime**), obtained from the PAL. The wall clock is provided by the environment through its interface (`04-drivers.md` §1; `00-README.md`, open question 11). Until it is implemented, timestamps on the wire are derived from uptime (`02-wire-protocol.md` §3.3). Once a wall clock exists, it is always **UTC** — there is no time-zone handling anywhere in the system.
 
 ### 3.5 Futures collapse to direct calls
 

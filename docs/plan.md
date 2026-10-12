@@ -366,7 +366,10 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
 - [ ] **23. `process/PID`** — behavior decided (03 §6.1); **waits for the user's PID code**: the
   implementation is to be based on the user's existing implementations, and the user adds the
   parameters `Pconst`, `Itime`, `Dtime`, `MaxD`. Don't start it without that code.
-- [ ] **24. Schedule blocks** — **blocked** (open questions 5, 11).
+- [ ] **24. Calendar blocks + standard schedule composites** (03 §6.2): the primitives
+  (`timing/MinuteRange`, `DayOfWeek`, `MonthOfYear`, …) with settings on input ports, bool
+  logic blocks, and built-in schedule composites. Needs the wall clock from the environment
+  interface (04 §1) and the remaining details of open question 5 (03 §6.2) and 11 (UTC vs local).
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
   smaller `WS_OUT_CAP` (e.g. 16 KiB) for the WebSocket connections' outgoing buffers (02 §0,
   "Outgoing buffer": 64 KiB × `max_connections` is too much SRAM).

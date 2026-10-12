@@ -221,9 +221,16 @@ Ports (provisional names): inputs `setpoint`, `measured_value`, `kp`, `ti`, `td`
 
 **To be completed by the user**: the parameter set will be aligned with the user's existing, field-proven PID implementations — the parameters `Pconst`, `Itime`, `Dtime` and `MaxD` will be added (and the port names above adjusted to match), and the implementation is to be based on the user's code rather than written from scratch (plan task 23).
 
-### 6.2 Schedule blocks — `timing/DaySchedule`, `timing/WeekSchedule`, `timing/MonthSchedule`
+### 6.2 Calendar blocks and schedule types
 
-Calendar-driven blocks producing an output based on the current time of day, day of week, or day of month against a configured schedule (e.g. "on from 06:00 to 22:00," "on every weekday," "on the 1st of the month"). These are scheduled blocks (`TIMER_SCHEDULED`) that arm their timer for the next schedule boundary. All schedule times are **UTC** (`01-architecture-overview.md` §3.4). Needs:
-- A wall-clock source, which is not yet worked out (`00-README.md`, open question 11). Until it is, these blocks can't be implemented meaningfully.
-- A schedule configuration — a list of time ranges or day/date selectors mapped to output values — which doesn't fit the plain scalar-port model used elsewhere. This likely needs a dedicated configuration structure attached to the block instance (outside the normal input-port mechanism, perhaps part of the block's metadata in the graph JSON) rather than a `Linkable` port value.
-- Output: likely `bool` for simple on/off schedules, though a richer per-entry value is plausible depending on use case.
+**Decided** (`00-README.md`, open question 5 — schedule part): schedules are not one configurable block. They are built from small **calendar primitive** blocks whose settings are ordinary input ports (so they can be wired, given initials, and work identically in every environment), combined with logic blocks; the **standard schedule types** the industry knows (day, week, month schedules, …) are delivered with the system as **composite block types** (§5) built from those primitives. Block metadata is never used for this (it only supports the user interface, `01-architecture-overview.md` §2.2).
+
+Calendar primitives — each a scheduled block (`TIMER_SCHEDULED`) that reads the wall clock from the environment (`04-drivers.md` §1) and arms its timer for its next boundary; each has a `bool` output `out`, true while the current time matches:
+- `timing/MinuteRange` — input `range` (string, e.g. `"12:30-15:45"`): true within that time-of-day range.
+- `timing/DayOfWeek` — input `day` (number 1–7) and input `sunday_first` (bool: whether day 1 is Sunday rather than Monday): true on that weekday.
+- `timing/MonthOfYear` — input `month` (number 1–12): true during that month.
+- Further primitives, e.g. `timing/DayOfYear`, `timing/WeekOfYear`, and holiday calendars such as `timing/HolidaysOfSweden`.
+
+Standard schedule types are composites of these primitives and boolean logic (e.g. a week schedule = `MinuteRange` AND `DayOfWeek` …), shipped with the system so they appear in the component list like any other type.
+
+Details still to settle (`00-README.md`, open question 5): whether the day/month selectors take a single value or a range/list like `MinuteRange` (e.g. `"1-5"`); `MinuteRange` edge rules (end exclusive? ranges past midnight such as `"22:00-06:00"`); week numbering for `WeekOfYear` (ISO 8601?); boolean logic blocks with `bool` outputs (the existing `math/And2`/`Or2` are bitwise on integers); how built-in composites are shipped (compiled-in or files installed with the system); and local time vs UTC (open question 11).

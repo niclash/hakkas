@@ -23,6 +23,8 @@ There is no EEPROM and no module discovery by hakkas. The hardware platform thes
 
 Instead, the **environment** — whatever hosts hakkas and owns the physical inputs and outputs (the device firmware on Zephyr, a simulator on POSIX) — provides a **service provider interface** that hakkas queries for the external inputs and outputs that are available. The environment describes them in the same terms as block types (`01-architecture-overview.md` §2.3, `02-wire-protocol.md` §3.5): named, typed, described ports, with an icon and a description. The one principal difference from a block type is that an environment **cannot be instantiated**: it exists once, whether or not a graph uses it, and the user cannot create or delete it. Presenting it nicely in the user interface needs dedicated handling there.
 
+The environment interface also provides the **wall clock** (`00-README.md`, open question 11): calendar blocks (`03-block-types.md` §6.2) and wire timestamps read real time from it; on POSIX the simulated environment uses the host's clock.
+
 How a graph's ports are connected to the environment's ports — so that the same graph runs unchanged in different environments, by applying a different bindings file — is open question 3 (§4). How the environment appears in the graph model and on the wire is open question 6.
 
 On the Zephyr build the environment's implementation (device drivers, devicetree, board support) belongs to the device firmware, not to hakkas; on POSIX it is the simulated provider (§0).
