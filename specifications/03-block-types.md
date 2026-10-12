@@ -226,11 +226,15 @@ Ports (provisional names): inputs `setpoint`, `measured_value`, `kp`, `ti`, `td`
 **Decided** (`00-README.md`, open question 5 — schedule part): schedules are not one configurable block. They are built from small **calendar primitive** blocks whose settings are ordinary input ports (so they can be wired, given initials, and work identically in every environment), combined with logic blocks; the **standard schedule types** the industry knows (day, week, month schedules, …) are delivered with the system as **composite block types** (§5) built from those primitives. Block metadata is never used for this (it only supports the user interface, `01-architecture-overview.md` §2.2).
 
 Calendar primitives — each a scheduled block (`TIMER_SCHEDULED`) that reads the wall clock from the environment (`04-drivers.md` §1) and arms its timer for its next boundary; each has a `bool` output `out`, true while the current time matches:
-- `timing/MinuteRange` — input `range` (string, e.g. `"12:30-15:45"`): true within that time-of-day range.
-- `timing/DayOfWeek` — input `day` (number 1–7) and input `sunday_first` (bool: whether day 1 is Sunday rather than Monday): true on that weekday.
-- `timing/MonthOfYear` — input `month` (number 1–12): true during that month.
-- Further primitives, e.g. `timing/DayOfYear`, `timing/WeekOfYear`, and holiday calendars such as `timing/HolidaysOfSweden`.
+- `timing/MinuteRange` — input `range` (string, e.g. `"12:30-15:45"`): true within that time-of-day range. The start is included and the end excluded (true from 12:30:00 until just before 15:45); a range may wrap past midnight (`"22:00-06:00"`).
+- `timing/DayOfWeek` — input `days` (selector string, 1–7) and input `sunday_first` (bool: whether day 1 is Sunday rather than Monday): true on the selected weekdays.
+- `timing/MonthOfYear` — input `months` (selector string, 1–12): true during the selected months.
+- Further primitives, e.g. `timing/DayOfYear`, `timing/WeekOfYear` (ISO 8601 week numbers 1–53, weeks starting on Monday), and holiday calendars such as `timing/HolidaysOfSweden`.
 
-Standard schedule types are composites of these primitives and boolean logic (e.g. a week schedule = `MinuteRange` AND `DayOfWeek` …), shipped with the system so they appear in the component list like any other type.
+**Selector strings** (all day/week/month/year selectors): a single value, a range, a list, or a mix — `"3"`, `"1-5"`, `"6,7"`, `"1-3,5"` — so e.g. Monday–Friday is one `DayOfWeek` block with `"1-5"`.
 
-Details still to settle (`00-README.md`, open question 5): whether the day/month selectors take a single value or a range/list like `MinuteRange` (e.g. `"1-5"`); `MinuteRange` edge rules (end exclusive? ranges past midnight such as `"22:00-06:00"`); week numbering for `WeekOfYear` (ISO 8601?); boolean logic blocks with `bool` outputs (the existing `math/And2`/`Or2` are bitwise on integers); how built-in composites are shipped (compiled-in or files installed with the system); and local time vs UTC (open question 11).
+**Boolean logic**: `logic/And`, `logic/Or`, `logic/Not` and `logic/Xor` with `bool` inputs and a `bool` output, for combining calendar primitives (the `math/And2`/`Or2` blocks are bitwise integer operations with number outputs).
+
+**Standard schedule types** (day, week, month schedules, …) are composites of the primitives and logic blocks. They are **not built into hakkas**: they are supplied separately as a **standard library** of composite type files (§5.1), which a deployment installs into its `types/` directory if it wants them. Once installed they are ordinary user types.
+
+Time zone: all of this is UTC unless open question 11 decides otherwise.
