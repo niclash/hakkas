@@ -13,9 +13,9 @@ The engine sees IO only through the PAL's **IO-provider interface** (`01-archite
 
 Two providers implement it:
 - **Zephyr IO provider** (`platform/zephyr/`): the device firmware's environment (§1), reached through Zephyr's device driver subsystem; hakkas reads no module descriptors itself.
-- **Simulated IO provider** (`platform/posix/`): a desktop simulator. It defines a set of virtual channels (from a simulation config file in the configuration directory) whose input values can be set externally — e.g. from a small local control socket or a script — and whose output writes are logged/observable. This is what lets the full system, including `io/*` blocks, run and be tested on an x86_64 desktop with no hardware. The exact simulator interface is an implementation detail.
+- **Simulated IO provider** (`platform/posix/`): a desktop simulator. It defines a set of virtual channels (from a simulation config file in the configuration directory) whose input values can be set externally — e.g. from a small local control socket or a script — and whose output writes are logged/observable. This is what lets the full system, including the environment bindings, run and be tested on an x86_64 desktop with no hardware. The exact simulator interface is an implementation detail.
 
-Everything above the IO-provider interface (the `io/*` block types, the binding table, delivering IO events to blocks) is platform-independent and lives in `drivers/` (`01-architecture-overview.md` §6).
+Everything above the IO-provider interface (the bindings, delivering IO events to the bound block ports) is platform-independent and lives in `drivers/` (`01-architecture-overview.md` §6).
 
 ## 1. The environment and its interface (decided, open question 2)
 
@@ -33,9 +33,9 @@ On the Zephyr build the environment's implementation (device drivers, devicetree
 
 1. At boot, hakkas queries the environment (§1) for its available inputs and outputs.
 2. *(Removed with the EEPROM, open question 2.)*
-3. **Binding** (platform-independent, above the IO-provider interface): a logical `io/*` block port (e.g. an `AnalogInput` instance's `out` port) is associated with one discovered physical channel.
-4. **Portability**: the same graph must run against different physical hardware configurations. The binding from a graph's logical IO reference to an actual discovered slot/channel is resolved per-deployment, at boot — not baked into the portable graph file. A graph references physical IO by a stable logical identifier (e.g. `"sensor1"`); a separate, per-device binding configuration maps that identifier to a specific discovered slot/channel on this board. The binding configuration is a **bindings file** per environment; its exact form is deferred until the environment SPI is implemented (`00-README.md`, open question 3, which records the current leaning). So is where an `io/*` block instance records its logical identifier (its instance name, a field in its node metadata, …).
-5. An input block receives IO events for its bound channel and propagates the value exactly like any other block's output (`01-architecture-overview.md` §3); an output block hands each new value to the IO provider (`io_write`, §0) on `update()`.
+3. **Binding** (platform-independent, above the IO-provider interface): an ordinary block port (`"<block>.<port>"`) is associated with one environment port; there are no `io/*` blocks (`03-block-types.md` §4).
+4. **Portability**: the same graph must run against different physical hardware configurations. The binding from a graph's logical IO reference to an actual discovered slot/channel is resolved per-deployment, at boot — not baked into the portable graph file. The graph itself contains no reference to hardware; a separate binding configuration maps its block ports to this environment's ports. The binding configuration is a **bindings file** per environment; its exact form is deferred until the environment SPI is implemented (`00-README.md`, open question 3, which records the current leaning).
+5. An environment input delivers IO events to its bound block port, which propagates the value exactly like any other value change (`01-architecture-overview.md` §3); an environment output receives each new value of its bound block port through the IO provider (`io_write`, §0). An output keeps its last value whenever nothing drives it (`03-block-types.md` §4).
 6. **Graceful degradation**: a logical IO reference with no live binding on a given deployment (the environment doesn't provide that input or output) holds its default value and takes no other action — it doesn't fail graph startup. This is what makes a graph portable across differently-configured hardware: references to IO points a particular board doesn't have simply stay inert.
 
 ## 5. What hakkas owns vs. the separate hardware effort

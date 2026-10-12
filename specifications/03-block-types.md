@@ -63,10 +63,6 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `math/GreaterEqual` | compare | `out = in1 >= in2` | `to_f64(in1) >= to_f64(in2)` (bool result) |
 | `process/Linear` | function | `out = k*in+m` | `(to_f64(in)*to_f64(k))+to_f64(m)`; ports named `in`, `k`, `m` → `out` |
 | `timing/Interval` | timer | periodic pulse generator: PWM or edge generator | see §3.1 |
-| `io/DigitalInput` | digital-input | logical digital input bound to a physical channel | see §4 |
-| `io/DigitalOutput` | digital-output | logical digital output bound to a physical channel | see §4 |
-| `io/AnalogInput` | analog-input | logical analog input bound to a physical channel | see §4 |
-| `io/AnalogOutput` | analog-output | logical analog output bound to a physical channel | see §4 |
 
 **Results and edge cases** (decided, plan task 5):
 - The arithmetic blocks and `process/Linear` output an f64; the comparisons a bool; the bitwise blocks (`And2`, `Or2`, `Xor`, `And4`, `Or4`) an **i64**, so all 64 bits of the result survive (an f64 would round values beyond 2^53). Their port type is still `"number"`.
@@ -110,17 +106,13 @@ Decisions (plan task 8, `src/blocktypes/timing.c`):
 - **100 % ↔ 0 %**: no special case — the change is latched at the next cycle start like any other, so a 100 % cycle runs to its end and the next cycle is all `false` (or the reverse).
 - **Stop and restart**: `stop()` leaves `out` as it was (not propagated); nothing of the interrupted cycle survives, and `start()` begins a fresh cycle at the restart time.
 
-## 4. IO block types
+## 4. The environment's inputs and outputs — no IO block types
 
-> **Provisional.** IO events come from the platform's IO provider — Zephyr on the device, a simulator on the desktop (`04-drivers.md`). The details will be worked out when the system is hooked up to Zephyr, and this section may change substantially.
-
-`io/AnalogInput`/`io/DigitalInput` have zero inputs and one output (`out`). `io/AnalogOutput`/`io/DigitalOutput` have one input (`input`) and zero outputs. Each is bound to a physical channel (`04-drivers.md` §4):
-- An input block receives **IO events** for its bound channel from the engine queue (`01-architecture-overview.md` §3.2) and sets `out` from each event, subject to the change threshold. Analog channels deliver `Metric` values; digital channels deliver booleans.
-- An output block hands each new input value to the IO provider for its bound channel. The engine never performs blocking hardware access on its own thread.
-
-A logical IO port with no live binding on a given deployment (module absent, or this board variant doesn't have it) holds its default value and takes no other action. This is what lets the same graph run unmodified across differently-configured hardware (`04-drivers.md` §4). `addressable` is `false` on all four built-in descriptors (no address indexing is implemented).
-
-How hardware channels are represented to the user (they can't be deleted, but can be hidden and organized into graphs), and what a physical output does when its graph stops or it is unwired, are open (`00-README.md`, open question 6).
+**Decided** (`00-README.md`, open question 6). There are no `io/*` block types: a graph contains no blocks that represent hardware. The environment's inputs and outputs are described by the environment itself, like a block type that cannot be instantiated (`04-drivers.md` §1), and a per-environment **bindings file** connects ordinary block ports to them (`04-drivers.md` §4; its exact form is open question 3). The same graph therefore runs unchanged in any environment.
+- **Environment inputs** (a sensor, a digital input) deliver their values to the bound block ports as IO events through the engine queue (`01-architecture-overview.md` §3.2), propagating like any other value change.
+- **Environment outputs** (a relay, a 0–10 V output) take the value of the bound block port and hand it to the environment. The engine never performs blocking hardware access on its own thread.
+- **An output keeps its last value** whenever no running process drives it — before its process is loaded, while it is stopped, when the binding is missing or removed. Hakkas does nothing in those cases. A timeout after which a held value is released (e.g. 1–10 minutes) may be added later. What the hardware does if hakkas itself crashes or hangs (watchdogs, on Zephyr or in hardware) is out of scope.
+- **User interface**: environment ports cannot be created or deleted by the user, but the frontend should let users hide them and organize them; that needs dedicated handling in the frontend.
 
 ## 5. Groups — user-defined (composite) block types
 

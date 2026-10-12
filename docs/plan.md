@@ -356,8 +356,9 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `changegroup` on the task-21 model functions, with their broadcasts and a `component:component`
   broadcast for new/changed types. Open question 4 is decided: "save as component" — the
   selected nodes are left unchanged.
-- [ ] **22. Simulated IO provider + `io/*` blocks + binding table** — **blocked** (open
-  questions 3, 6). IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
+- [ ] **22. Environment SPI + simulated environment + bindings** (04 §1, §4; 03 §4) — no
+  `io/*` blocks (open question 6 decided: outputs keep their last value); the bindings-file
+  format waits for open question 3, which is to be settled while implementing this task. IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
   `WORK_IO_EVENT` in `runtime_drain`.
   From task 19: startup step 5 is a marked no-op in `engine_start` (`src/engine/engine.c`),
   after `loop_init` (the handoff exists) and the authorizer; the provider would be a platform
