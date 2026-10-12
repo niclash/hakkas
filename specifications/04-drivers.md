@@ -2,7 +2,7 @@
 
 > **Provisional.** IO events will come from the Zephyr environment. This document captures the current intent, but the IO sections (§1–§5, §7) are expected to change substantially once hakkas is actually hooked up to Zephyr. The fixed requirement is §0: **the core program must not depend on Zephyr**, so a complete development system runs on a desktop against simulated IO.
 
-Hardware bring-up itself — devicetree authorship, board support, peripheral driver implementations — is the responsibility of a separate effort. This document specifies hakkas' side of the boundary: how it discovers what hardware is present at boot, how it drives it generically without per-module-type firmware changes, and how a graph's logical IO references get bound to actual physical channels on a given deployment.
+Hardware bring-up itself — devicetree authorship, board support, peripheral driver implementations — is the responsibility of a separate effort. This document specifies hakkas' side of the boundary: the interface through which the environment tells hakkas which external inputs and outputs exist (§1), and how a graph's ports get bound to them on a given deployment (§4).
 
 ## 0. The IO-provider boundary
 
@@ -12,50 +12,35 @@ The engine sees IO only through the PAL's **IO-provider interface** (`01-archite
 - event delivery — the provider pushes `(channel, value)` **IO events** into the engine's queue via the PAL's cross-context enqueue function (`pal_handoff_push`, `01-architecture-overview.md` §0.2, §3.2) whenever an input channel's value changes. The handoff is bounded and drops its oldest entry when full, so a provider that produces faster than the engine drains loses the oldest readings, never blocks.
 
 Two providers implement it:
-- **Zephyr IO provider** (`platform/zephyr/`): the boot-time discovery, descriptor-driven driver, and polling described in §1–§3.
+- **Zephyr IO provider** (`platform/zephyr/`): the device firmware's environment (§1), reached through Zephyr's device driver subsystem; hakkas reads no module descriptors itself.
 - **Simulated IO provider** (`platform/posix/`): a desktop simulator. It defines a set of virtual channels (from a simulation config file in the configuration directory) whose input values can be set externally — e.g. from a small local control socket or a script — and whose output writes are logged/observable. This is what lets the full system, including `io/*` blocks, run and be tested on an x86_64 desktop with no hardware. The exact simulator interface is an implementation detail.
 
 Everything above the IO-provider interface (the `io/*` block types, the binding table, delivering IO events to blocks) is platform-independent and lives in `drivers/` (`01-architecture-overview.md` §6).
 
-## 1. Zephyr IO provider: boot-time discovery, then steady-state polling (not hot-pluggable)
+## 1. The environment and its interface (decided, open question 2)
 
-Hardware identification happens once, at boot. Two phases:
+There is no EEPROM and no module discovery by hakkas. The hardware platform these sections originally described no longer exists; hakkas does not read module descriptors, probe expansion slots, or drive registers itself.
 
-1. **Boot-time discovery**: for each physical expansion slot the board provides (a fixed, build-time-known set — see §2 on devicetree's role), read the identity/descriptor data from that slot's onboard EEPROM over I2C, if a module is actually present and responds. A slot with no responding module is handled gracefully — logged and skipped, not a fatal error, since a given board may have fewer modules installed than slots available.
-2. **Steady-state polling**: once a slot's module is identified and configured, a dedicated worker polls that module's live data on an ongoing basis and feeds readings into the engine's single work queue as IO events (§0; `01-architecture-overview.md` §3.2, §3.2.1 — the worker must only *enqueue* readings, never call block logic directly, since it runs outside the engine's own thread). Only readings that changed are enqueued.
+Instead, the **environment** — whatever hosts hakkas and owns the physical inputs and outputs (the device firmware on Zephyr, a simulator on POSIX) — provides a **service provider interface** that hakkas queries for the external inputs and outputs that are available. The environment describes them in the same terms as block types (`01-architecture-overview.md` §2.3, `02-wire-protocol.md` §3.5): named, typed, described ports, with an icon and a description. The one principal difference from a block type is that an environment **cannot be instantiated**: it exists once, whether or not a graph uses it, and the user cannot create or delete it. Presenting it nicely in the user interface needs dedicated handling there.
 
-There is no third phase: a module removed or inserted after boot is not detected until the next reboot.
+How a graph's ports are connected to the environment's ports — so that the same graph runs unchanged in different environments, by applying a different bindings file — is open question 3 (§4). How the environment appears in the graph model and on the wire is open question 6.
 
-## 2. Devicetree's role vs. the EEPROM's role
-
-These are complementary, not overlapping:
-- **Devicetree** (owned by the separate hardware effort, static per board/build): defines the board's fixed physical topology — which I2C buses and GPIO lines exist, and which bus/address range is reserved for each physical expansion slot. This is "what wiring does this board have," known at compile time.
-- **Per-module EEPROM content** (read at runtime, varies with whatever is physically installed): identifies what is actually plugged into each of those devicetree-defined slots this boot — manufacturer/device/revision data, or richer descriptor data (§3). This is "what's actually there right now," not knowable until the EEPROM is read.
-
-Both pieces are needed: devicetree says where the expansion slots are; the EEPROM says what's in each one today.
-
-## 3. The driver is generic and descriptor-driven, not a fixed enum
-
-Supporting a new module type must never require a firmware update. That rules out identifying a module via a numeric ID that selects among a fixed set of compiled-in driver implementations — adding a new module type under that scheme would require a new compiled case and a reflash.
-
-**The EEPROM must therefore carry enough information for one generic driver to configure itself per module**: the IO channels the module exposes, their types (digital/analog/etc.), register addresses or access patterns, scaling/units, and polling requirements — not just an ID. The firmware's job is: read the descriptor, build an in-memory channel table for that slot, and drive every channel through one generic read/write/poll engine — the same generalization principle as the block-type runtime in `01-architecture-overview.md` §2.3.
-
-The exact byte layout of this descriptor is not specified here — it depends on what the separate hardware effort defines, or needs to be designed jointly (`00-README.md`, open question 2).
+On the Zephyr build the environment's implementation (device drivers, devicetree, board support) belongs to the device firmware, not to hakkas; on POSIX it is the simulated provider (§0).
 
 ## 4. Discovery and binding
 
-1. At boot, for each devicetree-defined expansion slot, attempt to read that slot's EEPROM over its I2C bus.
-2. For each slot that responds, parse its descriptor (§3) and configure the generic driver's channel table for that slot.
+1. At boot, hakkas queries the environment (§1) for its available inputs and outputs.
+2. *(Removed with the EEPROM, open question 2.)*
 3. **Binding** (platform-independent, above the IO-provider interface): a logical `io/*` block port (e.g. an `AnalogInput` instance's `out` port) is associated with one discovered physical channel.
 4. **Portability**: the same graph must run against different physical hardware configurations. The binding from a graph's logical IO reference to an actual discovered slot/channel is resolved per-deployment, at boot — not baked into the portable graph file. A graph references physical IO by a stable logical identifier (e.g. `"sensor1"`); a separate, per-device binding configuration maps that identifier to a specific discovered slot/channel on this board. The exact form of that binding configuration (a separate file, a section of boot configuration, etc.) is open (`00-README.md`, open question 3). So is where an `io/*` block instance records its logical identifier (its instance name, a field in its node metadata, …).
 5. An input block receives IO events for its bound channel and propagates the value exactly like any other block's output (`01-architecture-overview.md` §3); an output block hands each new value to the IO provider (`io_write`, §0) on `update()`.
-6. **Graceful degradation**: a logical IO reference with no live binding on a given deployment (module absent, or this board variant doesn't have it) holds its default value and takes no other action — it doesn't fail graph startup. This is what makes a graph portable across differently-configured hardware: references to IO points a particular board doesn't have simply stay inert.
+6. **Graceful degradation**: a logical IO reference with no live binding on a given deployment (the environment doesn't provide that input or output) holds its default value and takes no other action — it doesn't fail graph startup. This is what makes a graph portable across differently-configured hardware: references to IO points a particular board doesn't have simply stay inert.
 
 ## 5. What hakkas owns vs. the separate hardware effort
 
-Hakkas owns: the IO-provider interface and the simulated provider (§0), the `io/*` block types' FBP-facing behavior (`03-block-types.md` §4), the generic descriptor-driven driver engine (§3), the boot-time discovery and steady-state polling worker (§1), and the logical-identifier-to-physical-channel binding table (§4) including graceful degradation.
+Hakkas owns: the environment interface it queries (§1, §0), the simulated environment on POSIX, the FBP-facing behavior of whatever represents the environment in graphs (open question 6), and the binding of graph ports to environment ports (§4) including graceful degradation.
 
-The separate hardware effort owns: devicetree authorship, Zephyr board support, and — jointly with hakkas at the format-definition stage — the EEPROM descriptor format itself, since hakkas' generic driver is what has to interpret it.
+The environment's side — on Zephyr the device firmware: devicetree, board support, device drivers, and the implementation of the environment interface — belongs to the separate hardware/firmware effort. There is no EEPROM descriptor format.
 
 ## 6. Networking on the Zephyr targets — proposal
 
