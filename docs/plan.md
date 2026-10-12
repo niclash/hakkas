@@ -366,7 +366,8 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
 - [ ] **21e. Host-managed lifetime + local C API** (open question 12, 02 §6, 05 §1.4): the
   engine stops loading/starting graphs itself; the host (POSIX `main.c`, later the Zephyr
   app) does it through a local C API carrying the protocol's commands and events; the POSIX
-  host reads `processes.json` (05 §1.2). The API's form is still to be decided.
+  host reads `processes.json` (05 §1.2). The API is typed C functions + event structs over
+  the same `graphs_*` command layer as the dispatcher (02 §6).
 - [ ] **22. Environment SPI + simulated environment + bindings** (04 §1, §4; 03 §4) — no
   `io/*` blocks (open question 6 decided: outputs keep their last value); the bindings-file
   format waits for open question 3, which is to be settled while implementing this task. IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
