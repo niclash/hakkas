@@ -413,10 +413,10 @@ static void test_describe_topology(void)
 		  "    \"old\": {\"component\": \"vendor/Gone\"}\n  },\n"
 		  "  \"connections\": [\n"
 		  "    {\"src\": {\"data\": 2.5}, "
-		  "\"tgt\": {\"node\": \"add\", \"port\": \"in1\"}},\n"
-		  "    {\"src\": {\"node\": \"old\", \"port\": \"out\"}, "
-		  "\"tgt\": {\"node\": \"add\", \"port\": \"in2\"}}\n  ],\n"
-		  "  \"outports\": [{\"name\": \"sum\", \"node\": \"add\", "
+		  "\"tgt\": {\"block\": \"add\", \"port\": \"in1\"}},\n"
+		  "    {\"src\": {\"process\": \"old\", \"port\": \"out\"}, "
+		  "\"tgt\": {\"block\": \"add\", \"port\": \"in2\"}}\n  ],\n"
+		  "  \"outports\": [{\"name\": \"sum\", \"block\": \"add\", "
 		  "\"port\": \"out\"}]\n}\n");
 	CHECK(run("--confdir", conf, "describe", "topology", file, NULL) == CLI_EXIT_OK);
 	CHECK_STREQ(output,
@@ -425,11 +425,11 @@ static void test_describe_topology(void)
 		    "\"add\":{\"component\":\"math/Add2\",\"metadata\":{\"x\":10,\"y\":20}},"
 		    "\"old\":{\"component\":\"vendor/Gone\",\"metadata\":{\"x\":50,\"y\":50}}},"
 		    "\"connections\":["
-		    "{\"src\":{\"data\":2.5},\"tgt\":{\"node\":\"add\",\"port\":\"in1\"}},"
-		    "{\"src\":{\"node\":\"old\",\"port\":\"out\"},"
-		    "\"tgt\":{\"node\":\"add\",\"port\":\"in2\"}}],"
+		    "{\"src\":{\"data\":2.5},\"tgt\":{\"block\":\"add\",\"port\":\"in1\"}},"
+		    "{\"src\":{\"block\":\"old\",\"port\":\"out\"},"
+		    "\"tgt\":{\"block\":\"add\",\"port\":\"in2\"}}],"
 		    "\"inports\":[],"
-		    "\"outports\":[{\"name\":\"sum\",\"node\":\"add\",\"port\":\"out\"}]}"
+		    "\"outports\":[{\"name\":\"sum\",\"block\":\"add\",\"port\":\"out\"}]}"
 		    "\n");
 	/* The placeholder is reported on the log, not the output. */
 	CHECK(strstr(logs, "warn") != NULL && strstr(logs, "vendor/Gone") != NULL);

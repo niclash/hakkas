@@ -2,7 +2,8 @@
  * Graph files (app/graph_files.h, app/file_names.h; 05 §2, 02 §3.2–§3.4):
  * file names, the canonical format and its round trip, every initial type,
  * opaque metadata, placeholder blocks and their retained connections,
- * invalid entries and malformed files, the started flag, persist and its
+ * invalid entries and malformed files, the block reference keys and the
+ * sister project's files in examples/, the started flag, persist and its
  * failure event, delete, and loading a directory or a list of files. Files
  * live in a fresh temporary directory that is removed afterwards.
  */
@@ -343,16 +344,16 @@ static const char canonical[] =
 	"'B':{'component':'math/Add2','metadata':{'x':50,'y':50}},"
 	"'S':{'component':'test/Sink','metadata':{'x':50,'y':50}}},"
 	"'connections':["
-	"{'src':{'data':0.30000000000000004},'tgt':{'node':'A','port':'in1'}},"
-	"{'src':{'data':'NaN'},'tgt':{'node':'A','port':'in2'}},"
-	"{'src':{'node':'A','port':'out'},'tgt':{'node':'B','port':'in1'},"
+	"{'src':{'data':0.30000000000000004},'tgt':{'block':'A','port':'in1'}},"
+	"{'src':{'data':'NaN'},'tgt':{'block':'A','port':'in2'}},"
+	"{'src':{'block':'A','port':'out'},'tgt':{'block':'B','port':'in1'},"
 	"'metadata':{'route':3,'secure':false}},"
-	"{'src':{'data':'21.5 degC'},'tgt':{'node':'B','port':'in2'}},"
-	"{'src':{'data':'-Infinity'},'tgt':{'node':'S','port':'n'}},"
-	"{'src':{'data':'hi \\\\ \\'you\\''},'tgt':{'node':'S','port':'s'}},"
-	"{'src':{'data':true},'tgt':{'node':'S','port':'b'}}],"
-	"'inports':[{'name':'x','node':'A','port':'in1'}],"
-	"'outports':[{'name':'y','node':'B','port':'out'}]}";
+	"{'src':{'data':'21.5 degC'},'tgt':{'block':'B','port':'in2'}},"
+	"{'src':{'data':'-Infinity'},'tgt':{'block':'S','port':'n'}},"
+	"{'src':{'data':'hi \\\\ \\'you\\''},'tgt':{'block':'S','port':'s'}},"
+	"{'src':{'data':true},'tgt':{'block':'S','port':'b'}}],"
+	"'inports':[{'name':'x','block':'A','port':'in1'}],"
+	"'outports':[{'name':'y','block':'B','port':'out'}]}";
 
 /* Build the graph of canonical through the commands. */
 static Graph *build_canonical(void)
@@ -451,8 +452,9 @@ static void test_round_trip(void)
 	teardown();
 }
 
-/* A hand-written file loads into the same graph; its first save is the
- * canonical form, and saving is a fixed point from then on. */
+/* A hand-written file (with the former "node" references) loads into the
+ * same graph; its first save is the canonical form, and saving is a fixed
+ * point from then on. */
 static void test_hand_written(void)
 {
 	setup("hand");
@@ -469,8 +471,9 @@ static void test_hand_written(void)
 		"{'id':'h','name':'Hand','description':'','icon':'','started':false,"
 		"'blocks':{'B':{'component':'math/Add2','metadata':{'x':4,'y':3,'route':100}},"
 		"'A':{'component':'math/Add2','metadata':{'x':50,'y':50}}},"
-		"'connections':[{'src':{'node':'A','port':'out'},'tgt':{'node':'B','port':'in1'}},"
-		"{'src':{'data':5},'tgt':{'node':'B','port':'in2'}}],"
+		"'connections':[{'src':{'block':'A','port':'out'},"
+		"'tgt':{'block':'B','port':'in1'}},"
+		"{'src':{'data':5},'tgt':{'block':'B','port':'in2'}}],"
 		"'inports':[],'outports':[]}";
 	check_saved(g, jq(saved));
 	CHECK(graphs_delete_graph(&gs, "h", "Hand", NULL) == GRAPH_OK);
@@ -505,9 +508,9 @@ static void test_started(void)
 	setup("started");
 	const char *file = "{'id':'s','started':true,'blocks':{'A':{'component':'math/Add2'},"
 			   "'B':{'component':'math/Add2'}},'connections':["
-			   "{'src':{'data':2},'tgt':{'node':'A','port':'in1'}},"
-			   "{'src':{'node':'A','port':'out'},'tgt':{'node':'B','port':'in1'}},"
-			   "{'src':{'data':3},'tgt':{'node':'A','port':'in2'}}]}";
+			   "{'src':{'data':2},'tgt':{'block':'A','port':'in1'}},"
+			   "{'src':{'block':'A','port':'out'},'tgt':{'block':'B','port':'in1'}},"
+			   "{'src':{'data':3},'tgt':{'block':'A','port':'in2'}}]}";
 	Graph *g = load(file, GRAPH_FILES_OK);
 	CHECK(g->started);
 	/* Started after everything else is loaded. */
@@ -525,8 +528,8 @@ static void test_started(void)
 
 	/* Absent or false: stopped, values only stored. */
 	g = load("{'id':'t','blocks':{'A':{'component':'math/Add2'},'B':{'component':"
-		 "'math/Add2'}},'connections':[{'src':{'data':2},'tgt':{'node':'A','port':'in1'}},"
-		 "{'src':{'node':'A','port':'out'},'tgt':{'node':'B','port':'in1'}}]}",
+		 "'math/Add2'}},'connections':[{'src':{'data':2},'tgt':{'block':'A','port':'in1'}},"
+		 "{'src':{'block':'A','port':'out'},'tgt':{'block':'B','port':'in1'}}]}",
 		 GRAPH_FILES_OK);
 	CHECK(!g->started);
 	runtime_drain(&rt, 100);
@@ -543,14 +546,14 @@ static const char placeholder_file[] =
 	"'P':{'component':'vendor/Gizmo','metadata':{'x':1,'y':2,'change_threshold':0.25,"
 	"'knob':{'v':0.30000000000000004}}},"
 	"'B':{'component':'math/Add2','metadata':{'x':50,'y':50}}},"
-	"'connections':[{'src':{'data':1},'tgt':{'node':'A','port':'in1'}},"
-	"{'src':{'node':'A','port':'out'},'tgt':{'node':'P','port':'x'},'metadata':{'route':1}},"
-	"{'src':{'node':'P','port':'y'},'tgt':{'node':'B','port':'in1'}},"
-	"{'src':{'data':'abc'},'tgt':{'node':'P','port':'z'}},"
-	"{'src':{'data':2.5},'tgt':{'node':'P','port':'w'}},"
-	"{'src':{'node':'P','port':'q'},'tgt':{'node':'P','port':'r'}}],"
-	"'inports':[{'name':'i','node':'P','port':'x'}],"
-	"'outports':[{'name':'o','node':'P','port':'y'}]}";
+	"'connections':[{'src':{'data':1},'tgt':{'block':'A','port':'in1'}},"
+	"{'src':{'block':'A','port':'out'},'tgt':{'block':'P','port':'x'},'metadata':{'route':1}},"
+	"{'src':{'block':'P','port':'y'},'tgt':{'block':'B','port':'in1'}},"
+	"{'src':{'data':'abc'},'tgt':{'block':'P','port':'z'}},"
+	"{'src':{'data':2.5},'tgt':{'block':'P','port':'w'}},"
+	"{'src':{'block':'P','port':'q'},'tgt':{'block':'P','port':'r'}}],"
+	"'inports':[{'name':'i','block':'P','port':'x'}],"
+	"'outports':[{'name':'o','block':'P','port':'y'}]}";
 
 static void test_placeholders(void)
 {
@@ -578,8 +581,8 @@ static void test_placeholders(void)
 	CHECK(graphs_rename_node(&gs, "p", "P", "Q", NULL) == GRAPH_OK);
 	CHECK_STREQ(events, "renamenode;");
 	char *text = graph_files_serialize(g, NULL);
-	CHECK(text != NULL && strstr(text, "\"node\":\"P\"") == NULL &&
-	      strstr(text, "\"node\":\"Q\"") != NULL);
+	CHECK(text != NULL && strstr(text, "\"block\":\"P\"") == NULL &&
+	      strstr(text, "\"block\":\"Q\"") != NULL);
 	free(text);
 
 	/* A live edge into B.in1 and a live inport called i replace the
@@ -595,15 +598,15 @@ static void test_placeholders(void)
 		       "'Q':{'component':'vendor/Gizmo','metadata':{'x':1,'y':2,"
 		       "'change_threshold':0.25,'knob':{'v':0.30000000000000004}}},"
 		       "'B':{'component':'math/Add2','metadata':{'x':50,'y':50}}},"
-		       "'connections':[{'src':{'data':1},'tgt':{'node':'A','port':'in1'}},"
-		       "{'src':{'node':'A','port':'out'},'tgt':{'node':'B','port':'in1'}},"
-		       "{'src':{'node':'A','port':'out'},'tgt':{'node':'Q','port':'x'},"
+		       "'connections':[{'src':{'data':1},'tgt':{'block':'A','port':'in1'}},"
+		       "{'src':{'block':'A','port':'out'},'tgt':{'block':'B','port':'in1'}},"
+		       "{'src':{'block':'A','port':'out'},'tgt':{'block':'Q','port':'x'},"
 		       "'metadata':{'route':1}},"
-		       "{'src':{'data':'abc'},'tgt':{'node':'Q','port':'z'}},"
-		       "{'src':{'data':2.5},'tgt':{'node':'Q','port':'w'}},"
-		       "{'src':{'node':'Q','port':'q'},'tgt':{'node':'Q','port':'r'}}],"
-		       "'inports':[{'name':'i','node':'A','port':'in2'}],"
-		       "'outports':[{'name':'o','node':'A','port':'out'}]}"));
+		       "{'src':{'data':'abc'},'tgt':{'block':'Q','port':'z'}},"
+		       "{'src':{'data':2.5},'tgt':{'block':'Q','port':'w'}},"
+		       "{'src':{'block':'Q','port':'q'},'tgt':{'block':'Q','port':'r'}}],"
+		       "'inports':[{'name':'i','block':'A','port':'in2'}],"
+		       "'outports':[{'name':'o','block':'A','port':'out'}]}"));
 
 	/* A live initial replaces a retained connection too. */
 	CHECK(graph_retain_connection(g, &(RetainedConnection){.src = graph_find_block(g, "Q"),
@@ -652,32 +655,33 @@ static void test_invalid_entries(void)
 	       "':{'component':'math/Add2'},'E':{'component':'math/Add2'},"
 	       "'A':{'component':'math/Mul2'},'P':{'component':'nope/Type'}},"
 	       "'connections':["
-	       "{'src':{'node':'A','port':'out'},'tgt':{'node':'E','port':'in1'}},"
-	       "{'src':{'node':'A','port':'out'},'tgt':{'node':'E','port':'in1'}},"
-	       "{'src':{'data':3},'tgt':{'node':'E','port':'in1'}},"
-	       "{'src':{'node':'X','port':'out'},'tgt':{'node':'E','port':'in2'}},"
-	       "{'src':{'node':'A','port':'nope'},'tgt':{'node':'E','port':'in2'}},"
-	       "{'src':{'node':'A','port':'in1'},'tgt':{'node':'E','port':'in2'}},"
-	       "{'src':{'data':4},'tgt':{'node':'E','port':'out'}},"
-	       "{'src':{'data':[1]},'tgt':{'node':'E','port':'in2'}},"
-	       "{'src':{'node':'A','port':'out'}},"
-	       "{'src':{'node':'A','port':'out'},'tgt':{'node':'E','port':'in2'},'metadata':5},"
-	       "{'src':{'node':'P','port':'y'},'tgt':{'node':'A','port':'in1'}},"
-	       "{'src':{'data':1},'tgt':{'node':'A','port':'in1'}},"
-	       "{'src':{'node':'P','port':'y'},'tgt':{'node':'A','port':'nope'}},"
-	       "{'src':{'node':'P','port':'y'},'tgt':{'node':'A','port':'out'}},"
-	       "{'src':{'node':'A','port':'in2'},'tgt':{'node':'P','port':'x'}},"
-	       "{'src':{'node':'A','port':'out'},'tgt':{'node':'P','port':'x'}},"
-	       "{'src':{'data':1},'tgt':{'node':'P','port':'x'}},"
-	       "{'src':{'node':'P','port':'y'},'tgt':{'node':'E','port':'in1'}},"
-	       "{'src':{'data':2},'tgt':{'node':'Z','port':'in1'}},"
-	       "{'src':{'node':'','port':'out'},'tgt':{'node':'E','port':'in2'}},"
+	       "{'src':{'block':'A','port':'out'},'tgt':{'block':'E','port':'in1'}},"
+	       "{'src':{'block':'A','port':'out'},'tgt':{'block':'E','port':'in1'}},"
+	       "{'src':{'data':3},'tgt':{'block':'E','port':'in1'}},"
+	       "{'src':{'block':'X','port':'out'},'tgt':{'block':'E','port':'in2'}},"
+	       "{'src':{'block':'A','port':'nope'},'tgt':{'block':'E','port':'in2'}},"
+	       "{'src':{'block':'A','port':'in1'},'tgt':{'block':'E','port':'in2'}},"
+	       "{'src':{'data':4},'tgt':{'block':'E','port':'out'}},"
+	       "{'src':{'data':[1]},'tgt':{'block':'E','port':'in2'}},"
+	       "{'src':{'block':'A','port':'out'}},"
+	       "{'src':{'block':'A','port':'out'},'tgt':{'block':'E','port':'in2'},'metadata':5},"
+	       "{'src':{'block':'P','port':'y'},'tgt':{'block':'A','port':'in1'}},"
+	       "{'src':{'data':1},'tgt':{'block':'A','port':'in1'}},"
+	       "{'src':{'block':'P','port':'y'},'tgt':{'block':'A','port':'nope'}},"
+	       "{'src':{'block':'P','port':'y'},'tgt':{'block':'A','port':'out'}},"
+	       "{'src':{'block':'A','port':'in2'},'tgt':{'block':'P','port':'x'}},"
+	       "{'src':{'block':'A','port':'out'},'tgt':{'block':'P','port':'x'}},"
+	       "{'src':{'data':1},'tgt':{'block':'P','port':'x'}},"
+	       "{'src':{'block':'P','port':'y'},'tgt':{'block':'E','port':'in1'}},"
+	       "{'src':{'data':2},'tgt':{'block':'Z','port':'in1'}},"
+	       "{'src':{'block':'','port':'out'},'tgt':{'block':'E','port':'in2'}},"
 	       "7],"
-	       "'inports':[{'name':'i','node':'A','port':'in2'},"
-	       "{'name':'i','node':'E','port':'in2'},{'name':'j','node':'A','port':'out'},"
-	       "{'name':'k','node':'P','port':'x'},{'name':'k','node':'E','port':'in2'},"
-	       "{'name':'i','node':'P','port':'x'},{'name':5},{'name':'','node':'A','port':'in1'}],"
-	       "'outports':[{'name':'o','node':'A','port':'in1'}]}");
+	       "'inports':[{'name':'i','block':'A','port':'in2'},"
+	       "{'name':'i','block':'E','port':'in2'},{'name':'j','block':'A','port':'out'},"
+	       "{'name':'k','block':'P','port':'x'},{'name':'k','block':'E','port':'in2'},"
+	       "{'name':'i','block':'P','port':'x'},{'name':5},"
+	       "{'name':'','block':'A','port':'in1'}],"
+	       "'outports':[{'name':'o','block':'A','port':'in1'}]}");
 	Graph *g = load(file, GRAPH_FILES_OK);
 	char want[4096];
 	snprintf(want, sizeof(want),
@@ -721,11 +725,131 @@ static void test_invalid_entries(void)
 			  "'E':{'component':'math/Add2','metadata':{'x':50,'y':50}},"
 			  "'P':{'component':'nope/Type','metadata':{'x':50,'y':50}}},"
 			  "'connections':["
-			  "{'src':{'node':'A','port':'out'},'tgt':{'node':'E','port':'in1'}},"
-			  "{'src':{'node':'P','port':'y'},'tgt':{'node':'A','port':'in1'}},"
-			  "{'src':{'node':'A','port':'out'},'tgt':{'node':'P','port':'x'}}],"
-			  "'inports':[{'name':'i','node':'A','port':'in2'},"
-			  "{'name':'k','node':'P','port':'x'}],'outports':[]}"));
+			  "{'src':{'block':'A','port':'out'},'tgt':{'block':'E','port':'in1'}},"
+			  "{'src':{'block':'P','port':'y'},'tgt':{'block':'A','port':'in1'}},"
+			  "{'src':{'block':'A','port':'out'},'tgt':{'block':'P','port':'x'}}],"
+			  "'inports':[{'name':'i','block':'A','port':'in2'},"
+			  "{'name':'k','block':'P','port':'x'}],'outports':[]}"));
+	teardown();
+}
+
+/* Block references (05 §2.1 Terms): "block", and for compatibility "node"
+ * (earlier hakkas files) and "process" (the sister project's); an entry with
+ * more than one of them is invalid; a tgt's "data" is ignored. A save always
+ * writes "block". */
+static void test_block_keys(void)
+{
+	setup("keys");
+	static const char file[] =
+		"{'id':'k','blocks':{'A':{'component':'math/Add2'},'B':{'component':'math/Add2'},"
+		"'C':{'component':'math/Add2'},'P':{'component':'nope/Type'}},"
+		"'connections':["
+		"{'src':{'node':'A','port':'out'},'tgt':{'process':'B','port':'in1'}},"
+		"{'src':{'process':'B','port':'out'},'tgt':{'block':'C','port':'in1','data':''}},"
+		"{'src':{'data':7},'tgt':{'process':'A','port':'in1','data':''}},"
+		"{'src':{'process':'A','port':'out'},'tgt':{'node':'P','port':'x'}},"
+		"{'src':{'block':'A','port':'out','node':'A'},'tgt':{'block':'C','port':'in2'}},"
+		"{'src':{'data':1},'tgt':{'block':'C','port':'in2','process':'C'}},"
+		"{'src':{'block':'A','port':'out'},'tgt':{'node':5,'block':'C','port':'in2'}}],"
+		"'inports':[{'name':'i','process':'A','port':'in2'},"
+		"{'name':'j','node':'B','port':'in2'},"
+		"{'name':'k','block':'C','port':'in2','node':'C'}],"
+		"'outports':[{'name':'o','node':'P','port':'y'}]}";
+	Graph *g = load(file, GRAPH_FILES_OK);
+	CHECK_STREQ(logs, "warn v: block P: unknown component nope/Type, kept as a placeholder\n"
+			  "warn v: connection skipped: invalid entry\n"
+			  "warn v: connection skipped: invalid entry\n"
+			  "warn v: connection skipped: invalid entry\n"
+			  "warn v: inport skipped: invalid entry\n");
+	CHECK_STREQ(input_value(g, "A", "in1"), "7");
+	const char *saved =
+		"{'id':'k','name':'<<new graph>>','description':'','icon':'','started':false,"
+		"'blocks':{'A':{'component':'math/Add2','metadata':{'x':50,'y':50}},"
+		"'B':{'component':'math/Add2','metadata':{'x':50,'y':50}},"
+		"'C':{'component':'math/Add2','metadata':{'x':50,'y':50}},"
+		"'P':{'component':'nope/Type','metadata':{'x':50,'y':50}}},"
+		"'connections':[{'src':{'data':7},'tgt':{'block':'A','port':'in1'}},"
+		"{'src':{'block':'A','port':'out'},'tgt':{'block':'B','port':'in1'}},"
+		"{'src':{'block':'B','port':'out'},'tgt':{'block':'C','port':'in1'}},"
+		"{'src':{'block':'A','port':'out'},'tgt':{'block':'P','port':'x'}}],"
+		"'inports':[{'name':'i','block':'A','port':'in2'},"
+		"{'name':'j','block':'B','port':'in2'}],"
+		"'outports':[{'name':'o','block':'P','port':'y'}]}";
+	check_saved(g, jq(saved));
+	CHECK(graphs_delete_graph(&gs, "k", "<<new graph>>", NULL) == GRAPH_OK);
+	logs[0] = '\0';
+	g = load(saved, GRAPH_FILES_OK);
+	check_saved(g, jq(saved));
+	teardown();
+}
+
+/* The sister project's files in examples/ (05 §2.1 Terms): "process"
+ * references, an extra "data" in an initial's tgt, no description, icon or
+ * started. They load as they are and save in the canonical form. */
+static void test_examples(void)
+{
+	setup("examples");
+	Graph *g = NULL;
+	CHECK(graph_files_load(&gf, HAKKAS_EXAMPLES_DIR "/example.json", &g) == GRAPH_FILES_OK);
+	CHECK_STREQ(logs, "");
+	CHECK(g != NULL);
+	if (g == NULL) {
+		teardown();
+		return;
+	}
+	CHECK_STREQ(g->id, "0826152e-3014-4c89-9380-ec4991a76af2");
+	CHECK_STREQ(g->name, "Simple Example");
+	CHECK_STREQ(g->description, "");
+	CHECK_STREQ(g->icon, "");
+	CHECK(!g->started);
+	CHECK(g->block_count == 8);
+	uint32_t edges = 0, initials = 0;
+	for (uint32_t i = 0; i < g->block_count; i++) {
+		const Block *b = g->blocks[i];
+		CHECK(!block_is_placeholder(b));
+		for (uint32_t k = 0; k < b->input_count; k++) {
+			edges += b->inputs[k].source == INPUT_SOURCE_EDGE;
+			initials += b->inputs[k].source == INPUT_SOURCE_INITIAL;
+		}
+	}
+	CHECK(edges == 6 && initials == 2);
+	CHECK_STREQ(input_value(g, "block8", "in1"), "12");
+	CHECK_STREQ(input_value(g, "block8", "in2"), "23");
+	CHECK_STREQ(block_component(graph_find_block(g, "block8")), "math/Add2");
+	const char *saved =
+		"{'id':'0826152e-3014-4c89-9380-ec4991a76af2','name':'Simple Example',"
+		"'description':'','icon':'','started':false,'blocks':{"
+		"'block1':{'component':'math/Add4','metadata':{'x':27,'y':12}},"
+		"'block2':{'component':'math/Add4','metadata':{'x':27,'y':260}},"
+		"'block3':{'component':'math/Add4','metadata':{'x':278,'y':80.5}},"
+		"'block4':{'component':'math/Add4','metadata':{'x':27,'y':692}},"
+		"'block5':{'component':'math/Add4','metadata':{'x':27,'y':940}},"
+		"'block6':{'component':'math/Add4','metadata':{'x':278,'y':760.5}},"
+		"'block7':{'component':'math/Add4','metadata':{'x':572.8,'y':365}},"
+		"'block8':{'component':'math/Add2','metadata':{'x':278,'y':478}}},"
+		"'connections':["
+		"{'src':{'block':'block1','port':'out'},'tgt':{'block':'block3','port':'in1'}},"
+		"{'src':{'block':'block2','port':'out'},'tgt':{'block':'block3','port':'in2'}},"
+		"{'src':{'block':'block4','port':'out'},'tgt':{'block':'block6','port':'in1'}},"
+		"{'src':{'block':'block5','port':'out'},'tgt':{'block':'block6','port':'in2'}},"
+		"{'src':{'block':'block3','port':'out'},'tgt':{'block':'block7','port':'in1'}},"
+		"{'src':{'block':'block6','port':'out'},'tgt':{'block':'block7','port':'in2'}},"
+		"{'src':{'data':12},'tgt':{'block':'block8','port':'in1'}},"
+		"{'src':{'data':23},'tgt':{'block':'block8','port':'in2'}}],"
+		"'inports':[],'outports':[]}";
+	check_saved(g, jq(saved));
+	/* The canonical form is a fixed point. */
+	CHECK(graphs_delete_graph(&gs, "0826152e-3014-4c89-9380-ec4991a76af2",
+				  "Simple Example", NULL) == GRAPH_OK);
+	g = load(saved, GRAPH_FILES_OK);
+	check_saved(g, jq(saved));
+
+	CHECK(graph_files_load(&gf, HAKKAS_EXAMPLES_DIR "/empty.json", &g) == GRAPH_FILES_OK);
+	CHECK_STREQ(logs, "");
+	if (g != NULL)
+		check_saved(g, jq("{'id':'main','name':'pink2web main process','description':'',"
+				  "'icon':'','started':false,'blocks':{},'connections':[],"
+				  "'inports':[],'outports':[]}"));
 	teardown();
 }
 
@@ -977,6 +1101,8 @@ int main(void)
 	RUN(test_started);
 	RUN(test_placeholders);
 	RUN(test_invalid_entries);
+	RUN(test_block_keys);
+	RUN(test_examples);
 	RUN(test_malformed);
 	RUN(test_persist);
 	RUN(test_delete);

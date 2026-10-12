@@ -21,10 +21,13 @@
  *
  *   {"name": String, "icon"?: String, "description"?: String,
  *    "blocks": [{"name": String, "type": String}, ...],
- *    "edges"?: [{"src": "Block.port", "tgt": "Block.port"}, ...],
+ *    "connections"?: [{"src": "Block.port", "tgt": "Block.port"}, ...],
  *    "initials"?: [{"src": String|Number|Boolean, "tgt": "Block.port"}, ...],
  *    "inports"?: [{"name", "tgt", "type"?, "description"?, "addressable"?}, ...],
  *    "outports"?: [{"name", "src", "type"?, "description"?, "addressable"?}, ...]}
+ *
+ * "connections" may also be given under its former name "edges" (03 §5.1);
+ * a document with both is refused ("Invalid field: edges").
  *
  * name is a type name (1..64 bytes, 05 §2.3); inner block names are node ids
  * (1..64 bytes), unique; "Block.port" references split on the last '.'
@@ -44,7 +47,7 @@
  *     composite it contains (transitively) is name — else
  *     COMPOSITE_ERR_RECURSIVE "Recursive component: <name>"; its type is
  *     registered, else COMPOSITE_ERR_UNKNOWN_TYPE "Unknown component: <type>";
- *  4. edges, then initials, then inports, then outports, each in order:
+ *  4. connections, then initials, then inports, then outports, each in order:
  *     every reference resolves, else COMPOSITE_ERR_UNKNOWN_PORT with
  *     "Unknown node: <block>" / "Unknown port: <block>.<port>" (a port of
  *     the wrong direction: "Invalid edge direction" for an edge or initial,
@@ -145,11 +148,11 @@ enum composite_status composite_types_change(const char *name, const char *descr
 
 /* def's authoring document in canonical form (a plain tree: it can be
  * registered as is; print it with graph_json_print): the keys name, icon,
- * description, blocks, edges, initials, inports, outports in that order,
- * every one present; blocks, edges and initials in the definition's order;
- * references "Block.port"; initial values as graph files store them
- * (graph_json_from_initial); a port's type, description and addressable only
- * if they were given explicitly. NULL if def is not a composite type of this
+ * description, blocks, connections, initials, inports, outports in that
+ * order, every one present; blocks, connections and initials in the
+ * definition's order; references "Block.port"; initial values as graph files
+ * store them (graph_json_from_initial); a port's type, description and
+ * addressable only if they were given explicitly. NULL if def is not a composite type of this
  * module or memory runs out. */
 cJSON *composite_types_document(const BlockTypeDef *def);
 
@@ -174,9 +177,9 @@ typedef struct {
  * result registers like a hand-authored document (composite_types_register).
  *  - blocks: the selected nodes {name, type} in the graph's creation order
  *    (a node named twice counts once);
- *  - edges: every edge between two selected nodes; initials: every initial on
- *    a selected node; per target node (creation order) and input (port
- *    order), as in a graph file (05 §2.1);
+ *  - connections: every edge between two selected nodes; initials: every
+ *    initial on a selected node; per target node (creation order) and input
+ *    (port order), as in a graph file (05 §2.1);
  *  - inports: first every graph-level inport mapped to a selected node, under
  *    its public name, in creation order (only the first of several mapped to
  *    the same input, which would feed it twice); then one per input of a

@@ -12,11 +12,13 @@
  *
  * The format (05 §2.1, decisions of plan task 10 recorded there): a compact
  * JSON object with the keys id, name, description, icon, started, blocks,
- * connections, inports, outports in that order; numbers are exact
- * (graphs/graph_json.h). Blocks in creation order. Connections per target
- * block (creation order) and input (port order): its initial or its edge;
- * then the retained connections of placeholder blocks in load order. Graph
- * ports: the live ones in creation order, then the retained ones.
+ * connections, inports, outports in that order; a block reference is
+ * {"block","port"} (hakkas' terms; the wire's FBP form is {"node","port"},
+ * 02 §3.4); numbers are exact (graphs/graph_json.h). Blocks in creation
+ * order. Connections per target block (creation order) and input (port
+ * order): its initial or its edge; then the retained connections of
+ * placeholder blocks in load order. Graph ports: the live ones in creation
+ * order, then the retained ones.
  *
  * Round trip: saving is a fixed point of loading. A file this code wrote
  * loads into a graph that saves to the same bytes; the first save of any
@@ -139,8 +141,8 @@ enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, Grap
  *    would refuse (an invalid or duplicate name);
  *  - a block whose component is not registered becomes a placeholder
  *    (graph_create_placeholder), with a warning;
- *  - a connection that is not {"src":{"node","port"} or {"data"},
- *    "tgt":{"node","port"}[,"metadata":{...}]} with string names, whose data
+ *  - a connection that is not {"src":{"block","port"} or {"data"},
+ *    "tgt":{"block","port"}[,"metadata":{...}]} with string names, whose data
  *    is not a string, number or boolean, whose edge metadata is not an object,
  *    or that addedge / addinitial would refuse (unknown node or port, wrong
  *    direction, fan-in: the first connection to an input wins);
@@ -149,10 +151,15 @@ enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, Grap
  *    the wire command if the port on its real end does not exist with the
  *    right direction, or if the target input already has a source (live or
  *    retained; the first connection to an input wins either way);
- *  - a graph port that is not {"name","node","port"} with string values, or
+ *  - a graph port that is not {"name","block","port"} with string values, or
  *    that addinport / addoutport would refuse, or whose name an earlier port
  *    of the file already has; one mapped to a placeholder is retained
  *    (graph_retain_port).
+ * A block reference may use "node" (earlier hakkas files) or "process" (the
+ * sister project's files, e.g. examples/example.json) in place of "block";
+ * one that has more than one of the three members is invalid (the entry is
+ * skipped as above). Other members of a reference, such as the "data" the
+ * sister project writes in a connection's tgt, are ignored.
  * An initial's data is parsed for its port (graph_json_to_initial). The graph
  * is started (graphs_start) after everything is loaded, if "started" is true.
  *

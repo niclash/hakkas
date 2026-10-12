@@ -197,17 +197,17 @@ static void drain(void)
 /* a + b + c: A.out feeds B.in1. Port b gives everything explicitly. */
 #define SUM3                                                                                       \
 	"{'name':'t/Sum3','description':'a+b+c','icon':'add','blocks':[{'name':'A','type':"       \
-	"'math/Add2'},{'name':'B','type':'math/Add2'}],'edges':[{'src':'A.out','tgt':'B.in1'}],"   \
-	"'inports':[{'name':'a','tgt':'A.in1'},{'name':'b','tgt':'A.in2','type':'number',"        \
-	"'description':'Second','addressable':true},{'name':'c','tgt':'B.in2'}],"                  \
+	"'math/Add2'},{'name':'B','type':'math/Add2'}],'connections':[{'src':'A.out','tgt':"      \
+	"'B.in1'}],'inports':[{'name':'a','tgt':'A.in1'},{'name':'b','tgt':'A.in2','type':"       \
+	"'number','description':'Second','addressable':true},{'name':'c','tgt':'B.in2'}],"         \
 	"'outports':[{'name':'sum','src':'B.out'}]}"
 
 #define SUM3_CANONICAL                                                                             \
 	"{'name':'t/Sum3','icon':'add','description':'a+b+c','blocks':[{'name':'A','type':"       \
-	"'math/Add2'},{'name':'B','type':'math/Add2'}],'edges':[{'src':'A.out','tgt':'B.in1'}],"   \
-	"'initials':[],'inports':[{'name':'a','tgt':'A.in1'},{'name':'b','tgt':'A.in2','type':"   \
-	"'number','description':'Second','addressable':true},{'name':'c','tgt':'B.in2'}],"         \
-	"'outports':[{'name':'sum','src':'B.out'}]}"
+	"'math/Add2'},{'name':'B','type':'math/Add2'}],'connections':[{'src':'A.out','tgt':"      \
+	"'B.in1'}],'initials':[],'inports':[{'name':'a','tgt':'A.in1'},{'name':'b','tgt':"        \
+	"'A.in2','type':'number','description':'Second','addressable':true},{'name':'c','tgt':"   \
+	"'B.in2'}],'outports':[{'name':'sum','src':'B.out'}]}"
 
 /* A periodic pulse inside a composite (03 §3.1). */
 #define BLINK                                                                                      \
@@ -246,12 +246,22 @@ static void test_refusals(void)
 	refused("{'name':'t/X','blocks':[{'name':'A','type':'math/Add2'},{'name':'A','type':"
 		"'math/Add2'}]}",
 		COMPOSITE_ERR_INVALID, "Invalid field: blocks");
+	refused("{'name':'t/X','blocks':[],'connections':{}}", COMPOSITE_ERR_INVALID,
+		"Invalid field: connections");
+	refused("{'name':'t/X','blocks':[],'connections':[{'src':'nodot','tgt':'A.in1'}]}",
+		COMPOSITE_ERR_INVALID, "Invalid field: connections");
+	refused("{'name':'t/X','blocks':[],'connections':[{'src':'A.','tgt':'A.in1'}]}",
+		COMPOSITE_ERR_INVALID, "Invalid field: connections");
+	/* The former name "edges" (03 §5.1): checked the same way, and never
+	 * beside "connections". */
 	refused("{'name':'t/X','blocks':[],'edges':{}}", COMPOSITE_ERR_INVALID,
 		"Invalid field: edges");
 	refused("{'name':'t/X','blocks':[],'edges':[{'src':'nodot','tgt':'A.in1'}]}",
 		COMPOSITE_ERR_INVALID, "Invalid field: edges");
-	refused("{'name':'t/X','blocks':[],'edges':[{'src':'A.','tgt':'A.in1'}]}",
-		COMPOSITE_ERR_INVALID, "Invalid field: edges");
+	refused("{'name':'t/X','blocks':[],'connections':[],'edges':[]}", COMPOSITE_ERR_INVALID,
+		"Invalid field: edges");
+	refused("{'name':'t/X','blocks':[],'edges':[],'connections':{}}", COMPOSITE_ERR_INVALID,
+		"Invalid field: edges");
 	refused("{'name':'t/X','blocks':[],'initials':[{'src':{},'tgt':'A.in1'}]}",
 		COMPOSITE_ERR_INVALID, "Invalid field: initials");
 	refused("{'name':'t/X','blocks':[],'initials':[{'src':null,'tgt':'A.in1'}]}",
@@ -290,14 +300,14 @@ static void test_refusals(void)
 	"{'name':'t/X','blocks':[{'name':'A','type':'math/Add2'},{'name':'B','type':"             \
 	"'math/Add2'}],"
 	refused(TWO "'edges':[{'src':'Q.out','tgt':'B.in1'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
-		"Unknown node: Q");
-	refused(TWO "'edges':[{'src':'A.zz','tgt':'B.in1'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
+		"Unknown node: Q"); /* the former name, resolved alike */
+	refused(TWO "'connections':[{'src':'A.zz','tgt':'B.in1'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
 		"Unknown port: A.zz");
-	refused(TWO "'edges':[{'src':'A.in1','tgt':'B.in1'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
+	refused(TWO "'connections':[{'src':'A.in1','tgt':'B.in1'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
 		"Invalid edge direction");
-	refused(TWO "'edges':[{'src':'A.out','tgt':'B.out'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
+	refused(TWO "'connections':[{'src':'A.out','tgt':'B.out'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
 		"Invalid edge direction");
-	refused(TWO "'edges':[{'src':'A.out','tgt':'Q.in1'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
+	refused(TWO "'connections':[{'src':'A.out','tgt':'Q.in1'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
 		"Unknown node: Q");
 	refused(TWO "'initials':[{'src':1,'tgt':'A.out'}]}", COMPOSITE_ERR_UNKNOWN_PORT,
 		"Invalid edge direction");
@@ -313,15 +323,16 @@ static void test_refusals(void)
 		"Unknown port: A.nope");
 
 	/* An inner input fed twice (no fan-in, 01 §2.2). */
-	refused(TWO "'edges':[{'src':'A.out','tgt':'B.in1'},{'src':'B.out','tgt':'B.in1'}]}",
+	refused(TWO "'connections':[{'src':'A.out','tgt':'B.in1'},{'src':'B.out','tgt':'B.in1'}]}",
 		COMPOSITE_ERR_FAN_IN, "Input already connected: B.in1");
-	refused(TWO "'edges':[{'src':'A.out','tgt':'B.in1'}],'initials':[{'src':1,'tgt':'B.in1'}]}",
+	refused(TWO "'connections':[{'src':'A.out','tgt':'B.in1'}],'initials':[{'src':1,'tgt':"
+		    "'B.in1'}]}",
 		COMPOSITE_ERR_FAN_IN, "Input already connected: B.in1");
 	refused(TWO "'initials':[{'src':1,'tgt':'A.in1'},{'src':2,'tgt':'A.in1'}]}",
 		COMPOSITE_ERR_FAN_IN, "Input already connected: A.in1");
 	refused(TWO "'initials':[{'src':1,'tgt':'A.in1'}],'inports':[{'name':'a','tgt':'A.in1'}]}",
 		COMPOSITE_ERR_FAN_IN, "Input already connected: A.in1");
-	refused(TWO "'edges':[{'src':'A.out','tgt':'B.in1'}],'inports':[{'name':'a','tgt':"
+	refused(TWO "'connections':[{'src':'A.out','tgt':'B.in1'}],'inports':[{'name':'a','tgt':"
 		    "'B.in1'}]}",
 		COMPOSITE_ERR_FAN_IN, "Input already connected: B.in1");
 	refused(TWO "'inports':[{'name':'a','tgt':'A.in1'},{'name':'b','tgt':'A.in1'}]}",
@@ -376,14 +387,15 @@ static void test_document(void)
 	/* The canonical document, and the round trip through its text. */
 	CHECK_STREQ(source("t/Sum3"), jq(SUM3_CANONICAL));
 	CHECK(reg("{'name':'t/Min','blocks':[]}", &m) == COMPOSITE_OK);
-	CHECK_STREQ(source("t/Min"), jq("{'name':'t/Min','icon':'','description':'','blocks':[],"
-					"'edges':[],'initials':[],'inports':[],'outports':[]}"));
+	CHECK_STREQ(source("t/Min"),
+		    jq("{'name':'t/Min','icon':'','description':'','blocks':[],'connections':[],"
+		       "'initials':[],'inports':[],'outports':[]}"));
 	CHECK(reg(LIN, &m) == COMPOSITE_OK);
 	CHECK_STREQ(source("t/Lin"),
 		    jq("{'name':'t/Lin','icon':'','description':'','blocks':[{'name':'L','type':"
-		       "'process/Linear'}],'edges':[],'initials':[{'src':5,'tgt':'L.k'},{'src':"
-		       "0.1,'tgt':'L.m'}],'inports':[{'name':'in','tgt':'L.in'}],'outports':["
-		       "{'name':'out','src':'L.out'}]}"));
+		       "'process/Linear'}],'connections':[],'initials':[{'src':5,'tgt':'L.k'},"
+		       "{'src':0.1,'tgt':'L.m'}],'inports':[{'name':'in','tgt':'L.in'}],"
+		       "'outports':[{'name':'out','src':'L.out'}]}"));
 	char saved[3][4096];
 	const char *names[3] = {"t/Sum3", "t/Min", "t/Lin"};
 	for (int i = 0; i < 3; i++)
@@ -395,6 +407,18 @@ static void test_document(void)
 		      COMPOSITE_OK);
 		CHECK_STREQ(source(names[i]), saved[i]);
 	}
+
+	/* The former name "edges" (03 §5.1) registers alike; the canonical
+	 * form names it "connections". */
+	CHECK(reg("{'name':'t/Old','blocks':[{'name':'A','type':'math/Add2'},{'name':'B','type':"
+		  "'math/Add2'}],'edges':[{'src':'A.out','tgt':'B.in1'}]}",
+		  &m) == COMPOSITE_OK);
+	CHECK(block_types_get("t/Old")->composite->edge_count == 1);
+	CHECK_STREQ(source("t/Old"),
+		    jq("{'name':'t/Old','icon':'','description':'','blocks':[{'name':'A','type':"
+		       "'math/Add2'},{'name':'B','type':'math/Add2'}],'connections':[{'src':"
+		       "'A.out','tgt':'B.in1'}],'initials':[],'inports':[],'outports':[]}"));
+	CHECK(composite_types_unregister(&gs, "t/Old", &m) == COMPOSITE_OK);
 
 	/* Type files: saved atomically under the encoded name, loaded back. */
 	for (int i = 0; i < 3; i++)
@@ -564,8 +588,8 @@ static void test_nested(void)
 	CompositeMessage m;
 	CHECK(reg(SUM3, &m) == COMPOSITE_OK);
 	CHECK(reg("{'name':'t/Sum5','blocks':[{'name':'S','type':'t/Sum3'},{'name':'T','type':"
-		  "'math/Add2'}],'edges':[{'src':'S.sum','tgt':'T.in1'}],'initials':[{'src':100,"
-		  "'tgt':'S.c'}],'inports':[{'name':'a','tgt':'S.a'},{'name':'b','tgt':'S.b'},"
+		  "'math/Add2'}],'connections':[{'src':'S.sum','tgt':'T.in1'}],'initials':[{'src':"
+		  "100,'tgt':'S.c'}],'inports':[{'name':'a','tgt':'S.a'},{'name':'b','tgt':'S.b'},"
 		  "{'name':'d','tgt':'T.in2'}],'outports':[{'name':'out','src':'T.out'},{'name':"
 		  "'mid','src':'S.sum'}]}",
 		  &m) == COMPOSITE_OK);
@@ -720,11 +744,12 @@ static void test_graph_file(void)
 	CHECK_STREQ(text, jq("{'id':'g1','name':'G','description':'','icon':'','started':true,"
 			     "'blocks':{'c':{'component':'t/Sum3','metadata':{'x':50,'y':50}},"
 			     "'d':{'component':'math/Add2','metadata':{'x':50,'y':50}}},"
-			     "'connections':[{'src':{'data':1},'tgt':{'node':'c','port':'a'}},"
-			     "{'src':{'data':2},'tgt':{'node':'c','port':'b'}},{'src':{'node':'d',"
-			     "'port':'out'},'tgt':{'node':'c','port':'c'},'metadata':{'route':1}},"
-			     "{'src':{'node':'c','port':'sum'},'tgt':{'node':'d','port':'in1'}}],"
-			     "'inports':[{'name':'x','node':'c','port':'b'}],'outports':[]}"));
+			     "'connections':[{'src':{'data':1},'tgt':{'block':'c','port':'a'}},"
+			     "{'src':{'data':2},'tgt':{'block':'c','port':'b'}},"
+			     "{'src':{'block':'d','port':'out'},'tgt':{'block':'c','port':'c'},"
+			     "'metadata':{'route':1}},"
+			     "{'src':{'block':'c','port':'sum'},'tgt':{'block':'d','port':'in1'}}],"
+			     "'inports':[{'name':'x','block':'c','port':'b'}],'outports':[]}"));
 	CHECK(graphs_delete_graph(&gs, "g1", "G", NULL) == GRAPH_OK);
 	Graph *g;
 	CHECK(graph_files_load_text(&gf, text, strlen(text), "test", &g) == GRAPH_FILES_OK);
@@ -890,11 +915,11 @@ static void test_assemble(void)
 	const char *const sel[] = {"s2", "s1", "s2"};
 	char *t = assembled(g, "t/G", sel, 3);
 	CHECK_STREQ(t, jq("{'name':'t/G','icon':'box','description':'made','blocks':[{'name':"
-			  "'s1','type':'math/Add2'},{'name':'s2','type':'math/Add2'}],'edges':["
-			  "{'src':'s1.out','tgt':'s2.in2'}],'initials':[{'src':3,'tgt':'s1.in2'}],"
-			  "'inports':[{'name':'s1_in1','tgt':'s1.in1'},{'name':'s2_in1','tgt':"
-			  "'s2.in1'}],'outports':[{'name':'s2_out','src':'s2.out'},{'name':"
-			  "'s1_out','src':'s1.out'}]}"));
+			  "'s1','type':'math/Add2'},{'name':'s2','type':'math/Add2'}],"
+			  "'connections':[{'src':'s1.out','tgt':'s2.in2'}],'initials':[{'src':3,"
+			  "'tgt':'s1.in2'}],'inports':[{'name':'s1_in1','tgt':'s1.in1'},{'name':"
+			  "'s2_in1','tgt':'s2.in1'}],'outports':[{'name':'s2_out','src':'s2.out'},"
+			  "{'name':'s1_out','src':'s1.out'}]}"));
 	free(t);
 
 	/* Graph-level ports are exposed under their public names (the first

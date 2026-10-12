@@ -28,7 +28,7 @@
 #define GOOD_GRAPH                                                                                 \
 	"{\"id\":\"g1\",\"name\":\"Test graph\",\"started\":true,"                                 \
 	"\"blocks\":{\"a\":{\"component\":\"math/Add2\",\"metadata\":{\"x\":10,\"y\":20}}},"      \
-	"\"connections\":[{\"src\":{\"data\":2},\"tgt\":{\"node\":\"a\",\"port\":\"in1\"}}]}"
+	"\"connections\":[{\"src\":{\"data\":2},\"tgt\":{\"block\":\"a\",\"port\":\"in1\"}}]}"
 
 /* Open descriptors of this process. */
 static int fd_count(void)
@@ -279,7 +279,7 @@ static void test_types(void)
 	e2e_put(e2e_path(types, "t%2FY.json"),
 		"{\"name\":\"t/Y\",\"blocks\":[{\"name\":\"x\",\"type\":\"t/X\"}]}");
 	e2e_put(graph, "{\"id\":\"g2\",\"started\":true,\"blocks\":{\"c\":{\"component\":"
-		       "\"t/A\"}},\"connections\":[{\"src\":{\"data\":2},\"tgt\":{\"node\":\"c\","
+		       "\"t/A\"}},\"connections\":[{\"src\":{\"data\":2},\"tgt\":{\"block\":\"c\","
 		       "\"port\":\"in\"}}]}");
 
 	CHECK(start(ENGINE_LOAD_ALL, NULL));
@@ -319,10 +319,10 @@ static void test_types(void)
 	if (cJSON_IsString(code))
 		CHECK_STREQ(code->valuestring,
 			    "{\"name\":\"t/B\",\"icon\":\"\",\"description\":\"\",\"blocks\":"
-			    "[{\"name\":\"a\",\"type\":\"math/Add2\"}],\"edges\":[],\"initials\":"
-			    "[{\"src\":1,\"tgt\":\"a.in2\"}],\"inports\":[{\"name\":\"in\","
-			    "\"tgt\":\"a.in1\"}],\"outports\":[{\"name\":\"out\",\"src\":"
-			    "\"a.out\"}]}");
+			    "[{\"name\":\"a\",\"type\":\"math/Add2\"}],\"connections\":[],"
+			    "\"initials\":[{\"src\":1,\"tgt\":\"a.in2\"}],\"inports\":[{"
+			    "\"name\":\"in\",\"tgt\":\"a.in1\"}],\"outports\":[{\"name\":"
+			    "\"out\",\"src\":\"a.out\"}]}");
 	cJSON_Delete(m);
 	e2e_close(&a);
 	e2e_stop();

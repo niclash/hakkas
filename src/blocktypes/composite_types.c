@@ -98,6 +98,16 @@ static uint32_t array_size(const cJSON *obj, const char *key)
 	return cJSON_IsArray(v) ? (uint32_t)cJSON_GetArraySize(v) : 0;
 }
 
+/* The member of doc that holds the connections (03 §5.1): "connections", or
+ * the former "edges" if only that one is present (check_shape refuses
+ * both). */
+static const char *connections_key(const cJSON *doc)
+{
+	if (member(doc, "connections") == NULL && member(doc, "edges") != NULL)
+		return "edges";
+	return "connections";
+}
+
 /* A "Block.port" reference (01 §2.4): a string that splits on its last '.'
  * into a block name of 1..64 bytes and a non-empty port name. */
 static bool ref_valid(const char *ref)
@@ -207,7 +217,7 @@ static bool block_entry_valid(const cJSON *arr, const cJSON *e)
 	       !duplicate_before(arr, e, "name");
 }
 
-static bool edge_entry_valid(const cJSON *arr, const cJSON *e)
+static bool connection_entry_valid(const cJSON *arr, const cJSON *e)
 {
 	(void)arr;
 	return ref_valid(string_of(e, "src")) && ref_valid(string_of(e, "tgt"));
@@ -253,8 +263,10 @@ static enum composite_status check_shape(const cJSON *doc, CompositeMessage *msg
 	else if (!cJSON_IsArray(member(doc, "blocks")) ||
 		 !entries_valid(doc, "blocks", block_entry_valid))
 		bad = "blocks";
-	else if (!entries_valid(doc, "edges", edge_entry_valid))
-		bad = "edges";
+	else if (member(doc, "connections") != NULL && member(doc, "edges") != NULL)
+		bad = "edges"; /* the former name beside the current one */
+	else if (!entries_valid(doc, connections_key(doc), connection_entry_valid))
+		bad = connections_key(doc);
 	else if (!entries_valid(doc, "initials", initial_entry_valid))
 		bad = "initials";
 	else if (!entries_valid(doc, "inports", inport_entry_valid))
@@ -373,11 +385,11 @@ static enum composite_status build_blocks(Build *bd, const cJSON *doc)
 	return COMPOSITE_OK;
 }
 
-static enum composite_status build_edges(Build *bd, const cJSON *doc)
+static enum composite_status build_connections(Build *bd, const cJSON *doc)
 {
 	uint32_t k = 0;
 	const cJSON *e;
-	cJSON_ArrayForEach(e, member(doc, "edges"))
+	cJSON_ArrayForEach(e, member(doc, connections_key(doc)))
 	{
 		CompositeEdge *edge = &bd->t->edges[k++];
 		enum composite_status st =
@@ -471,7 +483,7 @@ static enum composite_status build_ports(Build *bd, const cJSON *doc, bool input
 static bool allocate(CompositeType *t, const cJSON *doc)
 {
 	uint32_t nb = array_size(doc, "blocks");
-	uint32_t ne = array_size(doc, "edges");
+	uint32_t ne = array_size(doc, connections_key(doc));
 	uint32_t ni = array_size(doc, "initials");
 	uint32_t nin = array_size(doc, "inports");
 	uint32_t nout = array_size(doc, "outports");
@@ -509,7 +521,7 @@ static enum composite_status build(CompositeType *t, const cJSON *doc, Composite
 		return no_memory(msg);
 	enum composite_status st = build_blocks(&bd, doc);
 	if (st == COMPOSITE_OK)
-		st = build_edges(&bd, doc);
+		st = build_connections(&bd, doc);
 	if (st == COMPOSITE_OK)
 		st = build_initials(&bd, doc);
 	if (st == COMPOSITE_OK)
@@ -827,8 +839,8 @@ static cJSON *pair(cJSON *src, cJSON *tgt)
 	return obj;
 }
 
-static bool document_lists(const CompositeType *t, cJSON *blocks, cJSON *edges, cJSON *initials,
-			   cJSON *inports, cJSON *outports)
+static bool document_lists(const CompositeType *t, cJSON *blocks, cJSON *connections,
+			   cJSON *initials, cJSON *inports, cJSON *outports)
 {
 	for (uint32_t j = 0; j < t->cdef.block_count; j++) {
 		cJSON *b = cJSON_CreateObject();
@@ -838,7 +850,8 @@ static bool document_lists(const CompositeType *t, cJSON *blocks, cJSON *edges, 
 	}
 	for (uint32_t k = 0; k < t->cdef.edge_count; k++) {
 		const CompositeEdge *e = &t->edges[k];
-		if (!append(edges, pair(inner_ref(t, e->src, false), inner_ref(t, e->tgt, true))))
+		if (!append(connections,
+			    pair(inner_ref(t, e->src, false), inner_ref(t, e->tgt, true))))
 			return false;
 	}
 	for (uint32_t k = 0; k < t->cdef.initial_count; k++) {
@@ -866,13 +879,14 @@ cJSON *composite_types_document(const BlockTypeDef *def)
 	cJSON *doc = cJSON_CreateObject();
 	if (doc == NULL)
 		return NULL;
-	cJSON *blocks = cJSON_CreateArray(), *edges = cJSON_CreateArray();
+	cJSON *blocks = cJSON_CreateArray(), *connections = cJSON_CreateArray();
 	cJSON *initials = cJSON_CreateArray(), *inports = cJSON_CreateArray();
 	cJSON *outports = cJSON_CreateArray();
 	/* add() frees an item it could not add; the ones after it are freed
 	 * here. */
-	cJSON *lists[] = {blocks, edges, initials, inports, outports};
-	static const char *const keys[] = {"blocks", "edges", "initials", "inports", "outports"};
+	cJSON *lists[] = {blocks, connections, initials, inports, outports};
+	static const char *const keys[] = {"blocks", "connections", "initials", "inports",
+					   "outports"};
 	bool fine = add(doc, "name", cJSON_CreateString(t->def.name)) &&
 		    add(doc, "icon", cJSON_CreateString(t->def.icon)) &&
 		    add(doc, "description", cJSON_CreateString(t->def.description));
@@ -887,7 +901,7 @@ cJSON *composite_types_document(const BlockTypeDef *def)
 		cJSON_Delete(doc);
 		return NULL;
 	}
-	if (!document_lists(t, blocks, edges, initials, inports, outports)) {
+	if (!document_lists(t, blocks, connections, initials, inports, outports)) {
 		cJSON_Delete(doc);
 		return NULL;
 	}
@@ -1029,7 +1043,7 @@ static cJSON *endpoint_ref(const Block *b, uint32_t port, bool input)
 
 /* The arrays of the assembled document. */
 static bool assemble_lists(const Graph *g, const CompositeSelection *sel, cJSON *blocks,
-			   cJSON *edges, cJSON *initials, ExposedList *in, ExposedList *out)
+			   cJSON *connections, cJSON *initials, ExposedList *in, ExposedList *out)
 {
 	/* Graph-level ports mapped to selected nodes, under their public
 	 * names (only the first per inner input: no fan-in). */
@@ -1063,7 +1077,8 @@ static bool assemble_lists(const Graph *g, const CompositeSelection *sel, cJSON 
 				bool src_selected = is_selected(sel, src);
 				if (selected && src_selected) {
 					cJSON *from = endpoint_ref(src, input->src_output, false);
-					if (!append(edges, pair(from, endpoint_ref(b, k, true))))
+					if (!append(connections,
+						    pair(from, endpoint_ref(b, k, true))))
 						return false;
 				} else if (selected && !exposed_has(in, b, k)) {
 					in->items[in->count++] = (Exposed){b, k, NULL, NULL};
@@ -1109,7 +1124,8 @@ enum composite_status composite_types_assemble(const Graph *g, const CompositeSe
 	cJSON *doc = cJSON_CreateObject();
 	cJSON *lists[5] = {cJSON_CreateArray(), cJSON_CreateArray(), cJSON_CreateArray(),
 			   cJSON_CreateArray(), cJSON_CreateArray()};
-	static const char *const keys[] = {"blocks", "edges", "initials", "inports", "outports"};
+	static const char *const keys[] = {"blocks", "connections", "initials", "inports",
+					   "outports"};
 	bool fine = in.items != NULL && outp.items != NULL && doc != NULL &&
 		    add(doc, "name", cJSON_CreateString(sel->name != NULL ? sel->name : "")) &&
 		    add(doc, "icon", cJSON_CreateString(sel->icon != NULL ? sel->icon : "")) &&

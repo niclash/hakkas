@@ -2527,10 +2527,10 @@ static void test_composite(void)
 	setup();
 	static const char sum3[] =
 		"{'name':'t/Sum3','icon':'add','description':'a+b+c','blocks':[{'name':'A',"
-		"'type':'math/Add2'},{'name':'B','type':'math/Add2'}],'edges':[{'src':'A.out',"
-		"'tgt':'B.in1'}],'initials':[{'src':0.5,'tgt':'B.in2'}],'inports':[{'name':'a',"
-		"'tgt':'A.in1'},{'name':'b','tgt':'A.in2','description':'Second'}],'outports':["
-		"{'name':'sum','src':'B.out'}]}";
+		"'type':'math/Add2'},{'name':'B','type':'math/Add2'}],'connections':[{'src':"
+		"'A.out','tgt':'B.in1'}],'initials':[{'src':0.5,'tgt':'B.in2'}],'inports':[{"
+		"'name':'a','tgt':'A.in1'},{'name':'b','tgt':'A.in2','description':'Second'}],"
+		"'outports':[{'name':'sum','src':'B.out'}]}";
 	char text[1024];
 	snprintf(text, sizeof(text), "%s", jq(sum3));
 	CompositeMessage cm;

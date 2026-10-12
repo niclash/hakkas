@@ -24,6 +24,9 @@ hakkas_add_test(test_timers)
 hakkas_add_test(test_json)
 hakkas_add_test(test_graph_json)
 hakkas_add_test(test_graph_files LIBS hakkas_pal_posix)
+# The sister project's graph files, loaded from the repository (05 §2.1).
+target_compile_definitions(test_graph_files
+  PRIVATE HAKKAS_EXAMPLES_DIR="${PROJECT_SOURCE_DIR}/examples")
 hakkas_add_test(test_composite LIBS hakkas_pal_posix)
 hakkas_add_test(test_config LIBS hakkas_pal_posix)
 # The command line calls the engine (engine/engine.c, in the core), which

@@ -144,13 +144,13 @@ static bool append(cJSON *array, cJSON *item)
 	return true;
 }
 
-/* {"node": node, "port": port} */
-static cJSON *endpoint(const char *node, const char *port)
+/* {"block": block, "port": port}, the canonical block reference (05 §2.1). */
+static cJSON *endpoint(const char *block, const char *port)
 {
 	cJSON *obj = cJSON_CreateObject();
 	if (obj == NULL)
 		return NULL;
-	if (!add(obj, "node", cJSON_CreateString(node)) ||
+	if (!add(obj, "block", cJSON_CreateString(block)) ||
 	    !add(obj, "port", cJSON_CreateString(port))) {
 		cJSON_Delete(obj);
 		return NULL;
@@ -170,7 +170,7 @@ static cJSON *data_source(const Linkable *v)
 }
 
 /* One connection entry: src (an endpoint or a data source), tgt, and the
- * edge's metadata if it has any. Takes src. */
+ * connection's metadata if it has any. Takes src. */
 static cJSON *connection(cJSON *src, const char *tgt, const char *tgt_port, const char *metadata)
 {
 	cJSON *obj = cJSON_CreateObject();
@@ -243,13 +243,13 @@ static bool save_connections(const Graph *g, cJSON *conns)
 	return true;
 }
 
-static cJSON *port_entry(const char *name, const char *node, const char *port)
+static cJSON *port_entry(const char *name, const char *block, const char *port)
 {
 	cJSON *obj = cJSON_CreateObject();
 	if (obj == NULL)
 		return NULL;
 	if (!add(obj, "name", cJSON_CreateString(name)) ||
-	    !add(obj, "node", cJSON_CreateString(node)) ||
+	    !add(obj, "block", cJSON_CreateString(block)) ||
 	    !add(obj, "port", cJSON_CreateString(port))) {
 		cJSON_Delete(obj);
 		return NULL;
@@ -458,12 +458,31 @@ static enum graph_files_status load_block(Loader *ld, const cJSON *entry)
 	return GRAPH_FILES_OK;
 }
 
-/* A {"node","port"} endpoint with string members. */
-static bool read_endpoint(const cJSON *obj, const char **node, const char **port)
+/* The block reference keys a file may use (05 §2.1): the canonical one, then
+ * those accepted for compatibility (earlier hakkas files, the sister
+ * project's files). */
+static const char *const block_keys[] = {"block", "node", "process"};
+
+/* A block reference {"block","port"} with string members (or "node" or
+ * "process" in place of "block"; exactly one of the three; other members,
+ * such as a tgt's "data", are ignored). */
+static bool read_endpoint(const cJSON *obj, const char **block, const char **port)
 {
-	*node = cJSON_IsObject(obj) ? string_of(obj, "node") : NULL;
-	*port = cJSON_IsObject(obj) ? string_of(obj, "port") : NULL;
-	return *node != NULL && *port != NULL;
+	*block = NULL;
+	*port = NULL;
+	if (!cJSON_IsObject(obj))
+		return false;
+	size_t found = 0;
+	for (size_t i = 0; i < sizeof(block_keys) / sizeof(block_keys[0]); i++) {
+		if (cJSON_GetObjectItemCaseSensitive(obj, block_keys[i]) != NULL) {
+			*block = string_of(obj, block_keys[i]);
+			found++;
+		}
+	}
+	if (found != 1)
+		*block = NULL;
+	*port = string_of(obj, "port");
+	return *block != NULL && *port != NULL;
 }
 
 /* A file's initial data as the retained literal: kept as its JSON type, a
@@ -557,14 +576,14 @@ static enum graph_files_status load_connection(Loader *ld, const cJSON *entry)
 {
 	const cJSON *src = cJSON_GetObjectItemCaseSensitive(entry, "src");
 	const cJSON *data = cJSON_GetObjectItemCaseSensitive(src, "data");
-	const char *src_node = NULL, *src_port = NULL, *tgt, *tgt_port;
+	const char *src_block = NULL, *src_port = NULL, *tgt, *tgt_port;
 	bool shape = cJSON_IsObject(entry) && cJSON_IsObject(src) &&
 		     read_endpoint(cJSON_GetObjectItemCaseSensitive(entry, "tgt"), &tgt, &tgt_port);
 	if (data != NULL)
 		shape = shape &&
 			(cJSON_IsString(data) || cJSON_IsNumber(data) || cJSON_IsBool(data));
 	else
-		shape = shape && read_endpoint(src, &src_node, &src_port);
+		shape = shape && read_endpoint(src, &src_block, &src_port);
 	if (!shape) {
 		log_warn("%s: connection skipped: invalid entry", ld->origin);
 		return GRAPH_FILES_OK;
@@ -582,7 +601,7 @@ static enum graph_files_status load_connection(Loader *ld, const cJSON *entry)
 	}
 
 	Block *tb = graph_find_block(ld->g, tgt);
-	Block *sb = src_node != NULL ? graph_find_block(ld->g, src_node) : NULL;
+	Block *sb = src_block != NULL ? graph_find_block(ld->g, src_block) : NULL;
 	enum graph_files_status st;
 	if (data != NULL && tb != NULL && block_is_placeholder(tb))
 		st = retain_connection(ld, NULL, NULL, data, tb, tgt_port, NULL);
@@ -591,7 +610,7 @@ static enum graph_files_status load_connection(Loader *ld, const cJSON *entry)
 	else if (sb != NULL && tb != NULL && (block_is_placeholder(sb) || block_is_placeholder(tb)))
 		st = retain_connection(ld, sb, src_port, NULL, tb, tgt_port, metadata);
 	else
-		st = live_edge(ld, sb, src_node, src_port, tb, tgt, tgt_port, metadata);
+		st = live_edge(ld, sb, src_block, src_port, tb, tgt, tgt_port, metadata);
 	free(metadata);
 	return st;
 }
@@ -600,20 +619,20 @@ static enum graph_files_status load_port(Loader *ld, enum graph_port_dir dir, co
 {
 	const char *what = dir == GRAPH_INPORT ? "inport" : "outport";
 	const char *name = cJSON_IsObject(entry) ? string_of(entry, "name") : NULL;
-	const char *node = NULL, *port = NULL;
-	if (name == NULL || !read_endpoint(entry, &node, &port)) {
+	const char *block = NULL, *port = NULL;
+	if (name == NULL || !read_endpoint(entry, &block, &port)) {
 		log_warn("%s: %s skipped: invalid entry", ld->origin, what);
 		return GRAPH_FILES_OK;
 	}
-	GraphRefusal ctx = {.graph = ld->g->id, .node = node, .port = port, .name = name};
-	Block *b = graph_find_block(ld->g, node);
+	GraphRefusal ctx = {.graph = ld->g->id, .node = block, .port = port, .name = name};
+	Block *b = graph_find_block(ld->g, block);
 	enum graph_status st;
 	if (graph_id_valid(name) && graph_port_retained(ld->g, dir, name))
 		st = GRAPH_ERR_PORT_EXISTS; /* the first port of a name wins */
 	else if (b != NULL && block_is_placeholder(b))
 		st = graph_retain_port(ld->g, dir, name, b, port);
 	else
-		st = graphs_add_port(ld->gf->gs, ld->g->id, dir, name, node, port, NULL);
+		st = graphs_add_port(ld->gf->gs, ld->g->id, dir, name, block, port, NULL);
 	if (st == GRAPH_ERR_NO_MEMORY)
 		return no_memory(ld);
 	if (st != GRAPH_OK)
