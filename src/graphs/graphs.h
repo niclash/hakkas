@@ -155,7 +155,7 @@ typedef struct {
 			    * INPUT_CONNECTED: the port's node, NULL for an
 			    * unknown graph port */
 	const char *port;  /* UNKNOWN_PORT, INPUT_CONNECTED */
-	const char *name;  /* UNKNOWN_COMPONENT, PORT_EXISTS */
+	const char *name;  /* UNKNOWN_COMPONENT, PORT_EXISTS, ACTUATOR_DRIVEN */
 } GraphRefusal;
 
 typedef struct {
@@ -170,7 +170,9 @@ typedef struct {
  * <node>.<port>", "No such connection", "Port exists: <name>", "Graph name
  * mismatch: <graph>", "Graph exists: <graph>", "Invalid id", and for the
  * links between processes (02 §6) "Invalid link direction", "Link exists",
- * "No such link". The statuses
+ * "No such link", for the environment bindings (02 §6) "Invalid binding
+ * direction", "Actuator already driven: <name>" (name: the channel, e.g.
+ * "relay[3]"), "No such binding". The statuses
  * that are no wire refusal render "Invalid argument", "Out of memory" and
  * "Random source unavailable"; GRAPH_OK renders "". Returns the length the
  * full message has (as snprintf). */
@@ -189,7 +191,8 @@ enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
 
 /* delete_graph: stop the graph if started (reporting GRAPH_STOPPED), remove
  * its links from and to other graphs (reporting LINK_REMOVED for each, every
- * target input reverting to its default; graphs/graph.h), then remove it,
+ * target input reverting to its default; graphs/graph.h) and its environment
+ * bindings (BINDING_REMOVED each, plan task 22), then remove it,
  * report GRAPH_DELETED (the graph is still readable during that
  * callback) and destroy it, its blocks going without events. name must equal
  * the graph's current name. Refused: INVALID_ID, UNKNOWN_GRAPH,
@@ -201,8 +204,9 @@ enum graph_status graphs_delete_graph(Graphs *gs, const char *id, const char *na
 
 /* ---- Network commands (02 §3.3) ------------------------------------------- */
 
-/* start: start the graph if stopped, recording the runtime's now as the
- * run's start; report GRAPH_STARTED either way (a started graph is not
+/* start: start the graph if stopped, recording the runtime's now (and its
+ * wall clock, for the wire's timestamps) as the run's start; report
+ * GRAPH_STARTED either way (a started graph is not
  * restarted and keeps its start time). Refused: INVALID_ID, UNKNOWN_GRAPH. */
 enum graph_status graphs_start(Graphs *gs, const char *id, GraphsMessage *msg);
 

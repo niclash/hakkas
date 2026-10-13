@@ -497,7 +497,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `"edges"` when it is alone (both: `"Invalid field: edges"`, 03 §5.1). The wire is unchanged.
   `test_graph_files` loads `examples/example.json` and `empty.json` from the repository
   (`HAKKAS_EXAMPLES_DIR`) and checks their canonical save.
-- [ ] **22. Environment SPI + bindings + the POSIX socket adapter** (designed together with the
+- [x] **22. Environment SPI + bindings + the POSIX socket adapter** (designed together with the
   user: 04 §0, §0.1, §1, §4; 05 §1.1; 00-README open questions 2, 3, 6, 11). Implement: the
   SPI types (`HakkasEnvironment`, the description with modules/metadata and addressable
   ports with `count`, the sink, values) handed to `hakkas_create`; applying bindings files
@@ -529,6 +529,41 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   (04 §1: the environment provides the wall clock), drop `pal_wall_ms`, and switch the wire
   timestamps (02 §3.3) from uptime to it. Keep the runtime's injected wall clock and its step
   handling (01 §3.4).
+  Done: the public SPI `src/hakkas_env.h` (`HakkasEnvironment` with `describe`, `start`,
+  `stop`, `write`, `wall_ms` — `NULL` falls back to `pal_wall_ms`, which stays as that
+  fallback — and `ctx`; `HakkasEnvDescription`/`HakkasEnvPort`/`HakkasEnvModule`; the opaque
+  sink with `hakkas_env_sink_push` for changes from any thread and `hakkas_env_sink_current`
+  for the current values within `start`, decided so they are there before bindings apply and
+  processes start and cannot overflow the handoff), handed in by `HakkasParams.environment`.
+  `src/drivers/`: `env_description.{h,c}` (validation: unique ids across both directions,
+  counts 1–1024, types, min ≤ max, module port ids, limits; the JSON form; equality),
+  `bindings_file.{h,c}` (the 04 §4 file, unknown members warned), `environment.{h,c}` (startup
+  step 5; the sink; per-channel conversion and engine-wide threshold; actuator writes converted
+  to the port's type; the wall clock; `environment_bind_all`, all or nothing with the skips).
+  `src/graphs/graph_bindings.c`: the binding model as a fourth input source kind
+  (`INPUT_SOURCE_ENV`, fan-in refused both ways) and actuator-marked outputs written on every
+  push incl. the start push; bindings end with their block or process, a removed sensor binding
+  reverts its input (severing), actuators keep their values; `GRAPH_EVENT_BINDING_*`, no wire
+  form. Work queue IO events carry (sensor port, channel); `runtime_drain` dispatches them.
+  Wire timestamps are the wall clock (`Graph.wall_started`, `GraphEvent.wall_ms`); the loop
+  reads the environment's clock (`loop_set_wall_clock`). C API: `hakkas_bindings_apply`,
+  `hakkas_binding_add`/`_remove`/`_count`/`_at`, `hakkas_environment`, BINDING events,
+  `wall_ms` on events and `wall_started_ms` in the status. Config key `environment.socket`.
+  POSIX: `platform/posix/env_link.{h,c}` — the Unix-socket client and its message set
+  (hello/write; describe/value/clock), the startup wait for the description and every
+  current value (stop request honoured), one link thread with reconnect, the
+  identical-description check, actuator re-send, per-channel coalescing (no overflow drops),
+  queued log messages logged by a tick hook; the host applies a process list's bindings right
+  after each process loads (the "ignored" log path removed). Tests: `test_environment`
+  (description, JSON, bindings file, sensor/actuator/fan-in/threshold/stopped-started rules,
+  every bindings-file refusal and skip, ending bindings, the wall clock), `test_env_api`
+  (startup and shutdown, a sink thread, the environment's wall clock on the wire and the
+  fallback, the C API's bindings), `test_env_link` (a fake environment program in the test:
+  startup wait, values, writes, clock, invalid messages, disconnect and reconnect with re-send,
+  changed description, startup failures), `test_cli` (`run processes` with bindings end to
+  end). Specs: 04 §0 (C types, rules), §0.1 (message set, startup, reconnect, overflow
+  policy), §1 (wall clock), §4 (file form, applying, ending a binding); 01 §0, §2.2, §3.2,
+  §3.2.1, §3.4, §6; 02 §3.3, §6; 03 §4; 05 §1.1, §1.2, §1.4; 00-README questions 2, 3, 11.
 - [ ] **23. `process/PID`** — behavior decided (03 §6.1); **waits for the user's PID code**: the
   implementation is to be based on the user's existing implementations, and the user adds the
   parameters `Pconst`, `Itime`, `Dtime`, `MaxD`. Don't start it without that code.

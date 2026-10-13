@@ -577,7 +577,7 @@ static void test_drain_budget(void)
 	size_t total = 2 * LOOP_DRAIN_BUDGET + 10;
 	CHECK(total <= work_queue_capacity());
 	for (size_t i = 0; i < total; i++)
-		work_queue_push_io(&rt.queue, (IoChannelId)i, linkable_from_i64(0));
+		work_queue_push_io(&rt.queue, (uint32_t)i, 0, linkable_from_i64(0));
 
 	uint64_t t0 = pal_uptime_ms();
 	loop_run_once(&loop);
@@ -611,7 +611,7 @@ static void *producer(void *arg)
 	sleep_ms(30); /* let the engine thread block in poll first */
 	for (int i = 0; i < THREAD_EVENTS; i++) {
 		WorkEntry e = {.type = WORK_IO_EVENT};
-		e.as.io.channel = (IoChannelId)i;
+		e.as.io.port = (uint32_t)i;
 		e.as.io.value = linkable_from_i64(1000 + i);
 		CHECK(pal_handoff_push(&e) == PAL_OK);
 		CHECK(e.type == WORK_NONE);
@@ -640,7 +640,7 @@ static void test_handoff_from_thread(void)
 	WorkEntry e;
 	for (int i = 0; i < THREAD_EVENTS; i++) {
 		CHECK(work_queue_pop(&rt.queue, &e));
-		CHECK(e.type == WORK_IO_EVENT && e.as.io.channel == (IoChannelId)i);
+		CHECK(e.type == WORK_IO_EVENT && e.as.io.port == (uint32_t)i);
 		CHECK(linkable_to_i64(&e.as.io.value) == 1000 + i);
 		work_queue_entry_clear(&e);
 	}
@@ -655,7 +655,7 @@ static void test_handoff_overflow(void)
 	size_t extra = 10;
 	for (size_t i = 0; i < PAL_HANDOFF_CAPACITY + extra; i++) {
 		WorkEntry e = {.type = WORK_IO_EVENT};
-		e.as.io.channel = (IoChannelId)i;
+		e.as.io.port = (uint32_t)i;
 		/* Strings: a dropped entry's value must be released (asan). */
 		CHECK(linkable_from_string(&e.as.io.value, "value", 5));
 		CHECK(pal_handoff_push(&e) == PAL_OK);
@@ -669,7 +669,7 @@ static void test_handoff_overflow(void)
 	CHECK(work_queue_len(&rt.queue) == PAL_HANDOFF_CAPACITY);
 	WorkEntry e;
 	CHECK(work_queue_pop(&rt.queue, &e));
-	CHECK(e.as.io.channel == extra); /* the oldest were dropped */
+	CHECK(e.as.io.port == extra); /* the oldest were dropped */
 	work_queue_entry_clear(&e);
 
 	/* Entries still in the handoff at close are released. */

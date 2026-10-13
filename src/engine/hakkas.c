@@ -10,6 +10,8 @@
 #include "app/graph_files.h"
 #include "app/type_files.h"
 #include "cJSON.h"
+#include "drivers/bindings_file.h"
+#include "drivers/environment.h"
 #include "engine/engine.h"
 #include "graphs/graph_json.h"
 #include "graphs/graphs.h"
@@ -160,7 +162,7 @@ static bool enter(Hakkas *h, HakkasMessage *msg)
 		return false;
 	}
 	runtime_set_now(graphs_of(h)->rt, pal_uptime_ms());
-	(void)runtime_set_wall_ms(graphs_of(h)->rt, pal_wall_ms());
+	(void)runtime_set_wall_ms(graphs_of(h)->rt, engine_wall_ms(h->engine));
 	set_msg(msg, "");
 	return true;
 }
@@ -186,6 +188,14 @@ static bool parse_json(const char *text, cJSON **out)
 }
 
 /* ---- The runtime ---------------------------------------------------------------- */
+
+/* The bound block's name and port name of b. */
+static void binding_info(const EnvBinding *b, const char **block, const char **port)
+{
+	*block = b->block->name;
+	*port = b->actuator ? block_output_port(b->block, b->port)->name
+			    : block_input_port(b->block, b->port)->name;
+}
 
 /* The registry's events, as typed events (hakkas.h "An event"). */
 static void convert(const GraphEvent *ev, HakkasEvent *out)
@@ -220,6 +230,8 @@ static void convert(const GraphEvent *ev, HakkasEvent *out)
 		[GRAPH_EVENT_COMPONENT] = HAKKAS_EVENT_COMPONENT,
 		[GRAPH_EVENT_LINK_ADDED] = HAKKAS_EVENT_LINK_ADDED,
 		[GRAPH_EVENT_LINK_REMOVED] = HAKKAS_EVENT_LINK_REMOVED,
+		[GRAPH_EVENT_BINDING_ADDED] = HAKKAS_EVENT_BINDING_ADDED,
+		[GRAPH_EVENT_BINDING_REMOVED] = HAKKAS_EVENT_BINDING_REMOVED,
 	};
 	memset(out, 0, sizeof(*out));
 	out->type = types[ev->type];
@@ -251,6 +263,7 @@ static void convert(const GraphEvent *ev, HakkasEvent *out)
 		out->started = ev->type == GRAPH_EVENT_GRAPH_STARTED;
 		out->time_ms = ev->time_ms;
 		out->uptime_ms = ev->uptime_ms;
+		out->wall_ms = ev->wall_ms;
 		break;
 	case GRAPH_EVENT_ERROR:
 		out->process = ev->graph_id;
@@ -324,6 +337,13 @@ static void convert(const GraphEvent *ev, HakkasEvent *out)
 		out->to_process = ev->link->tgt_graph->id;
 		out->to_port = ev->link->tgt_port;
 		break;
+	case GRAPH_EVENT_BINDING_ADDED:
+	case GRAPH_EVENT_BINDING_REMOVED:
+		binding_info(ev->binding, &out->block, &out->port);
+		out->env_port = ev->binding->env;
+		out->env_index = ev->binding->env_index;
+		out->actuator = ev->binding->actuator;
+		break;
 	}
 }
 
@@ -373,6 +393,7 @@ bool hakkas_create(const Config *cfg, const HakkasParams *params, Hakkas **out)
 		ep.platform_start = params->platform_start;
 		ep.platform_stop = params->platform_stop;
 		ep.platform_ctx = params->platform_ctx;
+		ep.environment = params->environment;
 		ep.ephemeral_ports = params->ephemeral_ports;
 	}
 	if (!engine_start(cfg, &ep, &h->engine)) {
@@ -608,6 +629,7 @@ static void status_of(const Graph *g, HakkasProcessStatus *out)
 	out->started = g->started;
 	out->uptime_ms = graphs_uptime_ms(g);
 	out->time_started_ms = g->time_started;
+	out->wall_started_ms = g->wall_started;
 }
 
 enum hakkas_status hakkas_process_status(Hakkas *h, const char *id, HakkasProcessStatus *out,
@@ -1064,4 +1086,166 @@ bool hakkas_link_at(const Hakkas *h, size_t i, HakkasLink *out)
 	out->to_process = l->tgt_graph->id;
 	out->to_inport = l->tgt_port;
 	return true;
+}
+
+/* ---- Environment bindings ---------------------------------------------------------- */
+
+/* An environment status as the API's. */
+static enum hakkas_status from_environment(enum environment_status st)
+{
+	switch (st) {
+	case ENVIRONMENT_OK:
+		return HAKKAS_OK;
+	case ENVIRONMENT_NO_MEMORY:
+		return HAKKAS_ERR_NO_MEMORY;
+	case ENVIRONMENT_REFUSED:
+		break;
+	}
+	return HAKKAS_REFUSED;
+}
+
+/* The process id's graph: the refusals of every process command. */
+static enum hakkas_status find_process(Hakkas *h, const char *id, Graph **out,
+				       HakkasMessage *msg)
+{
+	*out = NULL;
+	if (id == NULL)
+		return invalid_field(msg, "graph");
+	if (!graph_id_valid(id))
+		return refusal(GRAPH_ERR_INVALID_ID, NULL, msg);
+	*out = graphs_find(graphs_of(h), id);
+	if (*out == NULL)
+		return refusal(GRAPH_ERR_UNKNOWN_GRAPH, &(GraphRefusal){.graph = id}, msg);
+	return HAKKAS_OK;
+}
+
+enum hakkas_status hakkas_bindings_apply(Hakkas *h, const char *process, const char *path,
+					 size_t *applied, size_t *skipped, HakkasMessage *msg)
+{
+	if (applied != NULL)
+		*applied = 0;
+	if (skipped != NULL)
+		*skipped = 0;
+	if (!enter(h, msg))
+		return HAKKAS_ERR_BUSY;
+	if (process == NULL)
+		return invalid_field(msg, "graph");
+	if (path == NULL)
+		return invalid_field(msg, "bindings");
+	Graph *g;
+	enum hakkas_status st = find_process(h, process, &g, msg);
+	if (st != HAKKAS_OK)
+		return st;
+	if (path[0] == '\0') {
+		set_msg(msg, hakkas_status_str(HAKKAS_ERR_INVALID));
+		return HAKKAS_ERR_INVALID;
+	}
+	char *text;
+	size_t len;
+	enum graph_files_status fst = graph_files_read(path, HAKKAS_BINDINGS_FILE_MAX, &text, &len);
+	if (fst != GRAPH_FILES_OK) {
+		set_msg(msg, graph_files_status_str(fst));
+		return from_load(fst); /* logged */
+	}
+	BindingsFile file;
+	char why[HAKKAS_MESSAGE_MAX];
+	enum bindings_file_status bst =
+		bindings_file_parse(text, len, path, &file, why, sizeof(why));
+	free(text);
+	if (bst != BINDINGS_FILE_OK) {
+		set_msg(msg, why);
+		return bst == BINDINGS_FILE_NO_MEMORY ? HAKKAS_ERR_NO_MEMORY : HAKKAS_ERR_MALFORMED;
+	}
+	Environment *env = engine_environment(h->engine);
+	const HakkasEnvDescription *d = environment_description(env);
+	if (d == NULL) {
+		set_msg(msg, "No environment");
+		st = HAKKAS_REFUSED;
+	} else if (strcmp(file.environment, d->name) != 0) {
+		if (msg != NULL)
+			snprintf(msg->text, sizeof(msg->text),
+				 "Environment mismatch: %s (running: %s)", file.environment,
+				 d->name);
+		st = HAKKAS_REFUSED;
+	} else {
+		st = from_environment(environment_bind_all(
+			env, g, file.entries, file.count, path, applied, skipped,
+			msg != NULL ? msg->text : NULL, msg != NULL ? sizeof(msg->text) : 0));
+	}
+	bindings_file_free(&file);
+	return st;
+}
+
+/* The checks hakkas_binding_add and _remove start with. */
+static enum hakkas_status binding_args(Hakkas *h, const char *process, const char *block,
+				       const char *port, const char *env_port, Graph **g,
+				       HakkasMessage *msg)
+{
+	*g = NULL;
+	if (process == NULL)
+		return invalid_field(msg, "graph");
+	if (block == NULL)
+		return invalid_field(msg, "id");
+	if (port == NULL)
+		return invalid_field(msg, "port");
+	if (env_port == NULL)
+		return invalid_field(msg, "env");
+	return find_process(h, process, g, msg);
+}
+
+enum hakkas_status hakkas_binding_add(Hakkas *h, const char *process, const char *block,
+				      const char *port, const char *env_port, uint32_t env_index,
+				      HakkasMessage *msg)
+{
+	if (!enter(h, msg))
+		return HAKKAS_ERR_BUSY;
+	Graph *g;
+	enum hakkas_status st = binding_args(h, process, block, port, env_port, &g, msg);
+	if (st != HAKKAS_OK)
+		return st;
+	EnvBindingRequest req = {block, port, env_port, env_index};
+	return from_environment(environment_bind(engine_environment(h->engine), g, &req,
+						 msg != NULL ? msg->text : NULL,
+						 msg != NULL ? sizeof(msg->text) : 0));
+}
+
+enum hakkas_status hakkas_binding_remove(Hakkas *h, const char *process, const char *block,
+					 const char *port, const char *env_port,
+					 uint32_t env_index, HakkasMessage *msg)
+{
+	if (!enter(h, msg))
+		return HAKKAS_ERR_BUSY;
+	Graph *g;
+	enum hakkas_status st = binding_args(h, process, block, port, env_port, &g, msg);
+	if (st != HAKKAS_OK)
+		return st;
+	EnvBindingRequest req = {block, port, env_port, env_index};
+	return from_environment(environment_unbind(engine_environment(h->engine), g, &req,
+						   msg != NULL ? msg->text : NULL,
+						   msg != NULL ? sizeof(msg->text) : 0));
+}
+
+size_t hakkas_binding_count(const Hakkas *h)
+{
+	return runtime_binding_count(graphs_of(h)->rt);
+}
+
+bool hakkas_binding_at(const Hakkas *h, size_t i, HakkasBinding *out)
+{
+	memset(out, 0, sizeof(*out));
+	const Runtime *rt = graphs_of(h)->rt;
+	if (i >= runtime_binding_count(rt))
+		return false;
+	const EnvBinding *b = runtime_binding_at(rt, (uint32_t)i);
+	out->process = b->graph->id;
+	binding_info(b, &out->block, &out->port);
+	out->env_port = b->env;
+	out->env_index = b->env_index;
+	out->actuator = b->actuator;
+	return true;
+}
+
+const HakkasEnvDescription *hakkas_environment(const Hakkas *h)
+{
+	return environment_description(engine_environment(h->engine));
 }

@@ -22,6 +22,9 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c
+  ${HAKKAS_SOURCE_ROOT}/drivers/bindings_file.c
+  ${HAKKAS_SOURCE_ROOT}/drivers/env_description.c
+  ${HAKKAS_SOURCE_ROOT}/drivers/environment.c
   ${HAKKAS_SOURCE_ROOT}/engine/engine.c
   ${HAKKAS_SOURCE_ROOT}/engine/hakkas.c
   ${HAKKAS_SOURCE_ROOT}/engine/loop.c
@@ -31,6 +34,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/graphs/block.c
   ${HAKKAS_SOURCE_ROOT}/graphs/deadlines.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/graph_bindings.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph_json.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph_links.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph_ports.c
@@ -96,6 +100,7 @@ set(HAKKAS_THIRD_PARTY_DEFINITIONS
 # The POSIX PAL implementation (01 §0): the hakkas_pal_posix library, linked
 # by the POSIX runtime and by tests that exercise the PAL.
 set(HAKKAS_POSIX_PAL_SOURCES
+  ${HAKKAS_SOURCE_ROOT}/platform/posix/env_link.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/log_stderr.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/pal.c
   ${HAKKAS_SOURCE_ROOT}/platform/posix/signals.c

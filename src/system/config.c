@@ -84,6 +84,7 @@ static const KeyDef keys[] = {
 	KEY("auth.max_lifetime_s", K_UINT, auth.max_lifetime_s, CONFIG_SECONDS_MIN,
 	    CONFIG_SECONDS_MAX),
 	KEY("auth.server_secret", K_STRING, auth.server_secret, CONFIG_SECRET_MIN, 0),
+	KEY("environment.socket", K_PATH, environment.socket, 0, 0),
 	KEY("tls.enabled", K_BOOL, tls.enabled, 0, 0),
 	KEY("tls.cert", K_PATH, tls.cert, 0, 0),
 	KEY("tls.key", K_PATH, tls.key, 0, 0),
@@ -97,7 +98,7 @@ static const KeyDef keys[] = {
 #define KEY_COUNT (sizeof(keys) / sizeof(keys[0]))
 
 /* The sections: top-level keys whose value is an object of nested keys. */
-static const char *const sections[] = {"log", "auth", "tls", "net"};
+static const char *const sections[] = {"log", "auth", "environment", "tls", "net"};
 
 #define SECTION_COUNT (sizeof(sections) / sizeof(sections[0]))
 

@@ -21,14 +21,16 @@
  *    the configuration reads) is malformed: CONFIG_ERR_MALFORMED, logged as an
  *    error; the engine refuses to start;
  *  - an unknown key (also within a section) is logged as a warning and
- *    ignored (forward compatibility); a section ("log", "auth", "tls", "net")
- *    whose value is not an object is an invalid value;
+ *    ignored (forward compatibility); a section ("log", "auth",
+ *    "environment", "tls", "net") whose value is not an object is an invalid
+ *    value;
  *  - a key with the wrong type or an out-of-range value is logged as an error
  *    naming the key; every key is checked (so every problem is reported at
  *    once) and then CONFIG_ERR_INVALID is returned; the engine refuses to
  *    start;
- *  - a relative path in the file (webdir, datadir, auth.users_file, tls.cert,
- *    tls.key) is relative to confdir, the file's own directory; a path given
+ *  - a relative path in the file (webdir, datadir, auth.users_file,
+ *    environment.socket, tls.cert, tls.key) is relative to confdir, the
+ *    file's own directory; a path given
  *    as a command-line option is used as given (relative to the working
  *    directory).
  *
@@ -151,6 +153,11 @@ typedef struct {
 		/* "": absent from the file, see config_ensure_server_secret. */
 		char server_secret[CONFIG_SECRET_MAX + 1];
 	} auth;
+	struct {
+		/* POSIX: the Unix socket of the external environment program
+		 * (04 §0.1); "": no environment. */
+		char socket[PAL_PATH_MAX];
+	} environment;
 	struct {
 		bool enabled;
 		char cert[PAL_PATH_MAX]; /* "": none */

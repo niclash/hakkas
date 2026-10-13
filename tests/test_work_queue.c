@@ -57,7 +57,7 @@ static void push_mixed(uint32_t first, uint32_t n)
 			work_queue_push_timer(&q, handle(i, i + 1), i + 3);
 			break;
 		default:
-			work_queue_push_io(&q, i, linkable_from_i64((int64_t)i));
+			work_queue_push_io(&q, i, 0, linkable_from_i64((int64_t)i));
 			break;
 		}
 	}
@@ -84,7 +84,7 @@ static void check_mixed(uint32_t first, uint32_t n)
 			break;
 		default:
 			CHECK(e.type == WORK_IO_EVENT);
-			CHECK(e.as.io.channel == i);
+			CHECK(e.as.io.port == i);
 			CHECK(e.as.io.value.type == LINKABLE_I64 &&
 			      e.as.io.value.as.i64 == (int64_t)i);
 			break;
@@ -168,7 +168,7 @@ static void test_overflow_drops_timer_and_io(void)
 {
 	work_queue_init(&q);
 	work_queue_push_timer(&q, handle(1, 1), 1);
-	work_queue_push_io(&q, 2, str("io"));
+	work_queue_push_io(&q, 2, 0, str("io"));
 	for (uint32_t i = 0; i < CAP; i++)
 		work_queue_push_input(&q, handle(i, 0), 0, 0, linkable_from_bool(true));
 	CHECK(work_queue_drops(&q) == 2);
@@ -205,7 +205,7 @@ static void test_drop_hook(void)
 	work_queue_push_timer(&q, handle(1, 1), 7);
 	work_queue_push_input(&q, handle(2, 0), 0, 9, str("kept until the hook ran"));
 	for (uint32_t i = 0; i < CAP; i++)
-		work_queue_push_io(&q, i, linkable_from_bool(true));
+		work_queue_push_io(&q, i, 0, linkable_from_bool(true));
 	CHECK(dropped == 2);
 	CHECK(dropped_gen[0] == 7 && dropped_gen[1] == 9);
 	CHECK(work_queue_drops(&q) == 2);
@@ -220,7 +220,7 @@ static void test_value_ownership(void)
 	/* A copied value stays valid after the queue's reference is released. */
 	work_queue_init(&q);
 	Linkable keep = str("shared");
-	work_queue_push_io(&q, 7, linkable_copy(&keep));
+	work_queue_push_io(&q, 7, 0, linkable_copy(&keep));
 	work_queue_push_input(&q, handle(0, 0), 0, 0, linkable_copy(&keep));
 	WorkEntry e;
 	CHECK(work_queue_pop(&q, &e));
@@ -246,7 +246,7 @@ static void test_clear_releases(void)
 	uint32_t n = CAP < 6 ? CAP : 6;
 	for (uint32_t i = 0; i < n; i++) {
 		if (i % 2)
-			work_queue_push_io(&q, i, str("io value"));
+			work_queue_push_io(&q, i, 0, str("io value"));
 		else
 			work_queue_push_input(&q, handle(i, 0), 0, 0, str("input value"));
 	}

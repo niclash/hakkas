@@ -92,11 +92,12 @@ void work_queue_push_timer(WorkQueue *q, BlockHandle block, uint32_t timer_gen)
 	e->as.timer.timer_gen = timer_gen;
 }
 
-void work_queue_push_io(WorkQueue *q, IoChannelId channel, Linkable value)
+void work_queue_push_io(WorkQueue *q, uint32_t port, uint32_t index, Linkable value)
 {
 	WorkEntry *e = push_slot(q);
 	e->type = WORK_IO_EVENT;
-	e->as.io.channel = channel;
+	e->as.io.port = port;
+	e->as.io.index = index;
 	e->as.io.value = value;
 }
 

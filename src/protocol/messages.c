@@ -42,9 +42,9 @@ static bool add_bool(cJSON *obj, const char *key, bool b)
 
 /* ---- Time (02 §3.3 "Timestamps") ----------------------------------------------------- */
 
-void proto_msg_time(uint64_t ms, char buf[PROTO_TIME_SIZE])
+void proto_msg_time(int64_t ms, char buf[PROTO_TIME_SIZE])
 {
-	uint64_t s = ms / 1000;
+	uint64_t s = ms > 0 ? (uint64_t)ms / 1000 : 0; /* before 1970: the epoch */
 	uint64_t days = s / 86400;
 	uint32_t rem = (uint32_t)(s % 86400);
 	/* The proleptic Gregorian date of day number days since 1970-01-01
@@ -60,7 +60,7 @@ void proto_msg_time(uint64_t ms, char buf[PROTO_TIME_SIZE])
 	unsigned m = (unsigned)(mp < 10 ? mp + 3 : mp - 9);
 	if (m <= 2)
 		y++;
-	if (y > 9999) { /* beyond the format; never reached by an uptime */
+	if (y > 9999) { /* beyond the format */
 		snprintf(buf, PROTO_TIME_SIZE, "9999-12-31T23:59:59Z");
 		return;
 	}
@@ -245,7 +245,7 @@ static char *graph_status(const Graph *g, const GraphEvent *ev)
 static char *graph_started(const Graph *g, const GraphEvent *ev)
 {
 	char time[PROTO_TIME_SIZE];
-	proto_msg_time(ev->time_ms, time);
+	proto_msg_time(ev->wall_ms, time);
 	cJSON *p = object();
 	bool ok = p != NULL && add_str(p, "graph", g->id) && add_str(p, "time", time) &&
 		  add_bool(p, "started", true) && add_bool(p, "running", true) &&
@@ -256,7 +256,7 @@ static char *graph_started(const Graph *g, const GraphEvent *ev)
 static char *graph_stopped(const Graph *g, const GraphEvent *ev)
 {
 	char time[PROTO_TIME_SIZE];
-	proto_msg_time(ev->time_ms, time);
+	proto_msg_time(ev->wall_ms, time);
 	cJSON *p = object();
 	bool ok = p != NULL && add_str(p, "graph", g->id) && add_str(p, "time", time) &&
 		  add_num(p, "uptime", seconds(ev->uptime_ms)) && add_bool(p, "started", false) &&
@@ -561,6 +561,9 @@ char *proto_msg_event(const GraphEvent *ev)
 	case GRAPH_EVENT_LINK_ADDED:
 	case GRAPH_EVENT_LINK_REMOVED:
 		return NULL; /* no wire form yet (decided, plan task 21f; 02 §6) */
+	case GRAPH_EVENT_BINDING_ADDED:
+	case GRAPH_EVENT_BINDING_REMOVED:
+		return NULL; /* no wire form: the environment's UI is deferred (04 §1) */
 	}
 	return NULL;
 }

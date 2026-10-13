@@ -108,6 +108,55 @@ check). `SIGINT` (Ctrl-C) or `SIGTERM` stops the engine cleanly (exit code 0); a
 exits 1 with the cause logged. Running graphs are not saved at shutdown: a graph's file changes
 only when a client persists it.
 
+## The environment: inputs and outputs
+
+Hakkas reads sensors and drives actuators through its **environment** (`specifications/04`): on
+Zephyr the device firmware, on POSIX a separate **environment program** — a simulator, a separate
+project — that hakkas talks to over a Unix socket. Point hakkas at it in `hakkas.json`:
+
+```json
+{"environment": {"socket": "/run/sim/environment.sock"}}
+```
+
+(a relative path is relative to the configuration directory). The program is the server; `run`
+connects, logs `waiting for environment at <path>` and retries every second until the program
+has described its ports and sent their current values, and only then loads the processes
+(Ctrl-C stops the wait). If the program goes away, inputs keep their last values and hakkas
+reconnects by itself; the program must then describe itself identically. The protocol —
+newline-delimited JSON (`describe`, `value`, `clock` from the program; `hello`, `write` from
+hakkas) — is in `specifications/04-drivers.md` §0.1. For a quick look without a simulator, any
+program that serves the socket will do, e.g. `socat` replaying a description and the current
+values (two analog inputs, one relay) and printing what hakkas writes:
+
+```sh
+cat > sim.ndjson <<'EOF'
+{"describe":{"name":"sim","outPorts":[{"id":"ain","type":"number","addressable":true,"count":2}],"inPorts":[{"id":"relay","type":"bool"}]}}
+{"value":{"port":"ain","index":1,"value":2.5}}
+{"value":{"port":"ain","index":2,"value":0}}
+EOF
+socat UNIX-LISTEN:/run/sim/environment.sock,fork SYSTEM:'cat sim.ndjson; cat >&2'
+```
+
+A process is connected to the environment by a **bindings file** per process and environment,
+named in the process list (`run processes`):
+
+```json
+{"processes": [{"graph": "regulator.json", "bindings": "regulator-sim.json", "start": true}]}
+```
+
+```json
+{"environment": "sim",
+ "bindings": [{"block": "add", "port": "in1", "env": "ain", "index": 1},
+              {"block": "cmp", "port": "out", "env": "relay"}]}
+```
+
+A sensor (an environment output port) binds a block input, an actuator (an environment input
+port) a block output; `index` is required exactly for an addressable port. A bindings file that
+does not fit the process (an unknown block or port, a wrong direction, an input that already has
+a source, a second driver for an actuator, another environment's name) refuses startup; a channel
+this environment does not have is skipped with a warning. Without `environment.socket` there is
+no environment, any bindings file is refused, and the wall clock is the host's.
+
 ## The schedule standard library
 
 The calendar blocks (`timing/MinuteRange`, `DayOfWeek`, `DayOfMonth`, `MonthOfYear`, `DayOfYear`,
@@ -126,7 +175,9 @@ from `time_zone` in `hakkas.json`, a POSIX TZ string (default `"UTC0"`; Sweden i
 
 `add_subdirectory()` or `FetchContent` this repository and link `hakkas::core`; the embedding
 interface is `#include "hakkas.h"` (`src/hakkas.h`, 02 §6): create the runtime from a
-`Config`, load and start processes, edit them, and subscribe to their events. As a
+`Config`, load and start processes, edit them, and subscribe to their events. A host with
+inputs and outputs implements the environment interface of `src/hakkas_env.h` (04 §0) and hands
+it to `hakkas_create` (`HakkasParams.environment`). As a
 subproject, only the core library is built by default. A port with its own build integration,
 such as the future Zephyr module, can instead include `cmake/HakkasSources.cmake` and compile
 `HAKKAS_CORE_SOURCES` and `HAKKAS_THIRD_PARTY_SOURCES` (with the matching include directories

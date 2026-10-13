@@ -54,10 +54,11 @@
 /* "1970-01-01T00:00:00Z" and its NUL. */
 #define PROTO_TIME_SIZE 21
 
-/* The ISO 8601 UTC timestamp (02 §3.3 "Timestamps") of the engine time ms,
- * counted from the epoch and floored to the second, e.g. 90000 ->
- * "1970-01-01T00:01:30Z". buf holds PROTO_TIME_SIZE bytes. */
-void proto_msg_time(uint64_t ms, char buf[PROTO_TIME_SIZE]);
+/* The ISO 8601 UTC timestamp (02 §3.3 "Timestamps") of the wall-clock time
+ * ms (UTC ms since the epoch, 01 §3.4), floored to the second, e.g. 90000 ->
+ * "1970-01-01T00:01:30Z"; a time before the epoch is the epoch. buf holds
+ * PROTO_TIME_SIZE bytes. */
+void proto_msg_time(int64_t ms, char buf[PROTO_TIME_SIZE]);
 
 /* The envelope {"protocol","command","payload"} around payload, which it
  * takes over (freed in every case); payload NULL leaves the "payload" key

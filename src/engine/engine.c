@@ -30,6 +30,7 @@ struct Engine {
 	UserStore users;
 	Auth *auth;
 	Protocol *proto;
+	Environment env; /* step 5 */
 	WebServer *web;
 	WsServer *ws;
 	/* What exists, for the shutdown of a partial startup. */
@@ -42,6 +43,12 @@ struct Engine {
 static uint64_t loop_clock(void *ctx)
 {
 	return loop_now_ms(ctx);
+}
+
+/* The loop's wall clock: the environment's (04 §1). */
+static int64_t env_clock(void *ctx)
+{
+	return environment_wall_ms(ctx);
 }
 
 /* The directory part of path into buf: "." without a '/', "/" for a file in
@@ -137,6 +144,7 @@ bool engine_start(const Config *cfg, const EngineParams *params, Engine **out)
 	}
 	e->cfg = *cfg;
 	e->params = *params;
+	environment_init(&e->env, pal_wall_ms);
 
 	/* Step 1: logging, engine_id, auth.server_secret (05 §1.1). */
 	log_set_threshold(e->cfg.log.level);
@@ -213,8 +221,16 @@ bool engine_start(const Config *cfg, const EngineParams *params, Engine **out)
 	}
 	e->types_registered = true;
 
-	/* Step 5: the IO provider (04 §0-§1): not implemented yet (plan task
-	 * 22). */
+	/* Step 5: the environment (04 §0-§1), if there is one: described,
+	 * validated and started; its sensor values reach the work queue
+	 * through the PAL's handoff. From here the wall clock is its own. */
+	if (e->params.environment != NULL) {
+		if (!environment_open(&e->env, &e->rt, e->params.environment, pal_handoff_push))
+			goto fail; /* logged */
+		loop_set_wall_clock(&e->loop, env_clock, &e->env);
+		runtime_set_now(&e->rt, pal_uptime_ms());
+		(void)runtime_set_wall_ms(&e->rt, environment_wall_ms(&e->env));
+	}
 
 	/* Step 6: the composite block types of <datadir>/types (03 §5.1), in
 	 * dependency order; a type that does not load is logged and skipped
@@ -264,6 +280,9 @@ void engine_stop(Engine *e)
 	if (e->tick_added)
 		loop_remove_tick(&e->loop, auth_tick, e->auth);
 	auth_destroy(e->auth);
+	/* The environment stops delivering before the loop's handoff goes
+	 * (hakkas_env.h); the graphs that follow write nothing more. */
+	environment_close(&e->env);
 	/* Before loop_deinit: the POSIX stop signals write to the PAL's
 	 * wakeup, which loop_deinit closes. */
 	if (e->platform_started && e->params.platform_stop != NULL)
@@ -300,6 +319,16 @@ Graphs *engine_graphs(Engine *e)
 GraphFiles *engine_files(Engine *e)
 {
 	return &e->gf;
+}
+
+Environment *engine_environment(Engine *e)
+{
+	return &e->env;
+}
+
+int64_t engine_wall_ms(const Engine *e)
+{
+	return environment_wall_ms(&e->env);
 }
 
 uint16_t engine_web_port(const Engine *e)

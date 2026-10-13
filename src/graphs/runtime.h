@@ -30,9 +30,9 @@
  * Wall clock (decided, plan task 24; 01 §3.4): the runtime keeps the wall
  * clock as an offset from engine time, so it advances with runtime_set_now
  * (and runtime_fire_timers) and the tests drive both with one number. The
- * engine loop sets it from the PAL (pal_wall_ms, the interim source until the
- * environment interface, plan task 22) each iteration, before firing the
- * timers. Calendar primitives arm their timers in engine time for an instant
+ * engine loop sets it each iteration, before firing the timers, from the
+ * environment's wall clock, or the PAL's (pal_wall_ms) without one (plan task
+ * 22, 04 §1). Calendar primitives arm their timers in engine time for an instant
  * computed on the wall clock, so a step of the wall clock (set by the user, an
  * NTP correction, the first synchronization) would leave them armed for the
  * wrong instant: when the offset has moved by RUNTIME_WALL_STEP_MS or more
@@ -80,9 +80,18 @@ typedef struct Block Block;
 typedef struct Graph Graph;
 typedef struct GraphEvent GraphEvent; /* graphs/graph.h */
 typedef struct ProcessLink ProcessLink; /* graphs/graph.h */
+typedef struct EnvBinding EnvBinding;	/* graphs/graph.h */
 
 /* Receives every applied structural change (graphs/graph.h, GraphEvent). */
 typedef void (*graph_event_fn)(void *ctx, const GraphEvent *ev);
+
+/* The environment's hooks (drivers/environment.h; plan task 22): sensor
+ * receives each IO event's value (owned: it takes it over), write each push
+ * of an output with an actuator binding (value valid during the call). */
+typedef void (*runtime_sensor_fn)(void *ctx, uint32_t env_port, uint32_t env_index,
+				  Linkable value);
+typedef void (*runtime_write_fn)(void *ctx, uint32_t env_port, uint32_t env_index,
+				 const Linkable *value);
 
 /* One entry of the block table. gen is incremented whenever the block in the
  * slot is destroyed, so a BlockHandle taken before is stale (01 §3.2). */
@@ -114,6 +123,16 @@ typedef struct Runtime {
 	ProcessLink *links;
 	uint32_t link_count;
 	uint32_t link_cap;
+	/* The environment bindings (graphs/graph.h), in creation order; heap,
+	 * binding_cap entries. */
+	EnvBinding *bindings;
+	uint32_t binding_count;
+	uint32_t binding_cap;
+	/* The environment's hooks; NULL without an environment (IO events are
+	 * then discarded, actuator bindings cannot exist). */
+	runtime_sensor_fn env_sensor;
+	runtime_write_fn env_write;
+	void *env_ctx;
 } Runtime;
 
 /* Make rt an empty runtime: empty queue, no blocks, no timers, the default
@@ -165,6 +184,10 @@ static inline void runtime_set_time_zone(Runtime *rt, const TimeZone *tz)
  * registry (plan task 7) fans each event out to its subscribers. */
 void runtime_set_observer(Runtime *rt, graph_event_fn fn, void *ctx);
 
+/* Set the environment's hooks (NULLs to remove them; plan task 22). */
+void runtime_set_environment(Runtime *rt, runtime_sensor_fn sensor, runtime_write_fn write,
+			     void *ctx);
+
 /* The live block h refers to, or NULL if h is stale or out of range. */
 Block *runtime_block(const Runtime *rt, BlockHandle h);
 
@@ -181,8 +204,10 @@ Block *runtime_block(const Runtime *rt, BlockHandle h);
  * Dispatch: an input update whose block handle or input source generation is
  * stale is discarded; otherwise the block's update runs (03 §2). A timer
  * expiry whose block handle or timer generation is stale is discarded;
- * otherwise the block's compute step runs with REASON_TIMER (03 §2). IO
- * events are discarded: no producer exists yet (plan task 22). */
+ * otherwise the block's compute step runs with REASON_TIMER (03 §2). An IO
+ * event's value goes to the environment's sensor hook (drivers/environment.h:
+ * the change threshold, then runtime_env_deliver to the bound inputs); it is
+ * discarded without an environment. */
 size_t runtime_drain(Runtime *rt, size_t max_entries);
 
 /* runtime_timer_timeout_ms when no timer is armed. */

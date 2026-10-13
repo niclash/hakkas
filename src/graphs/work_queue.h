@@ -11,7 +11,11 @@
  *  - input update (block, input index, value, source generation): produced by
  *    output_set, by initials and by severing (01 §2.2);
  *  - timer expiry (block, timer generation): produced via a block's timer;
- *  - IO event (channel id, value): produced by the IO provider (04 §0).
+ *  - IO event (sensor port, channel index, value): a sensor value delivered
+ *    by the environment (04 §0) through the PAL's handoff (decided, plan
+ *    task 22: the port is the index of the sensor port in the environment's
+ *    description, the index its channel, 1..count, 0 for a port that is not
+ *    addressable; hakkas_env.h).
  *
  * Staleness: entries never hold a pointer to a block. They carry a BlockHandle
  * and generation numbers, and the dispatcher (task 6) discards an entry, with
@@ -94,10 +98,6 @@ static inline bool block_handle_eq(BlockHandle a, BlockHandle b)
 	return a.slot == b.slot && a.gen == b.gen;
 }
 
-/* An IO channel's stable id (04 §0), provisional like the rest of the IO
- * hookup. */
-typedef uint32_t IoChannelId;
-
 enum work_type {
 	WORK_NONE = 0, /* an empty entry; never queued */
 	WORK_INPUT_UPDATE,
@@ -119,7 +119,8 @@ typedef struct {
 			uint32_t timer_gen; /* the block's timer generation when armed */
 		} timer;
 		struct {
-			IoChannelId channel;
+			uint32_t port;	/* the sensor port: out_ports[port] (hakkas_env.h) */
+			uint32_t index; /* its channel: 1..count, 0 if not addressable */
 			Linkable value; /* owned */
 		} io;
 	} as;
@@ -158,7 +159,7 @@ void work_queue_clear(WorkQueue *q);
 void work_queue_push_input(WorkQueue *q, BlockHandle block, uint32_t input, uint32_t source_gen,
 			   Linkable value);
 void work_queue_push_timer(WorkQueue *q, BlockHandle block, uint32_t timer_gen);
-void work_queue_push_io(WorkQueue *q, IoChannelId channel, Linkable value);
+void work_queue_push_io(WorkQueue *q, uint32_t port, uint32_t index, Linkable value);
 
 /* Append *e (any type but WORK_NONE, which is ignored), taking ownership of
  * its value; *e is left empty. Used for entries handed over from another

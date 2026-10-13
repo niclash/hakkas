@@ -189,6 +189,7 @@ static void test_defaults(void)
 	CHECK(cfg.auth.max_lifetime_s == 43200);
 	CHECK_STREQ(cfg.auth.server_secret, "");
 	CHECK(!cfg.tls.enabled);
+	CHECK_STREQ(cfg.environment.socket, ""); /* no environment */
 	CHECK_STREQ(cfg.tls.cert, "");
 	CHECK_STREQ(cfg.tls.key, "");
 	CHECK_STREQ(cfg.net.hostname, "");
@@ -313,8 +314,9 @@ static void test_relative_paths(void)
 	/* Relative paths in the file are relative to confdir; absolute ones
 	 * are kept; an empty tls path means none. */
 	parse("{'webdir':'web','datadir':'./data','auth':{'users_file':'u.json'},"
-	      "'tls':{'cert':'tls/c.pem','key':''}}",
+	      "'tls':{'cert':'tls/c.pem','key':''},'environment':{'socket':'sim.sock'}}",
 	      CONFIG_OK);
+	CHECK_STREQ(cfg.environment.socket, "/etc/hakkas/sim.sock");
 	CHECK_STREQ(cfg.webdir, "/etc/hakkas/web");
 	CHECK_STREQ(cfg.datadir, "/etc/hakkas/./data");
 	CHECK_STREQ(cfg.auth.users_file, "/etc/hakkas/u.json");
@@ -502,6 +504,8 @@ static void test_invalid_values(void)
 	invalid("{'auth':{'users_file':''}}", "auth.users_file: expected a path");
 	invalid("{'tls':{'enabled':'yes'}}", "tls.enabled: expected true or false");
 	invalid("{'tls':{'cert':5}}", "tls.cert: expected a path of 0 to");
+	invalid("{'environment':{'socket':5}}", "environment.socket: expected a path of 0 to");
+	invalid("{'environment':5}", "environment: expected an object");
 	invalid("{'net':{'hostname':''}}", "net.hostname: expected a host name");
 	invalid("{'net':{'hostname':'-box'}}", "net.hostname: expected a host name");
 	invalid("{'net':{'hostname':'a.b'}}", "net.hostname: expected a host name");

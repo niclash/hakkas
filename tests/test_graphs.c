@@ -154,6 +154,11 @@ static void describe(char *log, size_t size, const GraphEvent *ev)
 		       ev->type == GRAPH_EVENT_LINK_ADDED ? '+' : '-', ev->link->src_port,
 		       ev->link->tgt_graph->id, ev->link->tgt_port);
 		break;
+	case GRAPH_EVENT_BINDING_ADDED:
+	case GRAPH_EVENT_BINDING_REMOVED: /* tests/test_environment.c */
+		append(log, size, "%s:%cbind %s;", id,
+		       ev->type == GRAPH_EVENT_BINDING_ADDED ? '+' : '-', ev->binding->env);
+		break;
 	}
 }
 

@@ -27,7 +27,12 @@
  *     (auth_create, re-reading the users file at every challenge through
  *     users_loader), its tick hook (auth_tick);
  *  4. the built-in block types (block_types_register_builtins);
- *  5. the IO provider: not implemented yet (plan task 22);
+ *  5. the environment (04 §0, drivers/environment.h; plan task 22), if the
+ *     host gave one: describe (which may wait for it, as the POSIX link
+ *     does, 04 §0.1), validate the description, start it with the sink
+ *     feeding the PAL's handoff; any failure refuses startup. From here the
+ *     wall clock is the environment's (the loop's and the C API's), or the
+ *     platform's (pal_wall_ms) without one or without its wall_ms;
  *  6. the composite block types of <datadir>/types, in dependency order
  *     (type_files_load_all; a type that does not load is logged and skipped,
  *     never fatal);
@@ -43,7 +48,8 @@
  * secret). engine_run is step 9, the loop until a stop request; engine_stop
  * shuts down in reverse order: the servers (their listeners and
  * connections), the protocol layer, the authorizer's tick hook and the
- * authorizer, the platform's stop hook (before loop_deinit, which closes the
+ * authorizer, the environment (its stop, before the loop and its handoff
+ * go), the platform's stop hook (before loop_deinit, which closes the
  * PAL's wakeup a signal handler writes to), the loop, the graphs (nothing is
  * saved: graphs are persisted only by network:persist), the runtime, the
  * composite block types and the built-in ones.
@@ -65,7 +71,9 @@
 
 #include "app/graph_files.h"
 #include "engine/loop.h"
+#include "drivers/environment.h"
 #include "graphs/graphs.h"
+#include "hakkas_env.h"
 #include "system/config.h"
 
 typedef struct {
@@ -77,6 +85,9 @@ typedef struct {
 	bool (*platform_start)(void *ctx);
 	void (*platform_stop)(void *ctx);
 	void *platform_ctx;
+	/* The environment (hakkas_env.h; startup step 5), NULL for none. The
+	 * structure is copied; its ctx must outlive the engine. */
+	const HakkasEnvironment *environment;
 	/* Tests only: both listeners on ephemeral ports (engine_web_port,
 	 * engine_ws_port) instead of port and port + 1, the WebSocket's
 	 * Origin port being the web server's actual port. Never set by a real
@@ -107,6 +118,13 @@ Loop *engine_loop(Engine *e);
 /* The graphs registry and the graph files (for the C API, hakkas.h). */
 Graphs *engine_graphs(Engine *e);
 GraphFiles *engine_files(Engine *e);
+
+/* The engine's side of the environment (drivers/environment.h): without
+ * an environment its description is NULL. */
+Environment *engine_environment(Engine *e);
+
+/* The wall clock (UTC ms): the environment's, else the platform's. */
+int64_t engine_wall_ms(const Engine *e);
 
 /* The ports the web server and the WebSocket listener listen on (0 once
  * closed). */

@@ -32,6 +32,10 @@ void runtime_deinit(Runtime *rt)
 	rt->links = NULL;
 	rt->link_count = 0;
 	rt->link_cap = 0;
+	free(rt->bindings); /* empty: graph_destroy dropped every binding */
+	rt->bindings = NULL;
+	rt->binding_count = 0;
+	rt->binding_cap = 0;
 	free(rt->slots);
 	rt->slots = NULL;
 	rt->slot_used = 0;
@@ -68,6 +72,14 @@ void runtime_set_observer(Runtime *rt, graph_event_fn fn, void *ctx)
 {
 	rt->on_event = fn;
 	rt->event_ctx = ctx;
+}
+
+void runtime_set_environment(Runtime *rt, runtime_sensor_fn sensor, runtime_write_fn write,
+			     void *ctx)
+{
+	rt->env_sensor = sensor;
+	rt->env_write = write;
+	rt->env_ctx = ctx;
 }
 
 /* ---- Block slot table ---------------------------------------------------- */
@@ -147,8 +159,14 @@ static void dispatch(Runtime *rt, WorkEntry *e)
 		break;
 	}
 	case WORK_IO_EVENT:
-		/* Nothing produces IO events yet: plan task 22 routes them
-		 * through the channel binding table to io/ blocks (03 §4). */
+		/* A sensor value (04 §0): the environment's hook filters it by
+		 * the change threshold and delivers it to the bound inputs
+		 * (runtime_env_deliver). Discarded without an environment. */
+		if (rt->env_sensor != NULL) {
+			Linkable v = e->as.io.value; /* a move */
+			e->as.io.value = (Linkable){0};
+			rt->env_sensor(rt->env_ctx, e->as.io.port, e->as.io.index, v);
+		}
 		break;
 	case WORK_NONE:
 		break;

@@ -122,7 +122,8 @@ void graph_destroy(Graph *g)
 	if (g == NULL)
 		return;
 	graph_stop(g);
-	graph_links_drop_graph(g); /* links between processes: silently */
+	graph_links_drop_graph(g);    /* links between processes: silently */
+	graph_bindings_drop_graph(g); /* environment bindings: silently */
 	/* Every edge ends in this graph, so the blocks go without severing
 	 * (a composite instance's inner blocks with it, block_free). */
 	for (uint32_t i = 0; i < g->block_count; i++) {
@@ -495,6 +496,8 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 						   .input = i,
 						   .value = &literal});
 			linkable_clear(&literal);
+		} else if (in->source == INPUT_SOURCE_ENV) {
+			graph_bindings_remove_input(g, b, i); /* plan task 22 */
 		}
 	}
 
@@ -524,6 +527,10 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 			input_revert(l.block, l.input);
 		}
 	}
+
+	/* Its outputs' actuator bindings (plan task 22): the actuators keep
+	 * their last values (03 §4). */
+	graph_bindings_remove_outputs(g, b);
 
 	/* Graph ports mapped to the block go before it (decided, 02 §3.4),
 	 * each with its links between processes (plan task 21f). */
@@ -738,7 +745,8 @@ enum graph_status graph_add_initial(Graph *g, const char *node, const char *port
 	if (st != GRAPH_OK)
 		return st;
 	Input *in = &b->inputs[i];
-	if (in->source == INPUT_SOURCE_EDGE || in->source == INPUT_SOURCE_LINK)
+	if (in->source == INPUT_SOURCE_EDGE || in->source == INPUT_SOURCE_LINK ||
+	    in->source == INPUT_SOURCE_ENV)
 		return GRAPH_ERR_INPUT_CONNECTED; /* no fan-in (01 §2.2) */
 	if (value == NULL)
 		return GRAPH_ERR_INVALID_ARGUMENT;

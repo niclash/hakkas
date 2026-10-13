@@ -107,7 +107,9 @@
  * default, else the engine-wide one (block_change_threshold), like any
  * block's: there is no per-instance override (decided, plan task 21c).
  *
- * Not yet here: IO (task 22).
+ * Environment bindings (04 §4; plan task 22): a block input bound to a
+ * sensor channel of the environment, or a block output bound to an actuator
+ * channel. See "Environment bindings" below.
  */
 #ifndef HAKKAS_GRAPHS_GRAPH_H
 #define HAKKAS_GRAPHS_GRAPH_H
@@ -153,6 +155,11 @@ enum graph_status {
 	GRAPH_ERR_INVALID_LINK_DIRECTION = -16, /* "Invalid link direction" */
 	GRAPH_ERR_LINK_EXISTS = -17,		/* "Link exists" */
 	GRAPH_ERR_NO_SUCH_LINK = -18,		/* "No such link" */
+	/* Refusals of the environment bindings (plan task 22; the C API only,
+	 * 02 §6: no wire command). */
+	GRAPH_ERR_INVALID_BINDING_DIRECTION = -19, /* "Invalid binding direction" */
+	GRAPH_ERR_ACTUATOR_DRIVEN = -20,	   /* "Actuator already driven: <channel>" */
+	GRAPH_ERR_NO_SUCH_BINDING = -21,	   /* "No such binding" */
 };
 
 /* ---- Inputs, outputs, links ------------------------------------------ */
@@ -165,6 +172,9 @@ typedef enum input_source {
 	/* A link from another process's outport, or from this graph's own
 	 * (ProcessLink, "Links between processes" below). */
 	INPUT_SOURCE_LINK,
+	/* A sensor channel of the environment (EnvBinding, "Environment
+	 * bindings" below). */
+	INPUT_SOURCE_ENV,
 } InputSource;
 
 /* A live-value watch on one input (03 §2 update, 02 §4.2): the protocol layer
@@ -211,6 +221,10 @@ typedef struct {
 	Link *links; /* in connection order */
 	uint32_t link_count;
 	uint32_t link_cap;
+	/* The actuator bindings writing this output's propagations (EnvBinding
+	 * with out == this output): when > 0, every push is also written to the
+	 * environment. */
+	uint32_t actuators;
 } Output;
 
 /* Node metadata (05 §2.1): the canvas position x, y. extra holds every other
@@ -328,6 +342,9 @@ struct Graph {
 	 * started), and the duration of the most recent completed run. */
 	uint64_t time_started;
 	uint64_t last_run_ms;
+	/* The wall clock (UTC ms, 01 §3.4) at time_started (0 if never
+	 * started): the run's start in wire timestamps (02 §3.3). */
+	int64_t wall_started;
 };
 
 /* ---- Events reported to the runtime's observer ------------------------ */
@@ -367,6 +384,10 @@ enum graph_event_type {
 	 * link's source process. No wire message yet (02 §6). */
 	GRAPH_EVENT_LINK_ADDED,
 	GRAPH_EVENT_LINK_REMOVED,
+	/* Environment bindings (plan task 22): graph-specific. No wire message
+	 * (the environment is not on the wire yet, 04 §1; 02 §6). */
+	GRAPH_EVENT_BINDING_ADDED,
+	GRAPH_EVENT_BINDING_REMOVED,
 };
 
 /* Pointers are valid only during the callback. Every event but ERROR and
@@ -387,6 +408,7 @@ struct GraphEvent {
 	const BlockTypeDef *block_type;
 	const GraphPort *port; /* *PORT_*: the port (with its new name if renamed) */
 	const ProcessLink *link; /* LINK_*: the link (as it was, when removed) */
+	const EnvBinding *binding; /* BINDING_*: the binding (as it was, when removed) */
 	/* GRAPH_STARTED: time_ms = the run's start, uptime_ms = its uptime so far.
 	 * GRAPH_STOPPED: the start and duration of the run that just ended (0 and
 	 * 0 if the graph never ran). GRAPH_STATUS: uptime_ms of the current run,
@@ -394,6 +416,9 @@ struct GraphEvent {
 	 * to whole seconds (02 §3.3). */
 	uint64_t time_ms;
 	uint64_t uptime_ms;
+	/* GRAPH_STARTED, GRAPH_STOPPED: the run's start on the wall clock (UTC
+	 * ms, 01 §3.4; 0 if the graph never ran), the wire's "time" (02 §3.3). */
+	int64_t wall_ms;
 	/* ERROR: the graph id the error is about (NULL if none; graph is that
 	 * graph if it exists, else NULL) and the message. */
 	const char *graph_id;
@@ -653,6 +678,101 @@ static inline uint32_t runtime_link_count(const Runtime *rt)
 static inline const ProcessLink *runtime_link_at(const Runtime *rt, uint32_t i)
 {
 	return &rt->links[i];
+}
+
+/* ---- Environment bindings (04 §4; plan task 22) ---------------------------
+ *
+ * A binding is a connection between the environment (hakkas_env.h, 04 §1)
+ * and an ordinary block (04 §4 item 3):
+ *  - a sensor binding makes a channel of an environment output port the
+ *    block input's one source (INPUT_SOURCE_ENV: no fan-in, so a connection,
+ *    initial or link onto it is refused as "Input already connected", and a
+ *    sensor binding onto an input with any source, a retained connection
+ *    included, is refused likewise). One channel may feed any number of
+ *    inputs. Its values arrive as IO events of the work queue, delivered to
+ *    every input bound to the channel (runtime_env_deliver) through the
+ *    block's update, like any value: a stopped process only stores them;
+ *  - an actuator binding attaches a channel of an environment input port to
+ *    a block output (a composite instance's mapped inner output, like a
+ *    link): every push of that output — a propagation past the change
+ *    threshold, and the unconditional push of start — is written to the
+ *    environment (Runtime.env_write). One output may drive several channels;
+ *    each channel has one driver across every graph of the runtime
+ *    (ACTUATOR_DRIVEN).
+ * Making a binding reports BINDING_ADDED, then delivers what is already
+ * there: a sensor binding the channel's current value (if the environment
+ * has delivered one) through the input's update; an actuator binding on a
+ * started block writes its output's last propagated value.
+ * Ending a binding reports BINDING_REMOVED: graph_unbind (a sensor-bound
+ * input then reverts to its port default, like any severed input, 01 §2.2;
+ * an actuator keeps its last value, 03 §4: nothing is written), removing the
+ * bound block (its sensor inputs with its edges and initials, in port order,
+ * its actuator outputs after its outgoing edges; the block goes, so nothing
+ * reverts), deleting the graph (after its stop, before GRAPH_DELETED).
+ * Destroying a graph without events (at shutdown) drops them silently.
+ * Renaming the bound block keeps them (they refer to the block). The
+ * environment's channels are numbers here (the port's index in the
+ * description's out_ports or in_ports, and the channel index); the
+ * environment's side — resolving port ids, the change threshold of sensor
+ * values, the SPI calls — is drivers/environment.h. Bindings live in the
+ * Runtime (rt->bindings, creation order), like links. */
+struct EnvBinding {
+	Graph *graph;
+	Block *block;	    /* the bound block (a composite instance itself) */
+	uint32_t port;	    /* its input (sensor) or output (actuator) index */
+	bool actuator;	    /* else a sensor */
+	char *env;	    /* the environment port's id, owned */
+	uint32_t env_port;  /* its index in out_ports (sensor) or in_ports (actuator) */
+	uint32_t env_index; /* the channel: 1..count, 0 if the port is not addressable */
+	Output *out;	    /* actuator: the output whose pushes are written */
+};
+
+/* What a binding names: the block port and the environment channel. */
+typedef struct {
+	const char *block;
+	const char *port;
+	bool actuator; /* the environment port is an input port (an actuator) */
+	const char *env;
+	uint32_t env_port;
+	uint32_t env_index;
+} EnvBindingSpec;
+
+/* Check spec against g without changing anything, in this order:
+ * INVALID_ID (block or port name), UNKNOWN_NODE, UNKNOWN_PORT,
+ * INVALID_BINDING_DIRECTION (a sensor onto an output, an actuator onto an
+ * input), INPUT_CONNECTED (a sensor onto an input with a source or a
+ * retained connection), ACTUATOR_DRIVEN (the channel has a driver). */
+enum graph_status graph_bind_check(const Graph *g, const EnvBindingSpec *spec);
+
+/* Make the binding (checked as graph_bind_check; NO_MEMORY), report
+ * BINDING_ADDED, then deliver (see above): current is the sensor channel's
+ * current value, NULL if none is known (ignored for an actuator). */
+enum graph_status graph_bind(Graph *g, const EnvBindingSpec *spec, const Linkable *current);
+
+/* Remove the binding of spec's block port to spec's channel. Refused:
+ * INVALID_ID, NO_SUCH_BINDING. Reports BINDING_REMOVED; a sensor-bound input
+ * reverts to its default. */
+enum graph_status graph_unbind(Graph *g, const EnvBindingSpec *spec);
+
+/* Remove every binding of g, in creation order, reporting BINDING_REMOVED
+ * for each (nothing reverts). Part of deleting a graph, after its stop. */
+void graph_bindings_remove_graph(Graph *g);
+
+/* Deliver value (copied) to every input bound to sensor channel (env_port,
+ * env_index), in binding order, through its block's update (a stopped
+ * process only stores it). */
+void runtime_env_deliver(Runtime *rt, uint32_t env_port, uint32_t env_index,
+			 const Linkable *value);
+
+/* The bindings of rt, in creation order. */
+static inline uint32_t runtime_binding_count(const Runtime *rt)
+{
+	return rt->binding_count;
+}
+
+static inline const EnvBinding *runtime_binding_at(const Runtime *rt, uint32_t i)
+{
+	return &rt->bindings[i];
 }
 
 /* The name of the inner block's port p maps to (p of direction dir). */

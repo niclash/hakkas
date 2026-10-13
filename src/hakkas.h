@@ -42,15 +42,18 @@
  * loading processes) or after it returns, from a tick hook (hakkas_add_tick)
  * while the loop runs, or from an event callback for the read-only
  * functions (hakkas_config, hakkas_process_count, _at, _status,
- * hakkas_link_count, _at). A command
+ * hakkas_link_count, _at, hakkas_binding_count, _at, hakkas_environment).
+ * The environment (HakkasParams.environment) may deliver sensor values
+ * from its own threads through its sink (hakkas_env.h). A command
  * that changes the model, called from inside an event callback, is refused
  * with HAKKAS_ERR_BUSY (01 §4: a subscriber must not change a graph while
  * events are delivered). Another context (a signal handler, an IO worker)
  * may only request a stop, with pal_request_stop (platform/pal.h).
  *
  * Time: every command first sets the runtime's engine time from the PAL's
- * clock, as the loop does before it dispatches a command (01 §3.4), so a
- * process started before hakkas_run reports the right start time.
+ * clock and its wall clock from the environment's (else the platform's), as
+ * the loop does before it dispatches a command (01 §3.4), so a process
+ * started before hakkas_run reports the right start time.
  *
  * Naming: functions are prefixed hakkas_; the runtime is a Hakkas.
  */
@@ -63,6 +66,7 @@
 
 #include "graphs/block_type.h"
 #include "graphs/linkable.h"
+#include "hakkas_env.h"
 #include "system/config.h"
 
 /* The longest process id, block name or port name, in bytes (02 §3.4.1). */
@@ -71,23 +75,28 @@
 /* Room for any refusal message (as GRAPHS_MESSAGE_MAX). */
 #define HAKKAS_MESSAGE_MAX 192
 
+/* The largest bindings file that is read, in bytes (hakkas_bindings_apply).
+ * A port's build may define it. */
+#ifndef HAKKAS_BINDINGS_FILE_MAX
+#define HAKKAS_BINDINGS_FILE_MAX (64 * 1024)
+#endif
+
 /* The most event subscribers (hakkas_subscribe). */
 #define HAKKAS_SUBSCRIBERS_MAX 8
 
 typedef struct Hakkas Hakkas;
 
-/* A value (01 §2.1): a string, an i64, an f64 or a bool. */
-typedef Linkable HakkasValue;
+/* HakkasValue, a value (01 §2.1): hakkas_env.h. */
 
 enum hakkas_status {
 	HAKKAS_OK = 0,
 	HAKKAS_REFUSED = -1,	    /* refused as the wire refuses it; msg holds the message */
 	HAKKAS_ERR_NO_MEMORY = -2,  /* "Out of memory"; nothing changed */
 	HAKKAS_ERR_STORAGE = -3,    /* a file could not be read or written (logged) */
-	HAKKAS_ERR_NOT_FOUND = -4,  /* load: no such file */
-	HAKKAS_ERR_INVALID = -5,    /* load: an invalid path (empty, too long) */
-	HAKKAS_ERR_TOO_BIG = -6,    /* load: the file is larger than HAKKAS_GRAPH_FILE_MAX */
-	HAKKAS_ERR_MALFORMED = -7,  /* load: not a graph file (05 §2.2) */
+	HAKKAS_ERR_NOT_FOUND = -4,  /* load, bindings: no such file */
+	HAKKAS_ERR_INVALID = -5,    /* load, bindings: an invalid path (empty, too long) */
+	HAKKAS_ERR_TOO_BIG = -6,    /* load, bindings: the file is larger than its maximum */
+	HAKKAS_ERR_MALFORMED = -7,  /* load: not a graph file (05 §2.2); bindings: not one */
 	HAKKAS_ERR_EXISTS = -8,	    /* load: a process with the file's id is loaded */
 	HAKKAS_ERR_BUSY = -9,	    /* a command called from inside an event callback */
 };
@@ -112,6 +121,11 @@ typedef struct {
 	bool (*platform_start)(void *ctx);
 	void (*platform_stop)(void *ctx);
 	void *platform_ctx;
+	/* The environment (hakkas_env.h, 04 §0; plan task 22): its inputs and
+	 * outputs and the wall clock. NULL: none (no bindings can be made; the
+	 * wall clock is the platform's, pal_wall_ms). Copied; its ctx must stay
+	 * valid until hakkas_destroy has returned. */
+	const HakkasEnvironment *environment;
 	/* Tests only: both listeners on ephemeral ports (hakkas_web_port,
 	 * hakkas_ws_port). */
 	bool ephemeral_ports;
@@ -119,8 +133,10 @@ typedef struct {
 
 /* Create the runtime from cfg (copied): the engine's startup sequence (05
  * §1.4 steps 1-8: the configuration's generated values, the data
- * directories, the loop, the authorization, the built-in and the composite
- * block types of <datadir>/types, the protocol layer and both listeners).
+ * directories, the loop, the authorization, the built-in block types, the
+ * environment (step 5: describe, which may wait for it, validate, start; a
+ * failure refuses startup), the composite block types of <datadir>/types,
+ * the protocol layer and both listeners).
  * No process is loaded or started: that is the host's part (step 7).
  * params may be NULL (no hooks). The PAL is initialized (pal_init) and
  * logging has its console sink before this call. True with *out the
@@ -195,13 +211,18 @@ enum hakkas_event_type {
 	/* Links between processes (plan task 21f): no wire message yet. */
 	HAKKAS_EVENT_LINK_ADDED,
 	HAKKAS_EVENT_LINK_REMOVED,
+	/* Environment bindings (plan task 22): no wire message (the
+	 * environment is not on the wire yet, 04 §1). */
+	HAKKAS_EVENT_BINDING_ADDED,
+	HAKKAS_EVENT_BINDING_REMOVED,
 };
 
 /*
  * An event. Every pointer is valid only during the callback. Fields an
  * event type does not list are NULL, 0 or false.
  *  process:     the process id; ERROR: the id the error is about, or NULL;
- *               COMPONENT: NULL; LINK_*: the link's source process.
+ *               COMPONENT: NULL; LINK_*: the link's source process;
+ *               BINDING_*: the bound block's process.
  *  name:        PROCESS_*: the process's name (RENAMED: the new one);
  *               *PORT_*: the public port name (RENAMED: the new one);
  *               LINK_*: the source process's outport;
@@ -215,7 +236,9 @@ enum hakkas_event_type {
  *               the type's.
  *  block, port: BLOCK_*: the block (RENAMED: its new name), no port;
  *               CONNECTION_*, INITIAL_*: the target block and input;
- *               INPORT_ADDED / OUTPORT_ADDED: the inner block and port.
+ *               INPORT_ADDED / OUTPORT_ADDED: the inner block and port;
+ *               BINDING_*: the bound block and its input (a sensor) or
+ *               output (an actuator).
  *  src_block, src_port: CONNECTION_*: the source block and output.
  *  component:   BLOCK_ADDED: the block's type name (a placeholder's
  *               component, 05 §2.2).
@@ -229,11 +252,17 @@ enum hakkas_event_type {
  *               run's start, its uptime so far; PROCESS_STOPPED: the start
  *               and duration of the run that ended (0, 0 if it never ran);
  *               PROCESS_STATUS: uptime_ms of the current run (0 stopped).
+ *  wall_ms:     PROCESS_STARTED, PROCESS_STOPPED: the run's start on the
+ *               wall clock (UTC ms since the epoch, 01 §3.4; 0 if it never
+ *               ran), the wire's "time" (02 §3.3).
  *  message:     ERROR: the message.
  *  block_type:  GROUP_ADDED, GROUP_RENAMED, GROUP_CHANGED, COMPONENT: the
  *               type as applied (graphs/block_type.h; a group's inner
  *               blocks are block_type->composite->blocks).
  *  to_process, to_port: LINK_*: the link's target process and its inport.
+ *  env_port, env_index, actuator: BINDING_*: the environment port's id, the
+ *               channel (1..count; 0 for a port that is not addressable),
+ *               and whether it is an actuator (else a sensor).
  */
 typedef struct {
 	enum hakkas_event_type type;
@@ -253,10 +282,14 @@ typedef struct {
 	bool started;
 	uint64_t time_ms;
 	uint64_t uptime_ms;
+	int64_t wall_ms;
 	const char *message;
 	const BlockTypeDef *block_type;
 	const char *to_process;
 	const char *to_port;
+	const char *env_port;
+	uint32_t env_index;
+	bool actuator;
 } HakkasEvent;
 
 typedef void (*hakkas_event_fn)(void *ctx, const HakkasEvent *ev);
@@ -351,6 +384,7 @@ typedef struct {
 	bool started;
 	uint64_t uptime_ms;	/* of the current run; 0 when stopped */
 	uint64_t time_started_ms; /* the start of the current or last run (0: never) */
+	int64_t wall_started_ms;  /* the same on the wall clock (UTC ms; 0: never) */
 } HakkasProcessStatus;
 
 /* The process's state, read without an event (network:getstatus is a
@@ -522,5 +556,95 @@ typedef struct {
  * is out of range). Read-only (allowed from an event callback). */
 size_t hakkas_link_count(const Hakkas *h);
 bool hakkas_link_at(const Hakkas *h, size_t i, HakkasLink *out);
+
+/* ---- Environment bindings (04 §4; plan task 22) -------------------------------- */
+
+/* A binding connects a block port to a channel of the environment
+ * (hakkas_env.h, 04 §1, §4):
+ *  - a sensor (a channel of an environment output port) binds a block input
+ *    and is its one source: no connection, initial, link or other binding
+ *    may feed it, and none can be added while it is bound ("Input already
+ *    connected: <block>.<port>"). Its values arrive through the work queue,
+ *    filtered by the engine-wide change threshold, and are delivered to
+ *    every input bound to the channel like any value change (a stopped
+ *    process only stores them). A new binding delivers the channel's
+ *    current value at once, if the environment has delivered one;
+ *  - an actuator (a channel of an environment input port) binds a block
+ *    output: every propagation of that output, the unconditional push when
+ *    its process starts included, is written to the environment; nothing is
+ *    written while the process is stopped. One output may drive several
+ *    actuators; each actuator channel has one driver across every process.
+ *    A binding made on a started process writes the output's current value
+ *    at once.
+ * A binding ends when it is removed (hakkas_binding_remove), its block is
+ * removed, or its process deleted (after its stop, before PROCESS_DELETED).
+ * A sensor-bound input whose binding is removed reverts to its port default,
+ * like any severed input (01 §2.2); with its block or process it simply
+ * goes. An actuator keeps its last value (03 §4). Renaming the block keeps
+ * the binding. Events: BINDING_ADDED (before the value it delivers) and
+ * BINDING_REMOVED; no wire message.
+ *
+ * A channel is named by the environment port's id and an index: 1..count
+ * for an addressable port, 0 (no index) for one that is not. */
+
+/* A binding, read without an event. */
+typedef struct {
+	const char *process;
+	const char *block;
+	const char *port;
+	const char *env_port;
+	uint32_t env_index;
+	bool actuator;
+} HakkasBinding;
+
+/* Apply the bindings file at path (04 §4: {"environment", "bindings":
+ * [{"block", "port", "env", "index"?}]}) to process, all or nothing, as the
+ * host does when it loads a process (05 §1.2). Every binding is checked
+ * first; a channel the environment does not provide (an unknown
+ * environment port, an index beyond its count) is skipped with a warning
+ * naming path and the entry, and its block port stays inert. Failures:
+ * "Invalid field: graph" (process NULL), "Invalid field: bindings" (path
+ * NULL), "Invalid id", "Unknown graph: <id>"; the file: HAKKAS_ERR_INVALID,
+ * _NOT_FOUND, _TOO_BIG (larger than HAKKAS_BINDINGS_FILE_MAX), _STORAGE,
+ * _MALFORMED (msg: the problem, e.g. "bindings[1]: index: expected an
+ * integer of at least 1"; drivers/bindings_file.h); refused: "No environment", "Environment
+ * mismatch: <the file's> (running: <the environment's name>)", and
+ * "bindings[<i>]: <refusal>" with the refusals of hakkas_binding_add. On
+ * success *applied and *skipped (if not NULL) count the bindings made and
+ * skipped. Reports BINDING_ADDED for each, in file order. */
+enum hakkas_status hakkas_bindings_apply(Hakkas *h, const char *process, const char *path,
+					 size_t *applied, size_t *skipped, HakkasMessage *msg);
+
+/* Bind block.port of process to channel env_index of the environment port
+ * env_port. Refused, in this order: "Invalid field: graph" / "id" (block) /
+ * "port" / "env" (NULL); "Invalid id" (the process), "Unknown graph: <id>";
+ * "No environment"; "Invalid id" (the block or port name);
+ * "Unknown environment port: <env>"; "Index required: <env>"
+ * (an addressable port, env_index 0), "No index expected: <env>", "Index out
+ * of range: <env>[<index>]"; "Unknown node: <block>", "Unknown port:
+ * <block>.<port>", "Invalid binding direction" (a sensor onto an output, an
+ * actuator onto an input), "Input already connected: <block>.<port>",
+ * "Actuator already driven: <channel>" (<channel>: "<env>[<index>]", or
+ * "<env>" without an index). Reports BINDING_ADDED. */
+enum hakkas_status hakkas_binding_add(Hakkas *h, const char *process, const char *block,
+				      const char *port, const char *env_port, uint32_t env_index,
+				      HakkasMessage *msg);
+
+/* Remove the binding of block.port of process to that channel; refused as
+ * hakkas_binding_add up to the channel, then "No such binding". Reports
+ * BINDING_REMOVED; a sensor-bound input then reverts to its default. */
+enum hakkas_status hakkas_binding_remove(Hakkas *h, const char *process, const char *block,
+					 const char *port, const char *env_port,
+					 uint32_t env_index, HakkasMessage *msg);
+
+/* The bindings in creation order: their number, and the i-th one (false if
+ * i is out of range). Read-only (allowed from an event callback). The
+ * strings are valid until the next command. */
+size_t hakkas_binding_count(const Hakkas *h);
+bool hakkas_binding_at(const Hakkas *h, size_t i, HakkasBinding *out);
+
+/* The environment's description (hakkas_env.h), NULL without one. Valid
+ * until hakkas_destroy. */
+const HakkasEnvDescription *hakkas_environment(const Hakkas *h);
 
 #endif

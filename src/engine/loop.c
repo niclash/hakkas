@@ -59,6 +59,17 @@ enum pal_err loop_init(Loop *loop, Runtime *rt)
 	return pal_loop_open();
 }
 
+void loop_set_wall_clock(Loop *loop, int64_t (*fn)(void *ctx), void *ctx)
+{
+	loop->wall_ms = fn;
+	loop->wall_ctx = ctx;
+}
+
+int64_t loop_wall_ms(const Loop *loop)
+{
+	return loop->wall_ms != NULL ? loop->wall_ms(loop->wall_ctx) : pal_wall_ms();
+}
+
 /* ---- Connections ---------------------------------------------------------- */
 
 static void mark_close_now(LoopConn *c, enum loop_close_reason reason)
@@ -503,7 +514,7 @@ void loop_run_once(Loop *loop)
 	now = pal_uptime_ms();
 	loop->now_ms = now;
 	runtime_set_now(rt, now);
-	if (runtime_set_wall_ms(rt, pal_wall_ms()))
+	if (runtime_set_wall_ms(rt, loop_wall_ms(loop)))
 		log_info("wall clock set: calendar blocks re-evaluated");
 	runtime_fire_timers(rt, now);
 

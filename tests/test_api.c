@@ -68,7 +68,7 @@ static cJSON *group_metadata(const HakkasEvent *ev)
 	return m;
 }
 
-static void add_time(cJSON *p, uint64_t ms)
+static void add_time(cJSON *p, int64_t ms)
 {
 	char t[PROTO_TIME_SIZE];
 	proto_msg_time(ms, t);
@@ -105,7 +105,7 @@ static char *render(const HakkasEvent *ev)
 		protocol = "network", command = started ? "started" : "stopped";
 		CHECK(ev->started == started);
 		cJSON_AddStringToObject(p, "graph", ev->process);
-		add_time(p, ev->time_ms);
+		add_time(p, ev->wall_ms); /* the wall clock (02 §3.3) */
 		if (!started)
 			cJSON_AddNumberToObject(p, "uptime", (double)(ev->uptime_ms / 1000));
 		cJSON_AddBoolToObject(p, "started", started);
@@ -227,6 +227,8 @@ static char *render(const HakkasEvent *ev)
 		break;
 	case HAKKAS_EVENT_LINK_ADDED:
 	case HAKKAS_EVENT_LINK_REMOVED:
+	case HAKKAS_EVENT_BINDING_ADDED:
+	case HAKKAS_EVENT_BINDING_REMOVED:
 		cJSON_Delete(p); /* no wire message (02 §6): see on_host_event */
 		return NULL;
 	}

@@ -70,6 +70,24 @@ void graph_links_remove_port(Graph *g, enum graph_port_dir dir, const char *name
  * other graph's inputs keep their values). Part of graph_destroy. */
 void graph_links_drop_graph(Graph *g);
 
+/* ---- graph_bindings.c: environment bindings (plan task 22) ------------- */
+
+/* Drop every binding of g, reporting nothing and reverting nothing. Part of
+ * graph_destroy. */
+void graph_bindings_drop_graph(Graph *g);
+
+/* Remove the sensor binding of input of b, reporting BINDING_REMOVED (no
+ * revert: the block is being removed). Part of graph_remove_block. */
+void graph_bindings_remove_input(Graph *g, const Block *b, uint32_t input);
+
+/* Remove every actuator binding of b's outputs, in creation order,
+ * reporting BINDING_REMOVED for each. Part of graph_remove_block. */
+void graph_bindings_remove_outputs(Graph *g, const Block *b);
+
+/* Write value, a push of output o, to every actuator channel bound to o
+ * (the runtime's env_write hook). */
+void runtime_env_write(Runtime *rt, const Output *o, const Linkable *value);
+
 /* ---- graph_retained.c: retained entries of placeholders (05 §2.2) ------- */
 
 /* Drop every retained connection and port that refers to b, reporting

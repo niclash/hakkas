@@ -25,6 +25,7 @@
 #include "cJSON.h"
 #include "engine/version.h"
 #include "platform/pal.h"
+#include "protocol/messages.h"
 
 #define EDITOR_CAPS                                                                                \
 	"['protocol:runtime','protocol:graph','protocol:component','graph:readonly',"             \
@@ -92,13 +93,20 @@ static void all_quiet(void)
 	QUIET(&v);
 }
 
-/* Whether s is an engine time stamp, "1970-01-01T<hh>:<mm>:<ss>Z" (02 §3.3). */
+/* Whether s is a wire time stamp of the wall clock now (02 §3.3: without an
+ * environment the platform's clock, plan task 22): the ISO 8601 UTC form of
+ * pal_wall_ms within a minute. */
 static bool is_time(const char *s)
 {
-	unsigned h, m, sec;
+	int64_t now = pal_wall_ms();
+	char lo[PROTO_TIME_SIZE], hi[PROTO_TIME_SIZE];
+	proto_msg_time(now - 60000, lo);
+	proto_msg_time(now + 60000, hi);
+	unsigned y, mo, d, h, m, sec;
 	char z = 0;
-	return strlen(s) == 20 && sscanf(s, "1970-01-01T%2u:%2u:%2u%c", &h, &m, &sec, &z) == 4 &&
-	       z == 'Z';
+	return strlen(s) == 20 &&
+	       sscanf(s, "%4u-%2u-%2uT%2u:%2u:%2u%c", &y, &mo, &d, &h, &m, &sec, &z) == 7 &&
+	       z == 'Z' && strcmp(s, lo) >= 0 && strcmp(s, hi) <= 0;
 }
 
 /* The graph:connect snapshot of id on c (every message up to a barrier). */

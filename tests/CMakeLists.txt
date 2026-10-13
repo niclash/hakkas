@@ -21,6 +21,8 @@ hakkas_add_test(test_block_types)
 hakkas_add_test(test_graph)
 hakkas_add_test(test_graphs LIBS hakkas_pal_posix)
 hakkas_add_test(test_links LIBS hakkas_pal_posix)
+# The environment's engine side (plan task 22, 04 §0, §4).
+hakkas_add_test(test_environment LIBS hakkas_pal_posix)
 hakkas_add_test(test_timers)
 # Compares with glibc's localtime_r under TZ (setenv, tzset, tm_gmtoff).
 hakkas_add_test(test_tz)
@@ -57,7 +59,8 @@ hakkas_add_test(test_process_list LIBS hakkas_pal_posix)
 # The engine in-process with real WebSocket clients (e2e.h): its startup,
 # the end-to-end protocol tests (plan task 20, 05 §5) and the local C API
 # (plan task 21e, 02 §6).
-foreach(test test_engine test_e2e_catalog test_e2e_clients test_e2e_dataflow test_api)
+foreach(test test_engine test_e2e_catalog test_e2e_clients test_e2e_dataflow test_api
+    test_env_api test_env_link)
   hakkas_add_test(${test} SOURCES e2e.c LIBS hakkas_pal_posix)
   target_compile_definitions(${test} PRIVATE _GNU_SOURCE)
 endforeach()

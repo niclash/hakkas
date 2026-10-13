@@ -11,6 +11,7 @@
 #include "hakkas.h"
 #include "platform/pal.h"
 #include "platform/posix/cli.h"
+#include "platform/posix/env_link.h"
 #include "platform/posix/signals.h"
 #include "system/log.h"
 
@@ -119,6 +120,21 @@ static bool load_files(Hakkas *h, const char *files, Starts *s)
 	}
 }
 
+/* A process's bindings file (04 §4): false (logged) if it does not apply. */
+static bool apply_bindings(Hakkas *h, const char *id, const char *path)
+{
+	size_t applied, skipped;
+	HakkasMessage msg;
+	enum hakkas_status st = hakkas_bindings_apply(h, id, path, &applied, &skipped, &msg);
+	if (st != HAKKAS_OK) {
+		log_error("run processes: %s: %s: not starting", path, msg.text);
+		return false;
+	}
+	log_info("process %s: %zu binding%s applied from %s, %zu skipped", id, applied,
+		 applied == 1 ? "" : "s", path, skipped);
+	return true;
+}
+
 /* `run processes <file>`: the list; each must load. */
 static bool load_list(Hakkas *h, const char *file, Starts *s)
 {
@@ -132,15 +148,17 @@ static bool load_list(Hakkas *h, const char *file, Starts *s)
 	bool ok = true;
 	for (size_t i = 0; ok && i < list.count; i++) {
 		const ProcessListEntry *e = &list.entries[i];
-		if (e->bindings != NULL)
-			log_info("%s: bindings %s ignored: environment bindings are not "
-				 "implemented yet",
-				 e->graph, e->bindings);
 		HakkasLoaded l;
 		enum hakkas_status st = hakkas_process_load(h, e->graph, &l, NULL);
 		if (st != HAKKAS_OK) {
 			log_error("run processes: %s did not load (%s): not starting", e->graph,
 				  hakkas_status_str(st));
+			ok = false;
+			break;
+		}
+		/* Its bindings (04 §4), before anything starts: each file must
+		 * apply, like each process must load. */
+		if (e->bindings != NULL && !apply_bindings(h, l.id, e->bindings)) {
 			ok = false;
 			break;
 		}
@@ -169,9 +187,33 @@ static bool load_list(Hakkas *h, const char *file, Starts *s)
 int posix_host_run(const Config *cfg, enum posix_host_mode mode, const char *arg)
 {
 	HakkasParams params = {.platform_start = signals_start, .platform_stop = signals_stop};
+	/* The external environment program (04 §0.1), if configured: startup
+	 * waits for its description in hakkas_create (step 5). */
+	PosixEnvLink *link = NULL;
+	if (cfg->environment.socket[0] != '\0') {
+		if (!posix_env_link_create(cfg->environment.socket, POSIX_ENV_LINK_RETRY_MS,
+					   &link)) {
+			log_error("the engine did not start");
+			return CLI_EXIT_FAILURE;
+		}
+		params.environment = posix_env_link_environment(link);
+	}
 	Hakkas *h;
-	if (!hakkas_create(cfg, &params, &h))
-		return CLI_EXIT_FAILURE; /* logged */
+	if (!hakkas_create(cfg, &params, &h)) {
+		/* A stop request while waiting for the environment is a clean
+		 * stop. */
+		bool interrupted = link != NULL && posix_env_link_interrupted(link);
+		posix_env_link_destroy(link);
+		if (interrupted)
+			log_info("engine stopped");
+		return interrupted ? CLI_EXIT_OK : CLI_EXIT_FAILURE; /* logged */
+	}
+	if (link != NULL && !hakkas_add_tick(h, posix_env_link_tick, link)) {
+		log_error("cannot add the environment link's tick hook: not starting");
+		hakkas_destroy(h);
+		posix_env_link_destroy(link);
+		return CLI_EXIT_FAILURE;
+	}
 	hakkas_subscribe(h, log_lifecycle, NULL);
 
 	Starts s = {0};
@@ -193,12 +235,14 @@ int posix_host_run(const Config *cfg, enum posix_host_mode mode, const char *arg
 	free(s.ids);
 	if (!ok) {
 		hakkas_destroy(h);
+		posix_env_link_destroy(link);
 		return CLI_EXIT_FAILURE;
 	}
 	log_info("%zu process%s loaded, %zu started", s.loaded, s.loaded == 1 ? "" : "es",
 		 started);
 	hakkas_run(h);
 	hakkas_destroy(h);
+	posix_env_link_destroy(link); /* stopped by hakkas_destroy */
 	log_info("engine stopped");
 	return CLI_EXIT_OK;
 }

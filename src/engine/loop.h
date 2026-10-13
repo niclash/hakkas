@@ -13,9 +13,10 @@
  *     queued or a stop is requested, otherwise the earliest of the next block
  *     timer (runtime_timer_timeout_ms), every tick hook's next deadline, and
  *     LOOP_MAX_WAIT_MS;
- *  2. read the clocks (pal_uptime_ms, pal_wall_ms: runtime_set_now and
+ *  2. read the clocks (pal_uptime_ms, and the wall clock: the environment's,
+ *     loop_set_wall_clock, else pal_wall_ms; runtime_set_now and
  *     runtime_set_wall_ms, which makes the calendar blocks' timers due when
- *     the wall clock steps, plan task 24) and fire the due timers
+ *     the wall clock steps, plan tasks 24 and 22) and fire the due timers
  *     (runtime_fire_timers);
  *  3. move the handed-off entries (IO events, 04 §0) into the work queue, in
  *     the order they were pushed;
@@ -217,12 +218,23 @@ struct Loop {
 	/* Handoff drop reporting (rate-limited like the work queue's). */
 	uint64_t handoff_drops, handoff_drops_reported, handoff_last_report_ms;
 	bool handoff_reported;
+	/* The wall clock (loop_set_wall_clock); NULL: pal_wall_ms. */
+	int64_t (*wall_ms)(void *ctx);
+	void *wall_ctx;
 };
 
 /* Makes loop an empty loop over rt (borrowed; it must outlive the loop) and
  * opens the PAL's wakeup and handoff (pal_loop_open). The startup calls it
  * before any IO worker starts (05 §1.4). Returns the PAL's error. */
 enum pal_err loop_init(Loop *loop, Runtime *rt);
+
+/* The wall clock the loop reads each iteration (UTC ms, 01 §3.4): fn(ctx),
+ * the environment's (04 §1, drivers/environment.h); fn NULL: the platform's,
+ * pal_wall_ms (the default). */
+void loop_set_wall_clock(Loop *loop, int64_t (*fn)(void *ctx), void *ctx);
+
+/* The wall clock as the loop reads it. */
+int64_t loop_wall_ms(const Loop *loop);
 
 /* Closes every connection (LOOP_CLOSE_SHUTDOWN, after one non-blocking
  * attempt to write out its buffer) and listener, frees the loop's memory and

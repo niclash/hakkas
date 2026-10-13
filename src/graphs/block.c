@@ -107,6 +107,8 @@ static void push_output(Block *b, uint32_t i)
 	WorkQueue *q = &b->graph->rt->queue;
 
 	linkable_assign(&o->last_propagated, v);
+	if (o->actuators > 0)
+		runtime_env_write(b->graph->rt, o, v); /* 04 §0 rule 3 */
 	for (uint32_t k = 0; k < o->link_count; k++) {
 		const Link *l = &o->links[k];
 		uint32_t in = l->input;

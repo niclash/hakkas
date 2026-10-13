@@ -1,0 +1,1014 @@
+/*
+ * The environment's engine side (plan task 22; 04 §0, §1, §4): the
+ * description (validation, its JSON form, equality), the bindings file's
+ * parsing, and drivers/environment.h on the Graphs registry with a fake
+ * environment and controlled draining — opening (describe, validate,
+ * start, the refusals), sensor values reaching every bound input through
+ * the work queue (current values first, the engine-wide change threshold,
+ * a stopped and a started process, a value for a channel nobody binds yet),
+ * no fan-in in either direction, actuator writes (the start push, every
+ * propagation, nothing while stopped, one driver per channel, a binding on a
+ * running process), every rule of applying a bindings file (refusals, skips,
+ * all or nothing), bindings ending with their block, their process or on
+ * request (a sensor-bound input then reverts; an actuator keeps its value),
+ * and the wall clock (the environment's, else the platform's).
+ */
+#include "test.h"
+
+#include <math.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+#include "blocktypes/block_types.h"
+#include "drivers/bindings_file.h"
+#include "drivers/env_description.h"
+#include "drivers/environment.h"
+#include "graphs/graphs.h"
+#include "platform/pal.h"
+#include "system/log.h"
+
+static void append(char *buf, size_t size, const char *fmt, ...) LOG_PRINTF_FORMAT(3, 4);
+
+static void append(char *buf, size_t size, const char *fmt, ...)
+{
+	size_t len = strlen(buf);
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(buf + len, size - len, fmt, ap);
+	va_end(ap);
+}
+
+static char logs[4096];
+
+static void log_sink(void *ctx, enum log_level level, const char *line, size_t len)
+{
+	(void)ctx;
+	(void)len;
+	const char *msg = strstr(line, ": ");
+	append(logs, sizeof(logs), "%s %s\n", log_level_name(level), msg != NULL ? msg + 2 : line);
+}
+
+/* ---- A fake environment ------------------------------------------------------------ */
+
+/* Sensors: ain (number, 1..4), din (bool, 1..2), temp (number, no index).
+ * Actuators: aout (number, 1..2), relay (bool, 1..3), lamp (bool, no
+ * index). One module with ain and relay. */
+static const HakkasEnvPort out_ports[] = {
+	{.id = "ain", .type = HAKKAS_ENV_NUMBER, .unit = "V", .addressable = true, .count = 4},
+	{.id = "din", .type = HAKKAS_ENV_BOOL, .addressable = true, .count = 2},
+	{.id = "temp", .type = HAKKAS_ENV_NUMBER, .has_min = true, .min = -40, .has_max = true,
+	 .max = 120},
+};
+static const HakkasEnvPort in_ports[] = {
+	{.id = "aout", .type = HAKKAS_ENV_NUMBER, .addressable = true, .count = 2},
+	{.id = "relay", .type = HAKKAS_ENV_BOOL, .addressable = true, .count = 3},
+	{.id = "lamp", .type = HAKKAS_ENV_BOOL},
+};
+static const char *const module_ports[] = {"ain", "relay"};
+static const HakkasEnvModule modules[] = {
+	{.slot = "3", .type = "AIV", .vendor = "stm32world", .revision = "B", .serial = "0042",
+	 .documentation = "https://stm32world.com/wiki/Colibri", .ports = module_ports,
+	 .port_count = 2},
+};
+
+static HakkasEnvDescription description(void)
+{
+	return (HakkasEnvDescription){
+		.name = "fake",
+		.description = "A test environment",
+		.icon = "chip",
+		.in_ports = in_ports,
+		.in_port_count = 3,
+		.out_ports = out_ports,
+		.out_port_count = 3,
+		.modules = modules,
+		.module_count = 1,
+	};
+}
+
+typedef struct {
+	HakkasEnvDescription desc;
+	bool describe_null;
+	int start_rc;
+	HakkasEnvSink *sink;
+	int starts, stops;
+	/* Delivered in start (current values first): ain[1] = 1.5, din[2] =
+	 * true. */
+	bool current;
+	char writes[1024]; /* "<port>[<index>]=<value>;" each */
+	int64_t wall;
+} Fake;
+
+static Fake fake;
+
+static const HakkasEnvDescription *fake_describe(void *ctx)
+{
+	Fake *f = ctx;
+	return f->describe_null ? NULL : &f->desc;
+}
+
+static int fake_start(void *ctx, HakkasEnvSink *sink)
+{
+	Fake *f = ctx;
+	f->starts++;
+	f->sink = sink;
+	if (f->start_rc == 0 && f->current) {
+		HakkasValue v = linkable_from_f64(1.5);
+		CHECK(hakkas_env_sink_current(sink, 0, 1, &v));
+		v = linkable_from_bool(true);
+		CHECK(hakkas_env_sink_current(sink, 1, 2, &v));
+		CHECK(!hakkas_env_sink_current(sink, 0, 5, &v)); /* no such channel */
+	}
+	return f->start_rc;
+}
+
+static void fake_stop(void *ctx)
+{
+	Fake *f = ctx;
+	f->stops++;
+}
+
+static void fake_write(void *ctx, int port, int index, const HakkasValue *v)
+{
+	Fake *f = ctx;
+	char value[32];
+	if (v->type == LINKABLE_BOOL)
+		snprintf(value, sizeof(value), "%s", v->as.b ? "true" : "false");
+	else
+		snprintf(value, sizeof(value), "%g", v->as.f64);
+	CHECK(v->type == (in_ports[port].type == HAKKAS_ENV_BOOL ? LINKABLE_BOOL : LINKABLE_F64));
+	if (index > 0)
+		append(f->writes, sizeof(f->writes), "%s[%d]=%s;", in_ports[port].id, index, value);
+	else
+		append(f->writes, sizeof(f->writes), "%s=%s;", in_ports[port].id, value);
+}
+
+static int64_t fake_wall(void *ctx)
+{
+	return ((Fake *)ctx)->wall;
+}
+
+static HakkasEnvironment fake_spi(void)
+{
+	return (HakkasEnvironment){fake_describe, fake_start, fake_stop, fake_write, fake_wall,
+				   &fake};
+}
+
+/* ---- The registry ------------------------------------------------------------------ */
+
+static Runtime rt;
+static Graphs gs;
+static GraphsSubscriber sub;
+static Environment env;
+static char events[4096];
+
+static void on_event(void *ctx, const GraphEvent *ev)
+{
+	(void)ctx;
+	const char *id = ev->graph != NULL ? ev->graph->id : "-";
+	const EnvBinding *b = ev->binding;
+	switch (ev->type) {
+	case GRAPH_EVENT_BINDING_ADDED:
+	case GRAPH_EVENT_BINDING_REMOVED: {
+		const PortDescriptor *p = b->actuator ? block_output_port(b->block, b->port)
+						      : block_input_port(b->block, b->port);
+		append(events, sizeof(events), "%s:%cbind %s.%s%s%s[%u];", id,
+		       ev->type == GRAPH_EVENT_BINDING_ADDED ? '+' : '-', b->block->name, p->name,
+		       b->actuator ? ">" : "<", b->env, (unsigned)b->env_index);
+		break;
+	}
+	case GRAPH_EVENT_BLOCK_REMOVED:
+		append(events, sizeof(events), "%s:-node %s;", id, ev->block->name);
+		break;
+	case GRAPH_EVENT_EDGE_REMOVED:
+		append(events, sizeof(events), "%s:-edge;", id);
+		break;
+	case GRAPH_EVENT_GRAPH_STOPPED:
+		append(events, sizeof(events), "%s:stopped;", id);
+		break;
+	case GRAPH_EVENT_GRAPH_DELETED:
+		append(events, sizeof(events), "%s:-graph;", id);
+		break;
+	default:
+		break;
+	}
+}
+
+/* The engine's handoff, single-threaded: straight into the work queue. */
+static enum pal_err push_direct(WorkEntry *e)
+{
+	work_queue_push_entry(&rt.queue, e);
+	return PAL_OK;
+}
+
+static int64_t platform_clock(void)
+{
+	return 777;
+}
+
+static void drain(void)
+{
+	runtime_drain(&rt, SIZE_MAX);
+}
+
+static Block *block(const char *graph, const char *node)
+{
+	Graph *g = graphs_find(&gs, graph);
+	return g != NULL ? graph_find_block(g, node) : NULL;
+}
+
+static const Linkable *in(const char *graph, const char *node, const char *port)
+{
+	Block *b = block(graph, node);
+	int32_t i = b != NULL ? block_input_index(b, port) : -1;
+	CHECK(i >= 0);
+	static const Linkable none = {0};
+	return i >= 0 ? block_input_value(b, (uint32_t)i) : &none;
+}
+
+static double num(const char *graph, const char *node, const char *port)
+{
+	return linkable_to_f64(in(graph, node, port));
+}
+
+static double out(const char *graph, const char *node)
+{
+	Block *b = block(graph, node);
+	CHECK(b != NULL);
+	return b != NULL ? linkable_to_f64(block_output_value(b, 0)) : -1;
+}
+
+static void init(const char *graph, const char *node, const char *port, double v)
+{
+	Linkable value = linkable_from_f64(v);
+	CHECK(graphs_add_initial(&gs, graph, node, port, &value, NULL) == GRAPH_OK);
+}
+
+static void start(const char *graph)
+{
+	CHECK(graphs_start(&gs, graph, NULL) == GRAPH_OK);
+}
+
+static void stop(const char *graph)
+{
+	CHECK(graphs_stop(&gs, graph, NULL) == GRAPH_OK);
+}
+
+/* A sensor value from the environment, as the sink delivers it. */
+static void sense(int port, int index, HakkasValue v)
+{
+	CHECK(hakkas_env_sink_push(fake.sink, port, index, &v));
+}
+
+/*
+ * Two processes, every block math/Add2 (out = in1 + in2):
+ *   P: a, b; Q: c. All stopped. The environment open (current values on
+ *   when current is set), the logs and events cleared.
+ */
+static void build(bool current)
+{
+	memset(&fake, 0, sizeof(fake));
+	fake.desc = description();
+	fake.current = current;
+	fake.wall = 1700000000000;
+	runtime_init(&rt);
+	graphs_init(&gs, &rt, block_types_get, pal_random_bytes);
+	graphs_subscriber_init(&sub, on_event, NULL);
+	graphs_subscribe(&gs, &sub);
+	CHECK(graphs_new_graph(&gs, "P", "P", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_new_graph(&gs, "Q", "Q", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "P", "a", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "P", "b", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "Q", "c", "math/Add2", NULL, NULL) == GRAPH_OK);
+	environment_init(&env, platform_clock);
+	HakkasEnvironment spi = fake_spi();
+	CHECK(environment_open(&env, &rt, &spi, push_direct));
+	events[0] = '\0';
+	logs[0] = '\0';
+}
+
+static void teardown(void)
+{
+	environment_close(&env);
+	graphs_deinit(&gs);
+	runtime_deinit(&rt);
+}
+
+/* One binding (as the C API makes it) on graph; its status, the message in
+ * msg. */
+static char msg[ENVIRONMENT_MESSAGE_MAX];
+
+static enum environment_status bind(const char *graph, const char *node, const char *port,
+				    const char *env_port, uint32_t index)
+{
+	EnvBindingRequest req = {node, port, env_port, index};
+	return environment_bind(&env, graphs_find(&gs, graph), &req, msg, sizeof(msg));
+}
+
+static enum environment_status unbind(const char *graph, const char *node, const char *port,
+				      const char *env_port, uint32_t index)
+{
+	EnvBindingRequest req = {node, port, env_port, index};
+	return environment_unbind(&env, graphs_find(&gs, graph), &req, msg, sizeof(msg));
+}
+
+#define REFUSED(call, want)                                                                        \
+	do {                                                                                       \
+		events[0] = '\0';                                                                  \
+		CHECK((call) == ENVIRONMENT_REFUSED);                                              \
+		CHECK_STREQ(msg, (want));                                                          \
+		CHECK_STREQ(events, "");                                                           \
+	} while (0)
+
+/* ---- The description (04 §1) -------------------------------------------------------- */
+
+static void invalid_desc(HakkasEnvDescription d, const char *want)
+{
+	char why[ENV_DESCRIPTION_MESSAGE_MAX];
+	CHECK(!env_description_validate(&d, why, sizeof(why)));
+	CHECK_STREQ(why, want);
+}
+
+static void test_description_validate(void)
+{
+	HakkasEnvDescription d = description();
+	char why[ENV_DESCRIPTION_MESSAGE_MAX] = "";
+	CHECK(env_description_validate(&d, why, sizeof(why)));
+	bool actuator;
+	uint32_t i;
+	CHECK(env_description_find(&d, "temp", &actuator, &i) && !actuator && i == 2);
+	CHECK(env_description_find(&d, "relay", &actuator, &i) && actuator && i == 1);
+	CHECK(!env_description_find(&d, "nope", &actuator, &i));
+	CHECK(env_port_channels(&out_ports[0]) == 4 && env_port_channels(&out_ports[2]) == 1);
+	CHECK(env_port_has_channel(&out_ports[0], 4) && !env_port_has_channel(&out_ports[0], 5));
+	CHECK(!env_port_has_channel(&out_ports[0], 0) && env_port_has_channel(&out_ports[2], 0));
+	CHECK(!env_port_has_channel(&out_ports[2], 1));
+
+	/* Every rule. */
+	CHECK(!env_description_validate(NULL, why, sizeof(why)));
+	d.name = "";
+	invalid_desc(d, "name: expected 1 to 64 bytes");
+	HakkasEnvPort ports[2];
+	d = description();
+	ports[0] = out_ports[0];
+	ports[1] = in_ports[2]; /* lamp: not addressable */
+	ports[1].id = "ain"; /* unique across both directions */
+	d.out_ports = &ports[0];
+	d.out_port_count = 1;
+	d.in_ports = &ports[1];
+	d.in_port_count = 1;
+	d.module_count = 0;
+	invalid_desc(d, "duplicate port id \"ain\"");
+	ports[1].id = "x";
+	ports[0].count = 0;
+	invalid_desc(d, "outPorts[0]: count: expected 1 to 1024");
+	ports[0].count = 1025;
+	invalid_desc(d, "outPorts[0]: count: expected 1 to 1024");
+	ports[0].count = 1024;
+	CHECK(env_description_validate(&d, NULL, 0));
+	ports[1].count = 2; /* not addressable */
+	invalid_desc(d, "inPorts[0]: count: only for an addressable port");
+	ports[1].count = 0;
+	ports[1].type = (enum hakkas_env_type)7;
+	invalid_desc(d, "inPorts[0]: type: expected number or bool");
+	ports[1].type = HAKKAS_ENV_BOOL;
+	ports[1].has_min = ports[1].has_max = true;
+	ports[1].min = 2;
+	ports[1].max = 1;
+	invalid_desc(d, "inPorts[0]: min, max: expected min <= max");
+	ports[1].min = NAN;
+	invalid_desc(d, "inPorts[0]: min, max: expected min <= max");
+	ports[1].has_min = ports[1].has_max = false;
+	ports[1].id = "";
+	invalid_desc(d, "inPorts[0]: id: expected 1 to 64 bytes");
+	char long_id[70];
+	memset(long_id, 'x', 65);
+	long_id[65] = '\0';
+	ports[1].id = long_id;
+	invalid_desc(d, "inPorts[0]: id: expected 1 to 64 bytes");
+	long_id[64] = '\0';
+	CHECK(env_description_validate(&d, NULL, 0));
+	ports[1].id = "x";
+	static const char *const bad_ports[] = {"ain", "zzz"};
+	HakkasEnvModule m = {.ports = bad_ports, .port_count = 2};
+	d.modules = &m;
+	d.module_count = 1;
+	invalid_desc(d, "modules[0]: ports[1]: no such port");
+	m.port_count = 1;
+	CHECK(env_description_validate(&d, NULL, 0));
+	d.in_ports = NULL;
+	invalid_desc(d, "a list with a count but no entries");
+}
+
+static void test_description_json(void)
+{
+	/* The example of 04 §1, with a module. */
+	const char *text =
+		"{\"name\": \"emulator\", \"description\": \"Desktop simulator\","
+		" \"icon\": \"chip\","
+		" \"outPorts\": [{\"id\": \"analog-in\", \"type\": \"number\","
+		" \"addressable\": true,"
+		" \"count\": 8, \"unit\": \"V\", \"description\": \"0-10 V inputs\", \"min\": 0,"
+		" \"max\": 10},"
+		" {\"id\": \"digital-in\", \"type\": \"bool\", \"addressable\": true,"
+		" \"count\": 16}],"
+		" \"inPorts\": [{\"id\": \"analog-out\", \"type\": \"number\","
+		" \"addressable\": true,"
+		" \"count\": 4, \"unit\": \"V\"},"
+		" {\"id\": \"relay\", \"type\": \"bool\", \"addressable\": true, \"count\": 8},"
+		" {\"id\": \"buzzer\", \"type\": \"bool\", \"addressable\": null, \"future\": 1}],"
+		" \"modules\": [{\"slot\": \"3\", \"type\": \"AIV\", \"serial\": \"77\","
+		" \"documentation\": \"https://example.com\", \"ports\": [\"analog-in\"]}],"
+		" \"later\": true}";
+	cJSON *json = cJSON_Parse(text);
+	char why[ENV_DESCRIPTION_MESSAGE_MAX];
+	HakkasEnvDescription *d = env_description_from_json(json, why, sizeof(why));
+	CHECK(d != NULL);
+	if (d != NULL) {
+		CHECK_STREQ(d->name, "emulator");
+		CHECK_STREQ(d->icon, "chip");
+		CHECK(d->out_port_count == 2 && d->in_port_count == 3 && d->module_count == 1);
+		CHECK_STREQ(d->out_ports[0].unit, "V");
+		CHECK(d->out_ports[0].addressable && d->out_ports[0].count == 8);
+		CHECK(d->out_ports[0].has_min && d->out_ports[0].max == 10);
+		CHECK(d->in_ports[1].type == HAKKAS_ENV_BOOL && d->in_ports[1].count == 8);
+		CHECK(!d->in_ports[2].addressable && d->in_ports[2].count == 0);
+		CHECK(d->in_ports[2].description == NULL);
+		CHECK_STREQ(d->modules[0].serial, "77");
+		CHECK(d->modules[0].vendor == NULL && d->modules[0].port_count == 1);
+		CHECK_STREQ(d->modules[0].ports[0], "analog-in");
+
+		/* Equality: a second parse is equal; any difference is not. */
+		HakkasEnvDescription *e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && env_description_equal(d, e));
+		env_description_free(e);
+		cJSON *module = cJSON_GetArrayItem(cJSON_GetObjectItem(json, "modules"), 0);
+		cJSON *port = cJSON_GetArrayItem(cJSON_GetObjectItem(json, "outPorts"), 1);
+		cJSON_ReplaceItemInObject(module, "serial", cJSON_CreateString("78"));
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_ReplaceItemInObject(port, "count", cJSON_CreateNumber(15));
+		cJSON_ReplaceItemInObject(module, "serial", cJSON_CreateString("77"));
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		CHECK(env_description_equal(d, d) && !env_description_equal(d, NULL));
+	}
+	env_description_free(d);
+	cJSON_Delete(json);
+
+	/* Invalid forms: the message names the problem. */
+	static const struct {
+		const char *json, *why;
+	} bad[] = {
+		{"[]", "expected an object"},
+		{"{}", "name: expected a string"},
+		{"{\"name\": 3}", "name: expected a string"},
+		{"{\"name\": \"e\", \"outPorts\": {}}", "outPorts: expected an array"},
+		{"{\"name\": \"e\", \"outPorts\": [3]}", "outPorts[0]: expected an object"},
+		{"{\"name\": \"e\", \"inPorts\": [{\"type\": \"bool\"}]}",
+		 "inPorts[0]: id: expected a string"},
+		{"{\"name\": \"e\", \"inPorts\": [{\"id\": \"x\", \"type\": \"string\"}]}",
+		 "inPorts[0]: type: expected \"number\" or \"bool\""},
+		{"{\"name\": \"e\", \"inPorts\": [{\"id\": \"x\", \"type\": \"bool\", "
+		 "\"addressable\": 1}]}",
+		 "inPorts[0]: addressable: expected true or false"},
+		{"{\"name\": \"e\", \"inPorts\": [{\"id\": \"x\", \"type\": \"bool\", "
+		 "\"addressable\": true, \"count\": 1.5}]}",
+		 "inPorts[0]: count: expected an integer"},
+		{"{\"name\": \"e\", \"inPorts\": [{\"id\": \"x\", \"type\": \"bool\", "
+		 "\"addressable\": true}]}",
+		 "inPorts[0]: count: expected 1 to 1024"},
+		{"{\"name\": \"e\", \"inPorts\": [{\"id\": \"x\", \"type\": \"bool\", \"min\": "
+		 "\"0\"}]}",
+		 "inPorts[0]: min, max: expected numbers"},
+		{"{\"name\": \"e\", \"outPorts\": [{\"id\": \"x\", \"type\": \"bool\"}], "
+		 "\"inPorts\": [{\"id\": \"x\", \"type\": \"bool\"}]}",
+		 "duplicate port id \"x\""},
+		{"{\"name\": \"e\", \"modules\": [{\"ports\": \"x\"}]}",
+		 "modules[0]: ports: expected an array of port ids"},
+		{"{\"name\": \"e\", \"modules\": [{\"ports\": [\"x\"]}]}",
+		 "modules[0]: ports[0]: no such port"},
+		{"{\"name\": \"e\", \"modules\": [{\"serial\": 42}]}",
+		 "modules[0]: serial: expected a string"},
+	};
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+		json = cJSON_Parse(bad[i].json);
+		CHECK(json != NULL);
+		why[0] = '\0';
+		d = env_description_from_json(json, why, sizeof(why));
+		CHECK(d == NULL);
+		if (strcmp(why, bad[i].why) != 0)
+			fprintf(stderr, "case %zu: %s\n", i, bad[i].json);
+		CHECK_STREQ(why, bad[i].why);
+		env_description_free(d);
+		cJSON_Delete(json);
+	}
+}
+
+/* ---- The bindings file (04 §4) ------------------------------------------------------ */
+
+static void bad_file(const char *text, const char *want)
+{
+	BindingsFile f;
+	char why[ENVIRONMENT_MESSAGE_MAX] = "";
+	CHECK(bindings_file_parse(text, strlen(text), "b.json", &f, why, sizeof(why)) ==
+	      BINDINGS_FILE_MALFORMED);
+	CHECK(f.count == 0 && f.entries == NULL && f.environment == NULL);
+	if (strcmp(why, want) != 0)
+		fprintf(stderr, "file: %s\n", text);
+	CHECK_STREQ(why, want);
+}
+
+static void test_bindings_file(void)
+{
+	const char *text = "{\"environment\": \"emulator\", \"bindings\": ["
+			   "{\"block\": \"block1\", \"port\": \"in1\", \"env\": \"analog-in\","
+			   " \"index\": 1},"
+			   "{\"block\": \"b.2\", \"port\": \"out\", \"env\": \"lamp\","
+			   " \"index\": null, \"note\": \"x\"}],"
+			   " \"version\": 2}\n";
+	BindingsFile f;
+	logs[0] = '\0';
+	CHECK(bindings_file_parse(text, strlen(text), "b.json", &f, NULL, 0) == BINDINGS_FILE_OK);
+	CHECK_STREQ(f.environment, "emulator");
+	CHECK(f.count == 2);
+	CHECK_STREQ(f.entries[0].block, "block1");
+	CHECK_STREQ(f.entries[0].port, "in1");
+	CHECK_STREQ(f.entries[0].env, "analog-in");
+	CHECK(f.entries[0].index == 1);
+	CHECK_STREQ(f.entries[1].block, "b.2");
+	CHECK(f.entries[1].index == 0);
+	CHECK_STREQ(logs, "warn b.json: unknown member \"version\" ignored\n"
+			  "warn b.json: bindings[1]: unknown member \"note\" ignored\n");
+	bindings_file_free(&f);
+	CHECK(f.count == 0 && f.entries == NULL);
+	text = "{\"environment\": \"e\", \"bindings\": []}";
+	CHECK(bindings_file_parse(text, strlen(text), "b.json", &f, NULL, 0) == BINDINGS_FILE_OK);
+	CHECK(f.count == 0);
+	bindings_file_free(&f);
+
+	bad_file("", "not a bindings file: expected a JSON object");
+	bad_file("[]", "not a bindings file: expected a JSON object");
+	bad_file("{\"environment\": \"e\", \"bindings\": []} x",
+		 "not a bindings file: expected a JSON object");
+	bad_file("{\"bindings\": []}", "environment: expected a non-empty string");
+	bad_file("{\"environment\": \"\", \"bindings\": []}",
+		 "environment: expected a non-empty string");
+	bad_file("{\"environment\": \"e\"}", "bindings: expected an array");
+	bad_file("{\"environment\": \"e\", \"bindings\": [1]}", "bindings[0]: expected an object");
+	bad_file("{\"environment\": \"e\", \"bindings\": [{\"port\": \"p\", \"env\": \"x\"}]}",
+		 "bindings[0]: block: expected a non-empty string");
+	bad_file("{\"environment\": \"e\", \"bindings\": [{\"block\": \"b\", \"port\": \"\","
+		 " \"env\": \"x\"}]}",
+		 "bindings[0]: port: expected a non-empty string");
+	bad_file("{\"environment\": \"e\", \"bindings\": [{\"block\": \"b\", \"port\": \"p\"}]}",
+		 "bindings[0]: env: expected a non-empty string");
+	static const char *const bad_index[] = {"0", "-1", "1.5", "\"1\"", "true", "1e10"};
+	for (size_t i = 0; i < sizeof(bad_index) / sizeof(bad_index[0]); i++) {
+		char file[256];
+		snprintf(file, sizeof(file),
+			 "{\"environment\": \"e\", \"bindings\": [{\"block\": \"b\", \"port\": "
+			 "\"p\", \"env\": \"x\"}, {\"block\": \"b\", \"port\": \"p\", \"env\": "
+			 "\"x\", \"index\": %s}]}",
+			 bad_index[i]);
+		bad_file(file, "bindings[1]: index: expected an integer of at least 1");
+	}
+}
+
+/* ---- Opening ------------------------------------------------------------------------ */
+
+static void test_open(void)
+{
+	build(false);
+	CHECK(fake.starts == 1 && fake.sink != NULL);
+	CHECK(environment_description(&env) == &fake.desc);
+	CHECK(environment_wall_ms(&env) == 1700000000000);
+	environment_close(&env);
+	CHECK(fake.stops == 1);
+	CHECK(environment_description(&env) == NULL);
+	CHECK(environment_wall_ms(&env) == 777); /* the platform's clock */
+	environment_close(&env);		 /* nothing more */
+	CHECK(fake.stops == 1);
+
+	/* No wall_ms: the platform's clock. */
+	HakkasEnvironment spi = fake_spi();
+	spi.wall_ms = NULL;
+	CHECK(environment_open(&env, &rt, &spi, push_direct));
+	CHECK(environment_wall_ms(&env) == 777);
+	environment_close(&env);
+
+	/* Refusals: nothing started, nothing left open. */
+	log_set_threshold(LOG_LEVEL_FINE);
+	logs[0] = '\0';
+	fake.starts = 0;
+	fake.describe_null = true;
+	spi = fake_spi();
+	CHECK(!environment_open(&env, &rt, &spi, push_direct));
+	CHECK_STREQ(logs, "error the environment did not describe itself\n");
+	fake.describe_null = false;
+	HakkasEnvPort dup[2] = {out_ports[0], out_ports[0]};
+	fake.desc.out_ports = dup;
+	fake.desc.out_port_count = 2;
+	fake.desc.module_count = 0;
+	logs[0] = '\0';
+	CHECK(!environment_open(&env, &rt, &spi, push_direct));
+	CHECK_STREQ(logs, "error environment description: duplicate port id \"ain\"\n");
+	fake.desc = description();
+	fake.start_rc = -5;
+	logs[0] = '\0';
+	CHECK(!environment_open(&env, &rt, &spi, push_direct));
+	CHECK(strstr(logs, "error the environment did not start (-5)\n") != NULL);
+	CHECK(fake.starts == 1 && environment_description(&env) == NULL);
+	spi.write = NULL;
+	logs[0] = '\0';
+	CHECK(!environment_open(&env, &rt, &spi, push_direct));
+	CHECK_STREQ(logs, "error the environment's interface is incomplete\n");
+	CHECK(fake.starts == 1);
+	log_set_threshold(LOG_LEVEL_WARN);
+
+	/* The sink refuses what the description does not have. */
+	fake.start_rc = 0;
+	spi = fake_spi();
+	CHECK(environment_open(&env, &rt, &spi, push_direct));
+	HakkasValue v = linkable_from_f64(1);
+	CHECK(!hakkas_env_sink_push(fake.sink, 3, 0, &v)); /* no such port */
+	CHECK(!hakkas_env_sink_push(fake.sink, -1, 0, &v));
+	CHECK(!hakkas_env_sink_push(fake.sink, 0, 0, &v)); /* addressable: 1..4 */
+	CHECK(!hakkas_env_sink_push(fake.sink, 0, 5, &v));
+	CHECK(!hakkas_env_sink_push(fake.sink, 2, 1, &v)); /* not addressable: 0 */
+	CHECK(!hakkas_env_sink_push(fake.sink, 0, 1, NULL));
+	Linkable s;
+	CHECK(linkable_from_string(&s, "1", 1));
+	CHECK(!hakkas_env_sink_push(fake.sink, 0, 1, &s)); /* scalars only */
+	linkable_clear(&s);
+	CHECK(work_queue_len(&rt.queue) == 0);
+	v = linkable_from_i64(3);
+	CHECK(hakkas_env_sink_push(fake.sink, 2, 0, &v));
+	CHECK(work_queue_len(&rt.queue) == 1);
+	/* Current values only within start. */
+	CHECK(!hakkas_env_sink_current(fake.sink, 2, 0, &v));
+	CHECK(work_queue_len(&rt.queue) == 1);
+	teardown();
+}
+
+/* ---- Sensors ------------------------------------------------------------------------ */
+
+static void test_sensor_values(void)
+{
+	build(true); /* ain[1] = 1.5 and din[2] = true were delivered in start */
+	CHECK(work_queue_len(&rt.queue) == 0); /* taken at once, not queued */
+	CHECK(environment_sensor_value(&env, 0, 1) != NULL &&
+	      linkable_to_f64(environment_sensor_value(&env, 0, 1)) == 1.5);
+	CHECK(environment_sensor_value(&env, 0, 2) == NULL);
+	CHECK(environment_sensor_value(&env, 1, 2) != NULL &&
+	      environment_sensor_value(&env, 1, 2)->type == LINKABLE_BOOL);
+
+	/* A binding delivers the current value at once (current values
+	 * first), after its event. */
+	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK_STREQ(events, "P:+bind a.in1<ain[1];");
+	CHECK(num("P", "a", "in1") == 1.5);
+	CHECK(out("P", "a") == 0); /* P is stopped: stored only */
+	/* A channel without a value yet leaves the input at its default. */
+	CHECK(bind("P", "a", "in2", "ain", 2) == ENVIRONMENT_OK);
+	CHECK(num("P", "a", "in2") == 0);
+	/* One channel feeds inputs in several processes. */
+	CHECK(bind("Q", "c", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(num("Q", "c", "in1") == 1.5);
+	CHECK(runtime_binding_count(&rt) == 3);
+
+	/* Changes go through the queue, to every bound input. */
+	start("P");
+	CHECK(out("P", "a") == 1.5);
+	sense(0, 1, linkable_from_f64(2));
+	CHECK(num("P", "a", "in1") == 1.5);
+	drain();
+	CHECK(num("P", "a", "in1") == 2 && num("Q", "c", "in1") == 2);
+	CHECK(out("P", "a") == 2);
+	CHECK(out("Q", "c") == 0); /* Q is stopped: stored only */
+	start("Q");
+	CHECK(out("Q", "c") == 2);
+
+	/* The engine-wide change threshold (0.05, 04 §0 rule 4): against the
+	 * last value delivered, so drift adds up. */
+	sense(0, 1, linkable_from_f64(2.03));
+	drain();
+	CHECK(num("P", "a", "in1") == 2);
+	sense(0, 1, linkable_from_f64(2.06));
+	drain();
+	CHECK(num("P", "a", "in1") == 2.06);
+	/* The port's type: an i64 or a bool is a number on a number port. */
+	sense(0, 1, linkable_from_i64(4));
+	drain();
+	CHECK(in("P", "a", "in1")->type == LINKABLE_F64 && num("P", "a", "in1") == 4);
+	sense(0, 2, linkable_from_bool(true));
+	drain();
+	CHECK(num("P", "a", "in2") == 1 && out("P", "a") == 5);
+
+	/* Bool ports: every change. A value for a channel nobody binds is its
+	 * current value, which a later binding delivers. */
+	sense(1, 1, linkable_from_f64(3));
+	drain();
+	CHECK(environment_sensor_value(&env, 1, 1)->type == LINKABLE_BOOL);
+	CHECK(bind("P", "b", "in1", "din", 1) == ENVIRONMENT_OK);
+	CHECK(in("P", "b", "in1")->type == LINKABLE_BOOL && num("P", "b", "in1") == 1);
+	CHECK(out("P", "b") == 1);
+	sense(1, 1, linkable_from_bool(false));
+	drain();
+	CHECK(num("P", "b", "in1") == 0);
+
+	/* A stopped process stores; its start computes from what is there. */
+	stop("P");
+	sense(0, 1, linkable_from_f64(10));
+	drain();
+	CHECK(num("P", "a", "in1") == 10 && out("P", "a") == 5);
+	start("P");
+	CHECK(out("P", "a") == 11);
+
+	/* A value for no channel (from the queue directly) is discarded. */
+	work_queue_push_io(&rt.queue, 9, 1, linkable_from_f64(1));
+	work_queue_push_io(&rt.queue, 0, 9, linkable_from_f64(1));
+	drain();
+	CHECK(env.discarded == 2);
+	teardown();
+}
+
+/* No fan-in, both ways (01 §2.2): "Input already connected". */
+static void test_fan_in(void)
+{
+	build(true);
+	init("P", "a", "in2", 3);
+	CHECK(graphs_add_edge(&gs, "P", "b", "out", "a", "in1", NULL, NULL) == GRAPH_OK);
+	REFUSED(bind("P", "a", "in1", "ain", 1), "Input already connected: a.in1");
+	REFUSED(bind("P", "a", "in2", "ain", 1), "Input already connected: a.in2");
+	CHECK(bind("P", "b", "in1", "ain", 1) == ENVIRONMENT_OK);
+	/* A second binding of the same input, even to the same channel. */
+	REFUSED(bind("P", "b", "in1", "ain", 1), "Input already connected: b.in1");
+	REFUSED(bind("P", "b", "in1", "ain", 2), "Input already connected: b.in1");
+	/* An edge, an initial or a link onto the bound input. */
+	GraphsMessage gm;
+	CHECK(graphs_add_edge(&gs, "P", "a", "out", "b", "in1", NULL, &gm) ==
+	      GRAPH_ERR_INPUT_CONNECTED);
+	CHECK_STREQ(gm.text, "Input already connected: b.in1");
+	Linkable one = linkable_from_f64(1);
+	CHECK(graphs_add_initial(&gs, "P", "b", "in1", &one, &gm) == GRAPH_ERR_INPUT_CONNECTED);
+	CHECK_STREQ(gm.text, "Input already connected: b.in1");
+	CHECK(graphs_add_port(&gs, "P", GRAPH_INPORT, "pi", "b", "in1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "Q", GRAPH_OUTPORT, "qo", "c", "out", NULL) == GRAPH_OK);
+	CHECK(graphs_add_link(&gs, "Q", "qo", "P", "pi", &gm) == GRAPH_ERR_INPUT_CONNECTED);
+	CHECK_STREQ(gm.text, "Input already connected: P.pi");
+	/* And a sensor onto a linked input. */
+	CHECK(graphs_add_port(&gs, "Q", GRAPH_INPORT, "qi", "c", "in2", NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "P", GRAPH_OUTPORT, "po", "a", "out", NULL) == GRAPH_OK);
+	CHECK(graphs_add_link(&gs, "P", "po", "Q", "qi", NULL) == GRAPH_OK);
+	REFUSED(bind("Q", "c", "in2", "temp", 0), "Input already connected: c.in2");
+	teardown();
+}
+
+/* ---- Actuators ---------------------------------------------------------------------- */
+
+static void test_actuator_writes(void)
+{
+	build(false);
+	init("P", "a", "in1", 1);
+	/* Bound while stopped: nothing written until the process starts. */
+	CHECK(bind("P", "a", "out", "aout", 2) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a", "out", "relay", 1) == ENVIRONMENT_OK); /* one output, two */
+	CHECK(bind("P", "b", "out", "lamp", 0) == ENVIRONMENT_OK);
+	CHECK_STREQ(events, "P:+bind a.out>aout[2];P:+bind a.out>relay[1];P:+bind b.out>lamp[0];");
+	CHECK_STREQ(fake.writes, "");
+	/* The start push writes every bound output, converted to the port's
+	 * type. */
+	start("P");
+	CHECK_STREQ(fake.writes, "aout[2]=1;relay[1]=true;lamp=false;");
+	fake.writes[0] = '\0';
+	/* Every propagation; below the threshold, none. */
+	init("P", "a", "in1", 2.5);
+	CHECK_STREQ(fake.writes, "aout[2]=2.5;relay[1]=true;");
+	fake.writes[0] = '\0';
+	init("P", "a", "in1", 2.52);
+	CHECK_STREQ(fake.writes, "");
+	init("P", "a", "in1", 0);
+	CHECK_STREQ(fake.writes, "aout[2]=0;relay[1]=false;");
+	fake.writes[0] = '\0';
+	/* Stopped: nothing is written; the actuator keeps its last value. */
+	stop("P");
+	init("P", "a", "in1", 7);
+	CHECK_STREQ(fake.writes, "");
+	start("P");
+	CHECK_STREQ(fake.writes, "aout[2]=7;relay[1]=true;lamp=false;");
+	fake.writes[0] = '\0';
+
+	/* One driver per actuator channel, across processes. */
+	REFUSED(bind("Q", "c", "out", "aout", 2), "Actuator already driven: aout[2]");
+	REFUSED(bind("P", "b", "out", "lamp", 0), "Actuator already driven: lamp");
+	/* A binding on a running process writes the output's value at once. */
+	start("Q");
+	init("Q", "c", "in1", 4);
+	CHECK(bind("Q", "c", "out", "aout", 1) == ENVIRONMENT_OK);
+	CHECK_STREQ(fake.writes, "aout[1]=4;");
+	fake.writes[0] = '\0';
+
+	/* Unbinding: the actuator keeps its value (nothing written), the
+	 * output no longer writes. */
+	CHECK(unbind("P", "a", "out", "relay", 1) == ENVIRONMENT_OK);
+	CHECK_STREQ(fake.writes, "");
+	init("P", "a", "in1", 8);
+	CHECK_STREQ(fake.writes, "aout[2]=8;");
+	/* The channel is free for another driver. */
+	CHECK(bind("Q", "c", "out", "relay", 1) == ENVIRONMENT_OK);
+	teardown();
+}
+
+/* ---- Bindings files (04 §4) --------------------------------------------------------- */
+
+static enum environment_status apply(const char *graph, const EnvBindingRequest *reqs, size_t n,
+				     size_t *applied, size_t *skipped)
+{
+	return environment_bind_all(&env, graphs_find(&gs, graph), reqs, n, "b.json", applied,
+				    skipped, msg, sizeof(msg));
+}
+
+static void refused_file(const EnvBindingRequest *reqs, size_t n, const char *want)
+{
+	events[0] = '\0';
+	size_t applied = 9, skipped = 9;
+	CHECK(apply("P", reqs, n, &applied, &skipped) == ENVIRONMENT_REFUSED);
+	CHECK_STREQ(msg, want);
+	CHECK(applied == 0 && skipped == 0);
+	CHECK_STREQ(events, ""); /* all or nothing */
+	CHECK(runtime_binding_count(&rt) == 0);
+}
+
+static void test_bindings_apply(void)
+{
+	build(true);
+	drain();
+	EnvBindingRequest ok[] = {
+		{"a", "in1", "ain", 1},
+		{"a", "out", "relay", 3},
+		{"b", "in1", "ain", 9},	 /* beyond the count: skipped */
+		{"b", "in2", "spare", 0}, /* not in this environment: skipped */
+		{"b", "out", "lamp", 0},
+	};
+	size_t applied, skipped;
+	CHECK(apply("P", ok, 5, &applied, &skipped) == ENVIRONMENT_OK);
+	CHECK(applied == 3 && skipped == 2);
+	CHECK_STREQ(msg, "");
+	CHECK_STREQ(events, "P:+bind a.in1<ain[1];P:+bind a.out>relay[3];P:+bind b.out>lamp[0];");
+	CHECK_STREQ(logs, "warn b.json: bindings[2]: Index out of range: ain[9]: skipped\n"
+			  "warn b.json: bindings[3]: Unknown environment port: spare: skipped\n");
+	CHECK(num("P", "a", "in1") == 1.5);
+	CHECK(num("P", "b", "in1") == 0); /* inert */
+	teardown();
+
+	/* Every graph-side error refuses the whole file. */
+	build(false);
+	EnvBindingRequest r1[] = {{"a", "in1", "ain", 1}, {"x", "in1", "ain", 2}};
+	refused_file(r1, 2, "bindings[1]: Unknown node: x");
+	EnvBindingRequest r2[] = {{"a", "in3", "ain", 1}};
+	refused_file(r2, 1, "bindings[0]: Unknown port: a.in3");
+	EnvBindingRequest r3[] = {{"a", "out", "ain", 1}};
+	refused_file(r3, 1, "bindings[0]: Invalid binding direction");
+	EnvBindingRequest r4[] = {{"a", "in1", "relay", 1}};
+	refused_file(r4, 1, "bindings[0]: Invalid binding direction");
+	EnvBindingRequest r5[] = {{"a", "in1", "ain", 1}, {"a", "in1", "din", 1}};
+	refused_file(r5, 2, "bindings[1]: Input already connected: a.in1");
+	EnvBindingRequest r6[] = {{"a", "out", "relay", 2}, {"b", "out", "relay", 2}};
+	refused_file(r6, 2, "bindings[1]: Actuator already driven: relay[2]");
+	EnvBindingRequest r7[] = {{"a", "in1", "ain", 0}};
+	refused_file(r7, 1, "bindings[0]: Index required: ain");
+	EnvBindingRequest r8[] = {{"a", "in1", "temp", 1}};
+	refused_file(r8, 1, "bindings[0]: No index expected: temp");
+	EnvBindingRequest r9[] = {{"", "in1", "temp", 0}};
+	refused_file(r9, 1, "bindings[0]: Invalid id");
+	/* Against what is already there: an input with a source, a driven
+	 * channel (in another process). */
+	init("P", "a", "in2", 1);
+	EnvBindingRequest r10[] = {{"a", "in2", "temp", 0}};
+	refused_file(r10, 1, "bindings[0]: Input already connected: a.in2");
+	CHECK(bind("Q", "c", "out", "aout", 1) == ENVIRONMENT_OK);
+	EnvBindingRequest r11[] = {{"a", "out", "aout", 1}};
+	events[0] = '\0';
+	CHECK(apply("P", r11, 1, NULL, NULL) == ENVIRONMENT_REFUSED);
+	CHECK_STREQ(msg, "bindings[0]: Actuator already driven: aout[1]");
+	CHECK_STREQ(events, "");
+	teardown();
+
+	/* Without an environment, every file is refused. */
+	build(false);
+	environment_close(&env);
+	CHECK(apply("P", ok, 1, NULL, NULL) == ENVIRONMENT_REFUSED);
+	CHECK_STREQ(msg, "No environment");
+	REFUSED(bind("P", "a", "in1", "ain", 1), "No environment");
+	teardown();
+}
+
+/* The single-binding refusals (the C API's) and unbinding. */
+static void test_bind_refusals(void)
+{
+	build(false);
+	REFUSED(bind("P", "a", "in1", "nope", 0), "Unknown environment port: nope");
+	REFUSED(bind("P", "a", "in1", "ain", 5), "Index out of range: ain[5]");
+	REFUSED(bind("P", "a", "in1", "ain", 0), "Index required: ain");
+	REFUSED(bind("P", "a", "in1", "temp", 2), "No index expected: temp");
+	REFUSED(bind("P", "", "in1", "temp", 0), "Invalid id");
+	REFUSED(bind("P", "a", "in1", NULL, 0), "Invalid id");
+	REFUSED(bind("P", "zz", "in1", "temp", 0), "Unknown node: zz");
+	REFUSED(bind("P", "a", "zz", "temp", 0), "Unknown port: a.zz");
+	REFUSED(bind("P", "a", "out", "temp", 0), "Invalid binding direction");
+	REFUSED(unbind("P", "a", "in1", "temp", 0), "No such binding");
+	CHECK(bind("P", "a", "in1", "temp", 0) == ENVIRONMENT_OK);
+	REFUSED(unbind("P", "a", "in1", "ain", 1), "No such binding");
+	REFUSED(unbind("P", "b", "in1", "temp", 0), "No such binding");
+	REFUSED(unbind("P", "a", "in1", "nope", 0), "Unknown environment port: nope");
+	teardown();
+}
+
+/* ---- Bindings ending ---------------------------------------------------------------- */
+
+static void test_bindings_end(void)
+{
+	build(true);
+	drain();
+	start("P");
+	init("P", "b", "in2", 3);
+	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a", "out", "relay", 1) == ENVIRONMENT_OK);
+	CHECK(graphs_add_edge(&gs, "P", "a", "out", "b", "in1", NULL, NULL) == GRAPH_OK);
+	drain();
+	CHECK(num("P", "a", "in1") == 1.5 && num("P", "b", "in1") == 1.5);
+	fake.writes[0] = '\0';
+
+	/* Unbinding a sensor: the input reverts to its default, which
+	 * propagates (severing, 01 §2.2); a queued value reaches only the
+	 * inputs bound when it is drained. */
+	sense(0, 1, linkable_from_f64(9));
+	events[0] = '\0';
+	CHECK(unbind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK_STREQ(events, "P:-bind a.in1<ain[1];");
+	CHECK(num("P", "a", "in1") == 0 && out("P", "a") == 0);
+	CHECK_STREQ(fake.writes, "relay[1]=false;");
+	drain();
+	CHECK(num("P", "a", "in1") == 0 && num("P", "b", "in1") == 0);
+	/* The input is free again. */
+	init("P", "a", "in1", 2);
+	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_REFUSED);
+
+	/* Removing the block: its bindings go with its connections (inputs
+	 * first, then its outputs'), nothing is written. */
+	CHECK(graphs_remove_initial(&gs, "P", "a", "in1", NULL) == GRAPH_OK);
+	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	fake.writes[0] = '\0';
+	events[0] = '\0';
+	CHECK(graphs_remove_node(&gs, "P", "a", NULL) == GRAPH_OK);
+	CHECK_STREQ(events, "P:-bind a.in1<ain[1];P:-edge;P:-bind a.out>relay[1];P:-node a;");
+	CHECK_STREQ(fake.writes, "");
+	CHECK(runtime_binding_count(&rt) == 0);
+	sense(0, 1, linkable_from_f64(5)); /* to nobody */
+	drain();
+
+	/* Deleting a process: after its stop, before its deletion. */
+	CHECK(bind("P", "b", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "b", "out", "lamp", 0) == ENVIRONMENT_OK);
+	CHECK(bind("Q", "c", "in1", "ain", 1) == ENVIRONMENT_OK);
+	fake.writes[0] = '\0';
+	events[0] = '\0';
+	CHECK(graphs_delete_graph(&gs, "P", "P", NULL) == GRAPH_OK);
+	CHECK_STREQ(events, "P:stopped;P:-bind b.in1<ain[1];P:-bind b.out>lamp[0];P:-graph;");
+	CHECK_STREQ(fake.writes, "");
+	CHECK(runtime_binding_count(&rt) == 1);
+	CHECK(runtime_binding_at(&rt, 0)->graph == graphs_find(&gs, "Q"));
+	/* The lamp may be driven by another process now. */
+	CHECK(bind("Q", "c", "out", "lamp", 0) == ENVIRONMENT_OK);
+
+	/* Renaming the block keeps its bindings. */
+	CHECK(graphs_rename_node(&gs, "Q", "c", "c2", NULL) == GRAPH_OK);
+	sense(0, 1, linkable_from_f64(6));
+	drain();
+	CHECK(num("Q", "c2", "in1") == 6);
+	/* Bindings left at shutdown go silently (asan). */
+	teardown();
+}
+
+int main(void)
+{
+	CHECK(pal_init() == PAL_OK);
+	CHECK(log_add_sink(log_sink, NULL));
+	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
+	RUN(test_description_validate);
+	RUN(test_description_json);
+	RUN(test_bindings_file);
+	RUN(test_open);
+	RUN(test_sensor_values);
+	RUN(test_fan_in);
+	RUN(test_actuator_writes);
+	RUN(test_bindings_apply);
+	RUN(test_bind_refusals);
+	RUN(test_bindings_end);
+	block_types_reset();
+	return test_result();
+}

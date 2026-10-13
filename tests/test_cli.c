@@ -15,9 +15,13 @@
 
 #include <ftw.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/un.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "blocktypes/block_types.h"
@@ -617,9 +621,9 @@ static void test_run_daemon(void)
 }
 
 /* run processes <file> (05 §1.2 "Process list"): both forms, paths relative
- * to the list's directory, "start" over the file's flag, bindings logged and
- * ignored, links made after every process is loaded and before any starts;
- * every failure refuses startup, a link that cannot be made too. */
+ * to the list's directory, "start" over the file's flag, links made after
+ * every process is loaded and before any starts; every failure refuses
+ * startup, a link that cannot be made too. Bindings: test_run_bindings. */
 static void test_run_processes(void)
 {
 	host_setup();
@@ -633,19 +637,14 @@ static void test_run_processes(void)
 	CHECK(strstr(logs, "process g2 started") == NULL && strstr(logs, "process g3") == NULL);
 	CHECK(logged("info 3 processes loaded, 1 started\n"));
 
-	/* The object form: start over the flag; bindings ignored. */
+	/* The object form: start over the flag. */
 	snprintf(path, sizeof(path), "%s/object.json", dir);
 	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":false},"
-		  "{\"graph\":\"sub/g2.json\",\"start\":true,\"bindings\":\"emu.json\"},"
+		  "{\"graph\":\"sub/g2.json\",\"start\":true,\"bindings\":null},"
 		  "{\"graph\":\"g3.json\",\"start\":null,\"note\":1}],"
 		  "\"links\":null,\"version\":2}");
 	CHECK(run_host("processes", path) == CLI_EXIT_OK);
 	char want[2 * PAL_PATH_MAX];
-	snprintf(want, sizeof(want),
-		 "info %s/sub/g2.json: bindings %s/emu.json ignored: environment bindings are "
-		 "not implemented yet\n",
-		 dir, dir);
-	CHECK(logged(want));
 	CHECK(logged("object.json: unknown member \"version\" ignored"));
 	CHECK(logged("object.json: processes[2]: unknown member \"note\" ignored"));
 	CHECK(logged("info process g2 started\n"));
@@ -710,6 +709,167 @@ static void test_run_processes(void)
 	snprintf(want, sizeof(want), "run processes: %s/bad.json did not load", dir);
 	CHECK(logged(want));
 	CHECK(strstr(logs, "started") == NULL);
+}
+
+/* ---- run processes with environment bindings (04 §0.1, §4) ---------------------- */
+
+/* A fake environment program (04 §0.1): serves a Unix socket, describes
+ * itself and sends its current values on each connection, and keeps what
+ * hakkas sends. */
+static struct {
+	pthread_mutex_t lock;
+	pthread_t thread;
+	int listen_fd;
+	bool stop;	      /* guarded by lock */
+	char received[8192]; /* guarded by lock */
+} env_srv = {.lock = PTHREAD_MUTEX_INITIALIZER, .listen_fd = -1};
+
+#define ENV_DESCRIBE                                                                               \
+	"{\"describe\":{\"name\":\"sim\",\"outPorts\":[{\"id\":\"ain\",\"type\":\"number\","       \
+	"\"addressable\":true,\"count\":2}],"                                                      \
+	"\"inPorts\":[{\"id\":\"aout\",\"type\":\"number\"}]}}\n"                                  \
+	"{\"value\":{\"port\":\"ain\",\"index\":1,\"value\":2}}\n"                                 \
+	"{\"value\":{\"port\":\"ain\",\"index\":2,\"value\":0}}\n"
+
+static void *env_server(void *arg)
+{
+	(void)arg;
+	int conn = -1;
+	for (;;) {
+		pthread_mutex_lock(&env_srv.lock);
+		bool stop = env_srv.stop;
+		pthread_mutex_unlock(&env_srv.lock);
+		if (stop)
+			break;
+		struct pollfd p = {conn >= 0 ? conn : env_srv.listen_fd, POLLIN, 0};
+		if (poll(&p, 1, 5) <= 0)
+			continue;
+		if (conn < 0) {
+			conn = accept(env_srv.listen_fd, NULL, NULL);
+			if (conn >= 0 && send(conn, ENV_DESCRIBE, strlen(ENV_DESCRIBE),
+					      MSG_NOSIGNAL) != (ssize_t)strlen(ENV_DESCRIBE)) {
+				close(conn);
+				conn = -1;
+			}
+			continue;
+		}
+		char buf[512];
+		ssize_t n = recv(conn, buf, sizeof(buf) - 1, 0);
+		if (n <= 0) {
+			close(conn);
+			conn = -1;
+			continue;
+		}
+		buf[n] = '\0';
+		pthread_mutex_lock(&env_srv.lock);
+		append(env_srv.received, sizeof(env_srv.received), "%s", buf);
+		pthread_mutex_unlock(&env_srv.lock);
+	}
+	if (conn >= 0)
+		close(conn);
+	return NULL;
+}
+
+/* Whether the program received text, waiting for it up to 5 s. */
+static bool env_received(const char *text)
+{
+	uint64_t end = pal_uptime_ms() + 5000;
+	for (;;) {
+		pthread_mutex_lock(&env_srv.lock);
+		bool found = strstr(env_srv.received, text) != NULL;
+		pthread_mutex_unlock(&env_srv.lock);
+		if (found || pal_uptime_ms() > end)
+			return found;
+		struct timespec ts = {0, 1000000};
+		nanosleep(&ts, NULL);
+	}
+}
+
+/* `run processes` with a process list naming bindings files: applied after
+ * each process loads and before anything starts (05 §1.2); a channel the
+ * environment lacks is skipped; every graph-side error, a mismatched
+ * environment, a bindings file that does not load and a bindings file
+ * without an environment refuse startup. */
+static void test_run_bindings(void)
+{
+	host_setup();
+	char sock[108];
+	snprintf(sock, sizeof(sock), "/tmp/hakkas-cli-env-%d.sock", (int)getpid());
+	unlink(sock);
+	env_srv.listen_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	struct sockaddr_un addr = {.sun_family = AF_UNIX};
+	snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", sock);
+	CHECK(bind(env_srv.listen_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0);
+	CHECK(listen(env_srv.listen_fd, 4) == 0);
+	CHECK(pthread_create(&env_srv.thread, NULL, env_server, NULL) == 0);
+
+	/* The configuration names the program's socket (05 §1.1). */
+	const char *conf = subdir("env-conf");
+	char text[256];
+	snprintf(text, sizeof(text), "{\"environment\": {\"socket\": \"%s\"}}", sock);
+	put(join(conf, "hakkas.json"), text);
+	char dir[PAL_PATH_MAX]; /* join's buffers rotate */
+	snprintf(dir, sizeof(dir), "%s", join(root, "host-files"));
+	put(join(dir, "b1.json"),
+	    "{\"environment\":\"sim\",\"bindings\":["
+	    "{\"block\":\"a\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1},"
+	    "{\"block\":\"a\",\"port\":\"out\",\"env\":\"aout\"},"
+	    "{\"block\":\"a\",\"port\":\"in1\",\"env\":\"ain\",\"index\":3}]}");
+	char path[PAL_PATH_MAX];
+	snprintf(path, sizeof(path), "%s", join(dir, "env-list.json"));
+	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"bindings\":\"b1.json\"}]}");
+	const char *saved_conf = host_conf;
+	host_conf = conf;
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(logged("info environment sim at "));
+	CHECK(logged("warn "));
+	CHECK(logged("/b1.json: bindings[2]: Index out of range: ain[3]: skipped\n"));
+	char want[2 * PAL_PATH_MAX];
+	snprintf(want, sizeof(want), "info process g1: 2 bindings applied from %s/b1.json, 1 "
+		 "skipped\n", dir);
+	CHECK(logged(want));
+	CHECK(logged("info process g1 started\n"));
+	const char *applied = strstr(logs, "bindings applied");
+	const char *started = strstr(logs, "process g1 started");
+	CHECK(applied != NULL && started != NULL && applied < started);
+	/* g1's a.out = a.in1 + ain[1] = 2, written at the start push. */
+	CHECK(env_received("{\"hello\":{\"version\":1}}\n"));
+	CHECK(env_received("{\"write\":{\"port\":\"aout\",\"value\":2}}\n"));
+
+	/* Graph-side errors and a mismatched environment refuse startup. */
+	put(join(dir, "b2.json"),
+	    "{\"environment\":\"sim\",\"bindings\":["
+	    "{\"block\":\"zz\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1}]}");
+	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":true,\"bindings\":"
+		  "\"b2.json\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	snprintf(want, sizeof(want),
+		 "error run processes: %s/b2.json: bindings[0]: Unknown node: zz: not starting\n",
+		 dir);
+	CHECK(logged(want));
+	CHECK(strstr(logs, "started") == NULL);
+	put(join(dir, "b2.json"), "{\"environment\":\"colibri\",\"bindings\":[]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(logged("b2.json: Environment mismatch: colibri (running: sim): not starting\n"));
+	put(join(dir, "b2.json"), "{\"environment\":\"sim\",\"bindings\":{}}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(logged("b2.json: bindings: expected an array: not starting\n"));
+	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"bindings\":\"none.json\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(logged("none.json: not found: not starting\n"));
+
+	/* Without an environment, a bindings file is refused (04 §0.1). */
+	host_conf = saved_conf;
+	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"bindings\":\"b1.json\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(logged("b1.json: No environment: not starting\n"));
+
+	pthread_mutex_lock(&env_srv.lock);
+	env_srv.stop = true;
+	pthread_mutex_unlock(&env_srv.lock);
+	pthread_join(env_srv.thread, NULL);
+	close(env_srv.listen_fd);
+	unlink(sock);
 }
 
 /* ---- user add|passwd|del|list (02 §2.2) ------------------------------------------- */
@@ -922,6 +1082,7 @@ int main(void)
 	RUN(test_run_process);
 	RUN(test_run_daemon);
 	RUN(test_run_processes);
+	RUN(test_run_bindings);
 	RUN(test_user_commands);
 	RUN(test_help_and_version);
 

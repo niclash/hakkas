@@ -9,7 +9,12 @@
  * posix_host_run:
  *  1. hakkas_create with the configuration, SIGINT/SIGTERM as the stop
  *     request (platform/posix/signals.h, the platform hooks), startup steps
- *     1-6 and 8 (05 §1.4); a failure exits CLI_EXIT_FAILURE;
+ *     1-6 and 8 (05 §1.4); a failure exits CLI_EXIT_FAILURE. With the
+ *     configuration key environment.socket, the environment is the external
+ *     environment program behind that Unix socket (platform/posix/env_link.h,
+ *     04 §0.1): step 5 waits for it (retrying every second; a stop request
+ *     meanwhile exits CLI_EXIT_OK), and the link's tick hook logs what its
+ *     thread reports;
  *  2. subscribes to the events and logs every process's lifecycle at info:
  *     "process <id> started", "... stopped", "... deleted" (whoever caused
  *     it: the host, a client), and every link between processes: "link
@@ -21,9 +26,13 @@
  *     - POSIX_HOST_LIST (`run processes <file>`): the process list
  *       (app/process_list.h) in order; a list that cannot be read or is
  *       malformed, or any process that does not load, refuses startup
- *       ("run processes: ... : not starting"). A "bindings" member is
- *       logged at info and ignored (environment bindings: plan task 22).
- *       Once every process is loaded, and before any is started, the
+ *       ("run processes: ... : not starting"). A process's "bindings"
+ *       file (04 §4) is applied right after it loads, before anything
+ *       starts (hakkas_bindings_apply; info "process <id>: <n> bindings
+ *       applied from <path>, <m> skipped"); one that does not apply refuses
+ *       startup ("run processes: <path>: <message>: not starting"), as does
+ *       any bindings file without an environment. Once every process is
+ *       loaded, and before any is started, the
  *       list's "links" are made in list order (hakkas_link_add); a link
  *       that is refused refuses startup like a process that does not load
  *       ("run processes: <file>: link <from> -> <to>: <message>: not

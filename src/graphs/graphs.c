@@ -244,6 +244,15 @@ size_t graph_refusal_message(enum graph_status st, const GraphRefusal *ctx, char
 	case GRAPH_ERR_NO_SUCH_LINK:
 		n = snprintf(buf, size, "%s", "No such link");
 		break;
+	case GRAPH_ERR_INVALID_BINDING_DIRECTION:
+		n = snprintf(buf, size, "%s", "Invalid binding direction");
+		break;
+	case GRAPH_ERR_ACTUATOR_DRIVEN:
+		n = snprintf(buf, size, "Actuator already driven: %s", name);
+		break;
+	case GRAPH_ERR_NO_SUCH_BINDING:
+		n = snprintf(buf, size, "%s", "No such binding");
+		break;
 	}
 	return n < 0 ? 0 : (size_t)n;
 }
@@ -353,7 +362,8 @@ static void emit_stopped(Graphs *gs, Graph *g)
 	emit(gs, g,
 	     (GraphEvent){.type = GRAPH_EVENT_GRAPH_STOPPED,
 			  .time_ms = g->time_started,
-			  .uptime_ms = g->last_run_ms});
+			  .uptime_ms = g->last_run_ms,
+			  .wall_ms = g->wall_started});
 }
 
 enum graph_status graphs_delete_graph(Graphs *gs, const char *id, const char *name,
@@ -369,12 +379,14 @@ enum graph_status graphs_delete_graph(Graphs *gs, const char *id, const char *na
 
 	/* A compound effect is reported as its parts (02 §1.1): the stop, if
 	 * the graph ran, then its links between processes (each target input
-	 * reverting, plan task 21f), then the deletion. */
+	 * reverting, plan task 21f), then its environment bindings (plan task
+	 * 22), then the deletion. */
 	if (g->started) {
 		stop_graph(g);
 		emit_stopped(gs, g);
 	}
 	graph_links_remove_graph(g);
+	graph_bindings_remove_graph(g); /* plan task 22 */
 	int32_t i = graph_index(gs, id);
 	memmove(&gs->graphs[i], &gs->graphs[i + 1],
 		(gs->count - (uint32_t)i - 1) * sizeof(gs->graphs[0]));
@@ -395,12 +407,14 @@ enum graph_status graphs_start(Graphs *gs, const char *id, GraphsMessage *msg)
 		return finish(st, &ctx, msg);
 	if (!g->started) {
 		g->time_started = gs->rt->now_ms;
+		g->wall_started = runtime_wall_ms(gs->rt);
 		graph_start(g);
 	}
 	emit(gs, g,
 	     (GraphEvent){.type = GRAPH_EVENT_GRAPH_STARTED,
 			  .time_ms = g->time_started,
-			  .uptime_ms = graphs_uptime_ms(g)});
+			  .uptime_ms = graphs_uptime_ms(g),
+			  .wall_ms = g->wall_started});
 	return finish(GRAPH_OK, &ctx, msg);
 }
 
