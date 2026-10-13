@@ -79,6 +79,12 @@ typedef struct {
 	const TimeZone *tz;
 	Reason reason;
 	int changed_input; /* the input that changed when reason == REASON_INPUT, else -1 */
+	/* TIMER_PERIODIC only: the block's current period in ms (0: no timer).
+	 * compute may change it, for a type whose input drives its period
+	 * (process/PID's sample_ms, 03 §6.1); after compute the runtime applies
+	 * a changed value as block_set_period does, restarting the timer from
+	 * now (a STOP compute's change only takes effect at the next start). */
+	uint32_t period_ms;
 } BlockCtx;
 
 /* For TIMER_SCHEDULED types, returns the delay in ms until the next

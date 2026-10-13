@@ -195,8 +195,18 @@ static int64_t run_compute(Block *b, Reason reason, int changed_input)
 		.tz = &b->graph->rt->tz,
 		.reason = reason,
 		.changed_input = changed_input,
+		.period_ms = b->period_ms,
 	};
-	return b->type->compute(&ctx);
+	int64_t ret = b->type->compute(&ctx);
+	/* A periodic type's compute may change its period (01 §3.2). STOP
+	 * runs with the timer already cancelled: keep it so. */
+	if (b->type->timer == TIMER_PERIODIC && ctx.period_ms != b->period_ms) {
+		if (reason == REASON_STOP)
+			b->period_ms = ctx.period_ms;
+		else
+			block_set_period(b, ctx.period_ms);
+	}
+	return ret;
 }
 
 /* The compute step (03 §2): compute, re-arm or cancel a TIMER_SCHEDULED type's

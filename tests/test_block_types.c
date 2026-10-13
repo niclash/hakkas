@@ -1,6 +1,7 @@
 /*
- * Block type registry and built-in stateless types (03 §3); timing/Interval's
- * descriptor (its behavior: tests/test_timers.c). Every compute
+ * Block type registry and built-in stateless types (03 §3); the descriptors of
+ * process/PID (its behavior: tests/test_pid.c) and timing/Interval (its
+ * behavior: tests/test_timers.c). Every compute
  * function is called directly through its registered BlockTypeDef with a
  * hand-built BlockCtx, the way the generic runtime (plan task 6) will call it.
  */
@@ -199,10 +200,10 @@ static void test_builtins(void)
 {
 	block_types_reset();
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
-	CHECK(block_types_count() == EXPECTED_COUNT + 1 + CALENDAR_COUNT);
+	CHECK(block_types_count() == EXPECTED_COUNT + 2 + CALENDAR_COUNT);
 	/* Registering them twice is refused. */
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_ERR_EXISTS);
-	CHECK(block_types_count() == EXPECTED_COUNT + 1 + CALENDAR_COUNT);
+	CHECK(block_types_count() == EXPECTED_COUNT + 2 + CALENDAR_COUNT);
 
 	for (size_t k = 0; k < EXPECTED_COUNT; k++) {
 		const struct expected_type *e = &table[k];
@@ -255,9 +256,59 @@ static void test_builtins(void)
 			check_port(&t->outputs[0], "out", e->out_type);
 	}
 
-	/* timing/Interval (03 §3.1), after the stateless types. */
-	const BlockTypeDef *t = block_types_get("timing/Interval");
+	/* process/PID (03 §6.1), after the stateless types. */
+	const BlockTypeDef *t = block_types_get("process/PID");
 	CHECK(t != NULL && block_types_at(EXPECTED_COUNT) == t);
+	if (t != NULL) {
+		static const struct {
+			const char *name, *type;
+			double def; /* a bool's default: 0 false, 1 true */
+		} pid_ins[] = {
+			{"setpoint", "number", 0},
+			{"measured_value", "number", 0},
+			{"kp", "number", 1},
+			{"ki", "number", 0},
+			{"kd", "number", 0},
+			{"max_dgain", "number", 10},
+			{"output_min", "number", 0},
+			{"output_max", "number", 100},
+			{"reverse", "bool", 0},
+			{"auto", "bool", 1},
+			{"manual_value", "number", 0},
+			{"sample_ms", "number", 1000},
+		};
+		CHECK_STREQ(t->icon, "tune");
+		CHECK_STREQ(t->description, "PID regulator");
+		CHECK(t->compute_on_input);
+		CHECK(t->timer == TIMER_PERIODIC);
+		CHECK(t->period_ms == 1000);
+		CHECK(t->compute != NULL);
+		CHECK(t->state_size > 0);
+		CHECK(isnan(t->change_threshold));
+		CHECK(!t->subgraph && t->composite == NULL && !t->wall_clock);
+		CHECK(t->input_count == 12 && t->output_count == 2);
+		for (uint32_t j = 0; j < 12 && j < t->input_count; j++) {
+			const PortDescriptor *p = &t->inputs[j];
+			CHECK_STREQ(p->name, pid_ins[j].name);
+			CHECK_STREQ(p->type, pid_ins[j].type);
+			CHECK(p->description != NULL && p->description[0] != '\0');
+			CHECK(!p->addressable && p->inner == NULL);
+			if (strcmp(pid_ins[j].type, "bool") == 0)
+				CHECK(p->default_value.type == LINKABLE_BOOL &&
+				      p->default_value.as.b == (pid_ins[j].def != 0));
+			else
+				CHECK(p->default_value.type == LINKABLE_F64 &&
+				      p->default_value.as.f64 == pid_ins[j].def);
+		}
+		if (t->output_count == 2) {
+			check_port(&t->outputs[0], "output", "number");
+			check_port(&t->outputs[1], "saturated", "bool");
+		}
+	}
+
+	/* timing/Interval (03 §3.1), after the process/ family. */
+	t = block_types_get("timing/Interval");
+	CHECK(t != NULL && block_types_at(EXPECTED_COUNT + 1) == t);
 	if (t != NULL) {
 		CHECK_STREQ(t->icon, "timer");
 		CHECK_STREQ(t->description, "periodic pulse generator: PWM or edge generator");
@@ -286,7 +337,7 @@ static void test_builtins(void)
 	/* The calendar primitives, after timing/Interval. */
 	for (size_t k = 0; k < CALENDAR_COUNT; k++) {
 		t = block_types_get(calendar[k].name);
-		CHECK(t != NULL && block_types_at(EXPECTED_COUNT + 1 + k) == t);
+		CHECK(t != NULL && block_types_at(EXPECTED_COUNT + 2 + k) == t);
 		if (t == NULL)
 			continue;
 		CHECK_STREQ(t->icon, calendar[k].icon);

@@ -564,9 +564,22 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   end). Specs: 04 §0 (C types, rules), §0.1 (message set, startup, reconnect, overflow
   policy), §1 (wall clock), §4 (file form, applying, ending a binding); 01 §0, §2.2, §3.2,
   §3.2.1, §3.4, §6; 02 §3.3, §6; 03 §4; 05 §1.1, §1.2, §1.4; 00-README questions 2, 3, 11.
-- [ ] **23. `process/PID`** — implement the built-in PID of 03 §6.1 (revised 2026-10-13: parallel
+- [x] **23. `process/PID`** — implement the built-in PID of 03 §6.1 (revised 2026-10-13: parallel
   `Kp`/`Ki`/`Kd`, windup protection, auto/manual, max D gain, output min/max). The user may
   refine it later with their own PID code.
+  Done: `process/PID` in `blocktypes/process.c`, a `TIMER_PERIODIC` + `compute_on_input` type
+  with per-instance state (integral term, derivative term, last measurement, last step time),
+  registered after `process/Deadband`. Parallel form with the stored integral term, conditional
+  integration that lands the output on a limit and never beyond, the max-D-gain filter on the
+  measurement by backward Euler (`D_k = (Tf·D_{k−1} + Kd·Δy)/(Tf + dt)`, `Tf = |Kd|/max_dgain`),
+  `dt` from engine time, bumpless manual → auto, non-finite inputs hold the output. A periodic
+  type's input drives its period through the new `BlockCtx.period_ms` (applied by the runtime
+  like `block_set_period`). Tests: `test_pid` (P step, integral per `dt`, closed loop on a
+  first-order plant with and without the integral, derivative filtered/unfiltered and no
+  setpoint kick, reverse acting, anti-windup at both limits, limits incl. NaN and swapped,
+  manual and bumpless transfer, start in manual, stop/restart, `sample_ms` re-arm and idle,
+  skipped ticks, NaN inputs), `test_block_types` (descriptor). Specs: 03 §3 table, §6 intro,
+  §6.1 (port table, decisions); 01 §2.3 (`BlockCtx.period_ms`), §3.2 (periodic timers).
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
   smaller `WS_OUT_CAP` (e.g. 16 KiB) for the WebSocket connections' outgoing buffers (02 §0,
   "Outgoing buffer": 64 KiB × `max_connections` is too much SRAM).

@@ -24,6 +24,8 @@ hakkas_add_test(test_links LIBS hakkas_pal_posix)
 # The environment's engine side (plan task 22, 04 §0, §4).
 hakkas_add_test(test_environment LIBS hakkas_pal_posix)
 hakkas_add_test(test_timers)
+# process/PID (plan task 23, 03 §6.1), on a simulated plant in explicit engine time.
+hakkas_add_test(test_pid)
 # Compares with glibc's localtime_r under TZ (setenv, tzset, tm_gmtoff).
 hakkas_add_test(test_tz)
 target_compile_definitions(test_tz PRIVATE _GNU_SOURCE)

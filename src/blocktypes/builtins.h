@@ -19,7 +19,7 @@ extern const size_t math_block_types_count;
 extern const BlockTypeDef logic_block_types[];
 extern const size_t logic_block_types_count;
 
-/* process/Linear, process/Deadband (blocktypes/process.c). */
+/* process/Linear, process/Deadband, process/PID (blocktypes/process.c). */
 extern const BlockTypeDef process_block_types[];
 extern const size_t process_block_types_count;
 
