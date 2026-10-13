@@ -27,6 +27,15 @@ Rules:
 
 The exact C types (`HakkasEnvDescription`, `HakkasEnvSink`, `HakkasValue`) are defined with the implementation (plan task 22). Everything above the SPI — applying bindings, delivering sensor values to the bound block inputs, calling `write` for bound outputs — is platform-independent.
 
+### 0.1 Implementations of the SPI (decided, environment SPI design, step 5)
+
+- **Zephyr**: the device firmware implements the SPI in C directly (the Colibri environment, §1).
+- **POSIX — the external environment link**: the environment is a **separate program** (a simulator, e.g. of a Colibri system; possibly others later), developed as its own project. Hakkas' POSIX build contains only an adapter implementing the SPI by talking to it over a **Unix domain socket**:
+  - **The environment program is the server**: it owns the socket, at the path given by the configuration key `environment.socket` (`05-app-lifecycle-persistence.md` §1.1); hakkas connects as a client. Without that key there is no environment, and any bindings file is refused (it can't match).
+  - **Messages** are newline-delimited JSON, transport-neutral (a later WebSocket transport would change only the framing). The environment program sends its **description** (§1, including modules and their metadata) first, then the current value of every sensor channel, then changes; optionally the **wall clock** (allowing simulated time). Hakkas sends a version greeting, then **actuator writes**. The exact message set is defined with the implementation (plan task 22).
+  - **Startup waits for the environment**: bindings need the description, so hakkas logs `waiting for environment at <path>` and retries every second until it has the description, and only then loads processes and applies bindings.
+  - **Disconnect while running**: sensor-bound inputs keep their last values (as actuators keep theirs, `03-block-types.md` §4); hakkas logs it and reconnects automatically. On reconnect the description must be identical — bindings are applied only at startup — otherwise hakkas logs an error and resumes no IO until restarted. The environment re-sends all current sensor values, and hakkas re-sends every actuator's last value.
+
 ## 1. The environment and its interface (decided, open question 2)
 
 There is no EEPROM and no module discovery by hakkas. The hardware platform these sections originally described no longer exists; hakkas does not read module descriptors, probe expansion slots, or drive registers itself.
