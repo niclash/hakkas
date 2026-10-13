@@ -13,8 +13,10 @@
  *     queued or a stop is requested, otherwise the earliest of the next block
  *     timer (runtime_timer_timeout_ms), every tick hook's next deadline, and
  *     LOOP_MAX_WAIT_MS;
- *  2. read the clock (pal_uptime_ms) and fire the due timers
- *     (runtime_fire_timers, which also sets the runtime's time);
+ *  2. read the clocks (pal_uptime_ms, pal_wall_ms: runtime_set_now and
+ *     runtime_set_wall_ms, which makes the calendar blocks' timers due when
+ *     the wall clock steps, plan task 24) and fire the due timers
+ *     (runtime_fire_timers);
  *  3. move the handed-off entries (IO events, 04 §0) into the work queue, in
  *     the order they were pushed;
  *  4. call the tick hooks (session expiry and the like, 01 §3.2 item 7);

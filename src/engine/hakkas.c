@@ -160,6 +160,7 @@ static bool enter(Hakkas *h, HakkasMessage *msg)
 		return false;
 	}
 	runtime_set_now(graphs_of(h)->rt, pal_uptime_ms());
+	(void)runtime_set_wall_ms(graphs_of(h)->rt, pal_wall_ms());
 	set_msg(msg, "");
 	return true;
 }

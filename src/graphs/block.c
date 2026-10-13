@@ -189,6 +189,8 @@ static int64_t run_compute(Block *b, Reason reason, int changed_input)
 		.outputs = b->out_values,
 		.state = b->state,
 		.now_ms = b->graph->rt->now_ms,
+		.wall_ms = runtime_wall_ms(b->graph->rt),
+		.tz = &b->graph->rt->tz,
 		.reason = reason,
 		.changed_input = changed_input,
 	};

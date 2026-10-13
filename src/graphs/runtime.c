@@ -20,6 +20,7 @@ void runtime_init(Runtime *rt)
 	deadline_heap_init(&rt->timers);
 	rt->free_head = RUNTIME_NO_SLOT;
 	rt->change_threshold = RUNTIME_DEFAULT_CHANGE_THRESHOLD;
+	rt->tz = tz_utc;
 }
 
 void runtime_deinit(Runtime *rt)
@@ -43,6 +44,23 @@ bool runtime_set_change_threshold(Runtime *rt, double threshold)
 	if (isnan(threshold) || threshold < 0)
 		return false;
 	rt->change_threshold = threshold;
+	return true;
+}
+
+bool runtime_set_wall_ms(Runtime *rt, int64_t wall_ms)
+{
+	rt->wall_offset_ms = wall_ms - (int64_t)rt->now_ms;
+	int64_t moved = rt->wall_offset_ms - rt->wall_checked_ms;
+	if (moved > -RUNTIME_WALL_STEP_MS && moved < RUNTIME_WALL_STEP_MS)
+		return false;
+	rt->wall_checked_ms = rt->wall_offset_ms;
+	/* Inner blocks of composite instances have slots too. */
+	for (uint32_t i = 0; i < rt->slot_used; i++) {
+		Block *b = rt->slots[i].block;
+		if (b != NULL && b->started && b->type != NULL && b->type->wall_clock &&
+		    deadline_armed(&b->timer))
+			block_timer_arm(b, rt->now_ms);
+	}
 	return true;
 }
 

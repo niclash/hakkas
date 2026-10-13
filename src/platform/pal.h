@@ -100,6 +100,15 @@ enum pal_err pal_init(void);
  * its value at pal_init). */
 uint64_t pal_uptime_ms(void);
 
+/* The wall clock: UTC milliseconds since the Unix epoch (1970-01-01, leap
+ * seconds not counted), for the calendar blocks (03 §6.2). It may step
+ * (set by the user, NTP) and may be far off (e.g. 1970) on a device that has
+ * not synchronized yet; the runtime copes with steps (graphs/runtime.h, "Wall
+ * clock"). Interim (decided, plan task 24; 01 §3.4, 04 §1): the wall clock
+ * belongs to the environment interface, which takes it over in plan task 22.
+ * POSIX: CLOCK_REALTIME. */
+int64_t pal_wall_ms(void);
+
 /* ---- Cryptographic random source (02 §2.5 item 1) ------------------------ */
 
 /* Fills buf with len bytes from the platform's cryptographically secure

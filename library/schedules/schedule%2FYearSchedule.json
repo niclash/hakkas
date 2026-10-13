@@ -1,0 +1,24 @@
+{
+  "name": "schedule/YearSchedule",
+  "icon": "schedule",
+  "description": "Year schedule: true during the selected months within a time-of-day range (local time)",
+  "blocks": [
+    { "name": "Time", "type": "timing/MinuteRange" },
+    { "name": "Months", "type": "timing/MonthOfYear" },
+    { "name": "Both", "type": "logic/And" }
+  ],
+  "connections": [
+    { "src": "Time.out", "tgt": "Both.in1" },
+    { "src": "Months.out", "tgt": "Both.in2" }
+  ],
+  "initials": [],
+  "inports": [
+    { "name": "range", "tgt": "Time.range",
+      "description": "Time of day \"HH:MM-HH:MM\", e.g. \"07:00-18:00\": start included, end excluded; \"00:00-24:00\" is all day" },
+    { "name": "months", "tgt": "Months.months",
+      "description": "Months, a selector such as \"5-9\" or \"11-2\": 1-12, 1 January" }
+  ],
+  "outports": [
+    { "name": "out", "src": "Both.out", "description": "True during the selected months within the range" }
+  ]
+}

@@ -51,6 +51,7 @@
 
 #include "platform/pal.h"
 #include "system/log.h"
+#include "system/tz.h"
 
 /* The file names in confdir (05 §1.1, 02 §2.2). */
 #define CONFIG_FILE_NAME "hakkas.json"
@@ -77,6 +78,7 @@
 #define CONFIG_SECRET_MAX 128	/* auth.server_secret */
 #define CONFIG_HOSTNAME_MAX 63	/* net.hostname (one DNS label) */
 #define CONFIG_IPV4_MAX 15	/* net.address etc., dotted quad */
+#define CONFIG_TIME_ZONE_MAX TZ_TEXT_MAX /* time_zone */
 
 /* The generated server secret: this many random bytes, base64 (RFC 4648 §4,
  * padded: 44 characters). */
@@ -89,6 +91,7 @@
 #define CONFIG_DEFAULT_MAX_CONNECTIONS 4
 #define CONFIG_DEFAULT_MAX_MESSAGE_BYTES 16384
 #define CONFIG_DEFAULT_CHANGE_THRESHOLD 0.05
+#define CONFIG_DEFAULT_TIME_ZONE "UTC0"
 #define CONFIG_DEFAULT_LOG_LEVEL LOG_LEVEL_WARN
 #define CONFIG_DEFAULT_IDLE_TIMEOUT_S 1800
 #define CONFIG_DEFAULT_MAX_LIFETIME_S 43200
@@ -134,6 +137,9 @@ typedef struct {
 	char allowed_origins[HAKKAS_CONFIG_ORIGINS_MAX][CONFIG_ORIGIN_MAX + 1];
 	uint32_t allowed_origin_count;
 	double change_threshold; /* >= 0, +Infinity included (01 §3.3) */
+	/* A POSIX TZ string valid for tz_parse (system/tz.h): local time for
+	 * the calendar blocks (01 §3.4, 03 §6.2). */
+	char time_zone[CONFIG_TIME_ZONE_MAX + 1];
 	struct {
 		enum log_level level;
 		bool mirror;

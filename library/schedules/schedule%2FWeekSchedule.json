@@ -1,0 +1,25 @@
+{
+  "name": "schedule/WeekSchedule",
+  "icon": "schedule",
+  "description": "Week schedule: true on the selected weekdays within a time-of-day range (local time)",
+  "blocks": [
+    { "name": "Time", "type": "timing/MinuteRange" },
+    { "name": "Days", "type": "timing/DayOfWeek" },
+    { "name": "Both", "type": "logic/And" }
+  ],
+  "connections": [
+    { "src": "Time.out", "tgt": "Both.in1" },
+    { "src": "Days.out", "tgt": "Both.in2" }
+  ],
+  "initials": [],
+  "inports": [
+    { "name": "range", "tgt": "Time.range",
+      "description": "Time of day \"HH:MM-HH:MM\", e.g. \"07:00-18:00\": start included, end excluded; \"00:00-24:00\" is all day" },
+    { "name": "days", "tgt": "Days.days",
+      "description": "Weekdays, a selector such as \"1-5\" or \"6,7\": 1-7, day 1 Monday (or Sunday if sunday_first)" },
+    { "name": "sunday_first", "tgt": "Days.sunday_first" }
+  ],
+  "outports": [
+    { "name": "out", "src": "Both.out", "description": "True on the selected days within the range" }
+  ]
+}

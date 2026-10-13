@@ -341,6 +341,9 @@ static int describe_topology(const Config *cfg, const char *path, FILE *out)
 {
 	runtime_init(&topo_rt);
 	runtime_set_change_threshold(&topo_rt, cfg->change_threshold);
+	TimeZone tz;
+	if (tz_parse(cfg->time_zone, &tz)) /* checked when the configuration was read */
+		runtime_set_time_zone(&topo_rt, &tz);
 	graphs_init(&topo_gs, &topo_rt, block_types_get, pal_random_bytes);
 	GraphFiles gf;
 	int rc = CLI_EXIT_FAILURE;

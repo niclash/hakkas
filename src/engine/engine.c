@@ -160,6 +160,15 @@ bool engine_start(const Config *cfg, const EngineParams *params, Engine **out)
 	remove_tmp_all(e);
 	runtime_init(&e->rt);
 	runtime_set_change_threshold(&e->rt, e->cfg.change_threshold);
+	TimeZone tz;
+	if (!tz_parse(e->cfg.time_zone, &tz)) {
+		/* Checked when the configuration was read (05 §1.1). */
+		log_error("time_zone: expected a POSIX TZ string");
+		goto fail;
+	}
+	runtime_set_time_zone(&e->rt, &tz);
+	runtime_set_now(&e->rt, pal_uptime_ms());
+	(void)runtime_set_wall_ms(&e->rt, pal_wall_ms());
 	graphs_init(&e->gs, &e->rt, block_types_get, pal_random_bytes);
 	e->rt_ready = true;
 	enum pal_err err = loop_init(&e->loop, &e->rt);

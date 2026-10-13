@@ -1,6 +1,6 @@
 /*
- * POSIX PAL: initialization, the monotonic clock and the random source
- * (01 §0, §3.4; 02 §2.5 item 1). Storage is in storage.c.
+ * POSIX PAL: initialization, the monotonic clock, the wall clock and the
+ * random source (01 §0, §3.4; 02 §2.5 item 1). Storage is in storage.c.
  */
 #include "platform/pal.h"
 
@@ -53,6 +53,14 @@ uint64_t pal_uptime_ms(void)
 	if (uptime > clock_last_ms)
 		clock_last_ms = uptime;
 	return clock_last_ms;
+}
+
+int64_t pal_wall_ms(void)
+{
+	struct timespec ts;
+	if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+		return 0; /* cannot happen with CLOCK_REALTIME */
+	return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
 enum pal_err pal_random_bytes(void *buf, size_t len)

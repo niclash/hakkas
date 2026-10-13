@@ -22,6 +22,14 @@ hakkas_add_test(test_graph)
 hakkas_add_test(test_graphs LIBS hakkas_pal_posix)
 hakkas_add_test(test_links LIBS hakkas_pal_posix)
 hakkas_add_test(test_timers)
+# Compares with glibc's localtime_r under TZ (setenv, tzset, tm_gmtoff).
+hakkas_add_test(test_tz)
+target_compile_definitions(test_tz PRIVATE _GNU_SOURCE)
+# The calendar primitives and the schedule standard library, read from the
+# repository (library/schedules/, 03 §6.2).
+hakkas_add_test(test_calendar LIBS hakkas_pal_posix)
+target_compile_definitions(test_calendar
+  PRIVATE HAKKAS_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/library/schedules")
 hakkas_add_test(test_json)
 hakkas_add_test(test_graph_json)
 hakkas_add_test(test_graph_files LIBS hakkas_pal_posix)

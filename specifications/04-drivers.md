@@ -25,6 +25,8 @@ Instead, the **environment** — whatever hosts hakkas and owns the physical inp
 
 The environment interface also provides the **wall clock** (`00-README.md`, open question 11): calendar blocks (`03-block-types.md` §6.2) and wire timestamps read real time from it; on POSIX the simulated environment uses the host's clock.
 
+**Interim** (decided, plan task 24): until this interface exists (plan task 22), the wall clock is the PAL's `pal_wall_ms()` (UTC ms since the Unix epoch; POSIX `CLOCK_REALTIME`, `01-architecture-overview.md` §0.1), read only by the engine loop, the startup and the local C API into the runtime (`01-architecture-overview.md` §3.4). Plan task 22 folds it into the environment interface: the runtime keeps taking the wall clock as an injected value, so only its source changes, and the step handling of `01-architecture-overview.md` §3.4 stays.
+
 How a graph's ports are connected to the environment's ports — so that the same graph runs unchanged in different environments, by applying a different bindings file — is open question 3 (§4). How the environment appears in the graph model and on the wire is open question 6.
 
 On the Zephyr build the environment's implementation (device drivers, devicetree, board support) belongs to the device firmware, not to hakkas; on POSIX it is the simulated provider (§0).

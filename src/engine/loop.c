@@ -498,9 +498,13 @@ void loop_run_once(Loop *loop)
 			loop->pollset[i].revents = 0;
 	}
 
-	/* 2. The clock, and the due timers. */
+	/* 2. The clocks, and the due timers. A step of the wall clock makes
+	 * the calendar blocks' timers due (graphs/runtime.h, "Wall clock"). */
 	now = pal_uptime_ms();
 	loop->now_ms = now;
+	runtime_set_now(rt, now);
+	if (runtime_set_wall_ms(rt, pal_wall_ms()))
+		log_info("wall clock set: calendar blocks re-evaluated");
 	runtime_fire_timers(rt, now);
 
 	/* 3. IO events handed over from other contexts. */

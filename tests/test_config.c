@@ -181,6 +181,7 @@ static void test_defaults(void)
 	CHECK(cfg.max_message_bytes == 16384);
 	CHECK(cfg.allowed_origin_count == 0);
 	CHECK(cfg.change_threshold == 0.05);
+	CHECK_STREQ(cfg.time_zone, "UTC0");
 	CHECK(cfg.log.level == LOG_LEVEL_WARN);
 	CHECK(!cfg.log.mirror);
 	CHECK_STREQ(cfg.auth.users_file, "/etc/hakkas/users.json");
@@ -298,6 +299,13 @@ static void test_partial_file(void)
 	CHECK(isinf(cfg.change_threshold) && cfg.change_threshold > 0);
 	parse("{'port':8.0e3}", CONFIG_OK);
 	CHECK(cfg.port == 8000);
+	/* time_zone (plan task 24): any valid POSIX TZ string. */
+	parse("{'time_zone':'CET-1CEST,M3.5.0,M10.5.0/3'}", CONFIG_OK);
+	CHECK_STREQ(cfg.time_zone, "CET-1CEST,M3.5.0,M10.5.0/3");
+	parse("{'time_zone':'<+0330>-3:30'}", CONFIG_OK);
+	CHECK_STREQ(cfg.time_zone, "<+0330>-3:30");
+	parse("{'time_zone':null}", CONFIG_OK); /* absent: the default */
+	CHECK_STREQ(cfg.time_zone, "UTC0");
 }
 
 static void test_relative_paths(void)
@@ -460,6 +468,15 @@ static void test_invalid_values(void)
 	invalid("{'change_threshold':-0.1}", "change_threshold: expected a number >= 0");
 	invalid("{'change_threshold':-1e999}", "change_threshold: expected a number >= 0");
 	invalid("{'change_threshold':'0.1'}", "change_threshold: expected a number >= 0");
+	invalid("{'time_zone':'Europe/Stockholm'}",
+		"time_zone: expected a POSIX TZ string of at most 64 bytes, e.g. "
+		"\"CET-1CEST,M3.5.0,M10.5.0/3\"");
+	invalid("{'time_zone':''}", "time_zone: expected a POSIX TZ string");
+	invalid("{'time_zone':'CET-1CEST'}", "time_zone: expected a POSIX TZ string");
+	invalid("{'time_zone':1}", "time_zone: expected a POSIX TZ string");
+	invalid("{'time_zone':'"
+		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0'}",
+		"time_zone: expected a POSIX TZ string");
 	invalid("{'engine_id':''}", "engine_id: expected a string of 1 to 64 bytes");
 	invalid("{'engine_id':42}", "engine_id: expected a string of 1 to 64 bytes");
 	invalid("{'engine_id':'"
@@ -554,6 +571,8 @@ static void test_set(void)
 	CHECK(config_set(&cfg, "log.level", "fine", "--fine") == CONFIG_OK);
 	CHECK(cfg.log.level == LOG_LEVEL_FINE);
 	CHECK(config_set(&cfg, "log.mirror", "true", "x") == CONFIG_OK && cfg.log.mirror);
+	CHECK(config_set(&cfg, "time_zone", "EST5EDT,M3.2.0,M11.1.0", "x") == CONFIG_OK);
+	CHECK_STREQ(cfg.time_zone, "EST5EDT,M3.2.0,M11.1.0");
 	CHECK(config_set(&cfg, "change_threshold", "0.5", "x") == CONFIG_OK);
 	CHECK(cfg.change_threshold == 0.5);
 	CHECK_STREQ(logs, "");
@@ -570,6 +589,8 @@ static void test_set(void)
 	CHECK(config_set(&cfg, "log.mirror", "yes", "x") == CONFIG_ERR_INVALID);
 	CHECK(config_set(&cfg, "change_threshold", "-1", "x") == CONFIG_ERR_INVALID);
 	CHECK(config_set(&cfg, "change_threshold", "nan", "x") == CONFIG_ERR_INVALID);
+	CHECK(config_set(&cfg, "time_zone", "EST", "x") == CONFIG_ERR_INVALID);
+	CHECK_STREQ(cfg.time_zone, "EST5EDT,M3.2.0,M11.1.0");
 	CHECK(config_set(&cfg, "allowed_origins", "a", "x") == CONFIG_ERR_INVALID);
 	CHECK(config_set(&cfg, "nope", "1", "x") == CONFIG_ERR_INVALID);
 	CHECK(config_set(&cfg, "log", "1", "x") == CONFIG_ERR_INVALID);

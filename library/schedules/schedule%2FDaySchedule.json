@@ -1,0 +1,17 @@
+{
+  "name": "schedule/DaySchedule",
+  "icon": "schedule",
+  "description": "Day schedule: true every day within a time-of-day range (local time)",
+  "blocks": [
+    { "name": "Time", "type": "timing/MinuteRange" }
+  ],
+  "connections": [],
+  "initials": [],
+  "inports": [
+    { "name": "range", "tgt": "Time.range",
+      "description": "Time of day \"HH:MM-HH:MM\", e.g. \"07:00-18:00\": start included, end excluded; wraps past midnight (\"22:00-06:00\"); \"00:00-24:00\" is all day" }
+  ],
+  "outports": [
+    { "name": "out", "src": "Time.out", "description": "True within the range" }
+  ]
+}

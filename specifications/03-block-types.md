@@ -39,7 +39,7 @@ Decisions (plan task 8), on timers (`01-architecture-overview.md` §3.2 item 7 a
 
 ## 3. Built-in block types
 
-Unless noted, the following are stateless, event-driven blocks (`compute_on_input = true`, `TIMER_NONE`), with ports named `in1..inN → out` and every port of type `"number"` with default `0`. The comparison blocks' `out` port is of type `"bool"`. Every type uses the engine-wide change threshold unless a type default is listed here.
+Unless noted, the following are stateless, event-driven blocks (`compute_on_input = true`, `TIMER_NONE`), with ports named `in1..inN → out` and every port of type `"number"` with default `0`. The comparison blocks' `out` port is of type `"bool"`; the `logic/*` blocks' ports are all `"bool"` with default `false`. Every type uses the engine-wide change threshold unless a type default is listed here. The table's order is the registration order (`01-architecture-overview.md` §2.3), family by family: `math/`, `logic/`, `process/`, `timing/` (decided, plan task 24).
 
 | Name | Icon | Description | Formula |
 |---|---|---|---|
@@ -61,9 +61,19 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `math/NotEqual` | compare | `out = in1 != in2` | `to_f64(in1) != to_f64(in2)` (bool result) |
 | `math/LessEqual` | compare | `out = in1 <= in2` | `to_f64(in1) <= to_f64(in2)` (bool result) |
 | `math/GreaterEqual` | compare | `out = in1 >= in2` | `to_f64(in1) >= to_f64(in2)` (bool result) |
+| `logic/And` | logic | `out = in1 AND in2 (boolean)` | `to_bool(in1) && to_bool(in2)`; bool ports, see §6.2 |
+| `logic/Or` | logic | `out = in1 OR in2 (boolean)` | `to_bool(in1) \|\| to_bool(in2)` |
+| `logic/Xor` | logic | `out = in1 XOR in2 (boolean)` | `to_bool(in1) != to_bool(in2)` |
+| `logic/Not` | logic | `out = NOT in (boolean)` | `!to_bool(in)`; one input, `in` |
 | `process/Linear` | function | `out = k*in+m` | `(to_f64(in)*to_f64(k))+to_f64(m)`; ports named `in`, `k`, `m` → `out` |
 | `process/Deadband` | filter | `out` follows `in` only when it moves by at least `threshold` | see below |
 | `timing/Interval` | timer | periodic pulse generator: PWM or edge generator | see §3.1 |
+| `timing/MinuteRange` | schedule | true within a time-of-day range | calendar primitive, §6.2 |
+| `timing/DayOfWeek` | date_range | true on the selected weekdays | calendar primitive, §6.2 |
+| `timing/DayOfMonth` | date_range | true on the selected days of the month | calendar primitive, §6.2 |
+| `timing/MonthOfYear` | date_range | true during the selected months | calendar primitive, §6.2 |
+| `timing/DayOfYear` | date_range | true on the selected days of the year | calendar primitive, §6.2 |
+| `timing/WeekOfYear` | date_range | true during the selected ISO weeks | calendar primitive, §6.2 |
 
 **Results and edge cases** (decided, plan task 5):
 - The arithmetic blocks and `process/Linear` output an f64; the comparisons a bool; the bitwise blocks (`And2`, `Or2`, `Xor`, `And4`, `Or4`) an **i64**, so all 64 bits of the result survive (an f64 would round values beyond 2^53). Their port type is still `"number"`.
@@ -202,9 +212,9 @@ Decisions (plan task 21; the assembly is the model function `composite_types_ass
 - **Left out**: node metadata (positions and other UI keys), edge metadata and a placeholder's retained connections are not part of a type. A selected placeholder node goes into `blocks` with its component name, so registering the result is refused as an unknown type. `description` and `icon` come from the request (`""` if none).
 - **Refusals**: an empty selection is `"Invalid field: nodes"`, a name that is no node of the graph `"Unknown node: <name>"`; everything else is refused, if at all, when the result is registered (§5.1).
 
-## 6. Planned block types — interface sketch, pending exact specification
+## 6. PID and schedule block types
 
-Two block families are confirmed as needed but reserved for more exact specification. **Everything below is a starting sketch, not a final design.**
+Two block families: the PID regulator (§6.1), whose behavior is decided but whose parameters and implementation wait for the user's existing PID code (plan task 23), and the calendar blocks and schedule types (§6.2), implemented in plan task 24.
 
 ### 6.1 `process/PID` — PID regulator
 
@@ -233,6 +243,7 @@ Calendar primitives — each a scheduled block (`TIMER_SCHEDULED`) that reads th
 - `timing/MinuteRange` — input `range` (string, e.g. `"12:30-15:45"`): true within that time-of-day range. The start is included and the end excluded (true from 12:30:00 until just before 15:45); a range may wrap past midnight (`"22:00-06:00"`).
 - `timing/DayOfWeek` — input `days` (selector string, 1–7) and input `sunday_first` (bool: whether day 1 is Sunday rather than Monday): true on the selected weekdays.
 - `timing/MonthOfYear` — input `months` (selector string, 1–12): true during the selected months.
+- `timing/DayOfMonth` — input `days` (selector string, 1–31): true on the selected days of the month ("the 1st of the month"); a day a month does not have simply never matches (`"31"` is never true in April).
 - Further primitives, e.g. `timing/DayOfYear`, `timing/WeekOfYear` (ISO 8601 week numbers 1–53, weeks starting on Monday), and holiday calendars such as `timing/HolidaysOfSweden`.
 
 **Selector strings** (all day/week/month/year selectors): a single value, a range, a list, or a mix — `"3"`, `"1-5"`, `"6,7"`, `"1-3,5"` — so e.g. Monday–Friday is one `DayOfWeek` block with `"1-5"`.
@@ -242,3 +253,20 @@ Calendar primitives — each a scheduled block (`TIMER_SCHEDULED`) that reads th
 **Standard schedule types** (day, week, month schedules, …) are composites of the primitives and logic blocks. They are **not built into hakkas**: they are supplied separately as a **standard library** of composite type files (§5.1), which a deployment installs into its `types/` directory if it wants them. Once installed they are ordinary user types.
 
 **Local time** (decided, `00-README.md` open question 11): the calendar primitives evaluate the wall clock in local time from the engine-wide `time_zone` POSIX TZ string (`05-app-lifecycle-persistence.md` §1.1). Daylight-saving edges: in spring the skipped local hour does not exist, and a range starting inside it begins at the jump; in autumn the repeated hour is evaluated on local wall-clock time, so a range covering it can be true twice.
+
+Decisions (plan task 24; `src/blocktypes/calendar.h`, `calendar.c`, `logic.c`, `src/system/tz.h`):
+- **The primitives**: `timing/MinuteRange` (input `range`), `timing/DayOfWeek` (`days`, `sunday_first`), `timing/DayOfMonth` (`days`, 1–31), `timing/MonthOfYear` (`months`, 1–12), `timing/DayOfYear` (`days`, 1–366, 1 = January 1, so 60 is March 1, or February 29 in a leap year, and 366 only exists in leap years) and `timing/WeekOfYear` (`weeks`, ISO 8601 weeks 1–53). The setting inputs are strings defaulting to `""` (so a new block is false until it is set), `sunday_first` a bool defaulting to `false`; the output `out` is a bool defaulting to `false`. Each is stateless, `compute_on_input` and `TIMER_SCHEDULED`, with the type flag `wall_clock` (`01-architecture-overview.md` §2.3, §3.4); every compute ignores `reason` except `STOP`, which changes nothing. Registered after `timing/Interval`, in this order (the §3 table). `timing/HolidaysOfSweden` is **not implemented**: which days count as holidays is for the user to decide.
+- **Selector strings**: a comma-separated list of items, each a value or a range `a-b`, values in decimal digits only (no sign; leading zeros allowed). Spaces and tabs are allowed around values, `-` and `,`. A range whose first value is greater than its last **wraps around**: `"6-1"` over weekdays is Saturday, Sunday, Monday; `"11-2"` over months is November to February. Repeated or overlapping items are fine. A selector is **invalid** if it is empty (or only whitespace), has an empty item (`"1,,3"`, `"1,"`), a value outside the block's range (`0`, `8` for weekdays; `32` for days of the month), or any other character.
+- **`MinuteRange` strings**: `"HH:MM-HH:MM"`, the hour one or two digits (0–23), the minute two digits; spaces and tabs allowed around the times and the `-`. The end may be `"24:00"`, the end of the day, so `"00:00-24:00"` is all day. An **equal start and end is an empty range** (never true): with the start included and the end excluded, `[s, s)` is empty; all day is written `"00:00-24:00"`.
+- **Invalid settings**: an invalid or empty setting makes `out` false with no timer armed (no error behavior in the dataflow, `01-architecture-overview.md` §2.1); setting a valid one computes and arms again. A value that is not a string is read in its text form (`linkable_stringify`: a number `3` is `"3"`; unset is invalid).
+- **Local time**: `ctx.wall_ms` (UTC, `01-architecture-overview.md` §3.4) in whole seconds, converted with the `time_zone` POSIX TZ string (`05-app-lifecycle-persistence.md` §1.1) by the portable core (`src/system/tz.h`; no time-zone database, no C library time functions). `sunday_first` makes day 1 Sunday and day 7 Saturday; otherwise day 1 is Monday (ISO 8601).
+- **Timers**: every compute returns the delay to the next instant at which `out` may change: for `MinuteRange` the next start or end of the range, for the day-based primitives the next local midnight at which the day's match differs. The boundary is a local time, converted to UTC as the first instant at which local time reaches it (`tz_next_reach`); the block also wakes at every daylight-saving transition (where local time jumps without passing the boundaries in between) and re-evaluates. A wake-up that changes nothing propagates nothing. A day-based primitive looks at most 400 days ahead; if its match changes on none of them (week 53, which is years away in most years, or a selector that matches every day), it wakes after that and looks again. An input change computes at once and re-arms the timer (§2).
+- **Daylight-saving edges**, as above: in spring the skipped local hour does not exist; a boundary inside it is reached at the jump, so a range starting in it begins at the jump, one ending in it ends at the jump, and one lying entirely in it (`"02:00-03:00"` in Sweden) is not true that day. In autumn the repeated hour is evaluated on local wall-clock time: a range in it (`"02:30-02:45"`) is true twice, and one covering it (`"01:00-03:00"`) is true for three hours. A day starts at local midnight in whatever offset is in effect.
+- **Wall-clock steps** (the clock set by the user, an NTP correction, the first synchronization): the runtime re-runs every armed calendar primitive at once (`01-architecture-overview.md` §3.4).
+- **`logic/*`**: `logic/And`, `logic/Or`, `logic/Xor` with inputs `in1`, `in2`, and `logic/Not` with input `in`; every port `"bool"` with default `false`, every input read with `to_bool`; port descriptions `"Operand 1"`, `"Operand 2"`, `"Operand"`, `out` → `"Result"`; icon `logic`. Registered after the `math/` family (the §3 table).
+- **The standard library** is the directory **`library/schedules/`** of the repository: one composite type file (§5.1, hakkas terms, `"connections"`) per type, named as `<datadir>/types/` names it (the encoded type name, `05-app-lifecycle-persistence.md` §2.3, e.g. `schedule%2FWeekSchedule.json`). A deployment installs it by copying the files into `<datadir>/types/`; they are then ordinary user types, loaded at startup (`05-app-lifecycle-persistence.md` §1.4 step 6). The types, all with icon `schedule` and the output `out` (bool):
+  - `schedule/DaySchedule` — input `range`: `timing/MinuteRange` alone, true every day within the range;
+  - `schedule/WeekSchedule` — inputs `range`, `days`, `sunday_first`: `timing/MinuteRange` AND `timing/DayOfWeek`;
+  - `schedule/MonthSchedule` — inputs `range`, `days`: `timing/MinuteRange` AND `timing/DayOfMonth`;
+  - `schedule/YearSchedule` — inputs `range`, `months`: `timing/MinuteRange` AND `timing/MonthOfYear`.
+  The inner blocks are `Time` (the range), `Days`/`Months` and `Both` (`logic/And`). Each input maps one primitive's setting, so its default is the primitive's (`""`: false until set).

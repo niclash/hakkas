@@ -27,6 +27,22 @@
  * Time: the runtime never reads a clock. The engine loop (plan task 12) calls
  * runtime_set_now with pal_uptime_ms() before draining; tests set it directly.
  *
+ * Wall clock (decided, plan task 24; 01 §3.4): the runtime keeps the wall
+ * clock as an offset from engine time, so it advances with runtime_set_now
+ * (and runtime_fire_timers) and the tests drive both with one number. The
+ * engine loop sets it from the PAL (pal_wall_ms, the interim source until the
+ * environment interface, plan task 22) each iteration, before firing the
+ * timers. Calendar primitives arm their timers in engine time for an instant
+ * computed on the wall clock, so a step of the wall clock (set by the user, an
+ * NTP correction, the first synchronization) would leave them armed for the
+ * wrong instant: when the offset has moved by RUNTIME_WALL_STEP_MS or more
+ * since the last such check, every armed timer of a wall_clock type is made
+ * due at once, and its compute re-evaluates and re-arms it. Drift (an NTP
+ * slew) is caught the same way once it adds up to the threshold, so a
+ * calendar boundary is never more than about RUNTIME_WALL_STEP_MS off.
+ * Until it is set the wall clock is engine time (offset 0, 1970). The time
+ * zone (05 §1.1 time_zone) is UTC until runtime_set_time_zone.
+ *
  * Timers (decided, plan task 8, 01 §3.2 item 7): each block of a
  * TIMER_PERIODIC or TIMER_SCHEDULED type has one timer, a Deadline in the
  * runtime's heap. No PAL timer is involved: each loop iteration the engine
@@ -51,9 +67,14 @@
 
 #include "graphs/deadlines.h"
 #include "graphs/work_queue.h"
+#include "system/tz.h"
 
 /* The engine-wide change threshold until configured (05 §1.1). */
 #define RUNTIME_DEFAULT_CHANGE_THRESHOLD 0.05
+
+/* A move of the wall clock against engine time by this much (ms, either
+ * way) re-evaluates the calendar primitives (see "Wall clock" above). */
+#define RUNTIME_WALL_STEP_MS 1000
 
 typedef struct Block Block;
 typedef struct Graph Graph;
@@ -81,6 +102,9 @@ typedef struct Runtime {
 	uint32_t free_head; /* first free slot below slot_used, or RUNTIME_NO_SLOT */
 	double change_threshold; /* engine-wide default (01 §3.3) */
 	uint64_t now_ms;	 /* engine uptime handed to compute (01 §3.4) */
+	int64_t wall_offset_ms;	 /* the wall clock minus now_ms */
+	int64_t wall_checked_ms; /* wall_offset_ms at the last step check */
+	TimeZone tz;		 /* local time for the calendar primitives */
 	DeadlineHeap timers;	 /* the armed block timers */
 	uint32_t timer_blocks;	 /* blocks of a timer type: the room reserved in timers */
 	graph_event_fn on_event;
@@ -115,6 +139,26 @@ static inline double runtime_change_threshold(const Runtime *rt)
 static inline void runtime_set_now(Runtime *rt, uint64_t now_ms)
 {
 	rt->now_ms = now_ms;
+}
+
+/* The wall clock at the engine time: UTC ms since the Unix epoch. */
+static inline int64_t runtime_wall_ms(const Runtime *rt)
+{
+	return (int64_t)rt->now_ms + rt->wall_offset_ms;
+}
+
+/* Set the wall clock at the current engine time (runtime_set_now first) to
+ * wall_ms, UTC ms since the Unix epoch. If that moves it against engine time
+ * by RUNTIME_WALL_STEP_MS or more since the last step, every armed timer of
+ * a wall_clock type is made due now (see "Wall clock" above); returns true
+ * then. */
+bool runtime_set_wall_ms(Runtime *rt, int64_t wall_ms);
+
+/* Set the time zone (05 §1.1 time_zone) for the calendar primitives' local
+ * time; it applies from their next compute. */
+static inline void runtime_set_time_zone(Runtime *rt, const TimeZone *tz)
+{
+	rt->tz = *tz;
 }
 
 /* Set the one observer of structural changes (NULL to remove it). The Graphs

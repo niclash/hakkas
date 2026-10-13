@@ -129,35 +129,57 @@ static void test_full(void)
 
 struct expected_type {
 	const char *name, *icon, *description;
-	int inputs; /* in1..inN; 0 for process/Linear's in, k, m; -1 for Deadband's in, threshold */
+	/* in1..inN; 0 for process/Linear's in, k, m; -1 for Deadband's in,
+	 * threshold; -2 for logic/Not's in */
+	int inputs;
 	const char *out_type;
+	const char *in_type; /* NULL: "number" */
 };
 
 static const struct expected_type table[] = {
-	{"math/Add4", "add", "out = in1+in2+in3+in4", 4, "number"},
-	{"math/Add2", "add", "out = in1+in2", 2, "number"},
-	{"math/Mult2", "close", "out = in1*in2", 2, "number"},
-	{"math/Divide", "divide", "out = in1/in2", 2, "number"},
-	{"math/Subtract", "remove", "out = in1-in2", 2, "number"},
-	{"math/Modulo", "percent", "out = in1 MOD in2", 2, "number"},
-	{"math/Remainder", "percent", "out = in1 REMAINDER in2", 2, "number"},
-	{"math/And2", "logic", "out = in1 AND in2", 2, "number"},
-	{"math/Or2", "logic", "out = in1 OR in2", 2, "number"},
-	{"math/Xor", "logic", "out = in1 XOR in2", 2, "number"},
-	{"math/And4", "logic", "out = in1 AND in2 AND in3 AND in4", 4, "number"},
-	{"math/Or4", "logic", "out = in1 OR in2 OR in3 OR in4", 4, "number"},
-	{"math/Greater", "compare", "out = in1 > in2", 2, "bool"},
-	{"math/Less", "compare", "out = in1 < in2", 2, "bool"},
-	{"math/Equal", "compare", "out = in1 == in2", 2, "bool"},
-	{"math/NotEqual", "compare", "out = in1 != in2", 2, "bool"},
-	{"math/LessEqual", "compare", "out = in1 <= in2", 2, "bool"},
-	{"math/GreaterEqual", "compare", "out = in1 >= in2", 2, "bool"},
-	{"process/Linear", "function", "out = k*in+m", 0, "number"},
+	{"math/Add4", "add", "out = in1+in2+in3+in4", 4, "number", NULL},
+	{"math/Add2", "add", "out = in1+in2", 2, "number", NULL},
+	{"math/Mult2", "close", "out = in1*in2", 2, "number", NULL},
+	{"math/Divide", "divide", "out = in1/in2", 2, "number", NULL},
+	{"math/Subtract", "remove", "out = in1-in2", 2, "number", NULL},
+	{"math/Modulo", "percent", "out = in1 MOD in2", 2, "number", NULL},
+	{"math/Remainder", "percent", "out = in1 REMAINDER in2", 2, "number", NULL},
+	{"math/And2", "logic", "out = in1 AND in2", 2, "number", NULL},
+	{"math/Or2", "logic", "out = in1 OR in2", 2, "number", NULL},
+	{"math/Xor", "logic", "out = in1 XOR in2", 2, "number", NULL},
+	{"math/And4", "logic", "out = in1 AND in2 AND in3 AND in4", 4, "number", NULL},
+	{"math/Or4", "logic", "out = in1 OR in2 OR in3 OR in4", 4, "number", NULL},
+	{"math/Greater", "compare", "out = in1 > in2", 2, "bool", NULL},
+	{"math/Less", "compare", "out = in1 < in2", 2, "bool", NULL},
+	{"math/Equal", "compare", "out = in1 == in2", 2, "bool", NULL},
+	{"math/NotEqual", "compare", "out = in1 != in2", 2, "bool", NULL},
+	{"math/LessEqual", "compare", "out = in1 <= in2", 2, "bool", NULL},
+	{"math/GreaterEqual", "compare", "out = in1 >= in2", 2, "bool", NULL},
+	{"logic/And", "logic", "out = in1 AND in2 (boolean)", 2, "bool", "bool"},
+	{"logic/Or", "logic", "out = in1 OR in2 (boolean)", 2, "bool", "bool"},
+	{"logic/Xor", "logic", "out = in1 XOR in2 (boolean)", 2, "bool", "bool"},
+	{"logic/Not", "logic", "out = NOT in (boolean)", -2, "bool", "bool"},
+	{"process/Linear", "function", "out = k*in+m", 0, "number", NULL},
 	{"process/Deadband", "filter", "out follows in only when it moves by at least threshold",
-	 -1, "number"},
+	 -1, "number", NULL},
 };
 
 #define EXPECTED_COUNT (sizeof(table) / sizeof(table[0]))
+
+/* The calendar primitives (03 §6.2), after timing/Interval: their one
+ * setting input (DayOfWeek also has sunday_first), a string defaulting to "". */
+static const struct {
+	const char *name, *icon, *description, *setting;
+} calendar[] = {
+	{"timing/MinuteRange", "schedule", "true within a time-of-day range", "range"},
+	{"timing/DayOfWeek", "date_range", "true on the selected weekdays", "days"},
+	{"timing/DayOfMonth", "date_range", "true on the selected days of the month", "days"},
+	{"timing/MonthOfYear", "date_range", "true during the selected months", "months"},
+	{"timing/DayOfYear", "date_range", "true on the selected days of the year", "days"},
+	{"timing/WeekOfYear", "date_range", "true during the selected ISO weeks", "weeks"},
+};
+
+#define CALENDAR_COUNT (sizeof(calendar) / sizeof(calendar[0]))
 
 static void check_port(const PortDescriptor *p, const char *name, const char *type)
 {
@@ -177,10 +199,10 @@ static void test_builtins(void)
 {
 	block_types_reset();
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
-	CHECK(block_types_count() == EXPECTED_COUNT + 1);
+	CHECK(block_types_count() == EXPECTED_COUNT + 1 + CALENDAR_COUNT);
 	/* Registering them twice is refused. */
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_ERR_EXISTS);
-	CHECK(block_types_count() == EXPECTED_COUNT + 1);
+	CHECK(block_types_count() == EXPECTED_COUNT + 1 + CALENDAR_COUNT);
 
 	for (size_t k = 0; k < EXPECTED_COUNT; k++) {
 		const struct expected_type *e = &table[k];
@@ -197,14 +219,20 @@ static void test_builtins(void)
 		CHECK(t->period_ms == 0);
 		CHECK(t->compute != NULL);
 		CHECK(t->state_size == 0);
-		if (e->inputs < 0)
+		if (e->inputs == -1)
 			CHECK(t->change_threshold == 0); /* the engine adds no filtering */
 		else
 			CHECK(isnan(t->change_threshold));
 		CHECK(!t->subgraph);
 		CHECK(t->composite == NULL);
+		CHECK(!t->wall_clock);
+		const char *in_type = e->in_type != NULL ? e->in_type : "number";
 
-		if (e->inputs < 0) {
+		if (e->inputs == -2) {
+			CHECK(t->input_count == 1);
+			if (t->input_count == 1)
+				check_port(&t->inputs[0], "in", in_type);
+		} else if (e->inputs < 0) {
 			static const char *const deadband_ins[] = {"in", "threshold"};
 			CHECK(t->input_count == 2);
 			for (uint32_t j = 0; j < 2 && j < t->input_count; j++)
@@ -219,7 +247,7 @@ static void test_builtins(void)
 			for (uint32_t j = 0; j < t->input_count; j++) {
 				char name[16];
 				snprintf(name, sizeof(name), "in%u", (unsigned)(j + 1));
-				check_port(&t->inputs[j], name, "number");
+				check_port(&t->inputs[j], name, in_type);
 			}
 		}
 		CHECK(t->output_count == 1);
@@ -252,6 +280,38 @@ static void test_builtins(void)
 			check_port(&t->outputs[0], "out", "bool");
 			CHECK(!t->inputs[0].addressable && !t->inputs[1].addressable);
 		}
+		CHECK(!t->wall_clock);
+	}
+
+	/* The calendar primitives, after timing/Interval. */
+	for (size_t k = 0; k < CALENDAR_COUNT; k++) {
+		t = block_types_get(calendar[k].name);
+		CHECK(t != NULL && block_types_at(EXPECTED_COUNT + 1 + k) == t);
+		if (t == NULL)
+			continue;
+		CHECK_STREQ(t->icon, calendar[k].icon);
+		CHECK_STREQ(t->description, calendar[k].description);
+		CHECK(t->compute_on_input);
+		CHECK(t->timer == TIMER_SCHEDULED);
+		CHECK(t->wall_clock);
+		CHECK(t->compute != NULL);
+		CHECK(t->state_size == 0);
+		CHECK(isnan(t->change_threshold));
+		CHECK(!t->subgraph && t->composite == NULL);
+		bool dow = strcmp(calendar[k].name, "timing/DayOfWeek") == 0;
+		CHECK(t->input_count == (dow ? 2u : 1u));
+		CHECK(t->output_count == 1);
+		if (t->input_count < 1 || t->output_count != 1)
+			continue;
+		const PortDescriptor *p = &t->inputs[0];
+		CHECK_STREQ(p->name, calendar[k].setting);
+		CHECK_STREQ(p->type, "string");
+		CHECK(p->default_value.type == LINKABLE_STRING && p->default_value.as.s[0] == '\0');
+		CHECK(p->description != NULL && p->description[0] != '\0');
+		CHECK(!p->addressable && p->inner == NULL);
+		if (dow && t->input_count == 2)
+			check_port(&t->inputs[1], "sunday_first", "bool");
+		check_port(&t->outputs[0], "out", "bool");
 	}
 	block_types_reset();
 }
@@ -542,6 +602,34 @@ static void test_linear(void)
 	CHECK(is_f64(run("process/Linear", in6, 3), ldexp(1.0, -29)));
 }
 
+static void test_logic(void)
+{
+	static const struct {
+		bool a, c, and_, or_, xor_;
+	} rows[] = {
+		{false, false, false, false, false},
+		{false, true, false, true, true},
+		{true, false, false, true, true},
+		{true, true, true, true, false},
+	};
+	for (size_t k = 0; k < sizeof(rows) / sizeof(rows[0]); k++) {
+		CHECK(is_bool(run2("logic/And", b(rows[k].a), b(rows[k].c)), rows[k].and_));
+		CHECK(is_bool(run2("logic/Or", b(rows[k].a), b(rows[k].c)), rows[k].or_));
+		CHECK(is_bool(run2("logic/Xor", b(rows[k].a), b(rows[k].c)), rows[k].xor_));
+	}
+	Linkable t1[1] = {b(true)};
+	CHECK(is_bool(run("logic/Not", t1, 1), false));
+	Linkable f1[1] = {b(false)};
+	CHECK(is_bool(run("logic/Not", f1, 1), true));
+	/* Defaults: false, so Not of nothing is true. */
+	CHECK(is_bool(run("logic/Not", NULL, 0), true));
+	CHECK(is_bool(run("logic/And", NULL, 0), false));
+	/* to_bool (01 §2.1): a non-zero number and "true" are true. */
+	CHECK(is_bool(run2("logic/And", f(2.5), s("true")), true));
+	CHECK(is_bool(run2("logic/Or", i(0), s("yes")), false));
+	CHECK(is_bool(run2("logic/Xor", unset, f(-1)), true));
+}
+
 int main(void)
 {
 	RUN(test_register_and_lookup);
@@ -564,6 +652,7 @@ int main(void)
 	RUN(test_bitwise);
 	RUN(test_comparisons);
 	RUN(test_linear);
+	RUN(test_logic);
 	block_types_reset();
 	return test_result();
 }

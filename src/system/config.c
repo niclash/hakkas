@@ -43,6 +43,7 @@ enum kind {
 	K_ORIGINS,   /* an array of origin strings */
 	K_IPV4,	     /* a dotted-quad IPv4 address, or "" */
 	K_HOSTNAME,  /* a DNS label: letters, digits, '-' inside */
+	K_TIME_ZONE, /* a POSIX TZ string (system/tz.h) */
 };
 
 typedef struct {
@@ -74,6 +75,7 @@ static const KeyDef keys[] = {
 	    CONFIG_MAX_MESSAGE_BYTES_MAX),
 	KEY("allowed_origins", K_ORIGINS, allowed_origins, 1, HAKKAS_CONFIG_ORIGINS_MAX),
 	KEY("change_threshold", K_THRESHOLD, change_threshold, 0, 0),
+	KEY("time_zone", K_TIME_ZONE, time_zone, 1, 0),
 	KEY("log.level", K_LEVEL, log.level, 0, 0),
 	KEY("log.mirror", K_BOOL, log.mirror, 0, 0),
 	KEY("auth.users_file", K_PATH, auth.users_file, 1, 0),
@@ -152,6 +154,7 @@ enum config_status config_init(Config *cfg, const ConfigDefaults *d)
 	cfg->max_connections = CONFIG_DEFAULT_MAX_CONNECTIONS;
 	cfg->max_message_bytes = CONFIG_DEFAULT_MAX_MESSAGE_BYTES;
 	cfg->change_threshold = CONFIG_DEFAULT_CHANGE_THRESHOLD;
+	strcpy(cfg->time_zone, CONFIG_DEFAULT_TIME_ZONE);
 	cfg->log.level = CONFIG_DEFAULT_LOG_LEVEL;
 	cfg->auth.idle_timeout_s = CONFIG_DEFAULT_IDLE_TIMEOUT_S;
 	cfg->auth.max_lifetime_s = CONFIG_DEFAULT_MAX_LIFETIME_S;
@@ -232,8 +235,17 @@ static bool apply_string(Config *cfg, const KeyDef *def, const cJSON *v, const c
 		ok = ipv4_valid(v->valuestring);
 	if (ok && def->kind == K_HOSTNAME)
 		ok = hostname_valid(v->valuestring);
+	if (ok && def->kind == K_TIME_ZONE) {
+		TimeZone tz;
+		ok = tz_parse(v->valuestring, &tz);
+	}
 	if (!ok) {
-		if (def->kind == K_IPV4)
+		if (def->kind == K_TIME_ZONE)
+			snprintf(what, sizeof(what),
+				 "expected a POSIX TZ string of at most %zu bytes, e.g. "
+				 "\"CET-1CEST,M3.5.0,M10.5.0/3\"",
+				 max);
+		else if (def->kind == K_IPV4)
 			snprintf(what, sizeof(what), "expected an IPv4 address (a.b.c.d) or \"\"");
 		else if (def->kind == K_HOSTNAME)
 			snprintf(what, sizeof(what),
@@ -304,6 +316,7 @@ static bool apply_value(Config *cfg, const KeyDef *def, const cJSON *v, const ch
 	case K_PATH:
 	case K_IPV4:
 	case K_HOSTNAME:
+	case K_TIME_ZONE:
 		return apply_string(cfg, def, v, origin, from_file);
 	case K_ORIGINS:
 		return apply_origins(cfg, def, v, origin);

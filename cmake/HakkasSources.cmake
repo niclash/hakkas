@@ -16,7 +16,9 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/app/process_list.c
   ${HAKKAS_SOURCE_ROOT}/app/type_files.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/block_types.c
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/calendar.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/composite_types.c
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/logic.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c
@@ -49,6 +51,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/system/config_file.c
   ${HAKKAS_SOURCE_ROOT}/system/crypto.c
   ${HAKKAS_SOURCE_ROOT}/system/log.c
+  ${HAKKAS_SOURCE_ROOT}/system/tz.c
   ${HAKKAS_SOURCE_ROOT}/system/uuid.c
 )
 

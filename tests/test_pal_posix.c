@@ -1,5 +1,5 @@
 /*
- * Tests for the POSIX PAL (01 §0.1): clock, random source, storage. Storage
+ * Tests for the POSIX PAL (01 §0.1): clocks, random source, storage. Storage
  * tests run in a fresh temporary directory that is removed afterwards.
  */
 #define _XOPEN_SOURCE 700
@@ -71,6 +71,12 @@ static void test_clock(void)
 	/* pal_init again does not restart the clock. */
 	CHECK(pal_init() == PAL_OK);
 	CHECK(pal_uptime_ms() >= c);
+
+	/* The interim wall clock (plan task 24): UTC ms since the epoch. */
+	int64_t before = (int64_t)time(NULL) * 1000;
+	int64_t wall = pal_wall_ms();
+	int64_t after = (int64_t)time(NULL) * 1000 + 1000;
+	CHECK(wall >= before && wall < after);
 }
 
 static void test_random(void)

@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "graphs/linkable.h"
+#include "system/tz.h"
 
 /* A port descriptor (01 §2.1, 03 §1), used for inputs and outputs alike. */
 typedef struct {
@@ -70,6 +71,12 @@ typedef struct {
 	Linkable *outputs;
 	void *state;	   /* state_size bytes, zeroed at creation; NULL when 0 */
 	uint64_t now_ms;   /* engine monotonic time (01 §3.4) */
+	/* The wall clock at now_ms: UTC ms since the Unix epoch (01 §3.4),
+	 * and the engine's time zone (05 §1.1 time_zone) for local time. Read
+	 * by the calendar primitives (03 §6.2), whose types set wall_clock.
+	 * tz is never NULL when the runtime calls compute. */
+	int64_t wall_ms;
+	const TimeZone *tz;
 	Reason reason;
 	int changed_input; /* the input that changed when reason == REASON_INPUT, else -1 */
 } BlockCtx;
@@ -96,6 +103,11 @@ typedef struct {
 	ComputeFn compute;  /* NULL for a composite type, whose inner blocks compute */
 	size_t state_size;  /* 0 for stateless types */
 	double change_threshold; /* the type default (01 §3.3); NAN = the engine-wide default */
+	/* The type's compute reads the wall clock (ctx.wall_ms; a
+	 * TIMER_SCHEDULED calendar primitive, 03 §6.2): when the wall clock
+	 * steps, the runtime fires its armed timer at once so that it
+	 * re-evaluates (runtime_set_wall_ms, 01 §3.4). */
+	bool wall_clock;
 	/* true for a composite type (03 §5): its ports carry inner references
 	 * and its definition (inner blocks, edges, initials) is reached through
 	 * composite. Reported as "subgraph" by component:component (02 §3.5). */

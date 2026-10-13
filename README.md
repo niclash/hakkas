@@ -15,6 +15,8 @@ src/platform/pal.h    the PAL interface (portable)
 src/platform/<port>/  PAL implementations; the only place OS/RTOS headers may appear
 tests/                unit tests and end-to-end protocol tests (CTest; e2e.h: the
                       engine in-process with real WebSocket clients)
+library/schedules/    the schedule standard library: composite type files (schedule/DaySchedule,
+                      WeekSchedule, MonthSchedule, YearSchedule; 03 §6.2), not built in
 examples/             the sister project's files, kept unmodified; its graph files load as
                       they are (05 §2.1), e.g. `hakkas describe topology examples/example.json`
                       prints one in hakkas' canonical form
@@ -105,6 +107,20 @@ so point `--webdir` at a frontend build (any directory with an `index.html` will
 check). `SIGINT` (Ctrl-C) or `SIGTERM` stops the engine cleanly (exit code 0); a failed startup
 exits 1 with the cause logged. Running graphs are not saved at shutdown: a graph's file changes
 only when a client persists it.
+
+## The schedule standard library
+
+The calendar blocks (`timing/MinuteRange`, `DayOfWeek`, `DayOfMonth`, `MonthOfYear`, `DayOfYear`,
+`WeekOfYear`) and `logic/And`/`Or`/`Xor`/`Not` are built in; the standard schedule types made of
+them are not. To install them, copy the type files into the data directory's `types/`:
+
+```sh
+mkdir -p data/types && cp library/schedules/*.json data/types/
+```
+
+They load at the next startup as ordinary user types. The calendar blocks evaluate in local time
+from `time_zone` in `hakkas.json`, a POSIX TZ string (default `"UTC0"`; Sweden is
+`"CET-1CEST,M3.5.0,M10.5.0/3"`, 05 §1.1).
 
 ## Using the core from another project
 
