@@ -555,7 +555,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   (`DayOfMonth`, decisions); 01 §0, §0.1, §2.3 (`wall_ms`, `tz`, `wall_clock`), §3.2.1 step 2,
   §3.4 (decisions), §6 (`system/tz.h`); 04 §1 (interim); 05 §1.1 (`time_zone` syntax); 00
   open questions 5 and 11.
-  **Waits for the user**: `timing/HolidaysOfSweden` (03 §6.2) is not implemented — which days
+  **Deferred by the user** (2026-10-13): `timing/HolidaysOfSweden` (03 §6.2) is not implemented — which days
   count as holidays (public holidays only, or also eves such as midsummer's eve and Christmas
   eve, "klämdagar", …) is for the user to list.
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
