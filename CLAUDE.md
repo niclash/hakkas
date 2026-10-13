@@ -19,6 +19,7 @@ Read `specifications/` before designing or changing anything, in this order: `00
 - **Only changes propagate**, filtered by the change threshold (`01` §3.3).
 - **One generic block runtime** driven by `BlockTypeDef` data records, not one implementation per block type (`01` §2.3).
 - No credentials compiled into any build, and secrets are never logged (`02` §2).
+- **The wire protocol stays as close to the upstream FBP protocol as possible** (`00-README.md`, "Protocol compatibility policy"): ask the user before any change to it, one change at a time; acceptable ones are typically additions. The frontend being in this repository does not change that.
 
 ## Building
 

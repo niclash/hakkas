@@ -89,7 +89,7 @@ Implementation decisions (plan task 11, `src/platform/posix/cli.h`):
 
 ### 1.3 Zephyr build tree (MCU targets)
 
-**Storage** (Colibri, `04-drivers.md` §1): two external 16 MB NOR flash chips (Winbond W25Q128), each formatted with LittleFS — one on the MCU board, mounted at **`/mcu`**, and one on the carrier board, mounted at **`/carrier`**. *Proposed* default locations (`00-README.md` open question 14):
+**Storage** (Colibri, `04-drivers.md` §1): two external 16 MB NOR flash chips (Winbond W25Q128), each formatted with LittleFS — one on the MCU board, mounted at **`/mcu`**, and one on the carrier board, mounted at **`/carrier`**. Default locations (decided, `00-README.md` open question 14):
 - `webdir` = `/mcu/web` — the frontend (`06-frontend.md` §5) belongs with the firmware whose protocol it speaks; the MCU board carries both, so a firmware update replaces them together.
 - configuration directory = `/carrier/config` (`hakkas.json`, `users.json`) and `datadir` = `/carrier` (`graphs/`, `types/`, §2.3) — they describe the installation (its network address, its users, its processes), which stays with the carrier board, so a replaced MCU board picks it up unchanged.
 
