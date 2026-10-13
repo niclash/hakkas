@@ -51,7 +51,7 @@ static int fake_start(void *ctx, HakkasEnvSink *sink)
 	f->starts++;
 	f->sink = sink;
 	if (f->start_rc == 0) {
-		HakkasValue v = linkable_from_f64(21.5); /* current values first */
+		HakkasValue v = linkable_from_f64(21.5); /* a value at hand, in start */
 		CHECK(hakkas_env_sink_current(sink, 1, 0, &v));
 	}
 	return f->start_rc;

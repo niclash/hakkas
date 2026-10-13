@@ -564,6 +564,18 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   end). Specs: 04 §0 (C types, rules), §0.1 (message set, startup, reconnect, overflow
   policy), §1 (wall clock), §4 (file form, applying, ending a binding); 01 §0, §2.2, §3.2,
   §3.2.1, §3.4, §6; 02 §3.3, §6; 03 §4; 05 §1.1, §1.2, §1.4; 00-README questions 2, 3, 11.
+  Revised 2026-10-13 (user decision): hakkas no longer waits for sensor values at startup and
+  has no timeout for them — only the description is awaited. Processes start from their
+  inputs' defaults (the start push drives the actuators from them) and real values propagate
+  as they arrive; start-up protection of the plant is the environment's job (on Colibri the
+  Zephyr driver, which also reports a value for every channel, dead sensors included).
+  `env_link.c` dropped the per-channel wait and its "waiting for the current values" log;
+  values read together with the description are still handed over at `start`.
+  `hakkas_env_sink_current` stays as an **optional** SPI call for values an environment
+  already has at `start` (taken at once, no handoff overflow; useful for the Zephyr
+  firmware), nothing requires it. Test: `test_env_link` `test_no_values` (start from
+  defaults, later values propagate). Specs: 04 §0 rule 2, C types, §0.1 messages, startup,
+  implementation; 05 §1.1, §1.2, §1.4 step 5; README.
 - [x] **23. `process/PID`** — implement the built-in PID of 03 §6.1 (revised 2026-10-13: parallel
   `Kp`/`Ki`/`Kd`, windup protection, auto/manual, max D gain, output min/max). The user may
   refine it later with their own PID code.

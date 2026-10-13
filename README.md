@@ -120,8 +120,9 @@ project — that hakkas talks to over a Unix socket. Point hakkas at it in `hakk
 
 (a relative path is relative to the configuration directory). The program is the server; `run`
 connects, logs `waiting for environment at <path>` and retries every second until the program
-has described its ports and sent their current values, and only then loads the processes
-(Ctrl-C stops the wait). If the program goes away, inputs keep their last values and hakkas
+has described its ports, and only then loads the processes (Ctrl-C stops the wait). It does not
+wait for sensor values: processes start from their inputs' defaults, and values propagate as the
+program sends them. If the program goes away, inputs keep their last values and hakkas
 reconnects by itself; the program must then describe itself identically. The protocol —
 newline-delimited JSON (`describe`, `value`, `clock` from the program; `hello`, `write` from
 hakkas) — is in `specifications/04-drivers.md` §0.1. For a quick look without a simulator, any

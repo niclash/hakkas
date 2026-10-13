@@ -26,16 +26,20 @@
  *    block until the environment can describe itself (the POSIX link waits
  *    for its program, 04 §0.1). The description must stay valid and unchanged
  *    until stop has returned.
- *  - start begins delivery. Current values first (decided, plan task 22):
- *    within start, on the engine thread, the environment delivers the
- *    current value of every sensor channel with hakkas_env_sink_current,
- *    which the engine takes at once — so they are there before any binding
- *    is applied or process started (startup steps 5 and 7, 05 §1.4), and no
- *    burst can overflow the handoff. A channel without one holds its bound
- *    inputs' defaults until its first value. After start, the environment
- *    delivers changes only. 0 is success; anything else refuses startup.
- *    The sink is valid until stop returns.
- *  - Changes may be delivered from any thread (not an interrupt handler)
+ *  - start begins delivery. Nothing waits for sensor values (decided
+ *    2026-10-13): processes start right after startup, from whatever their
+ *    inputs hold — a sensor-bound input without a value yet holds its
+ *    port's default — and each value propagates when it comes. Optionally,
+ *    within start, on the engine thread, the environment may hand over
+ *    values it already has with hakkas_env_sink_current, which the engine
+ *    takes at once (no handoff, so no burst can overflow it); they are then
+ *    there before any binding is applied or process started (startup steps
+ *    5 and 7, 05 §1.4). Every other value goes through
+ *    hakkas_env_sink_push. Protecting the plant at startup (e.g. a delay
+ *    before actuators are driven) is the environment's job (04 §0 rule 2).
+ *    0 is success; anything else refuses startup. The sink is valid until
+ *    stop returns.
+ *  - Values may be delivered from any thread (not an interrupt handler)
  *    with hakkas_env_sink_push; the engine takes them into its work queue
  *    through the PAL's handoff (pal_handoff_push, 01 §0.2: bounded, dropping
  *    the oldest entry when full). The environment never touches block
@@ -124,9 +128,10 @@ typedef struct HakkasEnvSink HakkasEnvSink;
  * not have, another value type, or once the sink is no longer valid. */
 bool hakkas_env_sink_push(HakkasEnvSink *sink, int port, int index, const HakkasValue *value);
 
-/* Deliver the current value of a sensor channel (as hakkas_env_sink_push)
- * from within start, on the engine thread: taken at once, not queued. False
- * outside start, and as hakkas_env_sink_push. */
+/* Optionally deliver a value the environment already has for a sensor
+ * channel (as hakkas_env_sink_push) from within start, on the engine
+ * thread: taken at once, not queued. Nothing requires or waits for it.
+ * False outside start, and as hakkas_env_sink_push. */
 bool hakkas_env_sink_current(HakkasEnvSink *sink, int port, int index,
 			     const HakkasValue *value);
 

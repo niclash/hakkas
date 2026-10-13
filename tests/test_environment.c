@@ -4,8 +4,8 @@
  * parsing, and drivers/environment.h on the Graphs registry with a fake
  * environment and controlled draining — opening (describe, validate,
  * start, the refusals), sensor values reaching every bound input through
- * the work queue (current values first, the engine-wide change threshold,
- * a stopped and a started process, a value for a channel nobody binds yet),
+ * the work queue (values handed over in start, the engine-wide change
+ * threshold, a stopped and a started process, a value for a channel nobody binds yet),
  * no fan-in in either direction, actuator writes (the start push, every
  * propagation, nothing while stopped, one driver per channel, a binding on a
  * running process), every rule of applying a bindings file (refusals, skips,
@@ -93,8 +93,8 @@ typedef struct {
 	int start_rc;
 	HakkasEnvSink *sink;
 	int starts, stops;
-	/* Delivered in start (current values first): ain[1] = 1.5, din[2] =
-	 * true. */
+	/* Delivered in start (values at hand, hakkas_env_sink_current, an
+	 * option): ain[1] = 1.5, din[2] = true. */
 	bool current;
 	char writes[1024]; /* "<port>[<index>]=<value>;" each */
 	int64_t wall;
@@ -648,7 +648,7 @@ static void test_open(void)
 	v = linkable_from_i64(3);
 	CHECK(hakkas_env_sink_push(fake.sink, 2, 0, &v));
 	CHECK(work_queue_len(&rt.queue) == 1);
-	/* Current values only within start. */
+	/* hakkas_env_sink_current only within start. */
 	CHECK(!hakkas_env_sink_current(fake.sink, 2, 0, &v));
 	CHECK(work_queue_len(&rt.queue) == 1);
 	teardown();
@@ -666,8 +666,7 @@ static void test_sensor_values(void)
 	CHECK(environment_sensor_value(&env, 1, 2) != NULL &&
 	      environment_sensor_value(&env, 1, 2)->type == LINKABLE_BOOL);
 
-	/* A binding delivers the current value at once (current values
-	 * first), after its event. */
+	/* A binding delivers the current value at once, after its event. */
 	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
 	CHECK_STREQ(events, "P:+bind a.in1<ain[1];");
 	CHECK(num("P", "a", "in1") == 1.5);

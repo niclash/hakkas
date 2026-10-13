@@ -2,9 +2,10 @@
  * The POSIX external environment link (platform/posix/env_link.h, 04 §0.1;
  * plan task 22) against a fake environment program inside the test: a
  * thread serving a Unix socket with the link's message set. Through the
- * whole engine in-process (e2e.h): the startup wait (the program comes up
- * after hakkas started waiting), the hello and the description, current
- * values first, sensor values reaching a bound input, actuator writes, the
+ * whole engine in-process (e2e.h): the startup wait for the description
+ * (the program comes up after hakkas started waiting), the hello, values
+ * sent with the description, no wait for sensor values (processes start
+ * from their defaults), sensor values reaching a bound input, actuator writes, the
  * clock; a disconnect (inputs keep their last values, a write made
  * meanwhile), the reconnect with the identical description (actuators
  * re-sent with their latest values, the environment's values resuming);
@@ -468,6 +469,41 @@ static void test_link(void)
 	server_down();
 }
 
+/* No waiting for sensor values (04 §0 rule 2, decided 2026-10-13): an
+ * environment that describes itself and sends no value yet. Startup ends at
+ * the description; the process starts from its inputs' defaults, the start
+ * push writing the actuators from them; a value arriving afterwards
+ * propagates normally. */
+static void test_no_values(void)
+{
+	server_up(DESCRIBE, "");
+	e2e_logs_clear();
+	CHECK(start_engine());
+	CHECK(strstr(e2e_logs(), "environment sim at ") != NULL);
+	CHECK(strstr(e2e_logs(), "current values") == NULL);
+	CHECK(posix_env_link_state(link_) == POSIX_ENV_LINK_CONNECTED);
+
+	/* a.in1 (ain[1]) holds its default 0: a.out = 0 + 0.5; door holds
+	 * false: relay[2] = not false. */
+	build();
+	CHECK(hakkas_process_start(e2e_hakkas, "p", NULL) == HAKKAS_OK);
+	HakkasProcessStatus st;
+	CHECK(hakkas_process_status(e2e_hakkas, "p", &st, NULL) == HAKKAS_OK);
+	CHECK(st.started);
+	CHECK(e2e_run_until(got, "{\"write\":{\"port\":\"aout\",\"value\":0.5}}\n"));
+	CHECK(wait_received("{\"write\":{\"port\":\"relay\",\"index\":2,\"value\":true}}\n"));
+
+	/* The first sensor values, after the start: they propagate. */
+	server_clear();
+	server_send("{\"value\":{\"port\":\"ain\",\"index\":1,\"value\":3}}\n"
+		    "{\"value\":{\"port\":\"door\",\"value\":true}}\n");
+	CHECK(e2e_run_until(got, "{\"write\":{\"port\":\"aout\",\"value\":3.5}}\n"));
+	CHECK(wait_received("{\"write\":{\"port\":\"relay\",\"index\":2,\"value\":false}}\n"));
+
+	stop_engine();
+	server_down();
+}
+
 /* Startup ends without the environment: an invalid description refuses it;
  * a stop request during the wait ends it. */
 static void test_startup_failures(void)
@@ -506,6 +542,7 @@ int main(void)
 	/* A short path: a Unix socket address holds about 100 bytes. */
 	snprintf(srv.path, sizeof(srv.path), "/tmp/hakkas-env-%d.sock", (int)getpid());
 	RUN(test_link);
+	RUN(test_no_values);
 	RUN(test_startup_failures);
 	log_remove_sink(waiting_sink, NULL);
 	e2e_teardown();

@@ -9,8 +9,9 @@
  *    and value type against the description (read-only while started) and
  *    hands an IO event to the engine through the push function (the PAL's
  *    handoff, pal_handoff_push, given by the engine so this module links no
- *    PAL symbol); hakkas_env_sink_current (within start, engine thread)
- *    takes a channel's current value at once, as a drained IO event;
+ *    PAL symbol); hakkas_env_sink_current (optional, within start, engine
+ *    thread) takes a value the environment already has at once, as a
+ *    drained IO event (nothing waits for values, 04 §0 rule 2);
  *  - sensor values (the IO events, from the work queue's drain): converted
  *    to the port's type (number: f64, bool: bool), filtered per channel by
  *    the engine-wide change threshold (04 §0 rule 4, 01 §3.3: the first

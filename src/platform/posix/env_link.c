@@ -62,12 +62,13 @@ struct PosixEnvLink {
 	size_t out_len;
 	unsigned invalid; /* invalid messages on this connection */
 
-	/* Sensor channels during startup: per out_port its first slot, the
-	 * current values received (04 §0 rule 2), how many are missing. */
+	/* Sensor channels during startup: per out_port its first slot and the
+	 * values that came with the description, handed over at start as
+	 * current values if there are any (04 §0 rule 2; nothing waits for
+	 * them). */
 	uint32_t *sens_base;
 	Linkable *init_value; /* scalars */
 	bool *init_known;
-	uint32_t sens_count, init_missing;
 
 	/* Actuator channels: per in_port its first slot. */
 	uint32_t *act_base;
@@ -289,7 +290,8 @@ enum lines_result {
 	LINES_CLOSE, /* end the connection */
 };
 
-/* The sensor channels' table for startup's current values. */
+/* The sensor channels' table for the values that come with the
+ * description. */
 static bool alloc_sensors(PosixEnvLink *l)
 {
 	const HakkasEnvDescription *d = l->desc;
@@ -301,8 +303,6 @@ static bool alloc_sensors(PosixEnvLink *l)
 		l->sens_base[i] = n;
 		n += env_port_channels(&d->out_ports[i]);
 	}
-	l->sens_count = n;
-	l->init_missing = n;
 	l->init_value = calloc(n + 1, sizeof(*l->init_value));
 	l->init_known = calloc(n + 1, sizeof(*l->init_known));
 	return l->init_value != NULL && l->init_known != NULL;
@@ -389,12 +389,10 @@ static void on_value(PosixEnvLink *l, const cJSON *body)
 			invalid(l, "value: not delivered");
 		return;
 	}
-	/* Startup: the channel's current value, delivered by start. */
+	/* Startup: a value read together with the description, handed over
+	 * by start. */
 	uint32_t slot = l->sens_base[p] + (i > 0 ? (uint32_t)i - 1 : 0);
-	if (!l->init_known[slot]) {
-		l->init_known[slot] = true;
-		l->init_missing--;
-	}
+	l->init_known[slot] = true;
 	l->init_value[slot] = v;
 }
 
@@ -666,8 +664,6 @@ static void reset_startup(PosixEnvLink *l)
 	l->sens_base = NULL;
 	l->init_value = NULL;
 	l->init_known = NULL;
-	l->sens_count = 0;
-	l->init_missing = 0;
 	set_state(l, POSIX_ENV_LINK_WAITING);
 }
 
@@ -680,33 +676,15 @@ static const HakkasEnvDescription *interrupted(PosixEnvLink *l)
 	return NULL;
 }
 
-/* The first sensor channel without a current value, "<id>[<index>]" or
- * "<id>". */
-static void first_missing(const PosixEnvLink *l, char *buf, size_t size)
-{
-	buf[0] = '\0';
-	for (size_t p = 0; p < l->desc->out_port_count; p++) {
-		const HakkasEnvPort *port = &l->desc->out_ports[p];
-		for (uint32_t k = 0; k < env_port_channels(port); k++) {
-			if (l->init_known[l->sens_base[p] + k])
-				continue;
-			if (port->addressable)
-				snprintf(buf, size, "%s[%u]", port->id, (unsigned)k + 1);
-			else
-				snprintf(buf, size, "%s", port->id);
-			return;
-		}
-	}
-}
-
-/* Startup (04 §0.1): the description, then the current value of every
- * sensor channel. */
+/* Startup (04 §0.1): wait for the description only, never for sensor
+ * values (decided 2026-10-13). Values read together with it are kept for
+ * start; the rest come through the link thread. */
 static const HakkasEnvDescription *link_describe(void *ctx)
 {
 	PosixEnvLink *l = ctx;
-	if (l->desc != NULL && l->init_missing == 0)
+	if (l->desc != NULL)
 		return l->desc;
-	bool waiting = false, waiting_values = false;
+	bool waiting = false;
 	for (;;) {
 		if (l->fd < 0) {
 			int fd = link_connect(l);
@@ -720,7 +698,7 @@ static const HakkasEnvDescription *link_describe(void *ctx)
 			}
 			connected(l, fd);
 		}
-		if (l->desc != NULL && l->init_missing == 0)
+		if (l->desc != NULL)
 			break;
 		struct pollfd p = {l->fd, (short)(POLLIN | (l->out_len > 0 ? POLLOUT : 0)), 0};
 		int n = poll(&p, 1, (int)l->retry_ms);
@@ -729,15 +707,6 @@ static const HakkasEnvDescription *link_describe(void *ctx)
 				reset_startup(l);
 			if (pal_stop_requested())
 				return interrupted(l);
-			if (n == 0 && l->desc != NULL && !waiting_values) {
-				char first[HAKKAS_ENV_ID_MAX + 16];
-				first_missing(l, first, sizeof(first));
-				log_warn("environment at %s: waiting for the current values of %u "
-					 "sensor channel%s (%s%s)",
-					 l->path, l->init_missing, l->init_missing == 1 ? "" : "s",
-					 first, l->init_missing > 1 ? ", ..." : "");
-				waiting_values = true;
-			}
 			continue;
 		}
 		if ((p.revents & POLLOUT) && !flush_out(l)) {
@@ -753,8 +722,8 @@ static const HakkasEnvDescription *link_describe(void *ctx)
 			set_state(l, POSIX_ENV_LINK_STOPPED);
 			return NULL; /* logged: refuses startup */
 		}
-		if (l->desc != NULL && l->init_missing == 0)
-			continue; /* complete: done at the top */
+		if (l->desc != NULL)
+			continue; /* described: done at the top */
 		if (lr == LINES_CLOSE || r <= 0) {
 			log_warn("environment at %s closed the connection during startup", l->path);
 			reset_startup(l);
@@ -770,15 +739,15 @@ static const HakkasEnvDescription *link_describe(void *ctx)
 	}
 	atomic_store(&l->connections, 1);
 	set_state(l, POSIX_ENV_LINK_CONNECTED);
-	log_info("environment %s at %s: described, %u sensor value%s", l->desc->name, l->path,
-		 l->sens_count, l->sens_count == 1 ? "" : "s");
+	log_info("environment %s at %s: described", l->desc->name, l->path);
 	return l->desc;
 }
 
 static int link_start(void *ctx, HakkasEnvSink *sink)
 {
 	PosixEnvLink *l = ctx;
-	/* Current values first, on the engine thread (hakkas_env.h). */
+	/* The values that came with the description, if any: current values,
+	 * on the engine thread (hakkas_env.h). Nothing waits for the others. */
 	for (size_t p = 0; p < l->desc->out_port_count; p++) {
 		const HakkasEnvPort *port = &l->desc->out_ports[p];
 		for (uint32_t k = 0; k < env_port_channels(port); k++) {

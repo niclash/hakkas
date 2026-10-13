@@ -20,8 +20,8 @@
  *  environment -> hakkas:
  *   {"describe": {<the description, 04 §1>}}       first, on every connection
  *   {"value": {"port": "<id>", "index": <n>, "value": <number|bool>}}
- *                                                  a sensor value; current
- *                                                  values first, then changes
+ *                                                  a sensor value: the
+ *                                                  current ones, then changes
  *   {"clock": {"wall_ms": <integer>}}              optional: the wall clock
  *                                                  (UTC ms), e.g. simulated
  *  A line whose object has another member is ignored (forward
@@ -39,9 +39,11 @@
  *    (POSIX_ENV_LINK_RETRY_MS in the host; a parameter for tests); a stop
  *    request (pal_request_stop, SIGINT/SIGTERM) ends the wait:
  *    posix_env_link_interrupted is then true and startup fails. A
- *    description that does not parse or validate refuses startup. Values
- *    that come before the description are ignored; those after it are kept
- *    for start.
+ *    description that does not parse or validate refuses startup. Startup
+ *    waits for the description only, never for sensor values (decided
+ *    2026-10-13, 04 §0 rule 2): values that come before the description
+ *    are ignored; those read together with it are handed over by start
+ *    (hakkas_env_sink_current), every later one by the link thread.
  *  - start: the link thread takes over the connection; sensor values reach
  *    the engine only through the sink (hakkas_env_sink_push, the PAL's
  *    handoff).

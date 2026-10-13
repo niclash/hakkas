@@ -180,7 +180,7 @@ bool environment_open(Environment *env, Runtime *rt, const HakkasEnvironment *sp
 	env->desc = d;
 	env->sink.env = env;
 	runtime_set_environment(rt, on_sensor, on_write, env);
-	env->opening = true; /* hakkas_env_sink_current: the current values */
+	env->opening = true; /* hakkas_env_sink_current: optional, values at hand */
 	int rc = spi->start(spi->ctx, &env->sink);
 	env->opening = false;
 	if (rc != 0) {
