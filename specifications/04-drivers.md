@@ -23,6 +23,19 @@ There is no EEPROM and no module discovery by hakkas. The hardware platform thes
 
 Instead, the **environment** — whatever hosts hakkas and owns the physical inputs and outputs (the device firmware on Zephyr, a simulator on POSIX) — provides a **service provider interface** that hakkas queries for the external inputs and outputs that are available. The environment describes them in the same terms as block types (`01-architecture-overview.md` §2.3, `02-wire-protocol.md` §3.5): named, typed, described ports, with an icon and a description. The one principal difference from a block type is that an environment **cannot be instantiated**: it exists once, whether or not a graph uses it, and the user cannot create or delete it. Presenting it nicely in the user interface needs dedicated handling there.
 
+**Description model** (decided, environment SPI design, step 1): the environment describes itself with the shape of a component descriptor (`02-wire-protocol.md` §3.5) — `name`, `description`, `icon`, `inPorts`, `outPorts` — seen **from the graph's side, as one block that cannot be instantiated**:
+- its **output ports** are the plant's inputs to hakkas (sensors, digital inputs, meters): values that flow *into* graphs;
+- its **input ports** are hakkas' outputs to the plant (relays, analog outputs): values graphs *send out*.
+Each port has `id`, `type` (`number` or `bool`), `description`, and optionally `unit` and `min`/`max` (descriptive, for the user interface only — values are plain numbers, `01-architecture-overview.md` §2.1). A port that stands for a group of identical channels is **addressable** (`"addressable": true`) with a `count`: its channels are indexed `1…count`, as in the sister project's bindings (`{"port": "analog-in", "index": 1}`). Example:
+```json
+{"name": "emulator", "description": "Desktop simulator", "icon": "chip",
+ "outPorts": [{"id": "analog-in",  "type": "number", "addressable": true, "count": 8, "unit": "V", "description": "0-10 V inputs"},
+              {"id": "digital-in", "type": "bool",   "addressable": true, "count": 16}],
+ "inPorts":  [{"id": "analog-out", "type": "number", "addressable": true, "count": 4, "unit": "V"},
+              {"id": "relay",      "type": "bool",   "addressable": true, "count": 8}]}
+```
+User-facing naming from the plant's point of view (e.g. calling a sensor an "input") is a presentation matter for the user interface, e.g. via metadata; it does not change this model.
+
 The environment interface also provides the **wall clock** (`00-README.md`, open question 11): calendar blocks (`03-block-types.md` §6.2) and wire timestamps read real time from it; on POSIX the simulated environment uses the host's clock.
 
 **Interim** (decided, plan task 24): until this interface exists (plan task 22), the wall clock is the PAL's `pal_wall_ms()` (UTC ms since the Unix epoch; POSIX `CLOCK_REALTIME`, `01-architecture-overview.md` §0.1), read only by the engine loop, the startup and the local C API into the runtime (`01-architecture-overview.md` §3.4). Plan task 22 folds it into the environment interface: the runtime keeps taking the wall clock as an injected value, so only its source changes, and the step handling of `01-architecture-overview.md` §3.4 stays.
