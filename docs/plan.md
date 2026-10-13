@@ -564,47 +564,9 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   end). Specs: 04 §0 (C types, rules), §0.1 (message set, startup, reconnect, overflow
   policy), §1 (wall clock), §4 (file form, applying, ending a binding); 01 §0, §2.2, §3.2,
   §3.2.1, §3.4, §6; 02 §3.3, §6; 03 §4; 05 §1.1, §1.2, §1.4; 00-README questions 2, 3, 11.
-- [ ] **23. `process/PID`** — behavior decided (03 §6.1); **waits for the user's PID code**: the
-  implementation is to be based on the user's existing implementations, and the user adds the
-  parameters `Pconst`, `Itime`, `Dtime`, `MaxD`. Don't start it without that code.
-- [x] **24. Calendar blocks + standard schedule composites** (03 §6.2): the primitives
-  (`timing/MinuteRange`, `DayOfWeek`, `MonthOfYear`, …) with selector-string inputs, the
-  `logic/*` bool blocks, and the schedule composites as a separate standard library of type
-  files (not built in). Needs the wall clock from the environment interface (04 §1); local
-  time from the `time_zone` POSIX TZ string in `hakkas.json` (05 §1.1, a config key to add).
-  Done: `src/system/tz.{h,c}` (POSIX.1-2024 TZ strings incl. `<+03>` names, `Jn`/`n`/`Mm.w.d`
-  rules and −167..167 h rule times; UTC → local broken-down time with ISO weeks;
-  `tz_next_reach`, the UTC instant local time reaches a local wall time, at the jump for a
-  skipped one; proleptic Gregorian calendar arithmetic); `Config.time_zone` (default `"UTC0"`,
-  checked by `tz_parse`, an invalid one refuses startup naming the key; 05 §1.1 records the
-  syntax and the refusals: `:`-forms, a missing offset, `dst` without rules).
-  Interim wall clock (user-approved): `pal_wall_ms()` (POSIX `CLOCK_REALTIME`); the runtime
-  keeps it as an offset from engine time (`runtime_set_wall_ms`, `runtime_wall_ms`), set by the
-  loop each iteration (and by startup and the C API's `enter`), handed to compute as
-  `ctx.wall_ms` with `ctx.tz`; a move of the offset by ≥ 1 s (`RUNTIME_WALL_STEP_MS`) since
-  the last check makes every armed timer of a `wall_clock` type due at once (01 §3.4).
-  `src/blocktypes/calendar.{h,c}`: `timing/MinuteRange`, `DayOfWeek`, `DayOfMonth`,
-  `MonthOfYear`, `DayOfYear`, `WeekOfYear` (stateless, `TIMER_SCHEDULED`, `wall_clock`),
-  selector/range parsing (wrap for reversed ranges, whitespace allowed, invalid → `out`
-  false and no timer, equal range ends = empty, `"24:00"` end), next boundary in local time via
-  `tz_next_reach`, also woken at every DST transition; `src/blocktypes/logic.c`: `logic/And`,
-  `Or`, `Xor`, `Not`. Registration order math/, logic/, process/, timing/ (Interval, then the
-  calendar primitives). Standard library `library/schedules/` (`schedule/DaySchedule`,
-  `WeekSchedule`, `MonthSchedule`, `YearSchedule`), installed by copying into
-  `<datadir>/types/` (README). Tests: `test_tz` (parsing, glibc `localtime_r` comparison of 13
-  zones 2024–2030 incl. every transition ±2 s, 2026 transitions for CET and Sydney, `Jn`/`n`,
-  `tz_next_reach` in both DST gaps), `test_calendar` (selectors and ranges; every primitive on
-  a driven clock: month ends, leap years, ISO week 53 in 2026 and 2032, wrap past midnight,
-  CET spring/autumn 2026, input changes, stop/restart, wall-clock steps and drift; the library
-  registered through `type_files_load_all` and run across the autumn transition),
-  `test_block_types` (descriptors, `logic/*`), `test_config` (`time_zone`), `test_pal_posix`
-  (`pal_wall_ms`). Spec text changed: 03 §3 (table rows, registration order), §6 intro, §6.2
-  (`DayOfMonth`, decisions); 01 §0, §0.1, §2.3 (`wall_ms`, `tz`, `wall_clock`), §3.2.1 step 2,
-  §3.4 (decisions), §6 (`system/tz.h`); 04 §1 (interim); 05 §1.1 (`time_zone` syntax); 00
-  open questions 5 and 11.
-  **Deferred by the user** (2026-10-13): `timing/HolidaysOfSweden` (03 §6.2) is not implemented — which days
-  count as holidays (public holidays only, or also eves such as midsummer's eve and Christmas
-  eve, "klämdagar", …) is for the user to list.
+- [ ] **23. `process/PID`** — implement the built-in PID of 03 §6.1 (revised 2026-10-13: parallel
+  `Kp`/`Ki`/`Kd`, windup protection, auto/manual, max D gain, output min/max). The user may
+  refine it later with their own PID code.
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
   smaller `WS_OUT_CAP` (e.g. 16 KiB) for the WebSocket connections' outgoing buffers (02 §0,
   "Outgoing buffer": 64 KiB × `max_connections` is too much SRAM).
