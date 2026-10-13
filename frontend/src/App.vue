@@ -3,12 +3,12 @@
     <div>
       <img alt="Bali Automation logotype" src="@/assets/logo.svg" height="64px"/>
       <div class="button-container">
-        <button class="btn btn-secondary" @click="logout()">Logout</button>
+        <button class="btn btn-secondary" data-testid="logout" @click="logout()">Logout</button>
       </div>
       <div class="spacer"/>
     </div>
     <div class="errors" v-if="vueModel.errors.value.length > 0">
-      <div class="alert alert-danger alert-dismissible py-1" v-for="(error, i) in vueModel.errors.value" :key="i">
+      <div class="alert alert-danger alert-dismissible py-1" data-testid="error" v-for="(error, i) in vueModel.errors.value" :key="i">
         {{ error }}
         <button type="button" class="btn-close py-2" @click="vueModel.errors.value.splice(i, 1)"></button>
       </div>

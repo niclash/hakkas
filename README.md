@@ -132,6 +132,17 @@ VITE_HAKKAS_WS=ws://localhost:8081/ npm run dev       # in frontend/
 # conf/hakkas.json: {"allowed_origins": ["http://localhost:5173"]}
 ```
 
+Its tests (06 §6), in `frontend/`: `npm test` runs the unit tests (Node only);
+`npm run test:e2e` builds the frontend and runs the end-to-end tests in a browser, each against
+its own engine started from `build/debug/hakkas` (build it first; `HAKKAS_BIN` names another).
+The browser is Playwright's Chromium (`npx playwright install chromium` once) or the
+Chromium-based browser named by `HAKKAS_BROWSER`:
+
+```sh
+HAKKAS_BROWSER=/usr/bin/google-chrome npm run test:e2e
+npx playwright show-report test-results/report      # after a failure: screenshots, traces
+```
+
 ## The environment: inputs and outputs
 
 Hakkas reads sensors and drives actuators through its **environment** (`specifications/04`): on

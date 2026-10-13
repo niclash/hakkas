@@ -28,3 +28,7 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+
+# Test output (npm test, npm run test:e2e)
+/test-results/
+/playwright-report/

@@ -5,6 +5,7 @@ import {Connection as WsConnection, Connection, Packet} from "@/components/proto
 import {onMounted, ref, watch} from "vue";
 import ReteEditor from "@/components/floweditor/ReteController.vue";
 import {vueModel} from "@/components/model";
+import {editor as reteEditor} from "@/components/floweditor/viewmodel/default";
 import {RuntimeEvent} from "@/components/protocols/runtime";
 
 const name = "FlowEditor";
@@ -24,8 +25,7 @@ const openProcess = (processId: string) => {
 }
 
 const addComponent = (componentType: string) => {
-  console.log("addComponent(" + componentType + ");");
-  const newNodeName = vueModel.nextName();
+  const newNodeName = vueModel.nextName(componentType, (name) => reteEditor.getNodes().some(n => n.label === name));
   vueModel.connection.value?.proto.graph.request_addnode(newNodeName, componentType, 100, 100);
 }
 

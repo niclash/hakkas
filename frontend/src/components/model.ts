@@ -84,8 +84,7 @@ export const vueModel: {
     selectedComponent: string,
     connection: ShallowRef<WsConnection | undefined>,
     errors: Ref<string[]>,
-    counters: Record<string, number>,
-    nextName: () => string,
+    nextName: (component: string, exists: (name: string) => boolean) => string,
 } = {
     graphs: ref(new Map<string, Graph>()),
     currentGraph: {id: "", name: "", icon: "", description: "", library: "", main: false},
@@ -96,15 +95,14 @@ export const vueModel: {
     connection: shallowRef(undefined),
     errors: ref([]),
     selectedComponent: "",
-    counters: {},
-    nextName: () => {
-        let count = vueModel.counters[vueModel.selectedComponent];
-        if (count === undefined)
-            count = 0;
-        else
-            count++;
-        vueModel.counters[vueModel.selectedComponent] = count;
-        return vueModel.selectedComponent + count;
+    // A new block's id: its type's name and the first number not taken in the process
+    // (math/Add2 -> Add2_1, Add2_2, ...).
+    nextName: (component: string, exists: (name: string) => boolean) => {
+        const base = component.substring(component.lastIndexOf('/') + 1);
+        for (let n = 1; ; n++) {
+            if (!exists(base + "_" + n))
+                return base + "_" + n;
+        }
     }
 };
 

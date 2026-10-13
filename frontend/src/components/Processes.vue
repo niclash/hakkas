@@ -17,7 +17,7 @@
       <h3>Processes</h3>
       <ul class="list-group">
         <li v-for="[id, graph] in vueModel.graphs.value" :key="id" @click="$emit('onSelection', id)"
-            class="list-group-item" :class="{ active: id === current }" :title="graph.description">
+            class="list-group-item" data-testid="process" :class="{ active: id === current }" :title="graph.description">
           <span class="state" :class="{ running: graph.running }"></span>{{ graph.name }}
         </li>
       </ul>

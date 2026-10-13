@@ -61,16 +61,22 @@ const enqueue = (handler: (payload: any) => Promise<void> | void) => (payload: a
 };
 
 // Zooms to fit once the graph:connect snapshot has arrived; the snapshot has no end marker,
-// so this waits for a pause in the events that follow a graph:clear.
+// so this waits for a pause in the events that follow a graph:clear. The editor's element
+// carries data-settled="true" once the fit is done (06 §4), e.g. for the tests.
 let fitTimer: ReturnType<typeof setTimeout> | undefined;
 let fitPending = false;
+const settled = ref(false);
 const scheduleFit = () => {
   if (!fitPending)
     return;
+  settled.value = false;
   clearTimeout(fitTimer);
   fitTimer = setTimeout(() => {
     fitPending = false;
-    eventQueue = eventQueue.then(() => AreaExtensions.zoomAt(editor.area, editor.getNodes()));
+    eventQueue = eventQueue.then(async () => {
+      await AreaExtensions.zoomAt(editor.area, editor.getNodes());
+      settled.value = !fitPending;
+    });
   }, 150);
 }
 
@@ -352,8 +358,8 @@ onMounted(() => {
       let graphProtocol = vueModel.connection.value?.proto.graph;
       switch (ctx.type) {
         case 'nodecreate':
-          let nodeName = vueModel.nextName();
           let componentType = vueModel.selectedComponent;
+          let nodeName = vueModel.nextName(componentType, (name) => findNodeByName(name) !== undefined);
           graphProtocol?.request_addnode(nodeName, componentType, 300, 300);
           return undefined;
         case 'noderemove':
@@ -425,7 +431,7 @@ onMounted(() => {
 
 <template>
   <div class="col">
-    <main class="rete" ref="rete"></main>
+    <main class="rete" ref="rete" data-testid="editor" :data-settled="settled"></main>
   </div>
 </template>
 

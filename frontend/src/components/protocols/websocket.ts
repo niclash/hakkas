@@ -9,13 +9,13 @@ export interface Packet {
 
 // The FBP WebSocket listens on the web server's port + 1 (specifications/02-wire-protocol.md §0).
 // VITE_HAKKAS_WS overrides it for `npm run dev`, whose page is served by Vite instead.
-function websocketUrl(): string {
-    const override = import.meta.env.VITE_HAKKAS_WS as string | undefined;
+export function websocketUrl(page: { protocol: string, hostname: string, port: string } = location,
+                             override: string | undefined = import.meta.env.VITE_HAKKAS_WS): string {
     if (override)
         return override;
-    const scheme = location.protocol === "https:" ? "wss://" : "ws://";
-    const port = location.port !== "" ? Number(location.port) : (location.protocol === "https:" ? 443 : 80);
-    const host = location.hostname.includes(":") ? "[" + location.hostname + "]" : location.hostname;
+    const scheme = page.protocol === "https:" ? "wss://" : "ws://";
+    const port = page.port !== "" ? Number(page.port) : (page.protocol === "https:" ? 443 : 80);
+    const host = page.hostname.includes(":") && !page.hostname.startsWith("[") ? "[" + page.hostname + "]" : page.hostname;
     return scheme + host + ":" + (port + 1) + "/";
 }
 

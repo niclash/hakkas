@@ -2,7 +2,7 @@
 
 The frontend is the browser editor in which users see and change the running processes. It lives in the repository, in `frontend/`, and is built and versioned together with the engine. It speaks the wire protocol of `02-wire-protocol.md`, is served by the engine's web server (`05-app-lifecycle-persistence.md` §3) and holds no state of its own beyond what the engine's events tell it.
 
-**Status**: this is the second generation of the UI. The first was built on GoJS (commercial); this one is a restart on the open-source **Rete** (v2) editor framework and is far from complete. Features are added step by step, because several design decisions depend on how incomplete versions are actually used. §6 lists what is missing.
+**Status**: this is the second generation of the UI. The first was built on GoJS (commercial); this one is a restart on the open-source **Rete** (v2) editor framework and is far from complete. Features are added step by step, because several design decisions depend on how incomplete versions are actually used. §7 lists what is missing.
 
 **Technology**: Vue 3 with TypeScript, built by Vite; Rete v2 with its area, connection, Vue rendering, context menu, minimap, reroute and auto-arrange plugins; Bootstrap for layout; `@noble/hashes` for the login's cryptography (§2). Dependencies are pinned in `frontend/package-lock.json`.
 
@@ -44,7 +44,8 @@ The frontend obeys `02-wire-protocol.md` §1.1 strictly: **a user action only se
 - A block's **position** is its metadata's `x`/`y`, from `graph:addnode` and `graph:changenode`. Other metadata is not used yet.
 - A **connection** is a Rete connection between the two ports.
 - An **initial** is shown in its input's label, `in1 = 12`; removing it restores the plain port name. The value is shown as the event carries it (a string, `02-wire-protocol.md` §3.4).
-- When the snapshot has arrived, the view zooms to fit the process. The snapshot has no end marker, so this happens after a pause of 150 ms in the events following a `graph:clear`.
+- A block added from the palette is named after its type with the first number not taken in the process: `math/Add2` → `Add2_1`, `Add2_2`, … The name goes in the `graph:addnode` command; the block appears with its event.
+- When the snapshot has arrived, the view zooms to fit the process. The snapshot has no end marker, so this happens after a pause of 150 ms in the events following a `graph:clear`. The editor's element carries `data-settled="true"` once that fit is done (`false` from the `graph:clear` until then): before it, blocks move under the pointer, so the tests (§6) wait for it before they touch the view.
 
 ## 5. On the device
 
@@ -52,7 +53,16 @@ On Colibri (`04-drivers.md` §1) the frontend is stored on external flash: the M
 
 **Size**: the current bundle is about 4.3 MB, 2.5 MB compressed with gzip — mostly a JavaScript file of 2.2 MB (0.65 MB compressed) and Material Icons fonts in every style, 1.8 MB, which are already compressed. That fits the flash comfortably, but it is written over SPI and every update rewrites it, so the bundle should shrink before the device ships: the 3D editor template pulls in three.js and is not used; only one icon font style is needed, or none; and the build can store each asset as `<file>.gz` only, which the web server serves to every browser (`05-app-lifecycle-persistence.md` §3).
 
-## 6. Not implemented yet
+## 6. Testing
+
+Two suites, both in `frontend/tests/` (decided 2026-10-13):
+
+- **Unit tests** (`tests/unit/`, Vitest, `npm test`, in Node without a browser or an engine): the protocol and model code. Messages enter through a real `Connection`'s dispatch (`onMessage`) with the socket left closed, and what it sends is recorded (`tests/unit/harness.ts`). They cover the SCRAM computation and the login handshake (against a server side written with `node:crypto`, `tests/support/scram-server.ts`, independent of the frontend's `@noble/hashes` code), the WebSocket URL (§2), the client model fed by events (§3), and new blocks' names (§4).
+- **End-to-end tests** (`tests/e2e/`, Playwright, `npm run test:e2e`, which builds `frontend/dist` first): the built frontend in a browser against the real engine. **Each test starts its own engine** (`tests/e2e/fixtures.ts`): the `hakkas` executable (`HAKKAS_BIN`, default `build/debug/hakkas`, so the C build comes first) on free loopback ports, with a temporary configuration directory (a `hakkas.json` a test may extend, e.g. a short `auth.idle_timeout_s`), a users file with an editor and a viewer whose records the fixture computes with few PBKDF2 iterations, and the test's processes in `<datadir>/graphs/` (the sister project's `examples/example.json` by default). A test may also use a **second client** (`tests/e2e/protocol-client.ts`), a logged-in WebSocket client in Node, to act as another user or to observe what the frontend sent. Every test fails if the page reports an error or a graph event fails to apply, if the engine logs an error, or if it does not stop cleanly (exit code 0 after `SIGINT`); the engine's log is attached to the test's report. The suites cover login (success, refusals, retry, logout, session expiry, a lost connection, nothing secret in the console), rendering (§4, against the engine's own snapshot), and the command → event rule in both directions: another client's edits appear; the palette, dragging and drawing a connection reach the engine and come back as its events; a refused command changes nothing and shows the engine's error.
+- **Browser**: Playwright's Chromium (`npx playwright install chromium`, once per machine), or any Chromium-based browser named by `HAKKAS_BROWSER` (e.g. an installed Chrome or Brave). Reports and failure artifacts (screenshots, traces) go to `frontend/test-results/`, which is not committed.
+- The suites are not part of CTest: the C build needs no Node.js toolchain (§1).
+
+## 7. Not implemented yet
 
 What the frontend does today is §2–§4: log in, list the block types and processes, open a process and draw it, and follow every change the engine broadcasts. The editing commands are sent from the editor's hooks — `addnode` (from the block palette), `removenode`, `addedge`, `removeedge`, and `changenode` while a block is dragged — and `runtime:new_graph` from the process list, but they have only been tried in passing. Missing, roughly in the order they are likely to be needed:
 

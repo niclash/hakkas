@@ -21,7 +21,7 @@
             data-bs-parent="#componentsAccordion"
         >
           <div class="accordion-body container"> <!-- Apply container class here -->
-            <button v-for="component in components" :key="component.fullId" @click="emit('onSelection', component.fullId)">
+            <button v-for="component in components" :key="component.fullId" data-testid="block-type" :data-type="component.fullId" @click="emit('onSelection', component.fullId)">
                 <!--<img :src="component.icon" alt="icon" />-->
               {{ component.name }}
             </button>

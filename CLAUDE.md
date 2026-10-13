@@ -26,7 +26,7 @@ Read `specifications/` before designing or changing anything, in this order: `00
 CMake is the canonical build system. The repository is a plain CMake project with no Zephyr dependency: the portable core library (`hakkas_core`), the POSIX runtime (`hakkas`), and the unit tests. Zephyr integration comes later as a separate layer over the same core sources. See `README.md`.
 
 - `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` (also `clang`, `asan`, `release`)
-- The frontend (`frontend/`, `06`) is built separately: `npm install && npm run build` in `frontend/` gives `frontend/dist`, which a development build's `webdir` defaults to.
+- The frontend (`frontend/`, `06`) is built separately: `npm install && npm run build` in `frontend/` gives `frontend/dist`, which a development build's `webdir` defaults to. Its tests: `npm test` (unit) and `npm run test:e2e` (browser + a real engine per test, needs `build/debug/hakkas`; `06` §6).
 - New core sources go in `HAKKAS_CORE_SOURCES` (`cmake/HakkasSources.cmake`). Platform code lives only under `src/platform/<port>/`. The `portable_core` CTest enforces the header rule above.
 
 ## Git workflow

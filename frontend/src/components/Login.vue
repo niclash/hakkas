@@ -14,7 +14,7 @@
           <input type="password" id="password" v-model="password" placeholder="" autocomplete="current-password" :disabled="busy">
 
           <button type="submit" :disabled="busy || user === ''">{{ busy ? "Logging in..." : "Log in" }}</button>
-          <p class="message" v-if="message !== ''">{{ message }}</p>
+          <p class="message" data-testid="login-message" v-if="message !== ''">{{ message }}</p>
         </form>
       </div>
     </div>

@@ -26,7 +26,7 @@ The frontend never updates its own view in response to its own actions. Every us
 | `03-block-types.md` | The block type library: math/process/timing blocks, the generic execution engine, composite ("group") blocks, PID and schedule blocks |
 | `04-drivers.md` | The hardware IO layer: the environment interface hakkas queries for external inputs/outputs, binding graph ports to them; networking on Zephyr |
 | `05-app-lifecycle-persistence.md` | Startup/configuration, graph persistence format, the static/web server, logging |
-| `06-frontend.md` | The browser editor: building and serving it, login, following the engine's events, rendering a process, its size on the device, what is missing |
+| `06-frontend.md` | The browser editor: building and serving it, login, following the engine's events, rendering a process, its size on the device, its tests, what is missing |
 | `fbp-protocol.html` | The upstream FBP network protocol (Flowhub/NoFlo), of which `02-wire-protocol.md` is a modified dialect. Reference only — where the two disagree, `02` wins. |
 
 **Read order recommendation**: this file → `01` → `02` → `03` → `04` → `05` → `06`.
