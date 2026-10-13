@@ -4,18 +4,28 @@
 
 Hardware bring-up itself — devicetree authorship, board support, peripheral driver implementations — is the responsibility of a separate effort. This document specifies hakkas' side of the boundary: the interface through which the environment tells hakkas which external inputs and outputs exist (§1), and how a graph's ports get bound to them on a given deployment (§4).
 
-## 0. The IO-provider boundary
+## 0. The environment SPI (decided, environment SPI design, step 4)
 
-The engine sees IO only through the PAL's **IO-provider interface** (`01-architecture-overview.md` §0), which deals in **channels**: each channel has a stable id, a kind (digital/analog, input/output), and optionally a unit, which is descriptive information for the user interface (values are plain numbers, `01-architecture-overview.md` §2.1). The interface:
-- `io_enumerate()` — list the channels available this boot;
-- `io_write(channel, value)` — hand a new value to an output channel (non-blocking; the provider does the actual hardware access on its own context);
-- event delivery — the provider pushes `(channel, value)` **IO events** into the engine's queue via the PAL's cross-context enqueue function (`pal_handoff_push`, `01-architecture-overview.md` §0.2, §3.2) whenever an input channel's value changes. The handoff is bounded and drops its oldest entry when full, so a provider that produces faster than the engine drains loses the oldest readings, never blocks.
+The engine sees IO only through the **environment service provider interface**: one environment per runtime, handed to `hakkas_create` by the host (`02-wire-protocol.md` §6) — the simulator on POSIX, the firmware's implementation on Zephyr. It replaces the earlier provisional "IO-provider" channel interface (`io_enumerate`/`io_write`). Shape:
 
-Two providers implement it:
-- **Zephyr IO provider** (`platform/zephyr/`): the device firmware's environment (§1), reached through Zephyr's device driver subsystem; hakkas reads no module descriptors itself.
-- **Simulated IO provider** (`platform/posix/`): a desktop simulator. It defines a set of virtual channels (from a simulation config file in the configuration directory) whose input values can be set externally — e.g. from a small local control socket or a script — and whose output writes are logged/observable. This is what lets the full system, including the environment bindings, run and be tested on an x86_64 desktop with no hardware. The exact simulator interface is an implementation detail.
+```c
+typedef struct {
+	const HakkasEnvDescription *(*describe)(void *ctx);   /* the description of §1 */
+	int  (*start)(void *ctx, HakkasEnvSink *sink);        /* begin delivering sensor values */
+	void (*stop)(void *ctx);
+	void (*write)(void *ctx, int port, int index, const HakkasValue *v);  /* actuators */
+	int64_t (*wall_ms)(void *ctx);                        /* UTC wall clock, §1 */
+	void *ctx;
+} HakkasEnvironment;
+```
 
-Everything above the IO-provider interface (the bindings, delivering IO events to the bound block ports) is platform-independent and lives in `drivers/` (`01-architecture-overview.md` §6).
+Rules:
+1. **Threading**: `describe`, `write` and `wall_ms` are called on the engine thread; `write` must return at once — the environment does the actual hardware access in its own context. Sensor values may be delivered from any thread through the `sink`, which feeds the cross-context handoff (`pal_handoff_push`, `01-architecture-overview.md` §0.2, §3.2; bounded, drops the oldest entry when full); the environment never touches block state.
+2. **Current values first**: right after `start` the environment delivers the current value of every sensor channel, so bound inputs start from real readings rather than their defaults; afterwards it delivers changes only.
+3. **Actuator writes**: `write` is called whenever a bound block output propagates, including the unconditional push when its process starts. When nothing drives an actuator (process not loaded, stopped, binding absent), hakkas writes nothing and the output keeps its last value (`03-block-types.md` §4).
+4. **Change threshold**: a sensor value is filtered by the engine-wide default change threshold like any output (`01-architecture-overview.md` §3.3); a `process/Deadband` in the graph filters it differently where needed.
+
+The exact C types (`HakkasEnvDescription`, `HakkasEnvSink`, `HakkasValue`) are defined with the implementation (plan task 22). Everything above the SPI — applying bindings, delivering sensor values to the bound block inputs, calling `write` for bound outputs — is platform-independent.
 
 ## 1. The environment and its interface (decided, open question 2)
 
