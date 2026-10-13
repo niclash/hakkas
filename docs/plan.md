@@ -497,9 +497,21 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `"edges"` when it is alone (both: `"Invalid field: edges"`, 03 §5.1). The wire is unchanged.
   `test_graph_files` loads `examples/example.json` and `empty.json` from the repository
   (`HAKKAS_EXAMPLES_DIR`) and checks their canonical save.
-- [ ] **22. Environment SPI + simulated environment + bindings** (04 §1, §4; 03 §4) — no
-  `io/*` blocks (open question 6 decided: outputs keep their last value); the bindings-file
-  format waits for open question 3, which is to be settled while implementing this task. IO events reach the engine through `pal_handoff_push` (01 §0.2); dispatch
+- [ ] **22. Environment SPI + bindings + the POSIX socket adapter** (designed together with the
+  user: 04 §0, §0.1, §1, §4; 05 §1.1; 00-README open questions 2, 3, 6, 11). Implement: the
+  SPI types (`HakkasEnvironment`, the description with modules/metadata and addressable
+  ports with `count`, the sink, values) handed to `hakkas_create`; applying bindings files
+  (format and error rules of 04 §4) from `processes.json`'s `bindings` members — sensors as
+  the bound inputs' one source with the engine-wide threshold, actuators written on every
+  propagation of the bound output, one driver per actuator channel, missing channels skipped
+  with a warning; the current-values-first rule; dispatching `WORK_IO_EVENT`; the wall clock
+  from the SPI (replacing the interim `pal_wall_ms`); the POSIX adapter for the external
+  environment program (Unix socket client at `environment.socket`, newline-delimited JSON,
+  waiting for the description at startup, last values kept and automatic reconnect,
+  identical-description check, actuator re-send). Tests use a fake environment server inside
+  the test suite. Not in scope: the Colibri simulator (a separate project, later), the
+  frontend/wire representation of the environment (deferred), the Zephyr firmware side.
+  Earlier notes:
   `WORK_IO_EVENT` in `runtime_drain`.
   From task 19: startup step 5 is a marked no-op in `engine_start` (`src/engine/engine.c`),
   after `loop_init` (the handoff exists) and the authorizer; the provider would be a platform
