@@ -12,7 +12,7 @@ The frontend never updates its own view in response to its own actions. Every us
 
 ## Target platforms
 
-- **Primary**: MCUs with no general-purpose OS — RP2354 (RP2350 family) and possibly STM32H5/STM32H7/STM32N6 — running **Zephyr RTOS**, with the device hosting the full WebSocket/FBP server and serving the frontend's static assets directly.
+- **Primary**: MCUs with no general-purpose OS — RP2354 (RP2350 family) and possibly STM32H5/STM32H7/STM32N6 — running **Zephyr RTOS**, concretely the modular **Colibri** automation hardware (`04-drivers.md` §1: carrier boards with MCU, Comm and I/O slots), with the device hosting the full WebSocket/FBP server and serving the frontend's static assets directly.
 - **Secondary build tree**: a POSIX/Linux-native build, used for Raspberry Pi deployment and for x86_64 development. It shares the entire portable core with the Zephyr build; see `01-architecture-overview.md` §0 for the Platform Abstraction Layer (PAL) boundary that makes this possible with only a small, isolated set of platform-specific files.
 - Hardware bring-up on the Zephyr targets (devicetree, board support, peripheral drivers) is the responsibility of a separate effort; hakkas consumes Zephyr's device driver subsystem rather than talking to hardware registers directly. The device firmware provides the environment interface hakkas queries for the available inputs and outputs (`04-drivers.md` §1).
 
