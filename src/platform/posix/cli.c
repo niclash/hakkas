@@ -264,18 +264,9 @@ int cli_parse(int argc, char *const argv[], CliOptions *o)
 
 int cli_config(const CliOptions *o, Config *cfg)
 {
-	/* The defaults (05 §1.1): webdir <cwd>/frontend/src, datadir <basedir>. */
-	char cwd[PAL_PATH_MAX];
-	char webdir[PAL_PATH_MAX];
-	if (getcwd(cwd, sizeof(cwd)) == NULL) {
-		log_error("cannot get the working directory: %s", strerror(errno));
-		return CLI_EXIT_FAILURE;
-	}
-	int n = snprintf(webdir, sizeof(webdir), "%s%s" CLI_DEFAULT_WEBDIR, cwd,
-			 strcmp(cwd, "/") == 0 ? "" : "/");
-	if (n < 0 || (size_t)n >= sizeof(webdir))
-		webdir[0] = '\0'; /* config_init reports it */
-	ConfigDefaults d = {.confdir = o->confdir, .webdir = webdir, .datadir = o->basedir};
+	/* The defaults (05 §1.1): webdir the build's, datadir <basedir>. */
+	ConfigDefaults d = {
+		.confdir = o->confdir, .webdir = HAKKAS_DEFAULT_WEBDIR, .datadir = o->basedir};
 	if (config_init(cfg, &d) != CONFIG_OK)
 		return CLI_EXIT_USAGE;
 

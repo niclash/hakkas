@@ -131,7 +131,7 @@ typedef enum pal_err (*pal_random_fn)(void *buf, size_t len);
  * Paths are platform paths, used as given: the core builds them by joining a
  * configured directory (datadir, confdir, or the users file's directory,
  * 05 §1.1) with relative names using '/'. The PAL resolves no root of its
- * own, so "/lfs/graphs/x.json" on Zephyr and "<basedir>/graphs/x.json" on
+ * own, so "/carrier/graphs/x.json" on Zephyr and "<basedir>/graphs/x.json" on
  * POSIX both reach it unchanged. A path, including the ".tmp" suffix an atomic
  * write appends and the terminating NUL, must fit PAL_PATH_MAX bytes, or the
  * call fails with PAL_ERR_NAME_TOO_LONG.

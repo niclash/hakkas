@@ -4,7 +4,7 @@ A flow-based-programming (FBP) runtime in C: users wire blocks into live dataflo
 
 ## Specifications are the source of truth
 
-Read `specifications/` before designing or changing anything, in this order: `00-README.md` → `01` → `02` → `03` → `04` → `05`. `fbp-protocol.html` is the upstream FBP network protocol, for reference only; where it disagrees with `02-wire-protocol.md`, `02` wins.
+Read `specifications/` before designing or changing anything, in this order: `00-README.md` → `01` → `02` → `03` → `04` → `05` → `06`. `fbp-protocol.html` is the upstream FBP network protocol, for reference only; where it disagrees with `02-wire-protocol.md`, `02` wins.
 
 - When code and spec disagree, the spec wins. If the spec looks wrong, raise it rather than silently diverging.
 - Open questions are listed in `00-README.md`. Don't guess an answer in code: ask, record the decision in the spec, then implement it.
@@ -25,6 +25,7 @@ Read `specifications/` before designing or changing anything, in this order: `00
 CMake is the canonical build system. The repository is a plain CMake project with no Zephyr dependency: the portable core library (`hakkas_core`), the POSIX runtime (`hakkas`), and the unit tests. Zephyr integration comes later as a separate layer over the same core sources. See `README.md`.
 
 - `cmake --preset debug && cmake --build --preset debug && ctest --preset debug` (also `clang`, `asan`, `release`)
+- The frontend (`frontend/`, `06`) is built separately: `npm install && npm run build` in `frontend/` gives `frontend/dist`, which a development build's `webdir` defaults to.
 - New core sources go in `HAKKAS_CORE_SOURCES` (`cmake/HakkasSources.cmake`). Platform code lives only under `src/platform/<port>/`. The `portable_core` CTest enforces the header rule above.
 
 ## Git workflow

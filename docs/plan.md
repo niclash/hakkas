@@ -595,8 +595,9 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
 - [ ] **25. Zephyr port** (`src/platform/zephyr/` + Zephyr module) — after phase 3. Set a
   smaller `WS_OUT_CAP` (e.g. 16 KiB) for the WebSocket connections' outgoing buffers (02 §0,
   "Outgoing buffer": 64 KiB × `max_connections` is too much SRAM).
-  From task 19: the boot builds a `Config` from `/lfs/config/hakkas.json`; LittleFS is mounted
-  and `pal_init` done before the configuration is read, and networking (which needs the
+  From task 19: the boot builds a `Config` from `/carrier/config/hakkas.json`; the LittleFS
+  volumes `/mcu` and `/carrier` (two W25Q128s; the file locations are open question 14,
+  05 §1.3) are mounted and `pal_init` done before the configuration is read, and networking (which needs the
   `net.*` keys) comes up after it — e.g. in the `platform_start` hook (05 §1.4). From task
   21e: the Zephyr application is the host and uses the local C API (`src/hakkas.h`, 02 §6):
   `hakkas_create(&cfg, &params, &h)`, then its processes — by default like `run daemon`

@@ -175,8 +175,9 @@ typedef struct {
 } Config;
 
 /* The defaults that depend on the platform (05 §1.1). POSIX: confdir
- * (--confdir, default /etc/hakkas), webdir <cwd>/frontend/src, datadir
- * <basedir>; Zephyr: /lfs/config, /lfs/web, /lfs. */
+ * (--confdir, default /etc/hakkas), webdir chosen by the build (the source
+ * tree's frontend/dist, or a package's installed frontend), datadir <basedir>;
+ * Zephyr: 05 §1.3. */
 typedef struct {
 	const char *confdir;
 	const char *webdir;

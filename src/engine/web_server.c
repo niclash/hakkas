@@ -567,6 +567,13 @@ enum pal_err web_server_open(Loop *loop, const WebServerConfig *cfg, WebServer *
 		return err;
 	}
 	log_info("web: serving %s on port %u", cfg->webdir, (unsigned)loop_listener_port(srv->listener));
+	char index[PAL_PATH_MAX];
+	int len = snprintf(index, sizeof(index), "%s/index.html", cfg->webdir);
+	if (len > 0 && (size_t)len + 3 < sizeof(index) && !pal_storage_exists(index) &&
+	    !pal_storage_exists(strcat(index, ".gz")))
+		log_warn("web: no frontend in %s (no index.html): build it with `npm run build` in "
+			 "frontend/, or set webdir (06 §1)",
+			 cfg->webdir);
 	*out = srv;
 	return PAL_OK;
 }

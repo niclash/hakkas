@@ -29,7 +29,7 @@
  *
  * Every command except --help and --version first builds the configuration
  * (05 §1.4 step 1): the defaults (confdir from --confdir, default /etc/hakkas;
- * webdir <cwd>/frontend/src; datadir <basedir>, default "."), then
+ * webdir HAKKAS_DEFAULT_WEBDIR; datadir <basedir>, default "."), then
  * <confdir>/hakkas.json, then the options; the log threshold is the
  * resulting log.level (a --fine/--info/--warn already applies while the file
  * is read).
@@ -81,8 +81,12 @@
 
 #define CLI_DEFAULT_BASEDIR "."
 #define CLI_DEFAULT_CONFDIR "/etc/hakkas"
-/* webdir's default, relative to the working directory (05 §1.1). */
-#define CLI_DEFAULT_WEBDIR "frontend/src"
+/* webdir's default (05 §1.1): an absolute path chosen by the build,
+ * HAKKAS_DEFAULT_WEBDIR — the source tree's frontend/dist, or the installed
+ * frontend of a package (HAKKAS_PACKAGE, CMakeLists.txt). */
+#ifndef HAKKAS_DEFAULT_WEBDIR
+#error "HAKKAS_DEFAULT_WEBDIR is set by CMakeLists.txt"
+#endif
 
 enum cli_command {
 	CLI_HELP,

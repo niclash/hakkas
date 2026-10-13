@@ -102,8 +102,8 @@ Then open `http://localhost:8080/`; the FBP WebSocket is on port 8081 (`port + 1
 `run` writes a generated `auth.server_secret` into `conf/hakkas.json`, so the configuration
 directory must be writable. `run`'s options override the file: `--host <addr>` (a numeric
 address, default `0.0.0.0`), `--port <n>`, `--webdir <dir>`, `--users <file>`, `--id <id>`.
-`webdir` defaults to `<working directory>/frontend/src`, so point `--webdir` at the frontend's
-build, `frontend/dist` (below). `SIGINT` (Ctrl-C) or `SIGTERM` stops the engine cleanly (exit code 0); a failed startup
+`webdir` defaults to this source tree's `frontend/dist` (below), whatever the working
+directory. `SIGINT` (Ctrl-C) or `SIGTERM` stops the engine cleanly (exit code 0); a failed startup
 exits 1 with the cause logged. Running graphs are not saved at shutdown: a graph's file changes
 only when a client persists it.
 
@@ -114,8 +114,14 @@ the engine's web server serves:
 
 ```sh
 cd frontend && npm install && npm run build && cd ..
-./build/debug/hakkas --info --confdir conf --basedir data run --webdir frontend/dist daemon
+./build/debug/hakkas --info --confdir conf --basedir data run daemon
 ```
+
+If `frontend/dist` is missing, the engine warns at startup (`web: no frontend in …`) and the
+browser gets `404`. A package build serves the installed frontend instead: configure with
+`-DHAKKAS_PACKAGE=ON` (and the install prefix), and `cmake --install` puts the executable in
+`<prefix>/bin` and copies `frontend/dist` to `<prefix>/share/hakkas/web`, the default `webdir`
+of that build (06 §1).
 
 It reaches the WebSocket on the page's own port + 1 (02 §0) and changes its view only from the
 engine's events (02 §1.1). For live reloading, `npm run dev` serves it from Vite instead; then

@@ -92,6 +92,18 @@ if(HAKKAS_BUILD_POSIX_RUNTIME OR HAKKAS_BUILD_TESTS)
   target_link_libraries(hakkas_cli_posix PUBLIC hakkas_pal_posix hakkas_core
     PRIVATE hakkas_compile_options)
   target_compile_definitions(hakkas_cli_posix PRIVATE _POSIX_C_SOURCE=200809L)
+
+  # webdir's default (05 §1.1, 06 §1): the frontend's build in this source tree for
+  # development; its installed location for a package (HAKKAS_PACKAGE), which
+  # `cmake --install` copies frontend/dist to.
+  option(HAKKAS_PACKAGE "Build for installation: webdir defaults to the installed frontend" OFF)
+  include(GNUInstallDirs)
+  if(HAKKAS_PACKAGE)
+    set(HAKKAS_DEFAULT_WEBDIR "${CMAKE_INSTALL_FULL_DATADIR}/hakkas/web")
+  else()
+    set(HAKKAS_DEFAULT_WEBDIR "${PROJECT_SOURCE_DIR}/frontend/dist")
+  endif()
+  target_compile_definitions(hakkas_cli_posix PUBLIC HAKKAS_DEFAULT_WEBDIR="${HAKKAS_DEFAULT_WEBDIR}")
 endif()
 
 if(HAKKAS_BUILD_POSIX_RUNTIME)
@@ -100,6 +112,16 @@ if(HAKKAS_BUILD_POSIX_RUNTIME)
   # the PAL calls the core (logging, the work queue's entries). Naming hakkas_core right after the command line puts it
   # before the PAL on the link line, and CMake adds it again after the PAL.
   target_link_libraries(hakkas PRIVATE hakkas_cli_posix hakkas_core hakkas_compile_options)
+
+  if(HAKKAS_PACKAGE)
+    install(TARGETS hakkas RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    # The frontend is built separately (npm run build in frontend/, 06 §1).
+    install(CODE "
+      if(NOT EXISTS \"${PROJECT_SOURCE_DIR}/frontend/dist/index.html\")
+        message(FATAL_ERROR \"frontend/dist is missing: run npm install && npm run build in frontend/ first\")
+      endif()")
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/frontend/dist/ DESTINATION ${CMAKE_INSTALL_DATADIR}/hakkas/web)
+  endif()
 endif()
 
 if(HAKKAS_BUILD_TESTS)

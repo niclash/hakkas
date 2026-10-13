@@ -292,9 +292,7 @@ static void test_config_defaults(void)
 	Config cfg;
 	CHECK(parse("--confdir", conf, "list", "types", NULL) == CLI_EXIT_OK);
 	CHECK(cli_config(&opts, &cfg) == CLI_EXIT_OK);
-	char cwd[PAL_PATH_MAX];
-	CHECK(getcwd(cwd, sizeof(cwd)) != NULL);
-	CHECK_STREQ(cfg.webdir, join(cwd, "frontend/src"));
+	CHECK_STREQ(cfg.webdir, HAKKAS_DEFAULT_WEBDIR);
 	CHECK_STREQ(cfg.datadir, ".");
 	CHECK_STREQ(cfg.confdir, conf);
 	CHECK_STREQ(cfg.file, join(conf, "hakkas.json"));

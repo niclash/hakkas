@@ -112,7 +112,7 @@ One record per user:
 
 where `SaltedPassword = PBKDF2-HMAC-SHA256(password, salt, iterations, 32 bytes)` and `ClientKey = HMAC(SaltedPassword, "Client Key")`. Neither the password nor `SaltedPassword` is stored. Knowing `stored_key` does not let someone log in.
 
-- **Location**: the users file (`users.json`, JSON array of the records above). It lives in the configuration directory on POSIX (`<confdir>/users.json`) and at `/lfs/config/users.json` on Zephyr (`05-app-lifecycle-persistence.md` §1). It is written atomically like every other persisted file (`05-app-lifecycle-persistence.md` §2.3).
+- **Location**: the users file (`users.json`, JSON array of the records above). It lives in the configuration directory on POSIX (`<confdir>/users.json`) and at `/carrier/config/users.json` on Zephyr (`05-app-lifecycle-persistence.md` §1). It is written atomically like every other persisted file (`05-app-lifecycle-persistence.md` §2.3).
 - **Provisioning**: users are created and changed only locally, never over the network in this version:
   - POSIX: `hakkas user add <name> --role <role>`, `hakkas user passwd <name>`, `hakkas user del <name>`, `hakkas user list` (the password is read interactively from the terminal, never from argv).
   - Zephyr: the same commands in the Zephyr shell over the console/USB-CDC backend. Physical access to the console is the trust anchor.

@@ -6,7 +6,7 @@
 
 Both build trees read one JSON configuration file, `hakkas.json`:
 - POSIX: `<confdir>/hakkas.json` (`--confdir`, default `/etc/hakkas`);
-- Zephyr: `/lfs/config/hakkas.json` on the LittleFS partition.
+- Zephyr: `/carrier/config/hakkas.json` on the carrier board's flash (§1.3).
 
 Every key is optional; a missing key takes the default below, and a missing file means "all defaults". On the POSIX build, command-line options (§1.2) override the file.
 
@@ -16,8 +16,8 @@ Every key is optional; a missing key takes the default below, and a missing file
 | `label` | `"Hakkas"` | `label` in `runtime:runtime`. |
 | `host` | `"0.0.0.0"` | Address both listeners bind to. |
 | `port` | `8080` | Web server port (static assets). The FBP WebSocket listens on `port + 1` (`02-wire-protocol.md` §0). |
-| `webdir` | POSIX: `<cwd>/frontend/src`; Zephyr: `/lfs/web` | Location of the frontend's static assets. |
-| `datadir` | POSIX: `<basedir>`; Zephyr: `/lfs` | Parent directory of `graphs/` and `types/` (§2.3). |
+| `webdir` | POSIX: chosen by the build — the source tree's `frontend/dist` for development, `<prefix>/share/hakkas/web` for a package (`06-frontend.md` §1); Zephyr: `/mcu/web` | Location of the frontend's static assets. |
+| `datadir` | POSIX: `<basedir>`; Zephyr: `/carrier` | Parent directory of `graphs/` and `types/` (§2.3). |
 | `max_connections` | `4` | Maximum concurrent WebSocket connections. |
 | `max_message_bytes` | `16384` | Maximum WebSocket message size (all fragments of a message together; `02-wire-protocol.md` §0). |
 | `allowed_origins` | `[]` | Extra `Origin` values accepted on the WebSocket upgrade, besides the device's own (`02-wire-protocol.md` §0). |
@@ -26,7 +26,7 @@ Every key is optional; a missing key takes the default below, and a missing file
 | `environment.socket` | *(unset → no environment)* | POSIX: path of the Unix socket of the external environment program (a simulator) that hakkas connects to (`04-drivers.md` §0.1). Startup waits until the environment has described itself; it never waits for sensor values (`04-drivers.md` §0 rule 2). |
 | `log.level` | `"warn"` | `fine`, `info`, `warn`, or `error` (§4). |
 | `log.mirror` | `false` | Mirror log output to authenticated clients as `network:output`/`network:error` (§4). |
-| `auth.users_file` | POSIX: `<confdir>/users.json`; Zephyr: `/lfs/config/users.json` | Credential store (`02-wire-protocol.md` §2.2). |
+| `auth.users_file` | POSIX: `<confdir>/users.json`; Zephyr: `/carrier/config/users.json` | Credential store (`02-wire-protocol.md` §2.2). |
 | `auth.idle_timeout_s` | `1800` | Session idle timeout (`02-wire-protocol.md` §2.5). |
 | `auth.max_lifetime_s` | `43200` | Session absolute lifetime. |
 | `auth.server_secret` | *(generated on first boot and written back to the file)* | Random key used to fake challenges for unknown users (`02-wire-protocol.md` §2.3). |
@@ -42,7 +42,7 @@ Implementation decisions (plan task 11, `src/system/config.h`):
 - **Malformed file → the engine refuses to start** with an error: text that is not a JSON object (or has anything but whitespace after it), nesting deeper than cJSON's limit (`third_party/cjson/README.md`), a file larger than `HAKKAS_CONFIG_FILE_MAX` (16 KiB, a per-build override), or a duplicate key at the top level or within a section.
 - **Unknown keys** (also within a section) are logged as a warning and ignored, for forward compatibility.
 - **Invalid values → the engine refuses to start**: every key with the wrong type or an out-of-range value is logged as an error naming it (`<file>: <key>: expected …`; the value itself is never logged), all of them, then startup stops. Valid values: `engine_id` a string of 1–64 bytes; `label` 0–64 bytes; `host` 1–63 bytes (not otherwise checked here; the listeners take only a numeric IPv4 or IPv6 address, `01-architecture-overview.md` §0.2, so a host name fails when they open in startup step 8 and the engine refuses to start); `port` an integer 1–65534 (`port + 1` must be a port too); `max_connections` an integer 1–1024; `max_message_bytes` an integer 1024–16777216; `allowed_origins` an array of at most 8 strings (`HAKKAS_CONFIG_ORIGINS_MAX`, a per-build override) of 1–127 bytes; `change_threshold` a number ≥ 0, `1e999` (+Infinity) included (`01-architecture-overview.md` §3.3); `time_zone` a POSIX TZ string of 1–64 bytes (below); `log.level` one of the four names; `log.mirror`, `tls.enabled`, `net.dhcp` booleans; `auth.idle_timeout_s`, `auth.max_lifetime_s` integers 1–2147483647; `auth.server_secret` a string of 16–128 bytes; `net.hostname` 1–63 letters, digits and inner `-` (one DNS label); `net.address`/`netmask`/`gateway` a dotted-quad IPv4 address or `""` (none); a section a JSON object; paths below. An integer may be written in any JSON number form with an integral value (`8.0e3`).
-- **Paths** (`webdir`, `datadir`, `auth.users_file`, `environment.socket`, `tls.cert`, `tls.key`): a relative path in the file is relative to the configuration directory (the file's own directory); a path given as a command-line option (§1.2) is used as given, i.e. relative to the working directory. A path (after that) is at most 251 bytes (`PAL_PATH_MAX` minus room for an atomic write's `.tmp`, §2.3). `webdir`, `datadir`, `auth.users_file` must not be empty; `environment.socket`, `tls.cert`, `tls.key` `""` means none (the default). `environment.socket` (decided, plan task 22) must also fit a Unix socket address (107 bytes on Linux), checked when `run` starts: a longer one refuses startup. The platform supplies the defaults that depend on it (configuration directory, `webdir`, `datadir`); the core derives the configuration file `<confdir>/hakkas.json` and the default users file `<confdir>/users.json` from the configuration directory (`/lfs/config` on Zephyr).
+- **Paths** (`webdir`, `datadir`, `auth.users_file`, `environment.socket`, `tls.cert`, `tls.key`): a relative path in the file is relative to the configuration directory (the file's own directory); a path given as a command-line option (§1.2) is used as given, i.e. relative to the working directory. A path (after that) is at most 251 bytes (`PAL_PATH_MAX` minus room for an atomic write's `.tmp`, §2.3). `webdir`, `datadir`, `auth.users_file` must not be empty; `environment.socket`, `tls.cert`, `tls.key` `""` means none (the default). `environment.socket` (decided, plan task 22) must also fit a Unix socket address (107 bytes on Linux), checked when `run` starts: a longer one refuses startup. The platform supplies the defaults that depend on it (configuration directory, `webdir`, `datadir`); the core derives the configuration file `<confdir>/hakkas.json` and the default users file `<confdir>/users.json` from the configuration directory (`/carrier/config` on Zephyr, §1.3).
 - **`engine_id`** unset: a fresh random UUID v4 (lowercase, the generator of `runtime:new_graph`'s ids, `src/system/uuid.h`) at every boot, after the command-line overrides.
 - **`net.hostname`** `""` (the default) means the platform's default, `hakkas-<last 3 MAC bytes in hex>` on Zephyr.
 - **`auth.server_secret`**: generated as 32 bytes from the PAL's random source, encoded in base64 (RFC 4648 §4: standard alphabet, `=` padding, 44 characters). The HMAC key of `02-wire-protocol.md` §2.3 is the string's bytes as stored, not decoded, so a hand-written secret is any string of 16–128 bytes. Only the startup of `run` (§1.4 step 1, plan task 19) generates and writes it; the other commands never write the file. It is written back by inserting the member as text — as the first member of the `auth` object, which is created if absent (a `null` `auth` or `server_secret` is replaced) — so every other byte of the user's file (formatting, key order, numbers, unknown keys) stays as it was. A missing file is created holding only the secret (mode `0600` on POSIX, like every file `pal_storage_write` creates). If the file cannot be written (e.g. the configuration directory is missing or read-only), the engine refuses to start. The secret is never logged (`02-wire-protocol.md` §2.5 item 8).
@@ -68,7 +68,7 @@ A command-line tree configures and starts the runtime:
 
 Implementation decisions (plan task 11, `src/platform/posix/cli.h`):
 - **Grammar**: `hakkas [global options] <command>`. Global options come before the command and also include `--help`/`-h` (usage on stdout) and `--version`; `run`'s options come between `run` and `process`/`processes`/`daemon`. An option's value is the next argument (no `--opt=value`), must not be empty, and a repeated option takes its last value. `user add` takes the name and `--role <role>` in either order.
-- **Configuration**: every command except `--help`/`--version` first builds the configuration — defaults < `<confdir>/hakkas.json` < options — so an unreadable, malformed or invalid file fails every command, not only `run`. `datadir` defaults to `--basedir`, `webdir` to `<working directory>/frontend/src`. `--fine`/`--info`/`--warn` already apply while the file is read; the resulting `log.level` is the log threshold.
+- **Configuration**: every command except `--help`/`--version` first builds the configuration — defaults < `<confdir>/hakkas.json` < options — so an unreadable, malformed or invalid file fails every command, not only `run`. `datadir` defaults to `--basedir`, `webdir` to the build's default (§1.1, `06-frontend.md` §1: an absolute path, so it does not depend on the working directory). `--fine`/`--info`/`--warn` already apply while the file is read; the resulting `log.level` is the log threshold.
 - **Output**: results (type names one per line, a compact JSON document on one line) go to stdout; diagnostics go through the log (§4), whose POSIX sink is stderr.
 - **Exit codes**: `0` success (for `run`: the engine stopped cleanly after a stop request); `1` a runtime failure (configuration file, unknown type, a graph file or process list that does not load, an unknown or already existing user, a refused password, a malformed or unwritable users file, an engine that refuses to start); `2` a usage error (unknown command or option, a missing or extra argument, an invalid option value such as `--port 0`, an invalid user name or role for `user add`, a missing `--role`).
 - **User commands** (plan task 16): they edit `auth.users_file` (default `<confdir>/users.json`; a missing file is no users, and `add` creates it). `add` creates a user with the role (`admin`, `editor`, `operator`, `viewer`; required; a name that exists is refused); `passwd` sets an existing user's password, keeping the role; `del` removes a user; `list` prints `<name> <role>` per user, one per line, in file order, and nothing else. A malformed users file is never overwritten: the command fails (`02-wire-protocol.md` §2.2). The file is written atomically (§2.3). A running engine re-reads it whenever it makes a login challenge (decided, plan task 18, `02-wire-protocol.md` §2.2), so a change takes effect at the next login, without a restart; sessions already open are not affected.
@@ -89,11 +89,15 @@ Implementation decisions (plan task 11, `src/platform/posix/cli.h`):
 
 ### 1.3 Zephyr build tree (MCU targets)
 
+**Storage** (Colibri, `04-drivers.md` §1): two external 16 MB NOR flash chips (Winbond W25Q128), each formatted with LittleFS — one on the MCU board, mounted at **`/mcu`**, and one on the carrier board, mounted at **`/carrier`**. *Proposed* default locations (`00-README.md` open question 14):
+- `webdir` = `/mcu/web` — the frontend (`06-frontend.md` §5) belongs with the firmware whose protocol it speaks; the MCU board carries both, so a firmware update replaces them together.
+- configuration directory = `/carrier/config` (`hakkas.json`, `users.json`) and `datadir` = `/carrier` (`graphs/`, `types/`, §2.3) — they describe the installation (its network address, its users, its processes), which stays with the carrier board, so a replaced MCU board picks it up unchanged.
+
 There is no argv to parse at boot. Configuration comes from Kconfig (compile-time limits and features), devicetree (board topology), and the configuration file on LittleFS (§1.1). The application is the host: it creates the runtime and loads and starts its processes through the local C API (`02-wire-protocol.md` §6) — by default like `run daemon` (`hakkas_process_load_saved`, starting the processes whose `started` flag is set). An equivalent of the `list types`/`describe type`/`describe topology`/`user …` commands is exposed through Zephyr's shell subsystem over a console/USB-CDC backend, for interactive diagnostics and for provisioning users.
 
 ### 1.4 Startup sequence (both build trees)
 
-1. Read the configuration file and apply command-line overrides (POSIX) → initialize logging and file locations. On Zephyr, first mount LittleFS.
+1. Read the configuration file and apply command-line overrides (POSIX) → initialize logging and file locations. On Zephyr, first mount the LittleFS volumes `/mcu` and `/carrier` (§1.3).
 2. Initialize the PAL: clock, random source, storage; on Zephyr also bring up networking (`04-drivers.md` §6). Delete any leftover `*.tmp` files from an interrupted write (§2.3). Create the engine loop (`loop_init`, which opens the PAL's cross-context handoff, `01-architecture-overview.md` §0.2) before step 5 starts any IO worker; on POSIX, install the `SIGINT`/`SIGTERM` stop handlers.
 3. Load the credential store and initialize the authorization component (`02-wire-protocol.md` §2). A missing, empty, malformed or unreadable users file never refuses startup: the engine runs with no users and every login is refused (`users_load_startup`, `02-wire-protocol.md` §2.2). The authorization component's tick hook (session expiry, delayed challenges, `auth_tick`) is added to the loop (`loop_add_tick`). The authorization component is given the users file as its reader (`AuthConfig.load_users = users_loader`, its path as context) and re-reads it at every challenge (`02-wire-protocol.md` §2.2: missing, empty or malformed → no users, as at startup; unreadable → the previous users kept).
 4. Register every built-in block type (`03-block-types.md`).
@@ -172,7 +176,7 @@ Implementation decisions (plan task 10, `src/app/graph_files.h`):
   types/<encoded type name>.json     (composite / group block types, 03-block-types.md §5.1)
 ```
 
-`<datadir>` is a plain directory on POSIX (default `<basedir>`) and the LittleFS mount on Zephyr (default `/lfs`). `graphs/` and `types/` share the same parent directory. The configuration and users files live in the configuration directory (§1.1).
+`<datadir>` is a plain directory on POSIX (default `<basedir>`) and the carrier board's LittleFS volume on Zephyr (default `/carrier`, §1.3). `graphs/` and `types/` share the same parent directory. The configuration and users files live in the configuration directory (§1.1).
 
 **File naming**: users never see these files, so names only need to be safe and reversible:
 - Graph ids and type names are limited to 64 bytes (`02-wire-protocol.md` §3.4.1).
@@ -201,7 +205,9 @@ The web server listens on `port` and serves only the frontend's static assets (H
 - The web server requires no authentication: the assets contain no secrets, and authentication happens on the WebSocket (`02-wire-protocol.md` §2).
 - To save flash, assets may be stored pre-compressed: if `<file>.gz` exists and the request's `Accept-Encoding` includes `gzip`, serve it with `Content-Encoding: gzip`.
 
-On the Zephyr build, assets live in LittleFS (`/lfs/web`), so the frontend can be updated without reflashing the firmware. Serving the bundle from flash carries a real storage-size budget — confirm the compressed bundle's size against the target MCU's flash budget during implementation.
+On the Zephyr build, assets live in LittleFS on the MCU board's flash (`/mcu/web`, §1.3), so the frontend can be updated without reflashing the firmware. The bundle's size against that flash is discussed in `06-frontend.md` §5: it fits the 16 MB chip, but should shrink before the device ships.
+
+The web server warns at startup (decided 2026-10-13, `06-frontend.md` §1) when `webdir` holds neither `index.html` nor `index.html.gz`: `web: no frontend in <webdir> (no index.html): …`. It still starts and answers `404`, as before.
 
 Implementation decisions (plan task 13; `src/engine/web_server.h`, the request parser `src/protocol/http.h`, shared with the WebSocket upgrade of `02-wire-protocol.md` §0):
 - **Server**: a small portable HTTP/1.1 server on the engine loop (`04-drivers.md` §6 option 1, `01-architecture-overview.md` §3.2.1), the same code on both build trees. `web_server_open_config` opens it from `host`, `port` and `webdir` in startup step 8 (§1.4); `web_server_close` after the loop returns.
