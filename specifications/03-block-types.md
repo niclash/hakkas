@@ -222,18 +222,19 @@ A **cyclic** block (`TIMER_PERIODIC` + `compute_on_input` — `01-architecture-o
 - **On every sample tick** (`reason = TIMER`, every `sample_ms`), it performs the full PID step: advance the integral by `error × dt`, compute the derivative over `dt`, compute and propagate `output`. The integral only exists in relation to a fixed sample rate, so the output is always updated at that rate.
 - **On any input change** (`reason = INPUT`), it takes the new parameter or value into account immediately, recomputing `output` from the current proportional term and the existing integral, without advancing the integral or derivative state. A change to `sample_ms` re-arms the periodic timer.
 
-**Decided behavior** (`00-README.md`, open question 5 — PID part):
-1. **Standard (ISA) gain form**: `out = Kp·(e + (1/Ti)·∫e dt + Td·de/dt)`, with `Ti` and `Td` in seconds; `Ti = 0` disables the integral term, `Td = 0` the derivative term.
+**Decided behavior** (`00-README.md`, open question 5 — PID part; revised by the user 2026-10-13 to the parallel form, implemented in plan task 23):
+1. **Parallel gain form**: `out = Kp·e + Ki·∫e dt + D`, where the derivative term `D` acts on the measurement (item 3) with gain `Kd`. `Ki = 0` disables the integral term, `Kd = 0` the derivative term. Gains are in output units per input unit (per second for `Ki`, times seconds for `Kd`).
 2. **Acting direction**: a `reverse` input — `false` (direct): `e = setpoint − measured_value`; `true` (reverse, e.g. cooling): `e = measured_value − setpoint`.
-3. **Derivative on the measurement**, not on the error, so a setpoint step causes no output kick; the derivative is filtered by a first-order low-pass with time constant `Td/10`.
-4. **Anti-windup by conditional integration**: the integral does not advance while the output is at `output_min`/`output_max` and the error would drive it further beyond that limit.
-5. **Manual/auto**: an `auto` input (default `true`); in manual the output follows `manual_value`. Switching manual → auto is **bumpless**: the integral is preset so that the output continues from the manual value.
-6. **Timing**: the full step runs every `sample_ms` (default `1000`) using the actual elapsed time as `dt`; an input change recomputes only the proportional part immediately (above). On `start` the integral is reset, or preset from `manual_value` when starting in manual.
-7. **Outputs**: `output` (number), and `saturated` (bool, true while the output is clamped at a limit) for alarms.
+3. **Derivative on the measurement**, not on the error, so a setpoint step causes no output kick.
+4. **Max D gain** (`max_dgain`, default `10`): the derivative is filtered as `Kd·s / (1 + (Kd/max_dgain)·s)`, so its high-frequency gain is limited to `max_dgain` — a fast change in the measurement is never amplified by more than that, which keeps measurement noise from making the output jump. A `max_dgain <= 0` (or NaN) means no limit (an unfiltered derivative).
+5. **Output limits and anti-windup**: the output is clamped to `[output_min, output_max]`; the integral does not advance while the output is at a limit and the error would drive it further beyond it (conditional integration), so the regulator recovers at once when the error reverses.
+6. **Manual/auto**: an `auto` input (default `true`); in manual the output follows `manual_value` (still clamped). Switching manual → auto is **bumpless**: the integral is preset so that the output continues from the manual value.
+7. **Timing**: the full step runs every `sample_ms` (default `1000`) using the actual elapsed time as `dt`; an input change recomputes only the proportional part immediately (above). On `start` the integral is reset, or preset from `manual_value` when starting in manual.
+8. **Outputs**: `output` (number), and `saturated` (bool, true while the output is at a limit) for alarms.
 
-Ports (provisional names): inputs `setpoint`, `measured_value`, `kp`, `ti`, `td`, `output_min`, `output_max`, `reverse` (bool), `auto` (bool), `manual_value`, `sample_ms`; outputs `output`, `saturated` (bool).
+Ports: inputs `setpoint`, `measured_value`, `kp`, `ki`, `kd`, `max_dgain`, `output_min`, `output_max`, `reverse` (bool), `auto` (bool), `manual_value`, `sample_ms`; outputs `output`, `saturated` (bool).
 
-**To be completed by the user**: the parameter set will be aligned with the user's existing, field-proven PID implementations — the parameters `Pconst`, `Itime`, `Dtime` and `MaxD` will be added (and the port names above adjusted to match), and the implementation is to be based on the user's code rather than written from scratch (plan task 23).
+**Later**: the user may refine or replace this implementation with their own field-proven PID code (adding parameters such as `Pconst`, `Itime`, `Dtime`, `MaxD`); this built-in version is the starting point.
 
 ### 6.2 Calendar blocks and schedule types
 
