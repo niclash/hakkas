@@ -102,11 +102,29 @@ Then open `http://localhost:8080/`; the FBP WebSocket is on port 8081 (`port + 1
 `run` writes a generated `auth.server_secret` into `conf/hakkas.json`, so the configuration
 directory must be writable. `run`'s options override the file: `--host <addr>` (a numeric
 address, default `0.0.0.0`), `--port <n>`, `--webdir <dir>`, `--users <file>`, `--id <id>`.
-The frontend is a separate artifact: `webdir` defaults to `<working directory>/frontend/src`,
-so point `--webdir` at a frontend build (any directory with an `index.html` will do for a quick
-check). `SIGINT` (Ctrl-C) or `SIGTERM` stops the engine cleanly (exit code 0); a failed startup
+`webdir` defaults to `<working directory>/frontend/src`, so point `--webdir` at the frontend's
+build, `frontend/dist` (below). `SIGINT` (Ctrl-C) or `SIGTERM` stops the engine cleanly (exit code 0); a failed startup
 exits 1 with the cause logged. Running graphs are not saved at shutdown: a graph's file changes
 only when a client persists it.
+
+## The frontend
+
+`frontend/` is the browser editor (Vue 3, Rete), built with Vite into `frontend/dist`, which
+the engine's web server serves:
+
+```sh
+cd frontend && npm install && npm run build && cd ..
+./build/debug/hakkas --info --confdir conf --basedir data run --webdir frontend/dist daemon
+```
+
+It reaches the WebSocket on the page's own port + 1 (02 §0) and changes its view only from the
+engine's events (02 §1.1). For live reloading, `npm run dev` serves it from Vite instead; then
+tell it where the WebSocket is and let the engine accept Vite's origin:
+
+```sh
+VITE_HAKKAS_WS=ws://localhost:8081/ npm run dev       # in frontend/
+# conf/hakkas.json: {"allowed_origins": ["http://localhost:5173"]}
+```
 
 ## The environment: inputs and outputs
 
