@@ -58,6 +58,7 @@
 typedef struct Block Block;
 typedef struct Graph Graph;
 typedef struct GraphEvent GraphEvent; /* graphs/graph.h */
+typedef struct ProcessLink ProcessLink; /* graphs/graph.h */
 
 /* Receives every applied structural change (graphs/graph.h, GraphEvent). */
 typedef void (*graph_event_fn)(void *ctx, const GraphEvent *ev);
@@ -84,6 +85,11 @@ typedef struct Runtime {
 	uint32_t timer_blocks;	 /* blocks of a timer type: the room reserved in timers */
 	graph_event_fn on_event;
 	void *event_ctx;
+	/* The links between processes (graphs/graph.h), in creation order;
+	 * heap, link_cap entries. */
+	ProcessLink *links;
+	uint32_t link_count;
+	uint32_t link_cap;
 } Runtime;
 
 /* Make rt an empty runtime: empty queue, no blocks, no timers, the default
@@ -91,8 +97,9 @@ typedef struct Runtime {
  * hook refers to it). */
 void runtime_init(Runtime *rt);
 
-/* Release the queue's entries, the timer heap and the slot table. Every graph created on rt
- * must have been destroyed (graph_destroy) first. */
+/* Release the queue's entries, the timer heap, the slot table and the link
+ * array. Every graph created on rt must have been destroyed (graph_destroy)
+ * first, which removed their links. */
 void runtime_deinit(Runtime *rt);
 
 /* Set the engine-wide change threshold (05 §1.1 change_threshold). Refused

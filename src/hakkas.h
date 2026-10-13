@@ -41,7 +41,8 @@
  * Call it on the engine thread only: from the host before hakkas_run (e.g.
  * loading processes) or after it returns, from a tick hook (hakkas_add_tick)
  * while the loop runs, or from an event callback for the read-only
- * functions (hakkas_config, hakkas_process_count, _at, _status). A command
+ * functions (hakkas_config, hakkas_process_count, _at, _status,
+ * hakkas_link_count, _at). A command
  * that changes the model, called from inside an event callback, is refused
  * with HAKKAS_ERR_BUSY (01 §4: a subscriber must not change a graph while
  * events are delivered). Another context (a signal handler, an IO worker)
@@ -191,15 +192,19 @@ enum hakkas_event_type {
 	HAKKAS_EVENT_GROUP_CHANGED,	 /* graph:changegroup */
 	HAKKAS_EVENT_COMPONENT,		 /* component:component: a new or changed block type */
 	HAKKAS_EVENT_ERROR,		 /* network:error, e.g. a failed persist (02 §3.3) */
+	/* Links between processes (plan task 21f): no wire message yet. */
+	HAKKAS_EVENT_LINK_ADDED,
+	HAKKAS_EVENT_LINK_REMOVED,
 };
 
 /*
  * An event. Every pointer is valid only during the callback. Fields an
  * event type does not list are NULL, 0 or false.
  *  process:     the process id; ERROR: the id the error is about, or NULL;
- *               COMPONENT: NULL.
+ *               COMPONENT: NULL; LINK_*: the link's source process.
  *  name:        PROCESS_*: the process's name (RENAMED: the new one);
  *               *PORT_*: the public port name (RENAMED: the new one);
+ *               LINK_*: the source process's outport;
  *               GROUP_*, COMPONENT: the block type's name (RENAMED: the new
  *               one; REMOVED: the removed one).
  *  old_name:    *_RENAMED: the previous name (of the process, block, port
@@ -228,6 +233,7 @@ enum hakkas_event_type {
  *  block_type:  GROUP_ADDED, GROUP_RENAMED, GROUP_CHANGED, COMPONENT: the
  *               type as applied (graphs/block_type.h; a group's inner
  *               blocks are block_type->composite->blocks).
+ *  to_process, to_port: LINK_*: the link's target process and its inport.
  */
 typedef struct {
 	enum hakkas_event_type type;
@@ -249,6 +255,8 @@ typedef struct {
 	uint64_t uptime_ms;
 	const char *message;
 	const BlockTypeDef *block_type;
+	const char *to_process;
+	const char *to_port;
 } HakkasEvent;
 
 typedef void (*hakkas_event_fn)(void *ctx, const HakkasEvent *ev);
@@ -467,5 +475,52 @@ enum hakkas_status hakkas_group_rename(Hakkas *h, const char *process, const cha
 enum hakkas_status hakkas_group_change(Hakkas *h, const char *process, const char *name,
 				       const char *description, const char *icon,
 				       HakkasMessage *msg);
+
+/* ---- Links between processes (01 §2.2 Port; plan task 21f) ------------------- */
+
+/* A link from one process's outport to another's (or its own) inport: the
+ * outport's inner output feeds the inport's inner input like a connection —
+ * through the work queue, filtered by the source block's change threshold,
+ * as the input's one source (no fan-in). A new link delivers the source's
+ * current output value if the source process is started. While the source
+ * is stopped the input keeps its last value; when the link goes (removed,
+ * either process deleted, either port removed or renamed, also with its
+ * block) LINK_REMOVED is reported and the input reverts to its default,
+ * which propagates if its process is started. A deleted process's links
+ * are removed after its stop and before PROCESS_DELETED (02 §1.1). Links
+ * are not saved in graph files: they are the deployment's (the POSIX
+ * host's process list, 05 §1.2). There is no wire command or message for
+ * them yet: clients see nothing of a link but its values.
+ *
+ * Refusals (02 §6): "Invalid field: from" (from_process or from_outport
+ * NULL), "Invalid field: to" (to_process or to_inport NULL), "Invalid id"
+ * (any of the four empty or longer than HAKKAS_ID_MAX), "Unknown graph:
+ * <process>" (the source, then the target), "Unknown port:
+ * <process>.<port>" (no port of that process in either direction, source
+ * first), "Invalid link direction" (from_outport is only an inport, or
+ * to_inport only an outport), "Link exists", "Input already connected:
+ * <to_process>.<to_inport>" (the inport's input has a connection, an
+ * initial or another link); hakkas_link_remove: "No such link". Reports
+ * LINK_ADDED / LINK_REMOVED. */
+enum hakkas_status hakkas_link_add(Hakkas *h, const char *from_process, const char *from_outport,
+				   const char *to_process, const char *to_inport,
+				   HakkasMessage *msg);
+enum hakkas_status hakkas_link_remove(Hakkas *h, const char *from_process,
+				      const char *from_outport, const char *to_process,
+				      const char *to_inport, HakkasMessage *msg);
+
+/* A link, read without an event. The strings are valid until the next
+ * command. */
+typedef struct {
+	const char *from_process;
+	const char *from_outport;
+	const char *to_process;
+	const char *to_inport;
+} HakkasLink;
+
+/* The links in creation order: their number, and the i-th one (false if i
+ * is out of range). Read-only (allowed from an event callback). */
+size_t hakkas_link_count(const Hakkas *h);
+bool hakkas_link_at(const Hakkas *h, size_t i, HakkasLink *out);
 
 #endif

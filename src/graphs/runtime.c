@@ -27,6 +27,10 @@ void runtime_deinit(Runtime *rt)
 	work_queue_clear(&rt->queue);
 	deadline_heap_deinit(&rt->timers);
 	rt->timer_blocks = 0;
+	free(rt->links); /* empty: graph_destroy dropped every link */
+	rt->links = NULL;
+	rt->link_count = 0;
+	rt->link_cap = 0;
 	free(rt->slots);
 	rt->slots = NULL;
 	rt->slot_used = 0;

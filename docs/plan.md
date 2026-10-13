@@ -433,7 +433,7 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   bindings/links log lines), `test_engine` (the engine starts no process by itself; the e2e
   helpers load processes through the C API), `test_graph_files` (the flag reported, nothing
   started).
-- [ ] **21f. Links between processes** (open question 13, 01 §2.2, 05 §1.2): explicit links
+- [x] **21f. Links between processes** (open question 13, 01 §2.2, 05 §1.2): explicit links
   from one process's outport to another's inport, declared in `processes.json` and created by
   the host through the C API; values travel like edges; stopped source → last value kept,
   absent source or removed link → default. Runtime link commands for the UI (wire + C API)
@@ -447,6 +447,44 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   / `run daemon` mode have no source yet. The C API's events would need a link event type
   (`HakkasEvent`), and 05 §1.2's "Not implemented yet" bullet and 00-README open question 13's
   last sentence change.
+  Done: the model in `src/graphs/graph_links.c` (declared in `graphs/graph.h` "Links between
+  processes"): a `ProcessLink` (source graph + outport name, target graph + inport name, the
+  resolved inner block/port of each) kept in the `Runtime` (`rt->links`, creation order), an
+  entry of the outport's inner output's fan-out `Link`s and the inport's input's third kind of
+  source, `INPUT_SOURCE_LINK` (edge machinery reused: `block_links_output`,
+  `output_links_reserve`, `output_unlink`, `input_source_changed`, `input_clear_source`,
+  `input_revert` are now shared in `graph_internal.h`). `graph_link_add`/`_remove`,
+  `graph_links_remove_graph` (deletion), and internally `graph_links_remove_port` (port
+  removal/rename, so also block removal) and `graph_links_drop_graph` (silent, in
+  `graph_destroy`). `graph_add_initial` refuses a linked input; `graph_remove_block`'s
+  outbound pass leaves links to the ports. Registry: `graphs_add_link`/`graphs_remove_link`,
+  link events system-wide, `graphs_delete_graph` removes the links after the stop and before
+  `GRAPH_DELETED`; new statuses `GRAPH_ERR_INVALID_LINK_DIRECTION`, `_LINK_EXISTS`,
+  `_NO_SUCH_LINK`. Events `GRAPH_EVENT_LINK_ADDED`/`_REMOVED` (graph = the source, `.link`);
+  `proto_msg_event` returns NULL for them (no wire message). C API: `hakkas_link_add`,
+  `_remove`, `hakkas_link_count`/`_at` (`HakkasLink`), `HAKKAS_EVENT_LINK_ADDED`/`_REMOVED`
+  with `to_process`/`to_port`. Process list: `ProcessList.links` (`ProcessListLink`, each
+  reference split on its last `.`; a reference without a process or port is malformed).
+  POSIX host: links made after loading and before starting, a refused link refuses startup,
+  `link … made`/`removed` logged at info; the "ignored" log line is gone. Decisions: a linked
+  port removed or renamed (also with its block) removes the link (reported before the port's
+  event), a process may link to itself, block/process renames keep links, a link onto an input
+  with a retained connection is refused, link events have no wire message (01 §2.2 "Links
+  between processes", §4; 02 §6 "Links between processes", events, threading; 05 §1.2 links,
+  monitoring, validation, "Not implemented yet"; 05 §2.1 inports/outports; 00-README open
+  question 13). Tests: `test_links` (new: values and threshold, delivery on link, stopped
+  source, removal with queued values dropped, deleting either process, port removal/rename and
+  block removal with event order, renames, self-link, fan-in both ways incl. a retained
+  connection, refusals, links left at shutdown), `test_api` (`test_links`: messages, host
+  events, the wire client sees exactly the non-link events, values watched over the wire;
+  `test_links_from_files`: two graph files chained by a process list's link),
+  `test_process_list` (links split, malformed references), `test_cli` (`run processes` with a
+  link: made before the starts; an unknown port or process refuses startup).
+  **Still open** (open question 13): runtime link commands for the UI — wire commands and
+  messages (`graph:*`-like or `runtime:*`), whether links appear in the `graph:connect`
+  snapshot or `network:status`, their capability (02 §2.4) — and persisting a link made at
+  runtime (UI or C API) into the host's `processes.json` (or another deployment file); until
+  then a runtime link lives until shutdown and `run processes` recreates only the list's.
 - [x] **21g. Hakkas terms in files + sister-project compatibility** (00-README Terminology,
   05 §2.1, 03 §5.1): graph files write `{"block","port"}` (connections and graph ports) and
   composite type files `"connections"`; the loaders also accept `"node"`, `"process"` (the

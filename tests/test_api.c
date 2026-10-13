@@ -14,6 +14,7 @@
 
 #include <stdlib.h>
 
+#include "app/process_list.h"
 #include "cJSON.h"
 #include "graphs/graph_json.h"
 #include "graphs/linkable.h"
@@ -224,6 +225,10 @@ static char *render(const HakkasEvent *ev)
 		if (ev->process != NULL)
 			cJSON_AddStringToObject(p, "graph", ev->process);
 		break;
+	case HAKKAS_EVENT_LINK_ADDED:
+	case HAKKAS_EVENT_LINK_REMOVED:
+		cJSON_Delete(p); /* no wire message (02 §6): see on_host_event */
+		return NULL;
 	}
 	cJSON *m = cJSON_CreateObject();
 	cJSON_AddStringToObject(m, "protocol", protocol);
@@ -246,9 +251,21 @@ static void clear_events(void)
 	nevents = 0;
 }
 
+/* The links between processes the host saw (they have no wire form):
+ * "+<from>.<outport>><to>.<inport>;" or "-...;" each. */
+static char link_log[1024];
+
 static void on_host_event(void *ctx, const HakkasEvent *ev)
 {
 	(void)ctx;
+	if (ev->type == HAKKAS_EVENT_LINK_ADDED || ev->type == HAKKAS_EVENT_LINK_REMOVED) {
+		size_t len = strlen(link_log);
+		snprintf(link_log + len, sizeof(link_log) - len, "%c%s.%s>%s.%s;",
+			 ev->type == HAKKAS_EVENT_LINK_ADDED ? '+' : '-', ev->process, ev->name,
+			 ev->to_process, ev->to_port);
+		CHECK(ev->block == NULL && ev->value == NULL);
+		return;
+	}
 	CHECK(nevents < EVENTS_MAX);
 	if (nevents < EVENTS_MAX)
 		events[nevents++] = render(ev);
@@ -809,6 +826,183 @@ static void test_tick(void)
 	wire_same(&wire);
 }
 
+/* ---- Links between processes (plan task 21f) ------------------------------------ */
+
+/* The next message to the wire client is the network:data of the watch on
+ * q's t.in1 with data. */
+static void expect_t_in1(const char *data)
+{
+	char want[256];
+	snprintf(want, sizeof(want),
+		 "{'id':'*','graph':'q','src':{'node':'w','port':'out'},'tgt':{'node':'t',"
+		 "'port':'in1'},'data':'%s'}",
+		 data);
+	EXPECT(&wire, "network", "data", want);
+}
+
+static void test_links(void)
+{
+	/* p: s (s.in1 = 2), outport o = s.out, inport pi = s.in2;
+	 * q: t, inports i = t.in1, i2 = t.in2 (t.in2 = 1), outport qo. */
+	OK(hakkas_process_create(h, "p", "P", NULL, NULL, NULL, &m));
+	OK(hakkas_process_create(h, "q", "Q", NULL, NULL, NULL, &m));
+	OK(hakkas_block_add(h, "p", "s", "math/Add2", NULL, &m));
+	OK(hakkas_block_add(h, "q", "t", "math/Add2", NULL, &m));
+	OK(hakkas_port_add(h, "p", HAKKAS_OUTPORT, "o", "s", "out", &m));
+	OK(hakkas_port_add(h, "p", HAKKAS_INPORT, "pi", "s", "in2", &m));
+	OK(hakkas_port_add(h, "q", HAKKAS_INPORT, "i", "t", "in1", &m));
+	OK(hakkas_port_add(h, "q", HAKKAS_INPORT, "i2", "t", "in2", &m));
+	OK(hakkas_port_add(h, "q", HAKKAS_OUTPORT, "qo", "t", "out", &m));
+	HakkasValue two = linkable_from_f64(2), one = linkable_from_f64(1);
+	OK(hakkas_initial_add(h, "p", "s", "in1", &two, &m));
+	OK(hakkas_initial_add(h, "q", "t", "in2", &one, &m));
+	wire_same(&wire);
+
+	/* Made: the host's event, nothing on the wire. */
+	link_log[0] = '\0';
+	OK(hakkas_link_add(h, "p", "o", "q", "i", &m));
+	CHECK_STREQ(m.text, "");
+	CHECK_STREQ(link_log, "+p.o>q.i;");
+	NEV(0);
+	wire_same(&wire);
+	CHECK(hakkas_link_count(h) == 1);
+	HakkasLink l;
+	CHECK(hakkas_link_at(h, 0, &l));
+	CHECK_STREQ(l.from_process, "p");
+	CHECK_STREQ(l.from_outport, "o");
+	CHECK_STREQ(l.to_process, "q");
+	CHECK_STREQ(l.to_inport, "i");
+	CHECK(!hakkas_link_at(h, 1, &l) && l.from_process == NULL);
+
+	/* Refusals: no event, no link event either. */
+	link_log[0] = '\0';
+	REFUSED(hakkas_link_add(h, NULL, "o", "q", "i", &m), "Invalid field: from");
+	REFUSED(hakkas_link_add(h, "p", NULL, "q", "i", &m), "Invalid field: from");
+	REFUSED(hakkas_link_add(h, "p", "o", NULL, "i", &m), "Invalid field: to");
+	REFUSED(hakkas_link_add(h, "p", "o", "q", NULL, &m), "Invalid field: to");
+	REFUSED(hakkas_link_add(h, "p", "", "q", "i", &m), "Invalid id");
+	REFUSED(hakkas_link_add(h, "zz", "o", "q", "i", &m), "Unknown graph: zz");
+	REFUSED(hakkas_link_add(h, "p", "o", "zz", "i", &m), "Unknown graph: zz");
+	REFUSED(hakkas_link_add(h, "p", "nope", "q", "i", &m), "Unknown port: p.nope");
+	REFUSED(hakkas_link_add(h, "p", "o", "q", "nope", &m), "Unknown port: q.nope");
+	REFUSED(hakkas_link_add(h, "p", "pi", "q", "i", &m), "Invalid link direction");
+	REFUSED(hakkas_link_add(h, "p", "o", "q", "qo", &m), "Invalid link direction");
+	REFUSED(hakkas_link_add(h, "p", "o", "q", "i", &m), "Link exists");
+	REFUSED(hakkas_link_add(h, "p", "o", "q", "i2", &m), "Input already connected: q.i2");
+	REFUSED(hakkas_initial_add(h, "q", "t", "in1", &two, &m),
+		"Input already connected: t.in1");
+	REFUSED(hakkas_connection_add(h, "q", "t", "out", "t", "in1", NULL, &m),
+		"Input already connected: t.in1");
+	REFUSED(hakkas_link_remove(h, "p", "o", "q", "i2", &m), "No such link");
+	REFUSED(hakkas_link_remove(h, "p", "o", NULL, "i", &m), "Invalid field: to");
+	REFUSED(hakkas_link_remove(h, "zz", "o", "q", "i", &m), "Unknown graph: zz");
+	CHECK_STREQ(link_log, "");
+	wire_same(&wire);
+
+	/* Values over the link, watched by the wire client on q's t.in1 (02
+	 * §4.2): the same values a connection would carry. */
+	OK(hakkas_process_start(h, "q", &m));
+	OK(hakkas_process_start(h, "p", &m));
+	wire_same(&wire);
+	static const char watch[] = "{'graph':'q','edges':[{'src':{'node':'w','port':'out'},"
+				    "'tgt':{'node':'t','port':'in1'}}]}";
+	e2e_send(&wire, "network", "edges", watch);
+	EXPECT(&wire, "network", "edges", watch);
+	expect_t_in1("2");
+	HakkasValue five = linkable_from_f64(5);
+	OK(hakkas_initial_add(h, "p", "s", "in1", &five, &m));
+	EXPECT(&wire, "graph", "addinitial", NULL);
+	expect_t_in1("5");
+	QUIET(&wire);
+	clear_events();
+
+	/* The source stopped: the value is kept, nothing reverts. */
+	OK(hakkas_process_stop(h, "p", &m));
+	OK(hakkas_initial_add(h, "p", "s", "in1", &two, &m));
+	EXPECT(&wire, "network", "stopped", NULL);
+	EXPECT(&wire, "graph", "addinitial", NULL);
+	QUIET(&wire);
+	clear_events();
+
+	/* Removed: the input reverts at once (its watch sees the default),
+	 * and that is all the wire sees. */
+	OK(hakkas_link_remove(h, "p", "o", "q", "i", &m));
+	CHECK_STREQ(link_log, "-p.o>q.i;");
+	NEV(0);
+	expect_t_in1("0");
+	QUIET(&wire);
+	CHECK(hakkas_link_count(h) == 0);
+
+	/* Made again from the stopped source: nothing until it starts. */
+	OK(hakkas_link_add(h, "p", "o", "q", "i", &m));
+	QUIET(&wire);
+	OK(hakkas_process_start(h, "p", &m));
+	EXPECT(&wire, "network", "started", NULL);
+	expect_t_in1("2");
+	QUIET(&wire);
+	clear_events();
+	e2e_send(&wire, "network", "edges", "{'graph':'q','edges':[]}");
+	EXPECT(&wire, "network", "edges", NULL);
+
+	/* Deleting the source: stopped, the link removed, deleted — and the
+	 * wire sees exactly what it saw before links existed. */
+	link_log[0] = '\0';
+	OK(hakkas_process_delete(h, "p", "P", &m));
+	CHECK_STREQ(link_log, "-p.o>q.i;");
+	NEV(2);
+	EV(0, "network", "stopped", NULL);
+	EV(1, "runtime", "delete_graph", "{'graph':'p','name':'P'}");
+	wire_same(&wire);
+	CHECK(hakkas_link_count(h) == 0);
+	OK(hakkas_process_delete(h, "q", "Q", &m));
+	wire_same(&wire);
+}
+
+/* Two processes chained from their files by a process list's link, made
+ * as the POSIX host makes it (platform/posix/host.c): the value crosses. */
+static void test_links_from_files(void)
+{
+	char src[PAL_PATH_MAX], tgt[PAL_PATH_MAX], list[PAL_PATH_MAX];
+	snprintf(src, sizeof(src), "%s", e2e_path(e2e_root, "c1.json"));
+	snprintf(tgt, sizeof(tgt), "%s", e2e_path(e2e_root, "c2.json"));
+	snprintf(list, sizeof(list), "%s", e2e_path(e2e_root, "chain.json"));
+	e2e_put(src, "{\"id\":\"c1\",\"blocks\":{\"a\":{\"component\":\"math/Add2\"}},"
+		     "\"connections\":[{\"src\":{\"data\":3},\"tgt\":{\"block\":\"a\","
+		     "\"port\":\"in1\"}}],\"outports\":[{\"name\":\"out\",\"block\":\"a\","
+		     "\"port\":\"out\"}]}");
+	e2e_put(tgt, "{\"id\":\"c2\",\"blocks\":{\"b\":{\"component\":\"math/Add2\"}},"
+		     "\"inports\":[{\"name\":\"in\",\"block\":\"b\",\"port\":\"in2\"}]}");
+	e2e_put(list, "{\"processes\":[{\"graph\":\"c1.json\"},{\"graph\":\"c2.json\"}],"
+		      "\"links\":[{\"from\":\"c1.out\",\"to\":\"c2.in\"}]}");
+	ProcessList pl;
+	CHECK(process_list_load(list, &pl) == GRAPH_FILES_OK && pl.link_count == 1);
+	for (size_t i = 0; i < pl.count; i++)
+		OK(hakkas_process_load(h, pl.entries[i].graph, NULL, &m));
+	link_log[0] = '\0';
+	for (size_t i = 0; i < pl.link_count; i++)
+		OK(hakkas_link_add(h, pl.links[i].from_process, pl.links[i].from_port,
+				   pl.links[i].to_process, pl.links[i].to_port, &m));
+	process_list_free(&pl);
+	CHECK_STREQ(link_log, "+c1.out>c2.in;");
+	OK(hakkas_process_start(h, "c1", &m));
+	OK(hakkas_process_start(h, "c2", &m));
+	wire_same(&wire);
+	static const char watch[] = "{'graph':'c2','edges':[{'src':{'node':'w','port':'out'},"
+				    "'tgt':{'node':'b','port':'in2'}}]}";
+	e2e_send(&wire, "network", "edges", watch);
+	EXPECT(&wire, "network", "edges", watch);
+	EXPECT(&wire, "network", "data",
+	       "{'id':'*','graph':'c2','src':{'node':'w','port':'out'},'tgt':{'node':'b',"
+	       "'port':'in2'},'data':'3'}");
+	QUIET(&wire);
+	e2e_send(&wire, "network", "edges", "{'graph':'c2','edges':[]}");
+	EXPECT(&wire, "network", "edges", NULL);
+	OK(hakkas_process_delete(h, "c2", "<<new graph>>", &m));
+	OK(hakkas_process_delete(h, "c1", "<<new graph>>", &m));
+	CHECK_STREQ(link_log, "+c1.out>c2.in;-c1.out>c2.in;");
+	wire_same(&wire);
+}
+
 int main(void)
 {
 	e2e_setup("api");
@@ -833,6 +1027,8 @@ int main(void)
 	RUN(test_compound_and_wire);
 	RUN(test_subscribers);
 	RUN(test_tick);
+	RUN(test_links);
+	RUN(test_links_from_files);
 
 	e2e_close(&wire);
 	hakkas_unsubscribe(h, on_host_event, NULL);

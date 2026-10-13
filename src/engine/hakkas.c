@@ -217,6 +217,8 @@ static void convert(const GraphEvent *ev, HakkasEvent *out)
 		[GRAPH_EVENT_GROUP_RENAMED] = HAKKAS_EVENT_GROUP_RENAMED,
 		[GRAPH_EVENT_GROUP_CHANGED] = HAKKAS_EVENT_GROUP_CHANGED,
 		[GRAPH_EVENT_COMPONENT] = HAKKAS_EVENT_COMPONENT,
+		[GRAPH_EVENT_LINK_ADDED] = HAKKAS_EVENT_LINK_ADDED,
+		[GRAPH_EVENT_LINK_REMOVED] = HAKKAS_EVENT_LINK_REMOVED,
 	};
 	memset(out, 0, sizeof(*out));
 	out->type = types[ev->type];
@@ -314,6 +316,12 @@ static void convert(const GraphEvent *ev, HakkasEvent *out)
 		break;
 	case GRAPH_EVENT_GROUP_REMOVED:
 		out->name = ev->old_name;
+		break;
+	case GRAPH_EVENT_LINK_ADDED:
+	case GRAPH_EVENT_LINK_REMOVED:
+		out->name = ev->link->src_port;
+		out->to_process = ev->link->tgt_graph->id;
+		out->to_port = ev->link->tgt_port;
 		break;
 	}
 }
@@ -1002,4 +1010,57 @@ enum hakkas_status hakkas_group_change(Hakkas *h, const char *process, const cha
 	return from_files(
 		type_files_change_group(files_of(h), process, name, description, icon, &gm), &gm,
 		msg);
+}
+
+/* ---- Links between processes ------------------------------------------------------- */
+
+enum hakkas_status hakkas_link_add(Hakkas *h, const char *from_process, const char *from_outport,
+				   const char *to_process, const char *to_inport,
+				   HakkasMessage *msg)
+{
+	if (!enter(h, msg))
+		return HAKKAS_ERR_BUSY;
+	if (from_process == NULL || from_outport == NULL)
+		return invalid_field(msg, "from");
+	if (to_process == NULL || to_inport == NULL)
+		return invalid_field(msg, "to");
+	GraphsMessage gm;
+	return from_graph(graphs_add_link(graphs_of(h), from_process, from_outport, to_process,
+					  to_inport, &gm),
+			  &gm, msg);
+}
+
+enum hakkas_status hakkas_link_remove(Hakkas *h, const char *from_process,
+				      const char *from_outport, const char *to_process,
+				      const char *to_inport, HakkasMessage *msg)
+{
+	if (!enter(h, msg))
+		return HAKKAS_ERR_BUSY;
+	if (from_process == NULL || from_outport == NULL)
+		return invalid_field(msg, "from");
+	if (to_process == NULL || to_inport == NULL)
+		return invalid_field(msg, "to");
+	GraphsMessage gm;
+	return from_graph(graphs_remove_link(graphs_of(h), from_process, from_outport, to_process,
+					     to_inport, &gm),
+			  &gm, msg);
+}
+
+size_t hakkas_link_count(const Hakkas *h)
+{
+	return runtime_link_count(graphs_of(h)->rt);
+}
+
+bool hakkas_link_at(const Hakkas *h, size_t i, HakkasLink *out)
+{
+	memset(out, 0, sizeof(*out));
+	const Runtime *rt = graphs_of(h)->rt;
+	if (i >= runtime_link_count(rt))
+		return false;
+	const ProcessLink *l = runtime_link_at(rt, (uint32_t)i);
+	out->from_process = l->src_graph->id;
+	out->from_outport = l->src_port;
+	out->to_process = l->tgt_graph->id;
+	out->to_inport = l->tgt_port;
+	return true;
 }

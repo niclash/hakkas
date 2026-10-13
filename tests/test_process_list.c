@@ -1,7 +1,8 @@
 /*
  * The process list (app/process_list.h, 05 §1.2 "Process list"): both
  * forms, paths resolved against the list file's directory, the "start"
- * values, bindings and links, unknown members warned about, every malformed
+ * values, bindings, links (each reference split on its last '.' into its
+ * process and port), unknown members warned about, every malformed
  * shape refused with its log line, and reading the file (missing, too big).
  */
 #define _XOPEN_SOURCE 700
@@ -75,7 +76,7 @@ static void test_object(void)
 	CHECK(parse("{'processes':[{'graph':'a.json','start':true,'bindings':'emu.json'},"
 		    "{'graph':'/x/b.json','start':false},{'graph':'c.json','start':null,"
 		    "'bindings':null,'extra':1}],'links':[{'from':'a.out','to':'b.in'},"
-		    "{'from':'b.o','to':'a.i'}],'version':1}",
+		    "{'from':'my.proc.o','to':'a.i.x'}],'version':1}",
 		    "/d/p.json", &l) == GRAPH_FILES_OK);
 	CHECK(l.count == 3 && l.link_count == 2);
 	if (l.count == 3) {
@@ -87,11 +88,25 @@ static void test_object(void)
 		CHECK(l.entries[2].start == PROCESS_LIST_START_FILE);
 		CHECK(l.entries[2].bindings == NULL);
 	}
+	/* Links: each reference split on its last '.' (01 §2.4). */
+	if (l.link_count == 2) {
+		CHECK_STREQ(l.links[0].from_process, "a");
+		CHECK_STREQ(l.links[0].from_port, "out");
+		CHECK_STREQ(l.links[0].to_process, "b");
+		CHECK_STREQ(l.links[0].to_port, "in");
+		CHECK_STREQ(l.links[1].from_process, "my.proc");
+		CHECK_STREQ(l.links[1].from_port, "o");
+		CHECK_STREQ(l.links[1].to_process, "a.i");
+		CHECK_STREQ(l.links[1].to_port, "x");
+	}
 	CHECK_STREQ(logs, "warn /d/p.json: unknown member \"version\" ignored\n"
 			  "warn /d/p.json: processes[2]: unknown member \"extra\" ignored\n");
 	process_list_free(&l);
 	CHECK(parse("{'processes':[],'links':null}", "p.json", &l) == GRAPH_FILES_OK);
-	CHECK(l.count == 0 && l.link_count == 0);
+	CHECK(l.count == 0 && l.link_count == 0 && l.links == NULL);
+	process_list_free(&l);
+	CHECK(parse("{'processes':[],'links':[]}", "p.json", &l) == GRAPH_FILES_OK);
+	CHECK(l.link_count == 0);
 	process_list_free(&l);
 }
 
@@ -100,7 +115,7 @@ static void malformed(const char *text, const char *line)
 {
 	ProcessList l;
 	CHECK(parse(text, "p.json", &l) == GRAPH_FILES_ERR_MALFORMED);
-	CHECK(l.count == 0 && l.entries == NULL);
+	CHECK(l.count == 0 && l.entries == NULL && l.link_count == 0 && l.links == NULL);
 	char want[512];
 	snprintf(want, sizeof(want), "error p.json: %s\n", line);
 	if (strstr(logs, want) == NULL)
@@ -132,6 +147,14 @@ static void test_malformed(void)
 	malformed("{'processes':[],'links':{}}", "links: expected an array");
 	malformed("{'processes':[],'links':[{'from':'a.b'}]}",
 		  "links[0]: expected an object with \"from\" and \"to\"");
+	malformed("{'processes':[],'links':[{'from':'a.b','to':3}]}",
+		  "links[0]: expected an object with \"from\" and \"to\"");
+	malformed("{'processes':[],'links':[{'from':'a.b','to':'c.d'},{'from':'ab','to':'c.d'}]}",
+		  "links[1]: from: expected \"<process>.<outport>\"");
+	malformed("{'processes':[],'links':[{'from':'a.b','to':'.d'}]}",
+		  "links[0]: to: expected \"<process>.<inport>\"");
+	malformed("{'processes':[],'links':[{'from':'a.','to':'c.d'}]}",
+		  "links[0]: from: expected \"<process>.<outport>\"");
 	char text[PAL_PATH_MAX + 16];
 	snprintf(text, sizeof(text), "['%0*d']", PAL_PATH_MAX, 0);
 	malformed(text, "[0]: path too long");

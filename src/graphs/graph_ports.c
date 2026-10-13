@@ -1,7 +1,8 @@
 /*
  * Graph-level ports: inports and outports (01 §2.2 Port, 02 §3.4). Metadata
  * only — a public name mapped to one inner block's input or output — with no
- * dataflow effect. See graphs/graph.h for the refusals and the behavior on
+ * dataflow effect but the links between processes made through them
+ * (graph_links.c). See graphs/graph.h for the refusals and the behavior on
  * block rename and removal.
  */
 #include <stdlib.h>
@@ -82,9 +83,10 @@ enum graph_status graph_add_port(Graph *g, enum graph_port_dir dir, const char *
 	return GRAPH_OK;
 }
 
-/* Take port i out of the array, report it, free it. */
+/* Remove port i's links, take it out of the array, report it, free it. */
 static void port_remove_at(Graph *g, enum graph_port_dir dir, uint32_t i)
 {
+	graph_links_remove_port(g, dir, g->ports[dir][i].name);
 	GraphPort p = g->ports[dir][i];
 	memmove(&g->ports[dir][i], &g->ports[dir][i + 1],
 		(g->port_count[dir] - i - 1) * sizeof(GraphPort));
@@ -117,6 +119,9 @@ enum graph_status graph_rename_port(Graph *g, enum graph_port_dir dir, const cha
 	char *name = graph_str_dup(to);
 	if (name == NULL)
 		return GRAPH_ERR_NO_MEMORY;
+	/* A link names the port: the renamed port is not its port any more
+	 * (decided, plan task 21f; graphs/graph.h). */
+	graph_links_remove_port(g, dir, from);
 	graph_retained_remove_port(g, dir, to); /* the live port takes its place */
 	GraphPort *p = &g->ports[dir][i];
 	char *old = p->name;

@@ -30,6 +30,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/graphs/deadlines.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph_json.c
+  ${HAKKAS_SOURCE_ROOT}/graphs/graph_links.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph_ports.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graph_retained.c
   ${HAKKAS_SOURCE_ROOT}/graphs/graphs.c

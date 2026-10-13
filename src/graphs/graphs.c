@@ -23,7 +23,8 @@ static bool system_wide(enum graph_event_type type)
 {
 	return type == GRAPH_EVENT_GRAPH_CREATED || type == GRAPH_EVENT_GRAPH_DELETED ||
 	       type == GRAPH_EVENT_GRAPH_STATUS || type == GRAPH_EVENT_ERROR ||
-	       type == GRAPH_EVENT_COMPONENT;
+	       type == GRAPH_EVENT_COMPONENT || type == GRAPH_EVENT_LINK_ADDED ||
+	       type == GRAPH_EVENT_LINK_REMOVED;
 }
 
 static bool in_scope(const GraphsSubscriber *s, const GraphEvent *ev)
@@ -234,6 +235,15 @@ size_t graph_refusal_message(enum graph_status st, const GraphRefusal *ctx, char
 	case GRAPH_ERR_UNAVAILABLE:
 		n = snprintf(buf, size, "%s", "Random source unavailable");
 		break;
+	case GRAPH_ERR_INVALID_LINK_DIRECTION:
+		n = snprintf(buf, size, "%s", "Invalid link direction");
+		break;
+	case GRAPH_ERR_LINK_EXISTS:
+		n = snprintf(buf, size, "%s", "Link exists");
+		break;
+	case GRAPH_ERR_NO_SUCH_LINK:
+		n = snprintf(buf, size, "%s", "No such link");
+		break;
 	}
 	return n < 0 ? 0 : (size_t)n;
 }
@@ -358,11 +368,13 @@ enum graph_status graphs_delete_graph(Graphs *gs, const char *id, const char *na
 		return finish(GRAPH_ERR_NAME_MISMATCH, &ctx, msg);
 
 	/* A compound effect is reported as its parts (02 §1.1): the stop, if
-	 * the graph ran, then the deletion. */
+	 * the graph ran, then its links between processes (each target input
+	 * reverting, plan task 21f), then the deletion. */
 	if (g->started) {
 		stop_graph(g);
 		emit_stopped(gs, g);
 	}
+	graph_links_remove_graph(g);
 	int32_t i = graph_index(gs, id);
 	memmove(&gs->graphs[i], &gs->graphs[i + 1],
 		(gs->count - (uint32_t)i - 1) * sizeof(gs->graphs[0]));
@@ -631,5 +643,57 @@ enum graph_status graphs_rename_port(Graphs *gs, const char *graph, enum graph_p
 	enum graph_status st = lookup_with(gs, graph, 2, (const char *const[]){from, to}, &g);
 	if (st == GRAPH_OK)
 		st = graph_rename_port(g, dir, from, to);
+	return finish(st, &ctx, msg);
+}
+
+/* ---- Links between processes (plan task 21f) ---------------------------- */
+
+/* The two graphs of a link command: every id first (both graph ids and both
+ * port names), then the source graph, then the target graph. */
+static enum graph_status lookup_link(const Graphs *gs, const char *from_graph,
+				     const char *outport, const char *to_graph, const char *inport,
+				     Graph **src, Graph **tgt, GraphRefusal *ctx)
+{
+	*src = *tgt = NULL;
+	if (!graph_id_valid(from_graph) || !graph_id_valid(outport) ||
+	    !graph_id_valid(to_graph) || !graph_id_valid(inport))
+		return GRAPH_ERR_INVALID_ID;
+	ctx->graph = from_graph;
+	if ((*src = graphs_find(gs, from_graph)) == NULL)
+		return GRAPH_ERR_UNKNOWN_GRAPH;
+	ctx->graph = to_graph;
+	if ((*tgt = graphs_find(gs, to_graph)) == NULL)
+		return GRAPH_ERR_UNKNOWN_GRAPH;
+	return GRAPH_OK;
+}
+
+enum graph_status graphs_add_link(Graphs *gs, const char *from_graph, const char *outport,
+				  const char *to_graph, const char *inport, GraphsMessage *msg)
+{
+	GraphRefusal ctx = {0};
+	Graph *src, *tgt;
+	enum graph_status st =
+		lookup_link(gs, from_graph, outport, to_graph, inport, &src, &tgt, &ctx);
+	if (st != GRAPH_OK)
+		return finish(st, &ctx, msg);
+	st = graph_link_add(src, outport, tgt, inport);
+	/* "<process>.<port>": the source's port if it is no port of src at
+	 * all (checked first), else the target's. */
+	bool src_unknown = graph_find_port(src, GRAPH_OUTPORT, outport) == NULL &&
+			   graph_find_port(src, GRAPH_INPORT, outport) == NULL;
+	ctx.node = st == GRAPH_ERR_UNKNOWN_PORT && src_unknown ? from_graph : to_graph;
+	ctx.port = st == GRAPH_ERR_UNKNOWN_PORT && src_unknown ? outport : inport;
+	return finish(st, &ctx, msg);
+}
+
+enum graph_status graphs_remove_link(Graphs *gs, const char *from_graph, const char *outport,
+				     const char *to_graph, const char *inport, GraphsMessage *msg)
+{
+	GraphRefusal ctx = {0};
+	Graph *src, *tgt;
+	enum graph_status st =
+		lookup_link(gs, from_graph, outport, to_graph, inport, &src, &tgt, &ctx);
+	if (st == GRAPH_OK)
+		st = graph_link_remove(src, outport, tgt, inport);
 	return finish(st, &ctx, msg);
 }

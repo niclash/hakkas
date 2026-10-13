@@ -148,6 +148,12 @@ static void describe(char *log, size_t size, const GraphEvent *ev)
 	case GRAPH_EVENT_COMPONENT:
 		append(log, size, "%s:component %s;", id, ev->block_type->name);
 		break;
+	case GRAPH_EVENT_LINK_ADDED:
+	case GRAPH_EVENT_LINK_REMOVED: /* tests/test_links.c */
+		append(log, size, "%s:%clink %s>%s.%s;", id,
+		       ev->type == GRAPH_EVENT_LINK_ADDED ? '+' : '-', ev->link->src_port,
+		       ev->link->tgt_graph->id, ev->link->tgt_port);
+		break;
 	}
 }
 

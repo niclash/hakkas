@@ -122,7 +122,8 @@ void graph_destroy(Graph *g)
 	if (g == NULL)
 		return;
 	graph_stop(g);
-	/* Every link ends in this graph, so the blocks go without severing
+	graph_links_drop_graph(g); /* links between processes: silently */
+	/* Every edge ends in this graph, so the blocks go without severing
 	 * (a composite instance's inner blocks with it, block_free). */
 	for (uint32_t i = 0; i < g->block_count; i++) {
 		Block *b = g->blocks[i];
@@ -297,7 +298,7 @@ static bool blocks_reserve(Graph *g)
 /* Make input i of b sourced or unsourced: increment its source generation,
  * and for a composite instance the mapped inner input's, the one queued
  * values are sent under (03 §5), so they go stale. */
-static void input_source_changed(Block *b, uint32_t i)
+void input_source_changed(Block *b, uint32_t i)
 {
 	b->inputs[i].source_gen++;
 	uint32_t k = i;
@@ -307,13 +308,11 @@ static void input_source_changed(Block *b, uint32_t i)
 }
 
 /* The output whose links carry output out of b (block_output_source). */
-static Output *link_output(Block *b, uint32_t out)
+Output *block_links_output(Block *b, uint32_t out)
 {
 	Block *s = block_output_source(b, &out);
 	return &s->outputs[out];
 }
-
-static bool links_reserve(Output *o);
 
 /* Build the inner blocks of the composite instance outer (03 §5 "Runtime
  * behavior" steps 1-5): create each inner block (with a slot, and room for
@@ -355,8 +354,8 @@ static enum graph_status composite_build(Block *outer)
 		const CompositeEdge *e = &def->edges[k];
 		Block *sb = outer->inner[e->src.block];
 		Block *tb = outer->inner[e->tgt.block];
-		Output *o = link_output(sb, e->src.port);
-		if (!links_reserve(o))
+		Output *o = block_links_output(sb, e->src.port);
+		if (!output_links_reserve(o))
 			return GRAPH_ERR_NO_MEMORY;
 		o->links[o->link_count++] = (Link){tb, e->tgt.port};
 		Input *in = &tb->inputs[e->tgt.port];
@@ -427,7 +426,7 @@ enum graph_status graph_create_placeholder(Graph *g, const char *name, const cha
 	return create_block(g, name, NULL, component, md, out);
 }
 
-static void output_unlink(Output *o, const Block *dst, uint32_t input)
+void output_unlink(Output *o, const Block *dst, uint32_t input)
 {
 	for (uint32_t k = 0; k < o->link_count; k++) {
 		if (o->links[k].block == dst && o->links[k].input == input) {
@@ -440,7 +439,7 @@ static void output_unlink(Output *o, const Block *dst, uint32_t input)
 }
 
 /* Make input i of b unsourced; queued values from the old source go stale. */
-static void input_clear_source(Block *b, uint32_t i)
+void input_clear_source(Block *b, uint32_t i)
 {
 	Input *in = &b->inputs[i];
 	in->source = INPUT_SOURCE_NONE;
@@ -454,7 +453,7 @@ static void input_clear_source(Block *b, uint32_t i)
 
 /* Severing (01 §2.2): the input reverts to its port default at once, which
  * propagates like any other input change. */
-static void input_revert(Block *b, uint32_t i)
+void input_revert(Block *b, uint32_t i)
 {
 	block_update(b, i, block_input_default(b, i));
 }
@@ -480,7 +479,7 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 		if (in->source == INPUT_SOURCE_EDGE) {
 			Block *src = in->src_block;
 			uint32_t out = in->src_output;
-			output_unlink(link_output(src, out), b, i);
+			output_unlink(block_links_output(src, out), b, i);
 			input_clear_source(b, i);
 			graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
 						   .block = b,
@@ -502,14 +501,16 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 	/* Outbound links: each downstream input is severed and reverts. A
 	 * composite instance's links are on its inner outputs (03 §5), next
 	 * to the inner links, which stay: only those whose destination's
-	 * source is b's output o are b's. */
+	 * source is b's output o are b's. Links between processes go with
+	 * the outports below. */
 	for (uint32_t o = 0; o < b->output_count; o++) {
-		Output *out = link_output(b, o);
+		Output *out = block_links_output(b, o);
 		uint32_t k = 0;
 		while (k < out->link_count) {
 			Link l = out->links[k];
 			const Input *dst = &l.block->inputs[l.input];
-			if (dst->src_block != b || dst->src_output != o) {
+			if (dst->source != INPUT_SOURCE_EDGE || dst->src_block != b ||
+			    dst->src_output != o) {
 				k++;
 				continue;
 			}
@@ -524,7 +525,8 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 		}
 	}
 
-	/* Graph ports mapped to the block go before it (decided, 02 §3.4). */
+	/* Graph ports mapped to the block go before it (decided, 02 §3.4),
+	 * each with its links between processes (plan task 21f). */
 	graph_ports_remove_block(g, b);
 	graph_retained_remove_block(g, b); /* no events (05 §2.2) */
 	block_detach_watches(b);
@@ -583,7 +585,7 @@ enum graph_status graph_change_block(Graph *g, const char *name, const BlockChan
 
 /* ---- Edges and initials ------------------------------------------------- */
 
-static bool links_reserve(Output *o)
+bool output_links_reserve(Output *o)
 {
 	if (o->link_count < o->link_cap)
 		return true;
@@ -619,10 +621,10 @@ enum graph_status graph_connect(Graph *g, const char *src, const char *src_port,
 		return st;
 	if (tb->inputs[in].source != INPUT_SOURCE_NONE)
 		return GRAPH_ERR_INPUT_CONNECTED; /* no fan-in (01 §2.2) */
-	Output *o = link_output(sb, out); /* a composite's inner output (03 §5) */
+	Output *o = block_links_output(sb, out); /* a composite's inner output (03 §5) */
 	bool ok = true;
 	char *md = str_dup_opt(metadata, &ok);
-	if (!ok || !links_reserve(o)) {
+	if (!ok || !output_links_reserve(o)) {
 		free(md);
 		return GRAPH_ERR_NO_MEMORY;
 	}
@@ -689,7 +691,7 @@ enum graph_status graph_disconnect(Graph *g, const char *src, const char *src_po
 	if (st != GRAPH_OK)
 		return st;
 
-	output_unlink(link_output(sb, out), tb, in);
+	output_unlink(block_links_output(sb, out), tb, in);
 	input_clear_source(tb, in);
 	graph_emit(g, (GraphEvent){.type = GRAPH_EVENT_EDGE_REMOVED,
 				   .block = tb,
@@ -736,7 +738,7 @@ enum graph_status graph_add_initial(Graph *g, const char *node, const char *port
 	if (st != GRAPH_OK)
 		return st;
 	Input *in = &b->inputs[i];
-	if (in->source == INPUT_SOURCE_EDGE)
+	if (in->source == INPUT_SOURCE_EDGE || in->source == INPUT_SOURCE_LINK)
 		return GRAPH_ERR_INPUT_CONNECTED; /* no fan-in (01 §2.2) */
 	if (value == NULL)
 		return GRAPH_ERR_INVALID_ARGUMENT;

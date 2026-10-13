@@ -12,7 +12,8 @@
  *     1-6 and 8 (05 §1.4); a failure exits CLI_EXIT_FAILURE;
  *  2. subscribes to the events and logs every process's lifecycle at info:
  *     "process <id> started", "... stopped", "... deleted" (whoever caused
- *     it: the host, a client);
+ *     it: the host, a client), and every link between processes: "link
+ *     <process>.<outport> -> <process>.<inport> made" / "... removed";
  *  3. step 7, the processes of the mode (05 §1.2):
  *     - POSIX_HOST_FILES (`run process <file>[:<file>...]`): the files in
  *       order; any file that does not load refuses startup (logged, then
@@ -21,8 +22,12 @@
  *       (app/process_list.h) in order; a list that cannot be read or is
  *       malformed, or any process that does not load, refuses startup
  *       ("run processes: ... : not starting"). A "bindings" member is
- *       logged at info and ignored (environment bindings: plan task 22);
- *       "links" are logged at info and ignored (plan task 21f);
+ *       logged at info and ignored (environment bindings: plan task 22).
+ *       Once every process is loaded, and before any is started, the
+ *       list's "links" are made in list order (hakkas_link_add); a link
+ *       that is refused refuses startup like a process that does not load
+ *       ("run processes: <file>: link <from> -> <to>: <message>: not
+ *       starting"; plan task 21f);
  *     - POSIX_HOST_DAEMON (`run daemon`): every saved process
  *       (hakkas_process_load_saved); a file that does not load is logged
  *       and skipped, the others run;

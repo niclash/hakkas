@@ -558,6 +558,9 @@ char *proto_msg_event(const GraphEvent *ev)
 		return group_event("changegroup", ev, false);
 	case GRAPH_EVENT_COMPONENT:
 		return proto_msg_component(ev->block_type);
+	case GRAPH_EVENT_LINK_ADDED:
+	case GRAPH_EVENT_LINK_REMOVED:
+		return NULL; /* no wire form yet (decided, plan task 21f; 02 §6) */
 	}
 	return NULL;
 }

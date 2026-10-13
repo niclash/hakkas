@@ -57,7 +57,8 @@ static void signals_stop(void *ctx)
 	posix_stop_signals_restore();
 }
 
-/* Every process's lifecycle, logged at info. */
+/* Every process's lifecycle and every link between processes, logged at
+ * info. */
 static void log_lifecycle(void *ctx, const HakkasEvent *ev)
 {
 	(void)ctx;
@@ -67,6 +68,9 @@ static void log_lifecycle(void *ctx, const HakkasEvent *ev)
 		log_info("process %s stopped", ev->process);
 	else if (ev->type == HAKKAS_EVENT_PROCESS_DELETED)
 		log_info("process %s deleted", ev->process);
+	else if (ev->type == HAKKAS_EVENT_LINK_ADDED || ev->type == HAKKAS_EVENT_LINK_REMOVED)
+		log_info("link %s.%s -> %s.%s %s", ev->process, ev->name, ev->to_process,
+			 ev->to_port, ev->type == HAKKAS_EVENT_LINK_ADDED ? "made" : "removed");
 }
 
 /* `run daemon`: every saved process; the flag decides. */
@@ -125,10 +129,6 @@ static bool load_list(Hakkas *h, const char *file, Starts *s)
 			  graph_files_status_str(lst));
 		return false;
 	}
-	if (list.link_count > 0)
-		log_info("%s: %zu link%s ignored: links between processes are not implemented "
-			 "yet",
-			 file, list.link_count, list.link_count == 1 ? "" : "s");
 	bool ok = true;
 	for (size_t i = 0; ok && i < list.count; i++) {
 		const ProcessListEntry *e = &list.entries[i];
@@ -148,6 +148,19 @@ static bool load_list(Hakkas *h, const char *file, Starts *s)
 				     ? l.started
 				     : e->start == PROCESS_LIST_START_YES;
 		note_loaded(s, &l, start);
+	}
+	/* The links, once every process is loaded and before any starts
+	 * (05 §1.2): each must be made, like each process must load. */
+	for (size_t i = 0; ok && i < list.link_count; i++) {
+		const ProcessListLink *k = &list.links[i];
+		HakkasMessage msg;
+		if (hakkas_link_add(h, k->from_process, k->from_port, k->to_process, k->to_port,
+				    &msg) != HAKKAS_OK) {
+			log_error("run processes: %s: link %s.%s -> %s.%s: %s: not starting", file,
+				  k->from_process, k->from_port, k->to_process, k->to_port,
+				  msg.text);
+			ok = false;
+		}
 	}
 	process_list_free(&list);
 	return ok;

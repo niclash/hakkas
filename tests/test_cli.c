@@ -520,6 +520,15 @@ static void test_run(void)
 	"{\"id\":\"g1\",\"started\":true,\"blocks\":{\"a\":{\"component\":\"math/Add2\"}}}"
 #define G_STOPPED "{\"id\":\"g2\",\"started\":false}"
 #define G_NOFLAG "{\"id\":\"g3\"}"
+/* Two processes to link: l1's outport out (a.out, a.in1 = 2) to l2's inport
+ * in (b.in1). */
+#define G_LINK_SRC                                                                                 \
+	"{\"id\":\"l1\",\"blocks\":{\"a\":{\"component\":\"math/Add2\"}},\"connections\":"    \
+	"[{\"src\":{\"data\":2},\"tgt\":{\"block\":\"a\",\"port\":\"in1\"}}],\"outports\":"     \
+	"[{\"name\":\"out\",\"block\":\"a\",\"port\":\"out\"}]}"
+#define G_LINK_TGT                                                                                 \
+	"{\"id\":\"l2\",\"blocks\":{\"b\":{\"component\":\"math/Add2\"}},\"inports\":"        \
+	"[{\"name\":\"in\",\"block\":\"b\",\"port\":\"in1\"}]}"
 
 static const char *host_conf, *host_base;
 
@@ -557,6 +566,8 @@ static void host_setup(void)
 	put(join(root, "host-files/sub/g2.json"), G_STOPPED);
 	put(join(root, "host-files/g3.json"), G_NOFLAG);
 	put(join(root, "host-files/bad.json"), "{\"id\":");
+	put(join(root, "host-files/l1.json"), G_LINK_SRC);
+	put(join(root, "host-files/l2.json"), G_LINK_TGT);
 }
 
 /* run process <files>: in order, the started flag decides; any file that
@@ -606,8 +617,9 @@ static void test_run_daemon(void)
 }
 
 /* run processes <file> (05 §1.2 "Process list"): both forms, paths relative
- * to the list's directory, "start" over the file's flag, bindings and links
- * logged and ignored; every failure refuses startup. */
+ * to the list's directory, "start" over the file's flag, bindings logged and
+ * ignored, links made after every process is loaded and before any starts;
+ * every failure refuses startup, a link that cannot be made too. */
 static void test_run_processes(void)
 {
 	host_setup();
@@ -621,12 +633,12 @@ static void test_run_processes(void)
 	CHECK(strstr(logs, "process g2 started") == NULL && strstr(logs, "process g3") == NULL);
 	CHECK(logged("info 3 processes loaded, 1 started\n"));
 
-	/* The object form: start over the flag; bindings and links ignored. */
+	/* The object form: start over the flag; bindings ignored. */
 	snprintf(path, sizeof(path), "%s/object.json", dir);
 	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":false},"
 		  "{\"graph\":\"sub/g2.json\",\"start\":true,\"bindings\":\"emu.json\"},"
 		  "{\"graph\":\"g3.json\",\"start\":null,\"note\":1}],"
-		  "\"links\":[{\"from\":\"g1.out\",\"to\":\"g2.in\"}],\"version\":2}");
+		  "\"links\":null,\"version\":2}");
 	CHECK(run_host("processes", path) == CLI_EXIT_OK);
 	char want[2 * PAL_PATH_MAX];
 	snprintf(want, sizeof(want),
@@ -634,13 +646,46 @@ static void test_run_processes(void)
 		 "not implemented yet\n",
 		 dir, dir);
 	CHECK(logged(want));
-	CHECK(logged("object.json: 1 link ignored: links between processes are not implemented "
-		     "yet\n"));
 	CHECK(logged("object.json: unknown member \"version\" ignored"));
 	CHECK(logged("object.json: processes[2]: unknown member \"note\" ignored"));
 	CHECK(logged("info process g2 started\n"));
 	CHECK(strstr(logs, "process g1 started") == NULL && strstr(logs, "process g3") == NULL);
 	CHECK(logged("info 3 processes loaded, 1 started\n"));
+
+	/* Links (plan task 21f): made once both processes are loaded, before
+	 * either starts. */
+	snprintf(path, sizeof(path), "%s/links.json", dir);
+	put(path, "{\"processes\":[{\"graph\":\"l1.json\",\"start\":true},"
+		  "{\"graph\":\"l2.json\",\"start\":true}],"
+		  "\"links\":[{\"from\":\"l1.out\",\"to\":\"l2.in\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(logged("info link l1.out -> l2.in made\n"));
+	const char *made = strstr(logs, "link l1.out -> l2.in made");
+	const char *started = strstr(logs, "process l1 started");
+	CHECK(made != NULL && started != NULL && made < started);
+	CHECK(logged("info process l2 started\n"));
+	CHECK(logged("info 2 processes loaded, 2 started\n"));
+	CHECK(strstr(logs, "ignored") == NULL);
+	/* A link that cannot be made refuses startup; nothing is started. */
+	put(path, "{\"processes\":[{\"graph\":\"l1.json\",\"start\":true},"
+		  "{\"graph\":\"l2.json\",\"start\":true}],"
+		  "\"links\":[{\"from\":\"l1.out\",\"to\":\"l2.nope\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	char want_link[2 * PAL_PATH_MAX];
+	snprintf(want_link, sizeof(want_link),
+		 "error run processes: %s: link l1.out -> l2.nope: Unknown port: l2.nope: not "
+		 "starting\n",
+		 path);
+	CHECK(logged(want_link));
+	CHECK(strstr(logs, "started") == NULL);
+	put(path, "{\"processes\":[{\"graph\":\"l1.json\"}],"
+		  "\"links\":[{\"from\":\"l1.out\",\"to\":\"l2.in\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(logged("link l1.out -> l2.in: Unknown graph: l2: not starting\n"));
+	put(path, "{\"processes\":[{\"graph\":\"l1.json\"}],"
+		  "\"links\":[{\"from\":\"l1out\",\"to\":\"l2.in\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(logged("links[0]: from: expected \"<process>.<outport>\""));
 
 	/* The sister project's example graph through a process list. */
 	snprintf(path, sizeof(path), "%s/example.json", dir);

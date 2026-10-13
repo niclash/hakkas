@@ -29,6 +29,27 @@ void graph_emit(Graph *g, GraphEvent ev);
 /* A heap copy of s, or NULL if memory runs out. */
 char *graph_str_dup(const char *s);
 
+/* The output whose links carry output out of b (block_output_source: a
+ * composite instance's mapped inner output). */
+Output *block_links_output(Block *b, uint32_t out);
+
+/* Make room for one more link in o. False if memory runs out. */
+bool output_links_reserve(Output *o);
+
+/* Remove the link to dst's input from o (nothing if there is none). */
+void output_unlink(Output *o, const Block *dst, uint32_t input);
+
+/* Increment input i's source generation (and the mapped inner input's of a
+ * composite instance), so queued values from the old source go stale. */
+void input_source_changed(Block *b, uint32_t i);
+
+/* Make input i of b unsourced (input_source_changed included). */
+void input_clear_source(Block *b, uint32_t i);
+
+/* Severing (01 §2.2): input i reverts to its port default at once, which
+ * propagates like any other input change. */
+void input_revert(Block *b, uint32_t i);
+
 /* ---- graph_ports.c: graph-level ports ---------------------------------- */
 
 /* Remove every port mapped to b, reporting each (inports, then outports, in
@@ -37,6 +58,17 @@ void graph_ports_remove_block(Graph *g, const Block *b);
 
 /* Free every port of g, reporting nothing. Part of graph_destroy. */
 void graph_ports_free(Graph *g);
+
+/* ---- graph_links.c: links between processes ---------------------------- */
+
+/* Remove every link of g's port name of direction dir, as
+ * graph_link_remove (an event each, then the input reverts). Part of
+ * removing and renaming a port. */
+void graph_links_remove_port(Graph *g, enum graph_port_dir dir, const char *name);
+
+/* Drop every link from or to g, reporting nothing and reverting nothing (the
+ * other graph's inputs keep their values). Part of graph_destroy. */
+void graph_links_drop_graph(Graph *g);
 
 /* ---- graph_retained.c: retained entries of placeholders (05 §2.2) ------- */
 

@@ -23,7 +23,8 @@
  * whose scope admits it: graph-specific events (blocks, edges, initials,
  * ports, groups, graph renamed/started/stopped) go to subscribers with no
  * scope or scoped to that graph; system-wide events (graph created/deleted,
- * status, errors, component) go to every subscriber (02 §4.1). Events are GraphEvents
+ * status, errors, component, and the links between processes, which concern
+ * two graphs) go to every subscriber (02 §4.1). Events are GraphEvents
  * (graphs/graph.h); turning them into wire messages is the protocol layer's
  * job, and so is withholding them from connections that are not
  * authenticated (02 §2.5 item 6).
@@ -167,7 +168,9 @@ typedef struct {
  * graph port, node NULL), "Node exists: <node>", "Unknown component:
  * <name>", "Invalid edge direction", "Input already connected:
  * <node>.<port>", "No such connection", "Port exists: <name>", "Graph name
- * mismatch: <graph>", "Graph exists: <graph>", "Invalid id". The statuses
+ * mismatch: <graph>", "Graph exists: <graph>", "Invalid id", and for the
+ * links between processes (02 §6) "Invalid link direction", "Link exists",
+ * "No such link". The statuses
  * that are no wire refusal render "Invalid argument", "Out of memory" and
  * "Random source unavailable"; GRAPH_OK renders "". Returns the length the
  * full message has (as snprintf). */
@@ -184,8 +187,10 @@ enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
 				   const char *description, const char *icon, Graph **out,
 				   GraphsMessage *msg);
 
-/* delete_graph: stop the graph if started (reporting GRAPH_STOPPED), then
- * remove it, report GRAPH_DELETED (the graph is still readable during that
+/* delete_graph: stop the graph if started (reporting GRAPH_STOPPED), remove
+ * its links from and to other graphs (reporting LINK_REMOVED for each, every
+ * target input reverting to its default; graphs/graph.h), then remove it,
+ * report GRAPH_DELETED (the graph is still readable during that
  * callback) and destroy it, its blocks going without events. name must equal
  * the graph's current name. Refused: INVALID_ID, UNKNOWN_GRAPH,
  * NAME_MISMATCH. This deletes the graph in memory only: the protocol layer
@@ -288,5 +293,22 @@ enum graph_status graphs_remove_port(Graphs *gs, const char *graph, enum graph_p
 
 enum graph_status graphs_rename_port(Graphs *gs, const char *graph, enum graph_port_dir dir,
 				     const char *from, const char *to, GraphsMessage *msg);
+
+/* ---- Links between processes (plan task 21f; the C API only, 02 §6) ------ */
+
+/* Link from_graph's outport to to_graph's inport (graphs/graph.h
+ * graph_link_add). Refused, in this order: INVALID_ID (any of the four
+ * names), UNKNOWN_GRAPH (from_graph, then to_graph: "Unknown graph: <id>"),
+ * then as graph_link_add: UNKNOWN_PORT ("Unknown port: <graph>.<port>",
+ * the source's port if it is no port of from_graph, else the target's),
+ * INVALID_LINK_DIRECTION, LINK_EXISTS, INPUT_CONNECTED ("Input already
+ * connected: <to_graph>.<inport>"), NO_MEMORY. Reports LINK_ADDED. */
+enum graph_status graphs_add_link(Graphs *gs, const char *from_graph, const char *outport,
+				  const char *to_graph, const char *inport, GraphsMessage *msg);
+
+/* Remove the link (graph_link_remove). Refused: INVALID_ID, UNKNOWN_GRAPH,
+ * NO_SUCH_LINK. Reports LINK_REMOVED; the target input reverts. */
+enum graph_status graphs_remove_link(Graphs *gs, const char *from_graph, const char *outport,
+				     const char *to_graph, const char *inport, GraphsMessage *msg);
 
 #endif

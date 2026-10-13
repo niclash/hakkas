@@ -29,7 +29,8 @@
  *
  * Graph-level ports (inports/outports, 01 §2.2 Port) are metadata: each maps
  * a public name to one inner block's input (inport) or output (outport) and
- * has no dataflow effect. A port refers to its block, not to the block's
+ * has no dataflow effect of its own; a link between processes (ProcessLink,
+ * plan task 21f) is made through them. A port refers to its block, not to the block's
  * name, so renaming the block carries the port along; removing the block
  * removes its ports, reported after its edges and initials and before the
  * block (decided, plan task 7, 02 §3.4).
@@ -147,6 +148,11 @@ enum graph_status {
 	GRAPH_ERR_NAME_MISMATCH = -14,	   /* "Graph name mismatch: <id>" */
 	/* Not a wire refusal case: the random source failed (no UUID). */
 	GRAPH_ERR_UNAVAILABLE = -15,
+	/* Refusals of the links between processes (plan task 21f; the C API
+	 * only, 02 §6: no wire command yet). */
+	GRAPH_ERR_INVALID_LINK_DIRECTION = -16, /* "Invalid link direction" */
+	GRAPH_ERR_LINK_EXISTS = -17,		/* "Link exists" */
+	GRAPH_ERR_NO_SUCH_LINK = -18,		/* "No such link" */
 };
 
 /* ---- Inputs, outputs, links ------------------------------------------ */
@@ -156,6 +162,9 @@ typedef enum input_source {
 	INPUT_SOURCE_NONE = 0,
 	INPUT_SOURCE_EDGE,
 	INPUT_SOURCE_INITIAL,
+	/* A link from another process's outport, or from this graph's own
+	 * (ProcessLink, "Links between processes" below). */
+	INPUT_SOURCE_LINK,
 } InputSource;
 
 /* A live-value watch on one input (03 §2 update, 02 §4.2): the protocol layer
@@ -173,21 +182,23 @@ struct InputWatch {
 
 typedef struct {
 	InputSource source;
-	Block *src_block;    /* INPUT_SOURCE_EDGE: the upstream block */
-	uint32_t src_output; /* INPUT_SOURCE_EDGE: its output index */
+	Block *src_block;    /* INPUT_SOURCE_EDGE, _LINK: the upstream block */
+	uint32_t src_output; /* INPUT_SOURCE_EDGE, _LINK: its output index */
 	Linkable initial;    /* INPUT_SOURCE_INITIAL: the literal (owned); unset otherwise */
 	/* INPUT_SOURCE_EDGE: the edge's opaque metadata (02 §3.4 addedge,
 	 * changeedge) as compact JSON object text, owned; NULL if it has none.
 	 * Kept here since an input has at most one edge. */
 	char *edge_metadata;
-	/* Incremented on every source change (edge or initial added, replaced or
-	 * removed, upstream block removed); queued updates sent under an older
-	 * value are discarded (01 §3.2). */
+	/* Incremented on every source change (edge, initial or link added,
+	 * replaced or removed, upstream block removed); queued updates sent
+	 * under an older value are discarded (01 §3.2). */
 	uint32_t source_gen;
 	InputWatch *watches;
 } Input;
 
-/* One fan-out link of an output (01 §2.2): the destination input. */
+/* One fan-out link of an output (01 §2.2): the destination input. An edge's
+ * or a link's between processes (ProcessLink), whose destination is in
+ * another graph: the destination input's source tells them apart. */
 typedef struct {
 	Block *block;
 	uint32_t input;
@@ -352,6 +363,10 @@ enum graph_event_type {
 	GRAPH_EVENT_GROUP_RENAMED,
 	GRAPH_EVENT_GROUP_CHANGED,
 	GRAPH_EVENT_COMPONENT, /* system-wide: a new or changed block type */
+	/* Links between processes (plan task 21f): system-wide; graph is the
+	 * link's source process. No wire message yet (02 §6). */
+	GRAPH_EVENT_LINK_ADDED,
+	GRAPH_EVENT_LINK_REMOVED,
 };
 
 /* Pointers are valid only during the callback. Every event but ERROR and
@@ -371,6 +386,7 @@ struct GraphEvent {
 	 * COMPONENT: the composite (or any) block type, as applied */
 	const BlockTypeDef *block_type;
 	const GraphPort *port; /* *PORT_*: the port (with its new name if renamed) */
+	const ProcessLink *link; /* LINK_*: the link (as it was, when removed) */
 	/* GRAPH_STARTED: time_ms = the run's start, uptime_ms = its uptime so far.
 	 * GRAPH_STOPPED: the start and duration of the run that just ended (0 and
 	 * 0 if the graph never ran). GRAPH_STATUS: uptime_ms of the current run,
@@ -423,8 +439,9 @@ enum graph_status graph_create_placeholder(Graph *g, const char *name, const cha
  * entries addressed to the block become stale. Reports EDGE_REMOVED /
  * INITIAL_REMOVED for each (inputs in port order, then outputs in port and
  * connection order), then INPORT_REMOVED / OUTPORT_REMOVED for each graph
- * port mapped to the block (inports, then outports, each in creation order),
- * then BLOCK_REMOVED. Refused: INVALID_ID, UNKNOWN_NODE. */
+ * port mapped to the block (inports, then outports, each in creation order;
+ * each port's links removed before it, as graph_remove_port), then
+ * BLOCK_REMOVED. Refused: INVALID_ID, UNKNOWN_NODE. */
 enum graph_status graph_remove_block(Graph *g, const char *name);
 
 /* Rename a block; links and graph ports mapped to it are unaffected and
@@ -458,7 +475,8 @@ void block_change_release(BlockChange *chg);
  * last_propagated value at once (03 §2 connect); in a stopped graph it keeps
  * its value. Refused: INVALID_ID, UNKNOWN_NODE, UNKNOWN_PORT,
  * INVALID_EDGE_DIRECTION (src_port is an input of src, or tgt_port an output
- * of tgt), INPUT_CONNECTED (the input has an edge or an initial), NO_MEMORY.
+ * of tgt), INPUT_CONNECTED (the input has an edge, an initial or a link),
+ * NO_MEMORY.
  * Reports EDGE_ADDED. A retained connection into the input is dropped (see
  * "Placeholder blocks" above). */
 enum graph_status graph_connect(Graph *g, const char *src, const char *src_port, const char *tgt,
@@ -483,7 +501,7 @@ enum graph_status graph_change_edge(Graph *g, const char *src, const char *src_p
  * initial already there. The value is delivered at once and propagates if g is
  * started; a stopped graph only stores it. Refused: INVALID_ID, UNKNOWN_NODE,
  * UNKNOWN_PORT, INVALID_EDGE_DIRECTION (port is an output), INPUT_CONNECTED
- * (the input has an edge), INVALID_ARGUMENT (value NULL). The graph takes its
+ * (the input has an edge or a link), INVALID_ARGUMENT (value NULL). The graph takes its
  * own reference to value. Reports INITIAL_ADDED. A retained connection into
  * the input is dropped (see "Placeholder blocks" above). */
 enum graph_status graph_add_initial(Graph *g, const char *node, const char *port,
@@ -518,12 +536,15 @@ enum graph_status graph_add_port(Graph *g, enum graph_port_dir dir, const char *
 				 const char *node, const char *port);
 
 /* Remove the port called name (02 §3.4 removeinport / removeoutport).
- * Refused: INVALID_ID, UNKNOWN_PORT (no such port). Reports *PORT_REMOVED. */
+ * Refused: INVALID_ID, UNKNOWN_PORT (no such port). Removes the port's links
+ * first (LINK_REMOVED each, then its input reverts), then reports
+ * *PORT_REMOVED. */
 enum graph_status graph_remove_port(Graph *g, enum graph_port_dir dir, const char *name);
 
 /* Rename a port (02 §3.4 renameinport / renameoutport). Refused: INVALID_ID,
  * UNKNOWN_PORT (from is no port), PORT_EXISTS (to is a port, from itself
- * included), NO_MEMORY. Reports *PORT_RENAMED. */
+ * included), NO_MEMORY. Removes the port's links first (as
+ * graph_remove_port), then reports *PORT_RENAMED. */
 enum graph_status graph_rename_port(Graph *g, enum graph_port_dir dir, const char *from,
 				    const char *to);
 
@@ -557,6 +578,82 @@ enum graph_status graph_retain_port(Graph *g, enum graph_port_dir dir, const cha
 
 /* The port called name in direction dir, or NULL. */
 const GraphPort *graph_find_port(const Graph *g, enum graph_port_dir dir, const char *name);
+
+/* ---- Links between processes (01 §2.2 Port; plan task 21f) ---------------
+ *
+ * A link connects one graph's outport to an inport of another graph (or of
+ * the same graph): the outport's inner output then feeds the inport's inner
+ * input exactly like an edge. The link is an entry of the output's fan-out
+ * links (Link), so a value travels through the work queue on output_set,
+ * filtered by the source block's change threshold (01 §3.3); the input
+ * counts the link as its one source (INPUT_SOURCE_LINK: no fan-in, so an
+ * edge or initial onto it is refused as "Input already connected", and a
+ * link onto an input with any source is refused); its source generation
+ * changes with the link, so values queued from a removed link are dropped.
+ *  - A new link delivers the output's last_propagated value at once if the
+ *    source graph is started (like graph_connect); otherwise the input keeps
+ *    its value until the source starts (start pushes every output).
+ *  - A stopped source graph pushes nothing: the input keeps its last value.
+ *  - Removing a link (graph_link_remove; the source or target graph deleted,
+ *    graph_links_remove_graph; a linked graph port removed or renamed, also
+ *    with its block) reports LINK_REMOVED and then severs the input: it
+ *    reverts to its port default, which propagates if its graph is started
+ *    (01 §2.2 Severing).
+ * A link is named by its ports' public names (the process list's
+ * "<process>.<port>", 05 §1.2), which is why a rename removes it: the
+ * renamed port no longer is the port the link was declared with. Renaming a
+ * port's inner block, or a graph, leaves it alone (the port follows the
+ * block; a graph's id never changes).
+ *
+ * Links are engine-wide: they live in the Runtime that every graph shares
+ * (rt->links, in creation order), since the graph operations that end one
+ * (port removal and rename, block removal, graph destruction) are below the
+ * Graphs registry. Memory (01 §2.2): the link array and the output's link
+ * array grow when a link is added; nothing is allocated while values
+ * propagate. Destroying a graph (graph_destroy, e.g. at shutdown) drops its
+ * links silently, the other graph's inputs keeping their values. */
+struct ProcessLink {
+	Graph *src_graph;
+	char *src_port;	     /* the outport's public name, owned */
+	Graph *tgt_graph;
+	char *tgt_port;	     /* the inport's public name, owned */
+	Block *src_block;    /* the outport's block and output */
+	uint32_t src_output;
+	Block *tgt_block;    /* the inport's block and input (the link's Input) */
+	uint32_t tgt_input;
+};
+
+/* Link src's outport to tgt's inport (src == tgt allowed). Refused, in this
+ * order: INVALID_ID (either port name), UNKNOWN_PORT (outport is no port of
+ * src, inport no port of tgt, in either direction; source first),
+ * INVALID_LINK_DIRECTION (outport is only an inport of src, or inport only
+ * an outport of tgt), LINK_EXISTS (this very link), INPUT_CONNECTED (the
+ * inport's input has an edge, an initial, a retained connection or another
+ * link), INVALID_ARGUMENT (the graphs are on different runtimes), NO_MEMORY.
+ * Reports LINK_ADDED, then delivers as described above. */
+enum graph_status graph_link_add(Graph *src, const char *outport, Graph *tgt,
+				 const char *inport);
+
+/* Remove the link src.outport -> tgt.inport. Refused: INVALID_ID,
+ * NO_SUCH_LINK. Reports LINK_REMOVED; the input reverts to its default. */
+enum graph_status graph_link_remove(Graph *src, const char *outport, Graph *tgt,
+				    const char *inport);
+
+/* Remove every link from or to g, in creation order, each as
+ * graph_link_remove (an event, then the input reverts). Part of deleting a
+ * graph (graphs_delete_graph), after its stop. */
+void graph_links_remove_graph(Graph *g);
+
+/* The links of rt, in creation order. */
+static inline uint32_t runtime_link_count(const Runtime *rt)
+{
+	return rt->link_count;
+}
+
+static inline const ProcessLink *runtime_link_at(const Runtime *rt, uint32_t i)
+{
+	return &rt->links[i];
+}
 
 /* The name of the inner block's port p maps to (p of direction dir). */
 const char *graph_port_inner_name(enum graph_port_dir dir, const GraphPort *p);

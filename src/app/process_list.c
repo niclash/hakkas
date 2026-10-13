@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "graphs/graph.h"
 #include "platform/pal.h"
 #include "system/log.h"
 
@@ -130,6 +131,37 @@ static bool parse_process(Parser *p, const cJSON *v, size_t i)
 	return true;
 }
 
+/* A heap copy of the len bytes at s, or NULL (p->no_memory set). */
+static char *dup_n(Parser *p, const char *s, size_t len)
+{
+	char *copy = malloc(len + 1);
+	if (copy == NULL) {
+		p->no_memory = true;
+		return NULL;
+	}
+	memcpy(copy, s, len);
+	copy[len] = '\0';
+	return copy;
+}
+
+/* Split the reference ref ("<process>.<port>", on its last '.', 01 §2.4)
+ * into heap copies. False if it has no process or port (logged) or memory
+ * runs out. */
+static bool split_ref(Parser *p, const char *ref, size_t i, const char *member,
+		      const char *port_kind, char **process, char **port)
+{
+	size_t process_len;
+	const char *port_name;
+	if (!port_ref_split(ref, &process_len, &port_name)) {
+		log_error("%s: links[%zu]: %s: expected \"<process>.<%s>\"", p->path, i, member,
+			  port_kind);
+		return false;
+	}
+	*process = dup_n(p, ref, process_len);
+	*port = dup_n(p, port_name, strlen(port_name));
+	return *process != NULL && *port != NULL;
+}
+
 static bool parse_links(Parser *p, const cJSON *links)
 {
 	if (links == NULL || cJSON_IsNull(links))
@@ -138,20 +170,30 @@ static bool parse_links(Parser *p, const cJSON *links)
 		log_error("%s: links: expected an array", p->path);
 		return false;
 	}
+	size_t n = (size_t)cJSON_GetArraySize(links);
+	ProcessList *l = p->list;
+	if (n > 0 && (l->links = calloc(n, sizeof(*l->links))) == NULL) {
+		p->no_memory = true;
+		return false;
+	}
 	const cJSON *v;
 	size_t i = 0;
 	cJSON_ArrayForEach(v, links)
 	{
-		if (!cJSON_IsObject(v) ||
-		    !nonempty_string(cJSON_GetObjectItemCaseSensitive(v, "from")) ||
-		    !nonempty_string(cJSON_GetObjectItemCaseSensitive(v, "to"))) {
+		const cJSON *from = cJSON_GetObjectItemCaseSensitive(v, "from");
+		const cJSON *to = cJSON_GetObjectItemCaseSensitive(v, "to");
+		if (!cJSON_IsObject(v) || !nonempty_string(from) || !nonempty_string(to)) {
 			log_error("%s: links[%zu]: expected an object with \"from\" and \"to\"",
 				  p->path, i);
 			return false;
 		}
+		ProcessListLink *k = &l->links[l->link_count++];
+		if (!split_ref(p, from->valuestring, i, "from", "outport", &k->from_process,
+			       &k->from_port) ||
+		    !split_ref(p, to->valuestring, i, "to", "inport", &k->to_process, &k->to_port))
+			return false;
 		i++;
 	}
-	p->list->link_count = i;
 	return true;
 }
 
@@ -244,5 +286,12 @@ void process_list_free(ProcessList *l)
 		free(l->entries[i].bindings);
 	}
 	free(l->entries);
+	for (size_t i = 0; i < l->link_count; i++) {
+		free(l->links[i].from_process);
+		free(l->links[i].from_port);
+		free(l->links[i].to_process);
+		free(l->links[i].to_port);
+	}
+	free(l->links);
 	memset(l, 0, sizeof(*l));
 }

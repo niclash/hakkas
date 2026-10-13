@@ -33,7 +33,8 @@
  * inner blocks), GROUP_REMOVED -> graph:removegroup {"graph","name"},
  * GROUP_RENAMED -> graph:renamegroup {"graph","from","to"}, GROUP_CHANGED ->
  * graph:changegroup {"graph","name","metadata"}, and COMPONENT ->
- * component:component.
+ * component:component. The links between processes (LINK_ADDED/REMOVED,
+ * plan task 21f) have no wire form yet: NULL, nothing is sent (02 §6).
  *
  * Every function returns a heap string to free with free(), or NULL when
  * memory runs out (or, for proto_msg_event, when the event has no wire

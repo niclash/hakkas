@@ -16,10 +16,13 @@
  *		    "to": "<process>.<inport>"}, ...]}
  *    where "processes" is required and "links" optional.
  * Validation (decided, plan task 21e): a path is a non-empty string; a
- * "bindings" or "start" member that is null is absent; a link is an object
- * with string "from" and "to" (only checked for its shape: links are plan
- * task 21f). Anything else — text that is not one JSON array or object, a
- * wrong type, a missing "processes" or "graph" — refuses the whole file
+ * "bindings" or "start" member that is null is absent; a "links" member that
+ * is null is absent; a link is an object with string "from" and "to", each
+ * a "<process>.<port>" reference split on its last '.' (01 §2.4) into two
+ * non-empty parts (plan task 21f; whether the processes and ports exist is
+ * the host's check, when it makes the links). Anything else — text that is
+ * not one JSON array or object, a wrong type, a missing "processes" or
+ * "graph", a link reference without a process or port — refuses the whole file
  * (logged as an error naming the problem, PROCESS_LIST_ERR_MALFORMED). A
  * member the format does not know, at the top level or in an entry, is
  * logged as a warning and ignored (forward compatibility, like the
@@ -60,10 +63,21 @@ typedef struct {
 	enum process_list_start start;
 } ProcessListEntry;
 
+/* A link between processes (05 §1.2; 01 §2.2 Port): from_process's outport
+ * from_port to to_process's inport to_port, process = graph id. Each string
+ * is owned. */
+typedef struct {
+	char *from_process;
+	char *from_port;
+	char *to_process;
+	char *to_port;
+} ProcessListLink;
+
 typedef struct {
 	ProcessListEntry *entries; /* in list order */
 	size_t count;
-	size_t link_count; /* the "links" (not implemented yet: plan task 21f) */
+	ProcessListLink *links; /* in list order */
+	size_t link_count;
 } ProcessList;
 
 /* Parse the process list text (len bytes, need not be NUL-terminated); path
@@ -79,7 +93,7 @@ enum graph_files_status process_list_parse(const char *text, size_t len, const c
  * GRAPH_FILES_ERR_NOT_FOUND, _TOO_BIG, _STORAGE (logged). */
 enum graph_files_status process_list_load(const char *path, ProcessList *out);
 
-/* Free l's entries and make it empty. */
+/* Free l's entries and links and make it empty. */
 void process_list_free(ProcessList *l);
 
 #endif
