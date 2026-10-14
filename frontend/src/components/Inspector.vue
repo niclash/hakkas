@@ -29,14 +29,15 @@
                :data-testid="'inspector-' + group.key">
         <h4 class="hk-inspector-heading">{{ group.title }}</h4>
         <dl>
-          <div v-for="port in group.ports" :key="port.id" class="hk-inspector-port" data-testid="inspector-port">
+          <div v-for="port in group.ports" :key="shownNode + '/' + port.id" class="hk-inspector-port"
+               data-testid="inspector-port" :data-port="port.id">
             <dt>
               <span class="hk-inspector-port-id" data-testid="port-id">{{ port.id }}</span>
               <span class="hk-inspector-port-type" data-testid="port-type">{{ port.type }}</span>
             </dt>
             <dd v-if="port.description" data-testid="port-description">{{ port.description }}</dd>
-            <dd v-if="port.default !== undefined" class="hk-inspector-default" data-testid="port-default">
-              Default: {{ port.default }}
+            <dd v-if="group.key === 'inputs'">
+              <InputValue :block="view.id" :port="port"/>
             </dd>
           </div>
         </dl>
@@ -65,6 +66,7 @@ import {PendingRename} from "@/components/renaming";
 import {inspect, PortView} from "@/components/inspector";
 import {ComponentEvent} from "@/components/protocols/component";
 import {editor} from "@/components/floweditor/viewmodel/default";
+import InputValue from "@/components/InputValue.vue";
 
 // The selected blocks (06 §4.2): the view's own state, so nothing here changes the process
 // except through the engine's commands.
@@ -99,7 +101,7 @@ const pending = new PendingRename();
 const shownId = () => view.value.kind === "one" ? view.value.id : undefined;
 
 // The block shown, by the editor's id (its renames keep it), and its id when last shown.
-let shownNode: string | undefined;
+const shownNode = ref<string | undefined>();
 let shownLabel: string | undefined;
 
 watch(view, () => {
@@ -108,12 +110,12 @@ watch(view, () => {
   const id = shownId();
   const before = shownLabel;
   shownLabel = id;
-  if (node !== shownNode) {
+  if (node !== shownNode.value) {
     // Another block, or none. Clicking a block keeps the focus in the field (the editor
     // takes the pointer), so a name being typed for the previous block is sent here.
     if (editing.value && before !== undefined && draft.value !== before && nameError.value === "" && !pending.active)
       vueModel.connection.value?.proto.graph.request_renamenode(before, draft.value);
-    shownNode = node;
+    shownNode.value = node;
     pending.cancel();
     nameError.value = "";
     draft.value = id ?? "";

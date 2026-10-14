@@ -381,6 +381,37 @@ h1, h2, h3 {
   font-size: 13px;
 }
 
+.hk-inspector-value {
+  margin-top: 4px;
+}
+
+.hk-inspector-value-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hk-inspector-source {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--hk-text-muted);
+}
+
+.hk-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--hk-text);
+}
+
+.hk-switch input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--hk-accent);
+}
+
 .hk-inspector .hk-actions {
   margin-top: 12px;
 }

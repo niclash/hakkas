@@ -9,6 +9,7 @@ import {Schemes} from '@/components/model';
 import {vueModel} from '@/components/model';
 import {setupSelection} from './index';
 import {BlockSelection, MoveThrottle, Position, SelectionDrag} from './blocks';
+import {InputSource} from '@/components/initials';
 
 // What the selection does to the process, by block id (the node's label).
 export interface SelectionCommands {
@@ -42,7 +43,16 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
             publishing = false;
             vueModel.selectedBlocks.value = selection.ids().flatMap(id => {
                 const node = editor.getNode(id);
-                return node === undefined ? [] : [{node: id, id: node.label, component: node.component}];
+                if (node === undefined)
+                    return [];
+                const inputs: Record<string, InputSource> = {};
+                for (const [port, value] of Object.entries(node.initials))
+                    inputs[port] = {kind: "fixed", value};
+                for (const c of editor.getConnections()) {
+                    if (c.target === id)
+                        inputs[c.targetInput] = {kind: "connected", from: (editor.getNode(c.source)?.label ?? "?") + "." + c.sourceOutput};
+                }
+                return [{node: id, id: node.label, component: node.component, inputs}];
             });
         });
     };
@@ -186,7 +196,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
             selection.set([id]);
             vueModel.renameRequest.value++;
         },
-        // A selected block was renamed.
+        // A selected block, or what feeds its inputs, changed.
         refresh: publish,
         destroy() {
             document.removeEventListener('keydown', keydown);

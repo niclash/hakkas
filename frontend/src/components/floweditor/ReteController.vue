@@ -192,6 +192,7 @@ const callbacks = {
         // Assuming p.src.port and p.tgt.port are the correct key types (string IDs).
         let link = new Connection(srcNode, srcPort as any, tgtNode, tgtPort as any); // Using 'as any' if type checking is problematic with generic keys
         await editor.addConnection(link);
+        editor.blockSelection?.refresh();
         scheduleFit();
       }
     } finally {
@@ -216,6 +217,7 @@ const callbacks = {
 
         if (matchingConnections.length > 0) {
           await editor.removeConnection(matchingConnections[0].id);
+          editor.blockSelection?.refresh();
         }
       }
     } finally {
@@ -239,6 +241,7 @@ const callbacks = {
       if (tgtNode !== undefined) {
         tgtNode.setInitial(payload.tgt.port, String(payload.src.data));
         await editor.area.update('node', tgtNode.id);
+        editor.blockSelection?.refresh();
       }
     } finally {
       endTransaction();
@@ -252,6 +255,7 @@ const callbacks = {
       if (tgtNode !== undefined) {
         tgtNode.setInitial(payload.tgt.port, undefined);
         await editor.area.update('node', tgtNode.id);
+        editor.blockSelection?.refresh();
       }
     } finally {
       endTransaction();

@@ -67,8 +67,15 @@ export class PrimitiveNode extends Classic.Node {
         }
     }
 
-    // Shows an input's initial (a literal wired to it) in its label; undefined removes it.
+    // The inputs' initials (literals wired to them), as the events carry them.
+    readonly initials: Record<string, string> = {};
+
+    // Shows an input's initial in its label; undefined removes it.
     setInitial(port: string, data: string | undefined) {
+        if (data === undefined)
+            delete this.initials[port];
+        else
+            this.initials[port] = data;
         let input = this.inputs[port];
         if (input !== undefined)
             input.label = data === undefined ? port : port + " = " + data;

@@ -690,11 +690,16 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   is added to Rete's classic menu for now (task 30 replaces it). A refusal is matched to the
   pending rename by its message (`renaming.ts`), since `network:error` names no command; refusals
   go through `errorClaims` in the model before the error bar.
-- [ ] **29. Fixed values on inputs** (initials, 02 §3.4): in the inspector, each input shows
+- [x] **29. Fixed values on inputs** (initials, 02 §3.4): in the inspector, each input shows
   whether it has a connection, a fixed value or its default; a fixed value is set with an
   editor fitting the port's type (a number field, a true/false switch, a text field) →
   `graph:addinitial`, cleared → `graph:removeinitial`. An input with a connection cannot take
   one (the engine refuses: no fan-in) — shown as such. Also from the context menu on an input.
+  Done in the inspector (06 §4.2, `InputValue.vue`, `initials.ts`). Numbers are checked in the
+  browser (the engine would read other text as 0). The context menu on an input moves to task
+  30 (Rete's classic menu does not know which input was clicked). The engine sends no port
+  `default` in `component:component`, so "Default" shows no value: a protocol question for
+  the user.
 - [ ] **30. Context menus** (themed, 06 §4.1): replace the classic preset's menu by our own
   component. On the canvas: add block (with search, placed where the menu was opened), paste,
   zoom to fit, auto-layout (sends a `changenode` per moved block). On a block: rename, set
