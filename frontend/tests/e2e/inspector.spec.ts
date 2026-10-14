@@ -32,7 +32,7 @@ test("one selected block: its id, type and ports as the engine describes them", 
     const add2 = await componentOf(await engine.client(), "math/Add2");
 
     await select(page, "block8");
-    await expect(page.getByTestId("inspector-id")).toHaveText("block8");
+    await expect(page.getByTestId("inspector-name")).toHaveValue("block8");
     await expect(page.getByTestId("inspector-type")).toHaveText("math/Add2");
     await expect(page.getByTestId("inspector-description")).toHaveText(add2.description);
     const inputs = page.getByTestId("inspector-inputs").getByTestId("inspector-port");
@@ -73,7 +73,7 @@ test("the inspector follows another client's rename and removal", async ({page, 
 
     await select(page, "block8");
     await other.command("graph", "renamenode", {graph: G, from: "block8", to: "sum"});
-    await expect(page.getByTestId("inspector-id")).toHaveText("sum");
+    await expect(page.getByTestId("inspector-name")).toHaveValue("sum");
     await other.command("graph", "removenode", {graph: G, id: "sum"});
     await expect(page.getByTestId("inspector-empty")).toBeVisible();
 });

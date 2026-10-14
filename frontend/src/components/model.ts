@@ -82,6 +82,8 @@ export const vueModel: {
     pipesDisabled: boolean,
     // The selected blocks of the open process (06 §4.0), for the inspector.
     selectedBlocks: Ref<SelectedBlock[]>,
+    // Incremented to ask the inspector to open its name field (F2, the context menu).
+    renameRequest: Ref<number>,
     components: Ref<UnwrapRef<ComponentEvent[]>>,
     selectedComponent: string,
     connection: ShallowRef<WsConnection | undefined>,
@@ -94,6 +96,7 @@ export const vueModel: {
     components: ref([]),
     pipesDisabled: false,
     selectedBlocks: ref([]),
+    renameRequest: ref(0),
     connection: shallowRef(undefined),
     errors: ref([]),
     selectedComponent: "",
@@ -107,6 +110,10 @@ export const vueModel: {
         }
     }
 };
+
+// Parts of the UI that show some refusals themselves, at the field the command came from:
+// each one tells whether it took the message.
+export const errorClaims: ((message: string) => boolean)[] = [];
 
 export function showError(message: string) {
     vueModel.errors.value.push(message);
@@ -154,7 +161,10 @@ export function attachModel(conn: WsConnection) {
     proto.network.addListener("onNetworkStopped", (s: StoppedEvent) => {
         Object.assign(graph(s.graph), {running: false, started: false, uptime: 0});
     });
-    proto.network.addListener("onNetworkError", (e: NetworkErrorEvent) => showError(e.message));
+    proto.network.addListener("onNetworkError", (e: NetworkErrorEvent) => {
+        if (!errorClaims.some(claim => claim(e.message)))
+            showError(e.message);
+    });
     proto.runtime.addListener("onNewGraphPacket", (p: { graph: string, name: string, description: string }) => {
         Object.assign(graph(p.graph), {name: p.name, description: p.description});
     });

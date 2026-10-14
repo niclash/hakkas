@@ -683,9 +683,13 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   Done as `Inspector.vue` beside the editor (06 §4.2), from `inspector.ts` (unit tested) and the
   selection published as `vueModel.selectedBlocks`. Inputs first, then outputs, with each
   port's default; the common action for now is Delete.
-- [ ] **28. Renaming blocks**: in the inspector, with F2 and from the context menu;
+- [x] **28. Renaming blocks**: in the inspector, with F2 and from the context menu;
   `graph:renamenode`, the new name shown when its event arrives; `"Node exists"`/`"Invalid id"`
   refusals shown at the field. Blocks added from the palette keep their `<Type>_<n>` names.
+  Done in the inspector's name field (06 §4.2): Enter or leaving the field sends; the menu item
+  is added to Rete's classic menu for now (task 30 replaces it). A refusal is matched to the
+  pending rename by its message (`renaming.ts`), since `network:error` names no command; refusals
+  go through `errorClaims` in the model before the error bar.
 - [ ] **29. Fixed values on inputs** (initials, 02 §3.4): in the inspector, each input shows
   whether it has a connection, a fixed value or its default; a fixed value is set with an
   editor fitting the port's type (a number field, a true/false switch, a text field) →

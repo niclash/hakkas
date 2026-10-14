@@ -4,8 +4,10 @@
 import {ComponentEvent} from "@/components/protocols/component";
 import {Port} from "@/components/protocols/protocols";
 
-// A selected block: its id in the process and its type.
+// A selected block: its id in the process and its type; `node` is the editor's own id for
+// it, which a rename keeps.
 export interface SelectedBlock {
+    node?: string;
     id: string;
     component: string;
 }

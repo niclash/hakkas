@@ -303,11 +303,27 @@ h1, h2, h3 {
   overflow-wrap: anywhere;
 }
 
+.hk-inspector-name .hk-inspector-heading {
+  display: block;
+}
+
+.hk-inspector-name .hk-input {
+  font-weight: 600;
+}
+
+.hk-input[aria-invalid="true"] {
+  border-color: var(--hk-danger);
+}
+
+.hk-inspector-name .hk-inspector-note {
+  margin-top: 4px;
+}
+
 .hk-inspector-type {
   color: var(--hk-text-muted);
   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: 13px;
-  margin-top: 2px;
+  margin-top: 8px;
 }
 
 .hk-inspector-description,

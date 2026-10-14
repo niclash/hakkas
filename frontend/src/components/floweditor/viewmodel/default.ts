@@ -38,6 +38,22 @@ export class FlowEditor extends NodeEditor<Schemes> {
 
 export let editor: FlowEditor;
 
+type MenuItems = ReturnType<typeof ContextMenuPresets.classic.setup<Schemes>>;
+
+// A block's menu gets Rename (06 §4.2), which opens the inspector's name field.
+function withRename(items: MenuItems): MenuItems {
+    return (context, plugin) => {
+        const collection = items(context, plugin);
+        if (context === 'root' || !('label' in context))
+            return collection;
+        return {
+            ...collection,
+            list: [{label: 'Rename', key: 'rename', handler: () => editor.blockSelection?.rename(context.id)},
+                ...collection.list],
+        };
+    };
+}
+
 export async function createEditor(container: HTMLElement) {
     const area = new AreaPlugin<Schemes, AreaExtra>(container);
     editor = new FlowEditor(area);
@@ -51,7 +67,7 @@ export async function createEditor(container: HTMLElement) {
     const arrange = new AutoArrangePlugin<Schemes>();
     arrange.addPreset(ArrangePresets.classic.setup());
     const contextMenu = new ContextMenuPlugin<Schemes>({
-        items: ContextMenuPresets.classic.setup([
+        items: withRename(ContextMenuPresets.classic.setup([
             ['Select All', () => {
                 editor.blockSelection?.selectAll();
                 return editor.getNodes()[0];
@@ -64,7 +80,7 @@ export async function createEditor(container: HTMLElement) {
                 AreaExtensions.zoomAt(area, editor.getNodes());
                 return editor.getNodes()[0];
             }],
-        ]),
+        ])),
     });
     area.use(vueRender);
     area.use(connection);

@@ -1,6 +1,6 @@
 // Selecting blocks in the editor and acting on the selection (06 §4): click, Ctrl/Shift-click,
 // a Shift/Ctrl-drag marquee on the canvas, Escape or a click on the canvas, Ctrl+A, Delete or
-// Backspace, and dragging the selection. Replaces Rete's selectableNodes, which moves the other
+// Backspace, F2 (rename), and dragging the selection. Replaces Rete's selectableNodes, which moves the other
 // selected blocks locally when the dragged one moves; here every move goes to the engine.
 
 import {NodeEditor} from 'rete';
@@ -42,7 +42,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
             publishing = false;
             vueModel.selectedBlocks.value = selection.ids().flatMap(id => {
                 const node = editor.getNode(id);
-                return node === undefined ? [] : [{id: node.label, component: node.component}];
+                return node === undefined ? [] : [{node: id, id: node.label, component: node.component}];
             });
         });
     };
@@ -163,6 +163,11 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
         } else if (event.key === 'a' && (event.ctrlKey || event.metaKey) && !event.altKey) {
             event.preventDefault();
             selectAll();
+        } else if (event.key === 'F2') {
+            if (selection.ids().length !== 1)
+                return;
+            event.preventDefault();
+            vueModel.renameRequest.value++;
         } else if (event.key === 'Delete' || event.key === 'Backspace') {
             if (selection.ids().length === 0)
                 return;
@@ -176,6 +181,11 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
         selection,
         selectAll,
         removeSelected,
+        // Selects the block alone and opens the inspector's name field.
+        rename(id: string) {
+            selection.set([id]);
+            vueModel.renameRequest.value++;
+        },
         // A selected block was renamed.
         refresh: publish,
         destroy() {
