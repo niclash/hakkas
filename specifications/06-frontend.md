@@ -73,15 +73,22 @@ Two suites, both in `frontend/tests/` (decided 2026-10-13):
 
 ## 7. Not implemented yet
 
-The order of the work, and the decisions it waits for, is phase 5 of `docs/plan.md`.
+The order of the work is phase 5 of `docs/plan.md`. Decided with the user for it (2026-10-14):
+
+- **Saving**: a Save button and an "unsaved" mark per process, from `network:status`'s `unsaved` (`02-wire-protocol.md` §3.3, a protocol addition). A successful save is confirmed discreetly (a short notice that fades); a failed one is shown prominently (a dialog, or an error that stays until dismissed).
+- **Starting at boot** is the saved `started` state: the process list shows the loaded processes only (as now), each with start/stop; a start or stop makes the process unsaved, and saving it stores whether it starts at boot (`05-app-lifecycle-persistence.md` §2.1; `run daemon` starts the processes saved running; with `run processes` a list entry's own `start` wins, 05 §1.2).
+- **A process's description** stays read-only in the UI for now (set at creation; no command changes it).
+- **Composite types** are view-only for now: create, describe, rename and remove them, and look inside one; editing an existing type's inside is wanted in the long term and needs its own design (what happens to running instances).
+- **Fewer logins**: reloading the page does not ask for the password again — the session is resumed with a resume key (`02-wire-protocol.md` §2.3.1, a protocol addition), kept in the browser's `localStorage` until the session would have expired or the user logs out.
+- **Block categories**: the bitwise `math/And2` … blocks go and the comparisons move to `compare/` (`03-block-types.md` §3); the palette's sections are the type names' prefixes, as now.
 
 What the frontend does today is §2–§4: log in, list the block types and processes, open a process and draw it, and follow every change the engine broadcasts. The editing commands are sent from the editor's hooks — `addnode` (from the block palette), `removenode`, `addedge`, `removeedge`, and `changenode` while a block is dragged — and `runtime:new_graph` from the process list, but they have only been tried in passing. Missing, roughly in the order they are likely to be needed:
 
 - **Dragging** sends one `changenode` per pointer movement, and the block moves when each event returns. That is smooth on a local network; over the Internet it will need throttling (e.g. at most one command per animation frame, and the final position on release), still without moving the block locally.
 - **Live values**: `network:edges` subscriptions and `network:data` shown on connections or ports (`02-wire-protocol.md` §4.2).
-- Starting, stopping and persisting a process (`network:start`/`stop`/`persist`), deleting and renaming it.
+- Starting, stopping and saving a process (`network:start`/`stop`/`persist`, with the unsaved mark above), deleting and renaming it.
 - Editing initials, renaming blocks.
 - The role's capabilities (`02-wire-protocol.md` §2.4): a viewer or operator should get a read-only editor.
 - Graph inports/outports (`graph:addinport` …), groups (`02-wire-protocol.md` §3.4.2), links between processes (`00-README.md` open question 13) and the environment's ports (`03-block-types.md` §4), none of which is drawn yet.
-- Reconnecting automatically after a lost connection.
+- Reconnecting automatically after a lost connection, and resuming the session after a reload (above).
 - A smaller bundle (§5).

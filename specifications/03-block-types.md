@@ -41,6 +41,8 @@ Decisions (plan task 8), on timers (`01-architecture-overview.md` §3.2 item 7 a
 
 Unless noted, the following are stateless, event-driven blocks (`compute_on_input = true`, `TIMER_NONE`), with ports named `in1..inN → out` and every port of type `"number"` with default `0`. The comparison blocks' `out` port is of type `"bool"`; the `logic/*` blocks' ports are all `"bool"` with default `false`. Every type uses the engine-wide change threshold unless a type default is listed here. The table's order is the registration order (`01-architecture-overview.md` §2.3), family by family: `math/`, `logic/`, `process/`, `timing/` (decided, plan task 24).
 
+**Decided 2026-10-14 with the user, not implemented yet (plan task 47)**: the bitwise integer blocks `math/And2`, `math/Or2`, `math/Xor`, `math/And4` and `math/Or4` are removed (boolean logic is `logic/*`); the comparisons move to their own category under the names `compare/Greater`, `compare/Less`, `compare/Equal`, `compare/NotEqual`, `compare/LessEqual` and `compare/GreaterEqual`. Graph and type files that name the old comparison names still load: the loader accepts `math/<comparison>` as an alias of `compare/<comparison>`, and a save writes the new name. A file naming a removed bitwise block loads it as a placeholder (`05-app-lifecycle-persistence.md` §2.2). The table below is the current state until that task lands.
+
 | Name | Icon | Description | Formula |
 |---|---|---|---|
 | `math/Add4` | add | `out = in1+in2+in3+in4` | `to_f64(in1)+to_f64(in2)+to_f64(in3)+to_f64(in4)` |

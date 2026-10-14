@@ -615,34 +615,40 @@ logic and end-to-end tests (06 §6) for what the user does, and records its deci
 **The wire protocol is not changed without asking** (00-README "Protocol compatibility
 policy"): a task that needs an addition stops at the decision below, one addition at a time.
 
-Decisions needed before the tasks that depend on them (recommendation first):
-- **D1. Save feedback.** `network:persist` has no reply on success (02 §3.3), so the UI cannot
-  say "saved". (a) An addition: an event on success, e.g. `network:persisted {graph,time}` to
-  the graph's subscribers; (b) no feedback, only errors. → task 32.
-- **D2. Startup activation.** Today a process starts at boot if it was *running when last
-  persisted* (`run daemon`, 05 §1.2), or as the process list says (`run processes`; not
-  writable from the wire). (a) Keep that and make it explicit in the UI: "Start at boot" =
-  start + save; (b) a separate autostart flag in the graph file, independent of the running
-  state, set by a protocol addition (e.g. `graph:changegraph {id, metadata:{autostart}}`)
-  — then also the process list's `start` vs. that flag needs a rule. → task 33.
-- **D3. Process description.** `runtime:new_graph` sets it, nothing changes it later (`graph:rename`
-  is the name only). (a) Leave it read-only; (b) an addition (the same `graph:changegraph` as
-  D2 b would carry it). → task 32.
-- **D4. Editing inside a composite type.** A type can be created (`addgroup`), described,
-  renamed and removed — the last two only while unused — but its inner blocks cannot be
-  edited (03 §5, 02 §3.4.2). (a) View the inside read-only (`component:getsource`), edit by
-  "save as" a new type; (b) a design for editing a type in place, with what happens to its
-  running instances. → task 36.
-- **D5. `math/` boolean operations.** `math/And2`, `Or2`, `Xor`, `And4`, `Or4` are *bitwise
-  integer* operations; `logic/And`, `Or`, `Xor`, `Not` are boolean; the comparisons
-  (`math/Greater` …) give booleans (03 §2 calls them "compare"). (a) Move the bitwise ones to
-  `logic/` under clear names (e.g. `logic/BitAnd2` …) and the comparisons to a `compare/`
-  category, with the old names kept as aliases when a graph file or type file is loaded, so
-  existing files (the sister project's included) still load; (b) only the palette groups them
-  differently (a category in the UI), the type names unchanged. → task 44.
-- **D6. Reconnecting.** After a lost connection the session is gone (02 §2.5). (a) Reconnect
-  and show the login with the user name filled in, then reopen the same process; (b) also keep
-  the password in memory for a silent re-login (convenient; a password in page memory). → task 39.
+Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3.3, 03 §3):
+- **D1. Saving**: a Save button and an "unsaved" mark; a discreet notice on success, a prominent
+  error on failure. Protocol addition: `network:status` gains `unsaved` (02 §3.3) → tasks 45, 32.
+- **D2. Starting at boot** is the saved `started` state, which the graph file already holds
+  (05 §2.1): start/stop makes a process unsaved, saving stores it. The process list keeps
+  showing only loaded processes. No protocol change → task 32 (task 33 merged into it).
+- **D3. A process's description** stays read-only for now.
+- **D4. Composite types** are view-only for now; editing a type's inside is wanted later and
+  needs its own design → task 36.
+- **D5.** The bitwise `math/And2`, `Or2`, `Xor`, `And4`, `Or4` are removed; the comparisons
+  become `compare/*`, the old names load as aliases → task 47 (task 44 merged into it).
+- **D6. Fewer logins**: a reload resumes the session with a resume key, never sent on the wire;
+  kept in `localStorage`. Protocol addition (02 §2.3.1) → tasks 46, 39.
+
+### 5.0 Engine prerequisites (C, with their tests and the spec)
+
+- [ ] **45. Unsaved state** (02 §3.3 "Unsaved state"): a per-process flag in the model, set by
+  every applied change the graph file holds (graph commands, rename, start/stop), cleared by a
+  successful persist (and set for a new process); `network:status` carries it as its last member;
+  a status broadcast when it turns true and after every successful persist. The C API's status
+  (`HakkasProcessStatus`) gets it too (02 §6). End-to-end tests: each kind of change, a save,
+  a failed save, a new process.
+- [ ] **46. Resuming a session** (02 §2.3.1): the resume table in the authorizer (bounded, LRU,
+  checked against the users file at the challenge), the `resume` member of the login reply, the
+  `resume` variants of `environment:challenge`/`login`, rotation, expiry with the chain's idle
+  timeout and lifetime, revocation at logout, failures counted for the rate limits; logging
+  never shows an id or key (02 §2.5 item 8). Then the frontend: keep `{user, id, ResumeKey}` in
+  `localStorage`, resume on load before showing the login, forget it at logout or when a resume
+  fails. Unit tests (the derivation against an independent implementation, 06 §6), protocol
+  tests, and an end-to-end test that a reload stays logged in.
+- [ ] **47. Block types** (03 §3): remove `math/And2`, `Or2`, `Xor`, `And4`, `Or4`; rename the
+  comparisons to `compare/*` with the `math/*` names accepted as aliases by the graph and type
+  file loaders (a save writes the new name); update 03's table, `describe`, the tests, and the
+  palette's end-to-end expectations.
 
 ### 5a. Working with blocks
 
@@ -681,12 +687,14 @@ Decisions needed before the tasks that depend on them (recommendation first):
 ### 5b. Processes
 
 - [ ] **32. Process management** (02 §3.2–§3.4): rename (`graph:rename`, in place in the list),
-  start/stop (`network:start`/`stop`, the running mark from the events), save
-  (`network:persist`; feedback per D1), delete (`runtime:delete_graph`, with a confirmation
+  start/stop (`network:start`/`stop`, the running mark from the events; a start or stop makes
+  the process unsaved, and saving stores whether it starts at boot, D2), save (a Save button
+  and an "unsaved" mark from `network:status`'s `unsaved`, after task 45; a discreet notice on
+  success, a prominent error on failure, D1), delete (`runtime:delete_graph`, with a confirmation
   naming the process), create (existing "New...": open the new process when its
-  `runtime:new_graph` arrives from this client's request). The description shown (editable per
-  D3). Uptime from `network:status`.
-- [ ] **33. Startup activation** — **blocked on D2**: a "start at boot" control per process.
+  `runtime:new_graph` arrives from this client's request). The description shown, read-only
+  (D3). Uptime from `network:status`.
+- [x] **33. Startup activation** — merged into task 32 (D2: the saved `started` state).
 - [ ] **34. Live values** (`network:edges`/`network:data`, 02 §4.2): watch a connection (context
   menu, inspector, or a "watch all" toggle for the open process) and show its value as a label
   on the connection; watch a block's inputs, including unconnected ones with a fixed value.
@@ -703,7 +711,7 @@ Decisions needed before the tasks that depend on them (recommendation first):
   one from the selection (name, description, icon) → `graph:addgroup`; the palette lists
   composites in their category with a mark; change description/icon (`changegroup`), rename
   and remove (`renamegroup`/`removegroup`; refused while in use — shown); view the inside of a
-  type read-only, drawn from `component:getsource`; editing per D4. Replacing the selection by
+  type read-only, drawn from `component:getsource`. Editing a type's inside is later (D4). Replacing the selection by
   an instance of the new type is a separate, later option (open question 4, "collapse").
 - [ ] **37. Copy, paste, duplicate**: the selection with its inner connections and fixed values
   as a clipboard (in the page; also to the system clipboard as JSON), pasted into the same or
@@ -715,8 +723,8 @@ Decisions needed before the tasks that depend on them (recommendation first):
 - [ ] **38. Roles** (02 §2.4): from the login's capabilities — a viewer gets a read-only editor
   (no palette, menus without edit actions, no dragging), an operator also start/stop; the
   engine's refusals stay the guard, the UI only stops offering what would be refused.
-- [ ] **39. Connection resilience**: reconnect after a lost connection with back-off, then the
-  login per D6, then reopen the process that was open and resend the watches (task 34).
+- [ ] **39. Connection resilience**: reconnect after a lost connection with back-off, resuming
+  the session (task 46) rather than asking for the password, then reopen the process that was open and resend the watches (task 34).
   Dragging throttle for slow links if task 26 has not covered it.
 - [ ] **40. Addresses**: the open process in the URL (`/process/<id>`; the web server's SPA
   fallback serves it, 05 §3), so a process can be bookmarked and the browser's back button
@@ -730,9 +738,8 @@ Decisions needed before the tasks that depend on them (recommendation first):
 - [ ] **43. A smaller bundle** (06 §5): drop the unused 3D editor template (three.js) and the
   icon fonts nothing uses, build `.gz` assets only for the device, and record the size
   against the flash budget.
-- [ ] **44. Block categories** — **blocked on D5**: (a) the backend renames with load-time
-  aliases (03, a C task with its tests and the spec), then the palette follows; or (b) the
-  palette's own categories.
+- [x] **44. Block categories** — merged into task 47 (D5); the palette's sections follow the
+  type names.
 
 ### 5d. Waiting for other decisions
 
