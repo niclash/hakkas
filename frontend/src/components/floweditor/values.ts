@@ -16,10 +16,12 @@ function valueNodeOf(editor: FlowEditor, block: PrimitiveNode, port: string): Va
     return valueNodes(editor, block).find(v => v.port === port);
 }
 
-// The middle of an input's socket below the block's top, as drawn (without the zoom).
-function socketOffset(editor: FlowEditor, block: PrimitiveNode, port: string): number {
+// The middle of a port's socket below the block's top, as drawn (without the zoom).
+export function socketOffset(editor: FlowEditor, block: PrimitiveNode, port: string,
+                             side: "input" | "output" = "input"): number {
     const view = editor.area.nodeViews.get(block.id);
-    const socket = view?.element.querySelector(`[data-testid="input-${CSS.escape(port)}"] [data-testid="input-socket"]`);
+    const socket = view?.element.querySelector(
+        `[data-testid="${side}-${CSS.escape(port)}"] [data-testid="${side}-socket"]`);
     if (view !== undefined && socket !== null && socket !== undefined) {
         const top = view.element.getBoundingClientRect().top;
         const rect = socket.getBoundingClientRect();
@@ -27,7 +29,8 @@ function socketOffset(editor: FlowEditor, block: PrimitiveNode, port: string): n
             return (rect.top + rect.height / 2 - top) / editor.area.area.transform.k;
     }
     // Not drawn yet: the classic block's layout (a title, then outputs and inputs in rows).
-    const row = Object.keys(block.outputs).length + Object.keys(block.inputs).indexOf(port);
+    const row = side === "output" ? Object.keys(block.outputs).indexOf(port)
+        : Object.keys(block.outputs).length + Object.keys(block.inputs).indexOf(port);
     return 40 + row * 36 + 18;
 }
 
@@ -84,7 +87,7 @@ export function inputSources(editor: NodeEditor<Schemes>, block: PrimitiveNode):
         inputs[port] = {kind: "fixed", value};
     for (const c of editor.getConnections()) {
         const source = editor.getNode(c.source);
-        if (c.target === block.id && source !== undefined && !isValueNode(source))
+        if (c.target === block.id && source instanceof PrimitiveNode)
             inputs[c.targetInput] = {kind: "connected", from: source.label + "." + c.sourceOutput};
     }
     return inputs;

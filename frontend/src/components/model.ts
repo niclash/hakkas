@@ -21,10 +21,12 @@ export function socketFor(portType: string): Classic.Socket {
 
 export let componentTemplates: Record<string, ComponentEvent> = {};
 
-export type Node = PrimitiveNode | ValueNode;
+export type Node = PrimitiveNode | ValueNode | PortNode;
 type Conn =
     | Connection<PrimitiveNode, PrimitiveNode>
     | Connection<ValueNode, PrimitiveNode>
+    | Connection<PortNode, PrimitiveNode>
+    | Connection<PrimitiveNode, PortNode>
     ;
 
 export class Connection<A extends Node, B extends Node> extends Classic.Connection<A, B> {
@@ -125,6 +127,35 @@ export class ValueNode extends Classic.Node {
 
 export function isValueNode(node: Node | undefined): node is ValueNode {
     return node instanceof ValueNode;
+}
+
+// A process port (02 §3.4 addinport/addoutport, 06 §4.8): a marker at the process's edge,
+// connected to the block port it exposes. Like a value node it is not a block: not selected,
+// not dragged, placed by the editor.
+export class PortNode extends Classic.Node {
+    readonly direction: "in" | "out";
+    name: string;               // the public name
+    readonly block: string;     // the editor's id of the block
+    readonly port: string;
+    width = 130;
+    height = 32;
+
+    constructor(direction: "in" | "out", name: string, block: PrimitiveNode, port: string) {
+        super(name);
+        this.direction = direction;
+        this.name = name;
+        this.block = block.id;
+        this.port = port;
+        const type = direction === "in" ? block.inputType(port) : block.outports.find(p => p.id === port)?.type ?? "";
+        if (direction === "in")
+            this.addOutput("port", new Classic.Output(socketFor(type), ""));
+        else
+            this.addInput("port", new Classic.Input(socketFor(type), ""));
+    }
+}
+
+export function isPortNode(node: Node | undefined): node is PortNode {
+    return node instanceof PortNode;
 }
 
 export const vueModel: {

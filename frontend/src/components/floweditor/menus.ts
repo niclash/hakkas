@@ -10,14 +10,17 @@ export type MenuTarget =
     | { kind: "block", id: string, selected: number, watched?: boolean }   // `selected`: blocks selected with it
     | { kind: "input", id: string, port: string, source: InputSource, watched?: boolean }
     | { kind: "value", id: string, port: string, watched?: boolean }       // a value node or its line (06 §4.3)
-    | { kind: "connection", watched?: boolean };
+    | { kind: "connection", watched?: boolean }
+    | { kind: "output", id: string, port: string }                          // a block's output row
+    | { kind: "port", direction: "in" | "out", name: string };              // a process port (06 §4.8)
 
 export type MenuAction =
     | "add-block" | "zoom-fit" | "arrange" | "select-all"
     | "rename" | "edit-inputs" | "delete-block" | "delete-selection"
     | "set-value" | "change-value" | "clear-value" | "disconnect"
     | "delete-connection"
-    | "watch" | "unwatch" | "watch-inputs" | "unwatch-inputs" | "watch-all" | "unwatch-all";
+    | "watch" | "unwatch" | "watch-inputs" | "unwatch-inputs" | "watch-all" | "unwatch-all"
+    | "expose-input" | "expose-output" | "rename-port" | "remove-port";
 
 export interface MenuItem {
     action: MenuAction;
@@ -51,16 +54,26 @@ export function menuFor(target: MenuTarget): MenuItem[] {
                     ? {action: "delete-selection", label: `Delete ${target.selected} blocks`, shortcut: "Del"}
                     : {action: "delete-block", label: "Delete", shortcut: "Del"},
             ];
-        case "input":
+        case "input": {
+            const expose: MenuItem = {action: "expose-input", label: "Expose as process input…"};
             if (target.source.kind === "connected")
-                return [{action: "disconnect", label: "Disconnect"}, watchItem(target.watched)];
+                return [{action: "disconnect", label: "Disconnect"}, watchItem(target.watched), expose];
             if (target.source.kind === "fixed")
                 return [
                     {action: "change-value", label: "Change fixed value…"},
                     {action: "clear-value", label: "Use the default"},
                     watchItem(target.watched),
+                    expose,
                 ];
-            return [{action: "set-value", label: "Set fixed value…"}, watchItem(target.watched)];
+            return [{action: "set-value", label: "Set fixed value…"}, watchItem(target.watched), expose];
+        }
+        case "output":
+            return [{action: "expose-output", label: "Expose as process output…"}];
+        case "port":
+            return [
+                {action: "rename-port", label: "Rename process port…"},
+                {action: "remove-port", label: "Remove process port"},
+            ];
         case "value":
             return [
                 {action: "change-value", label: "Change value…"},

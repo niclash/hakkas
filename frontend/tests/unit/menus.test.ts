@@ -21,17 +21,19 @@ describe("menuFor", () => {
     });
 
     it("an input, by what feeds it", () => {
-        expect(actions({kind: "input", id: "a", port: "in", source: {kind: "default"}})).toEqual(["set-value", "watch"]);
+        expect(actions({kind: "input", id: "a", port: "in", source: {kind: "default"}})).toEqual(["set-value", "watch", "expose-input"]);
         expect(actions({kind: "input", id: "a", port: "in", source: {kind: "fixed", value: "1"}, watched: true}))
-            .toEqual(["change-value", "clear-value", "unwatch"]);
+            .toEqual(["change-value", "clear-value", "unwatch", "expose-input"]);
         expect(actions({kind: "input", id: "a", port: "in", source: {kind: "connected", from: "b.out"}}))
-            .toEqual(["disconnect", "watch"]);
+            .toEqual(["disconnect", "watch", "expose-input"]);
     });
 
     it("a value node and a connection", () => {
         expect(actions({kind: "value", id: "a", port: "in"})).toEqual(["change-value", "clear-value", "watch"]);
         expect(actions({kind: "connection"})).toEqual(["delete-connection", "watch"]);
         expect(actions({kind: "connection", watched: true})).toEqual(["delete-connection", "unwatch"]);
+        expect(actions({kind: "output", id: "a", port: "out"})).toEqual(["expose-output"]);
+        expect(actions({kind: "port", direction: "in", name: "x"})).toEqual(["rename-port", "remove-port"]);
     });
 });
 

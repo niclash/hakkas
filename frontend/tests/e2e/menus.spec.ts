@@ -35,7 +35,8 @@ test("the canvas menu, by keyboard: arrows, Escape", async ({page, engine}) => {
     await expect(item(page, "select-all")).toBeFocused();
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
-    await expect(item(page, "arrange")).toBeFocused();
+    // Up from the first item wraps to the last.
+    await expect(item(page, "watch-all")).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(menu(page)).toHaveCount(0);
 
@@ -104,14 +105,14 @@ test("an input's menu: set, change and clear a fixed value, or disconnect", asyn
     await other.connectGraph(G);
 
     await inputRow(page, "block7", "in3").click({button: "right"});
-    expect(await actions(page)).toEqual(["set-value", "watch"]);
+    expect(await actions(page)).toEqual(["set-value", "watch", "expose-input"]);
     await item(page, "set-value").click();
     await page.getByTestId("value-draft-field").fill("2");
     await page.getByTestId("value-draft-field").press("Enter");
     await expect.poll(() => inputLabels(page, "block7")).toEqual(["in1", "in2", "in3 = 2", "in4"]);
 
     await inputRow(page, "block8", "in1").click({button: "right"});
-    expect(await actions(page)).toEqual(["change-value", "clear-value", "watch"]);
+    expect(await actions(page)).toEqual(["change-value", "clear-value", "watch", "expose-input"]);
     await item(page, "change-value").click();
     const field = valueNode(page, "block8", "in1").getByTestId("value-node-field");
     await expect(field).toBeFocused();
@@ -126,7 +127,7 @@ test("an input's menu: set, change and clear a fixed value, or disconnect", asyn
     await expect.poll(() => inputLabels(page, "block8")).toEqual(["in1 = 13", "in2"]);
 
     await inputRow(page, "block7", "in1").click({button: "right"});
-    expect(await actions(page)).toEqual(["disconnect", "watch"]);
+    expect(await actions(page)).toEqual(["disconnect", "watch", "expose-input"]);
     await item(page, "disconnect").click();
     expect((await other.next(m => m.command === "removeedge")).payload)
         .toMatchObject({src: {node: "block3", port: "out"}, tgt: {node: "block7", port: "in1"}});

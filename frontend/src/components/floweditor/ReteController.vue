@@ -1,11 +1,13 @@
 <script setup lang="ts">
 
-import {computed, onMounted, ref, watch} from "vue";
+import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
 import {createEditor} from './viewmodel';
 import {editor} from './viewmodel/default';
-import {componentTemplates, Connection, isValueNode, PrimitiveNode, ValueNode, vueModel} from "../model";
+import {componentTemplates, Connection, errorClaims, isPortNode, isValueNode, PortNode, PrimitiveNode, ValueNode, vueModel} from "../model";
 import {SocketData} from "rete-connection-plugin";
 import {inputSources, placeValues, renameValues, showValue} from "./values";
+import {placePorts, portNodes, removePort, renamePort, showPort} from "./ports";
+import Popup from "@/components/Popup.vue";
 import {
   attachLive, blockRemoved, blockRenamed, connectionLost, connectionsChanged, dataArrived, inputsOf, isWatched,
   live, processOpened, unwatch, watch as watchInputs, watchAll
@@ -138,6 +140,7 @@ const callbacks = {
       let node = new PrimitiveNode(payload.id, template ? template.description : "Unknown component", payload.component, inp, outp);
       await editor.addNode(node);
       await editor.area.translate(node.id, payload.metadata);
+      await placePorts(editor);
       scheduleFit();
     } finally {
       endTransaction();
@@ -151,6 +154,7 @@ const callbacks = {
       if (node !== undefined) {
         await editor.removeNode(node);
         blockRemoved(payload.id);
+        await placePorts(editor);
       }
     } finally {
       endTransaction();
@@ -166,6 +170,8 @@ const callbacks = {
         node.label = payload.to;
         await editor.area.update('node', node.id);
         await renameValues(editor, node);
+        for (const marker of portNodes(editor).filter(p => p.block === node!.id))
+          await editor.area.update("node", marker.id);
         blockRenamed(oldName, payload.to);
         editor.blockSelection?.refresh();
       }
@@ -181,6 +187,7 @@ const callbacks = {
       if (node !== undefined) {
         await editor.setPosition(node.id, payload.metadata as Position);
         await placeValues(editor, node);
+        await placePorts(editor);
       }
     } finally {
       endTransaction();
@@ -251,6 +258,7 @@ const callbacks = {
       let tgtNode = findNodeByName(payload.tgt.node);
       if (tgtNode !== undefined) {
         await showValue(editor, tgtNode, payload.tgt.port, String(payload.src.data));
+        await placePorts(editor);
         editor.blockSelection?.refresh();
         if (draft.value?.block === tgtNode.id && draft.value.port === payload.tgt.port)
           draft.value = undefined;
@@ -266,6 +274,7 @@ const callbacks = {
       let tgtNode = findNodeByName(payload.tgt.node);
       if (tgtNode !== undefined) {
         await showValue(editor, tgtNode, payload.tgt.port, undefined);
+        await placePorts(editor);
         editor.blockSelection?.refresh();
       }
     } finally {
@@ -276,7 +285,10 @@ const callbacks = {
   onGraphAddInport: async (payload: AddInportEvent): Promise<void> => {
     startTransaction(payload);
     try {
-
+      const block = findNodeByName(payload.node);
+      if (block !== undefined)
+        await showPort(editor, "in", payload.name, block, payload.port);
+      portDialogDone("in", payload.name);
     } finally {
       endTransaction();
     }
@@ -285,7 +297,7 @@ const callbacks = {
   onGraphRemoveInport: async (payload: RemoveInportEvent): Promise<void> => {
     startTransaction(payload);
     try {
-
+      await removePort(editor, "in", payload.name);
     } finally {
       endTransaction();
     }
@@ -294,7 +306,8 @@ const callbacks = {
   onGraphRenameInport: async (payload: RenameInportEvent): Promise<void> => {
     startTransaction(payload);
     try {
-
+      await renamePort(editor, "in", payload.from, payload.to);
+      portDialogDone("in", payload.to);
     } finally {
       endTransaction();
     }
@@ -303,7 +316,10 @@ const callbacks = {
   onGraphAddOutport: async (payload: AddOutportEvent): Promise<void> => {
     startTransaction(payload);
     try {
-
+      const block = findNodeByName(payload.node);
+      if (block !== undefined)
+        await showPort(editor, "out", payload.name, block, payload.port);
+      portDialogDone("out", payload.name);
     } finally {
       endTransaction();
     }
@@ -312,7 +328,7 @@ const callbacks = {
   onGraphRemoveOutport: async (payload: RemoveOutportEvent): Promise<void> => {
     startTransaction(payload);
     try {
-
+      await removePort(editor, "out", payload.name);
     } finally {
       endTransaction();
     }
@@ -321,7 +337,8 @@ const callbacks = {
   onGraphRenameOutport: async (payload: RenameOutportEvent): Promise<void> => {
     startTransaction(payload);
     try {
-
+      await renamePort(editor, "out", payload.from, payload.to);
+      portDialogDone("out", payload.to);
     } finally {
       endTransaction();
     }
@@ -446,6 +463,13 @@ const openMenu = (event: MouseEvent, context: unknown) => {
     const value = context as ValueNode;
     const input = {node: value.blockLabel, port: value.port};
     open = {target: {kind: "value", id: value.blockLabel, port: value.port, watched: isWatched(input)}, node: value.id, input};
+  } else if (context instanceof PortNode) {
+    open = {target: {kind: "port", direction: context.direction, name: context.name}, node: context.id};
+  } else if (context instanceof PrimitiveNode
+      && event.target instanceof Element && event.target.closest(".output[data-testid^='output-']") !== null) {
+    const row = event.target.closest<HTMLElement>(".output[data-testid^='output-']")!;
+    const port = row.dataset.testid!.substring("output-".length);
+    open = {target: {kind: "output", id: context.label, port}, node: context.id, port};
   } else if (context instanceof PrimitiveNode) {
     const row = event.target instanceof Element ? event.target.closest<HTMLElement>(".input[data-testid^='input-']") : null;
     const port = row?.dataset.testid?.substring("input-".length);
@@ -464,7 +488,10 @@ const openMenu = (event: MouseEvent, context: unknown) => {
     const c = context as { id: string, source: string, target: string, targetInput: string };
     const source = editor.getNode(c.source);
     const input = {node: editor.getNode(c.target)?.label ?? "", port: c.targetInput};
-    open = isValueNode(source)
+    const marker = [source, editor.getNode(c.target)].find(isPortNode);
+    open = marker !== undefined
+      ? {target: {kind: "port", direction: marker.direction, name: marker.name}, node: marker.id}
+      : isValueNode(source)
       ? {target: {kind: "value", id: source.blockLabel, port: source.port, watched: isWatched(input)}, node: source.id, input}
       : {target: {kind: "connection", watched: isWatched(input)}, connection: c.id, input};
   }
@@ -551,7 +578,7 @@ const act = async (action: MenuAction) => {
       if (block !== undefined && m.port !== undefined) {
         for (const c of editor.getConnections().filter(c => c.target === block.id && c.targetInput === m.port)) {
           const source = editor.getNode(c.source);
-          if (source !== undefined && !isValueNode(source))
+          if (source instanceof PrimitiveNode)
             graph()?.request_removeedge(source.label, block.label, c.sourceOutput, c.targetInput, -1, -1);
         }
       }
@@ -576,6 +603,19 @@ const act = async (action: MenuAction) => {
     case "unwatch-all":
       watchAll(action === "watch-all");
       break;
+    case "expose-input":
+    case "expose-output":
+      if (block !== undefined && m.port !== undefined)
+        openPortDialog({mode: "add", direction: action === "expose-input" ? "in" : "out", block: block.label, port: m.port});
+      break;
+    case "rename-port":
+      if (m.target.kind === "port")
+        openPortDialog({mode: "rename", direction: m.target.direction, from: m.target.name});
+      break;
+    case "remove-port":
+      if (m.target.kind === "port")
+        graph()?.request_removeport(m.target.direction, m.target.name);
+      break;
     case "delete-connection": {
       const c = editor.getConnections().find(c => c.id === m.connection);
       const source = c && editor.getNode(c.source);
@@ -586,6 +626,72 @@ const act = async (action: MenuAction) => {
     }
   }
 };
+
+// The process port name dialog (06 §4.8): exposing a block port, or renaming a process port.
+// It stays open until the port's event arrives; a refusal is shown in it.
+type PortDialog =
+  | { mode: "add", direction: "in" | "out", block: string, port: string }
+  | { mode: "rename", direction: "in" | "out", from: string };
+const portDialog = ref<PortDialog | undefined>();
+const portName = ref("");
+const portError = ref("");
+const portField = ref<HTMLInputElement | null>(null);
+let portPending: { direction: "in" | "out", name: string, refusals: string[] } | undefined;
+
+const openPortDialog = async (dialog: PortDialog) => {
+  portDialog.value = dialog;
+  portError.value = "";
+  portPending = undefined;
+  if (dialog.mode === "rename") {
+    portName.value = dialog.from;
+  } else {
+    // The port's own name, unless the process already has a port of that direction so named.
+    const taken = (n: string) => portNodes(editor).some(p => p.direction === dialog.direction && p.name === n);
+    portName.value = taken(dialog.port) ? dialog.block + "_" + dialog.port : dialog.port;
+  }
+  await nextTick();
+  portField.value?.focus();
+  portField.value?.select();
+};
+
+const sendPortDialog = () => {
+  const d = portDialog.value;
+  if (d === undefined)
+    return;
+  const name = portName.value;
+  const kind = d.direction === "in" ? "inport" : "outport";
+  portError.value = "";
+  if (d.mode === "rename" && name === d.from) {
+    portDialog.value = undefined;
+    return;
+  }
+  portPending = {
+    direction: d.direction, name,
+    refusals: ["Port exists: " + name, "Invalid id", "Unknown port: " + (d.mode === "add" ? d.block + "." + d.port : d.from),
+      "Unknown node: " + (d.mode === "add" ? d.block : ""), "Not permitted: graph:" + (d.mode === "add" ? "add" : "rename") + kind],
+  };
+  if (d.mode === "add")
+    graph()?.request_addport(d.direction, d.block, d.port, name);
+  else
+    graph()?.request_renameport(d.direction, d.from, name);
+};
+
+const portDialogDone = (direction: "in" | "out", name: string) => {
+  if (portPending !== undefined && portPending.direction === direction && portPending.name === name) {
+    portPending = undefined;
+    portDialog.value = undefined;
+  }
+};
+
+const claimPortRefusal = (message: string): boolean => {
+  if (portPending === undefined || !portPending.refusals.includes(message))
+    return false;
+  portPending = undefined;
+  portError.value = message;
+  return true;
+};
+errorClaims.push(claimPortRefusal);
+onUnmounted(() => errorClaims.splice(errorClaims.indexOf(claimPortRefusal), 1));
 
 // A block from the menu's "Add block…", where the menu was opened.
 const addBlock = (type: string) => {
@@ -665,10 +771,13 @@ onMounted(() => {
         case 'noderemove':
           // e.g. the context menu's Delete; the Delete key goes through the selection. A value
           // node's Delete is its connection's removal, which comes first.
-          if (!isValueNode(ctx.data))
+          if (ctx.data instanceof PrimitiveNode)
             graphProtocol?.request_removenode(ctx.data.label);
           return undefined;
         case 'connectioncreate': {
+          // A process port's line is the port's own (06 §4.8): drawing one changes nothing.
+          if (isPortNode(editor.getNode(ctx.data.source)) || isPortNode(editor.getNode(ctx.data.target)))
+            return undefined;
           // A value node's line dropped on an input: the value moves there (picked up from its
           // input), or is copied there (drawn from the value node).
           const value = editor.getNode(ctx.data.source);
@@ -700,6 +809,8 @@ onMounted(() => {
           const fixed = editor.getNode(ctx.data.source);
           const picked = editor.picking;
           editor.picking = false;
+          if (isPortNode(fixed) || isPortNode(editor.getNode(ctx.data.target)))
+            return undefined;
           if (isValueNode(fixed)) {
             if (picked)
               carrying = fixed;
@@ -744,6 +855,19 @@ onMounted(() => {
     </ul>
     <ValueDraft v-if="draft" :key="draft.block + '/' + draft.port" :block="draft.blockLabel" :port="draft.port"
                 :port-type="draft.portType" :x="draft.x" :y="draft.y" @close="draft = undefined"/>
+    <Popup v-if="portDialog" :onOk="sendPortDialog" :onCancel="() => portDialog = undefined"
+           :okLabel="portDialog.mode === 'add' ? 'Expose' : 'Rename'">
+      <h4>{{ portDialog.mode === 'add'
+          ? (portDialog.direction === 'in' ? 'Expose as process input' : 'Expose as process output')
+          : 'Rename process port' }}</h4>
+      <p v-if="portDialog.mode === 'add'" class="hk-dialog-note">{{ portDialog.block }}.{{ portDialog.port }}</p>
+      <div class="hk-field">
+        <label class="hk-label" for="hk-port-name">Name</label>
+        <input id="hk-port-name" ref="portField" class="hk-input" data-testid="port-name-field" v-model="portName"
+               spellcheck="false" autocomplete="off" :aria-invalid="portError !== ''" @keydown.enter.prevent="sendPortDialog"/>
+        <p v-if="portError" class="hk-inspector-note" role="alert" data-testid="port-name-error">{{ portError }}</p>
+      </div>
+    </Popup>
     <ContextMenu v-if="menu" :items="menu.items" :x="menu.x" :y="menu.y" :types="blockTypes"
                  @action="act" @add-block="addBlock" @close="closeMenu"/>
   </div>

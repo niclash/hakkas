@@ -747,11 +747,13 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   Done (06 §4.7, `watches.ts`, `floweditor/live.ts`, `ConnectionView.vue`, which now draws
   connections and value lines alike). The stale mark is set on a lost connection but is seen
   only once task 39 keeps the view while reconnecting.
-- [ ] **35. Process ports** (`graph:addinport`/`addoutport`/`remove…`/`rename…`, 02 §3.4): a
+- [x] **35. Process ports** (`graph:addinport`/`addoutport`/`remove…`/`rename…`, 02 §3.4): a
   process's inputs and outputs, through which processes are linked (01 §2.2): expose a block's
   input or output as a process port (context menu on the port, a name dialog), draw them as
   markers at the canvas edge connected to their block port, rename and remove them. The links
   themselves have no wire messages yet (00-README open question 13), so they are not shown.
+  Done (06 §4.8, `ports.ts`, `port-layout.ts`, `PortNodeView.vue`). The client's port event
+  types named the broadcast's `name` `public`; fixed.
 - [ ] **36. Composite types** (02 §3.4.2, 03 §5; "save as component", open question 4): create
   one from the selection (name, description, icon) → `graph:addgroup`; the palette lists
   composites in their category with a mark; change description/icon (`changegroup`), rename

@@ -103,19 +103,16 @@ export interface RemoveInitialEvent {
     graph: string;
 }
 
+// The broadcast names the public port `name` (the request's `public`, 02 §3.4).
 export interface AddInportEvent {
-    public: string;
+    name: string;
     node: string;
     port: string;
-    metadata: {
-        x: number;
-        y: number;
-    }
     graph: string;
 }
 
 export interface RemoveInportEvent {
-    public: string;
+    name: string;
     graph: string;
 }
 
@@ -125,19 +122,16 @@ export interface RenameInportEvent {
     graph: string;
 }
 
+// The broadcast names the public port `name` (the request's `public`, 02 §3.4).
 export interface AddOutportEvent {
-    public: string;
+    name: string;
     node: string;
     port: string;
-    metadata: {
-        x: number;
-        y: number;
-    }
     graph: string;
 }
 
 export interface RemoveOutportEvent {
-    public: string;
+    name: string;
     graph: string;
 }
 
@@ -350,6 +344,31 @@ export class GraphProtocol {
                 id: id,
                 graph: this.currentGraph
             }
+        });
+    }
+
+    // Process ports (02 §3.4): a block's input or output exposed under a public name.
+    request_addport(direction: "in" | "out", node: string, port: string, name: string) {
+        this.connection.send({
+            protocol: "graph",
+            command: direction === "in" ? "addinport" : "addoutport",
+            payload: {graph: this.currentGraph, node, port, public: name}
+        });
+    }
+
+    request_removeport(direction: "in" | "out", name: string) {
+        this.connection.send({
+            protocol: "graph",
+            command: direction === "in" ? "removeinport" : "removeoutport",
+            payload: {graph: this.currentGraph, public: name}
+        });
+    }
+
+    request_renameport(direction: "in" | "out", from: string, to: string) {
+        this.connection.send({
+            protocol: "graph",
+            command: direction === "in" ? "renameinport" : "renameoutport",
+            payload: {graph: this.currentGraph, from, to}
         });
     }
 

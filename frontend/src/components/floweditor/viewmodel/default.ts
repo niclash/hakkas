@@ -9,7 +9,8 @@ import {AutoArrangePlugin, Presets as ArrangePresets,} from 'rete-auto-arrange-p
 
 import {MinimapExtra, MinimapPlugin} from 'rete-minimap-plugin';
 import {RerouteExtensions, RerouteExtra, ReroutePlugin,} from 'rete-connection-reroute-plugin';
-import {isValueNode, PrimitiveNode, Schemes, vueModel} from "@/components/model";
+import {isPortNode, isValueNode, PrimitiveNode, Schemes, vueModel} from "@/components/model";
+import PortNodeView from "@/components/floweditor/PortNodeView.vue";
 import ValueNodeView from "@/components/floweditor/ValueNodeView.vue";
 import ConnectionView from "@/components/floweditor/ConnectionView.vue";
 import SocketView from "@/components/floweditor/SocketView.vue";
@@ -77,7 +78,8 @@ export async function createEditor(container: HTMLElement) {
     // The arrangement is computed only: each block is moved by its changenode's event.
     editor.arrangement = async () => {
         const nodes = editor.getNodes().filter(n => n instanceof PrimitiveNode);
-        const connections = editor.getConnections().filter(c => !isValueNode(editor.getNode(c.source)));
+        const connections = editor.getConnections().filter(c =>
+            editor.getNode(c.source) instanceof PrimitiveNode && editor.getNode(c.target) instanceof PrimitiveNode);
         const keep = {setEditor() {}, setArea() {}, async apply() {}};
         const {result} = await arrange.layout({nodes, connections, applier: keep as never});
         const positions = new Map<string, Position>();
@@ -114,7 +116,9 @@ export async function createEditor(container: HTMLElement) {
         customize: {
             // Fixed values are drawn as value nodes (06 §4.3).
             node(context) {
-                return isValueNode(context.payload) ? ValueNodeView : VuePresets.classic.Node;
+                if (isValueNode(context.payload))
+                    return ValueNodeView;
+                return isPortNode(context.payload) ? PortNodeView : VuePresets.classic.Node;
             },
             // Sockets show their port's type (06 §4.5).
             socket() {

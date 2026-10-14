@@ -1,7 +1,7 @@
 <template>
   <!-- A connection, or a value node's line (06 §4.3), with its input's live value (06 §4.7). -->
-  <svg :class="valueLine ? 'hk-value-connection' : 'hk-connection'"
-       :data-testid="valueLine ? 'value-connection' : 'connection'">
+  <svg :class="kind === 'value' ? 'hk-value-connection' : kind === 'port' ? 'hk-port-connection' : 'hk-connection'"
+       :data-testid="kind === 'value' ? 'value-connection' : kind === 'port' ? 'port-connection' : 'connection'">
     <path ref="line" :d="path"/>
     <foreignObject v-if="value !== undefined" :x="middle.x - 70" :y="middle.y - 12" width="140" height="24">
       <div class="hk-live" :class="{stale: value.stale}" data-testid="live-value" :data-target="target"
@@ -14,7 +14,7 @@
 
 <script lang="ts" setup>
 import {computed, nextTick, ref, watch} from "vue";
-import {isValueNode, PrimitiveNode} from "@/components/model";
+import {isPortNode, isValueNode, PrimitiveNode} from "@/components/model";
 import {editor} from "./viewmodel/default";
 import {live, liveValue} from "./live";
 import {formatLive} from "@/components/watches";
@@ -24,7 +24,13 @@ const props = defineProps<{
   start?: unknown, end?: unknown, path: string
 }>();
 
-const valueLine = computed(() => isValueNode(editor.getNode(props.data.source)));
+// A connection, a value node's line (06 §4.3) or a process port's line (06 §4.8).
+const kind = computed(() => {
+  const source = editor.getNode(props.data.source);
+  if (isValueNode(source))
+    return "value";
+  return isPortNode(source) || isPortNode(editor.getNode(props.data.target)) ? "port" : "connection";
+});
 const block = computed(() => {
   void live.version;
   const node = editor.getNode(props.data.target);
@@ -36,7 +42,8 @@ const target = computed(() => {
 });
 const value = computed(() => {
   void live.version;
-  return block.value ? liveValue({node: block.value.label, port: props.data.targetInput}) : undefined;
+  // A port's line shows no value: the input's own line does.
+  return block.value && kind.value !== "port" ? liveValue({node: block.value.label, port: props.data.targetInput}) : undefined;
 });
 const text = computed(() =>
     value.value && block.value ? formatLive(block.value.inputType(props.data.targetInput), value.value.data) : "");

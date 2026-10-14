@@ -37,7 +37,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
     const publishNow = () => {
         vueModel.selectedBlocks.value = selection.ids().flatMap(id => {
             const node = editor.getNode(id);
-            if (node === undefined || isValueNode(node))
+            if (!(node instanceof PrimitiveNode))
                 return [];
             return [{node: id, id: node.label, component: node.component, inputs: inputSources(editor, node)}];
         });

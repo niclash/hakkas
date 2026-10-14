@@ -869,6 +869,76 @@ h1, h2, h3 {
   pointer-events: auto;
 }
 
+/* Process ports (06 §4.8): markers at the process's edge and their lines. */
+#hk-editor .hk-port-node {
+  box-sizing: border-box;
+  width: 130px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--hk-accent-text);
+  background: var(--hk-accent);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: default;
+  user-select: none;
+}
+
+#hk-editor .hk-port-node.in {
+  justify-content: flex-end;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
+  padding-right: 4px;
+}
+
+#hk-editor .hk-port-node.out {
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+  padding-left: 4px;
+}
+
+#hk-editor .hk-port-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#hk-editor .hk-port-node.in .hk-port-name {
+  text-align: right;
+}
+
+#hk-editor .hk-port-node .socket {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+}
+
+#hk-editor .hk-port-connection {
+  overflow: visible !important;
+  position: absolute;
+  pointer-events: none;
+  width: 9999px;
+  height: 9999px;
+}
+
+#hk-editor .hk-port-connection path {
+  fill: none;
+  stroke: var(--hk-accent);
+  stroke-width: 2px;
+  stroke-dasharray: 2 4;
+  pointer-events: auto;
+}
+
+.hk-dialog-note {
+  margin: 0 0 8px;
+  color: var(--hk-text-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
 /* A live value on its connection (06 §4.7). */
 #hk-editor .hk-live {
   display: flex;
