@@ -605,3 +605,139 @@ primitives (01 §6). Task 14 uses `src/system/crypto.h` (`crypto_sha1`, `crypto_
   `started` flag is set (`platform/posix/host.c` `on_saved` does the same) — or a process list
   (`app/process_list.h` is portable), then `hakkas_run`, `hakkas_destroy`. The engine itself
   loads no process.
+
+## Phase 5 — Frontend (06)
+
+The browser editor, feature by feature. Rules for every task: a user action only sends a
+command and the view changes only from the engine's events (02 §1.1, 06 §3); a refusal shows
+the engine's `network:error` and changes nothing; every task adds unit tests where there is
+logic and end-to-end tests (06 §6) for what the user does, and records its decisions in 06.
+**The wire protocol is not changed without asking** (00-README "Protocol compatibility
+policy"): a task that needs an addition stops at the decision below, one addition at a time.
+
+Decisions needed before the tasks that depend on them (recommendation first):
+- **D1. Save feedback.** `network:persist` has no reply on success (02 §3.3), so the UI cannot
+  say "saved". (a) An addition: an event on success, e.g. `network:persisted {graph,time}` to
+  the graph's subscribers; (b) no feedback, only errors. → task 32.
+- **D2. Startup activation.** Today a process starts at boot if it was *running when last
+  persisted* (`run daemon`, 05 §1.2), or as the process list says (`run processes`; not
+  writable from the wire). (a) Keep that and make it explicit in the UI: "Start at boot" =
+  start + save; (b) a separate autostart flag in the graph file, independent of the running
+  state, set by a protocol addition (e.g. `graph:changegraph {id, metadata:{autostart}}`)
+  — then also the process list's `start` vs. that flag needs a rule. → task 33.
+- **D3. Process description.** `runtime:new_graph` sets it, nothing changes it later (`graph:rename`
+  is the name only). (a) Leave it read-only; (b) an addition (the same `graph:changegraph` as
+  D2 b would carry it). → task 32.
+- **D4. Editing inside a composite type.** A type can be created (`addgroup`), described,
+  renamed and removed — the last two only while unused — but its inner blocks cannot be
+  edited (03 §5, 02 §3.4.2). (a) View the inside read-only (`component:getsource`), edit by
+  "save as" a new type; (b) a design for editing a type in place, with what happens to its
+  running instances. → task 36.
+- **D5. `math/` boolean operations.** `math/And2`, `Or2`, `Xor`, `And4`, `Or4` are *bitwise
+  integer* operations; `logic/And`, `Or`, `Xor`, `Not` are boolean; the comparisons
+  (`math/Greater` …) give booleans (03 §2 calls them "compare"). (a) Move the bitwise ones to
+  `logic/` under clear names (e.g. `logic/BitAnd2` …) and the comparisons to a `compare/`
+  category, with the old names kept as aliases when a graph file or type file is loaded, so
+  existing files (the sister project's included) still load; (b) only the palette groups them
+  differently (a category in the UI), the type names unchanged. → task 44.
+- **D6. Reconnecting.** After a lost connection the session is gone (02 §2.5). (a) Reconnect
+  and show the login with the user name filled in, then reopen the same process; (b) also keep
+  the password in memory for a silent re-login (convenient; a password in page memory). → task 39.
+
+### 5a. Working with blocks
+
+- [ ] **26. Selection** (06 §4): select one block by click, more with Ctrl/Shift-click or the
+  marquee (Rete's selector is already set up), clear with Escape or a click on the canvas,
+  select all with Ctrl+A. Delete/Backspace removes the selection (`removenode` per block,
+  connections go with them). Moving a selection moves every selected block: the editor blocks
+  local moves and sends one `changenode` per pointer movement for the dragged block, so the
+  other selected blocks probably stay put (to be checked first) — send each selected block's
+  new position (throttled to one
+  command per animation frame and per block, the final positions on release; 06 §7). The
+  selection is local view state (not engine state); blocks removed by an event leave it.
+- [ ] **27. Inspector panel**: a panel beside the editor for the selected block — its id, its
+  type and the type's description, and every port with its type and description (from
+  `component:component`); with several blocks selected, their count and the common actions.
+  The base for tasks 28, 29 and 34.
+- [ ] **28. Renaming blocks**: in the inspector, with F2 and from the context menu;
+  `graph:renamenode`, the new name shown when its event arrives; `"Node exists"`/`"Invalid id"`
+  refusals shown at the field. Blocks added from the palette keep their `<Type>_<n>` names.
+- [ ] **29. Fixed values on inputs** (initials, 02 §3.4): in the inspector, each input shows
+  whether it has a connection, a fixed value or its default; a fixed value is set with an
+  editor fitting the port's type (a number field, a true/false switch, a text field) →
+  `graph:addinitial`, cleared → `graph:removeinitial`. An input with a connection cannot take
+  one (the engine refuses: no fan-in) — shown as such. Also from the context menu on an input.
+- [ ] **30. Context menus** (themed, 06 §4.1): replace the classic preset's menu by our own
+  component. On the canvas: add block (with search, placed where the menu was opened), paste,
+  zoom to fit, auto-layout (sends a `changenode` per moved block). On a block: rename, set
+  inputs, watch values, duplicate, copy, delete, "create composite" with a selection. On a
+  connection: watch value, delete. On a port: expose as process port (task 35). Keyboard
+  accessible, closes on Escape.
+- [ ] **31. Palette and sockets**: a search field over the block types; drag a type onto the
+  canvas to add it at the drop point (today it lands at 100,100); tooltips with the type's
+  description and ports; sockets colored by port type (number, bool, string) with a legend in
+  the themes (new `--hk-*` variables in all three).
+
+### 5b. Processes
+
+- [ ] **32. Process management** (02 §3.2–§3.4): rename (`graph:rename`, in place in the list),
+  start/stop (`network:start`/`stop`, the running mark from the events), save
+  (`network:persist`; feedback per D1), delete (`runtime:delete_graph`, with a confirmation
+  naming the process), create (existing "New...": open the new process when its
+  `runtime:new_graph` arrives from this client's request). The description shown (editable per
+  D3). Uptime from `network:status`.
+- [ ] **33. Startup activation** — **blocked on D2**: a "start at boot" control per process.
+- [ ] **34. Live values** (`network:edges`/`network:data`, 02 §4.2): watch a connection (context
+  menu, inspector, or a "watch all" toggle for the open process) and show its value as a label
+  on the connection; watch a block's inputs, including unconnected ones with a fixed value.
+  The client keeps the set of watches and sends it whole (a request replaces the previous set);
+  the set is cleared when another process is opened and resent after a reconnect. Values as
+  the engine sends them (strings), formatted by the port's type; a stale mark when the
+  connection is lost.
+- [ ] **35. Process ports** (`graph:addinport`/`addoutport`/`remove…`/`rename…`, 02 §3.4): a
+  process's inputs and outputs, through which processes are linked (01 §2.2): expose a block's
+  input or output as a process port (context menu on the port, a name dialog), draw them as
+  markers at the canvas edge connected to their block port, rename and remove them. The links
+  themselves have no wire messages yet (00-README open question 13), so they are not shown.
+- [ ] **36. Composite types** (02 §3.4.2, 03 §5; "save as component", open question 4): create
+  one from the selection (name, description, icon) → `graph:addgroup`; the palette lists
+  composites in their category with a mark; change description/icon (`changegroup`), rename
+  and remove (`renamegroup`/`removegroup`; refused while in use — shown); view the inside of a
+  type read-only, drawn from `component:getsource`; editing per D4. Replacing the selection by
+  an instance of the new type is a separate, later option (open question 4, "collapse").
+- [ ] **37. Copy, paste, duplicate**: the selection with its inner connections and fixed values
+  as a clipboard (in the page; also to the system clipboard as JSON), pasted into the same or
+  another process as `addnode` + `addinitial` + `addedge` commands, with new names where
+  taken and an offset position; each part appears as its event arrives.
+
+### 5c. The application
+
+- [ ] **38. Roles** (02 §2.4): from the login's capabilities — a viewer gets a read-only editor
+  (no palette, menus without edit actions, no dragging), an operator also start/stop; the
+  engine's refusals stay the guard, the UI only stops offering what would be refused.
+- [ ] **39. Connection resilience**: reconnect after a lost connection with back-off, then the
+  login per D6, then reopen the process that was open and resend the watches (task 34).
+  Dragging throttle for slow links if task 26 has not covered it.
+- [ ] **40. Addresses**: the open process in the URL (`/process/<id>`; the web server's SPA
+  fallback serves it, 05 §3), so a process can be bookmarked and the browser's back button
+  works; after login the URL's process opens.
+- [ ] **41. Messages**: the log mirror (`network:output`/`network:error` from `log.mirror`,
+  05 §4) in a collapsible panel; errors with their process named; the user name and role in
+  the top bar; the runtime's label and version (`runtime:runtime`) in an "about" view.
+- [ ] **42. Undo/redo** — later: the client's own commands, undone by their inverse commands
+  (`removenode` for `addnode`, …) sent to the engine like any other, so other users see them
+  too; an undo whose state was changed by someone else meanwhile is refused or skipped.
+- [ ] **43. A smaller bundle** (06 §5): drop the unused 3D editor template (three.js) and the
+  icon fonts nothing uses, build `.gz` assets only for the device, and record the size
+  against the flash budget.
+- [ ] **44. Block categories** — **blocked on D5**: (a) the backend renames with load-time
+  aliases (03, a C task with its tests and the spec), then the palette follows; or (b) the
+  palette's own categories.
+
+### 5d. Waiting for other decisions
+
+- **Links between processes in the UI**: needs the wire messages of 00-README open question 13.
+- **Environment ports and bindings in the UI**: deferred (03 §4, 04 §1); the UI should let users
+  hide and organize environment ports.
+- **Connection routes**: Rete's reroute pins kept in the connection's metadata (`changeedge`,
+  `route`), so a hand-routed wire survives a reload and is shared with other users.

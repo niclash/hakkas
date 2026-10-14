@@ -73,6 +73,8 @@ Two suites, both in `frontend/tests/` (decided 2026-10-13):
 
 ## 7. Not implemented yet
 
+The order of the work, and the decisions it waits for, is phase 5 of `docs/plan.md`.
+
 What the frontend does today is §2–§4: log in, list the block types and processes, open a process and draw it, and follow every change the engine broadcasts. The editing commands are sent from the editor's hooks — `addnode` (from the block palette), `removenode`, `addedge`, `removeedge`, and `changenode` while a block is dragged — and `runtime:new_graph` from the process list, but they have only been tried in passing. Missing, roughly in the order they are likely to be needed:
 
 - **Dragging** sends one `changenode` per pointer movement, and the block moves when each event returns. That is smooth on a local network; over the Internet it will need throttling (e.g. at most one command per animation frame, and the final position on release), still without moving the block locally.
