@@ -11,6 +11,7 @@
     "src/components/renaming.ts",
     "src/components/initials.ts",
     "src/components/floweditor/value-position.ts",
+    "src/components/floweditor/menus.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

@@ -95,6 +95,7 @@ export class ValueNode extends Classic.Node {
     readonly portType: string;
     value: string;              // as the event carries it
     blockLabel: string;         // the block's id in the process, for commands
+    editRequested = false;      // its menu's "Change value…": open the field at the next update
     width = 110;
     height = 36;
 
@@ -122,6 +123,8 @@ export const vueModel: {
     selectedBlocks: Ref<SelectedBlock[]>,
     // Incremented to ask the inspector to open its name field (F2, the context menu).
     renameRequest: Ref<number>,
+    // Incremented to ask the inspector to focus its first input's value (the context menu).
+    inputsRequest: Ref<number>,
     components: Ref<UnwrapRef<ComponentEvent[]>>,
     selectedComponent: string,
     connection: ShallowRef<WsConnection | undefined>,
@@ -135,6 +138,7 @@ export const vueModel: {
     pipesDisabled: false,
     selectedBlocks: ref([]),
     renameRequest: ref(0),
+    inputsRequest: ref(0),
     connection: shallowRef(undefined),
     errors: ref([]),
     selectedComponent: "",

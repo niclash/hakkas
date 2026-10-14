@@ -14,7 +14,7 @@
 </template>
 
 <script lang="ts" setup>
-import {computed, nextTick, onMounted, onUnmounted, ref} from "vue";
+import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
 import {Ref} from "rete-vue-plugin";
 import {errorClaims, ValueNode, vueModel} from "@/components/model";
 import {initialRefusals, parseTyped, sameValue, valueEditor} from "@/components/initials";
@@ -86,6 +86,14 @@ const claim = (message: string): boolean => {
   error.value = message;
   return true;
 };
+
+// The context menu's "Change value…" (06 §4.4).
+watch(() => props.seed, () => {
+  if (props.data.editRequested) {
+    props.data.editRequested = false;
+    void edit();
+  }
+});
 
 onMounted(() => errorClaims.push(claim));
 onUnmounted(() => errorClaims.splice(errorClaims.indexOf(claim), 1));

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 
-import {onMounted, ref} from "vue";
+import {computed, onMounted, ref} from "vue";
 import {createEditor} from './viewmodel';
 import {editor} from './viewmodel/default';
 import {componentTemplates, Connection, isValueNode, PrimitiveNode, ValueNode, vueModel} from "../model";
 import {SocketData} from "rete-connection-plugin";
-import {placeValues, renameValues, showValue} from "./values";
+import {inputSources, placeValues, renameValues, showValue} from "./values";
+import ContextMenu from "./ContextMenu.vue";
+import {MenuAction, menuFor, MenuItem, MenuTarget} from "./menus";
 import ValueDraft from "./ValueDraft.vue";
 import {
   AddEdgeEvent,
@@ -397,8 +399,181 @@ const askValue = (nodeId: string, port: string, socket: HTMLElement) => {
   };
 };
 
+// The context menu (06 §4.4): what it was opened on, where (x, y in the pane; `at` in the
+// editor's coordinates, where "Add block…" puts the block).
+interface OpenMenu {
+  items: MenuItem[];
+  target: MenuTarget;
+  x: number;
+  y: number;
+  at: Position;
+  node?: string;          // the block or value node, by the editor's id
+  port?: string;
+  socket?: HTMLElement;   // the input's socket
+  connection?: string;
+}
+const menu = ref<OpenMenu | undefined>();
+const blockTypes = computed(() => vueModel.components.value.map(c => c.name));
+
+const editorPoint = (clientX: number, clientY: number): Position => {
+  const box = editor.area.container.getBoundingClientRect();
+  const {x, y, k} = editor.area.area.transform;
+  return {x: (clientX - box.left - x) / k, y: (clientY - box.top - y) / k};
+};
+
+// The most specific of the nested contextmenu events (a block's, then the canvas's) opens it.
+const opened = new WeakSet<Event>();
+
+const openMenu = (event: MouseEvent, context: unknown) => {
+  event.preventDefault();
+  if (opened.has(event) || pane.value === null)
+    return;
+  opened.add(event);
+  draft.value = undefined;
+  const origin = pane.value.getBoundingClientRect();
+  const where = {x: event.clientX - origin.left, y: event.clientY - origin.top, at: editorPoint(event.clientX, event.clientY)};
+  let open: Omit<OpenMenu, "items" | "x" | "y" | "at"> | undefined;
+  if (context === "root") {
+    open = {target: {kind: "canvas"}};
+  } else if (context instanceof ValueNode) {
+    const value = context as ValueNode;
+    open = {target: {kind: "value", id: value.blockLabel, port: value.port}, node: value.id};
+  } else if (context instanceof PrimitiveNode) {
+    const row = event.target instanceof Element ? event.target.closest<HTMLElement>(".input[data-testid^='input-']") : null;
+    const port = row?.dataset.testid?.substring("input-".length);
+    if (row !== null && port !== undefined && port in context.inputs) {
+      const source = inputSources(editor, context)[port] ?? {kind: "default"};
+      open = {target: {kind: "input", id: context.label, port, source}, node: context.id, port,
+        socket: row.querySelector<HTMLElement>("[data-testid=input-socket]") ?? undefined};
+    } else {
+      const selection = editor.blockSelection?.selection;
+      const selected = selection?.has(context.id) ? selection.ids().length : 0;
+      open = {target: {kind: "block", id: context.label, selected}, node: context.id};
+    }
+  } else if (context !== null && typeof context === "object" && "source" in context) {
+    const c = context as { id: string, source: string, target: string, targetInput: string };
+    const source = editor.getNode(c.source);
+    open = isValueNode(source)
+      ? {target: {kind: "value", id: source.blockLabel, port: source.port}, node: source.id}
+      : {target: {kind: "connection"}, connection: c.id};
+  }
+  if (open !== undefined)
+    menu.value = {...open, ...where, items: menuFor(open.target)};
+};
+
+// The menu key: the menu of the first selected block, else the canvas's, in the middle.
+const menuKey = () => {
+  const ids = editor.blockSelection?.selection.ids() ?? [];
+  const element = ids.length > 0 ? editor.area.nodeViews.get(ids[0])?.element : editor.area.container;
+  if (element === undefined)
+    return;
+  const box = element.getBoundingClientRect();
+  const event = new MouseEvent("contextmenu", {clientX: box.left + box.width / 2, clientY: box.top + Math.min(box.height / 2, 20)});
+  openMenu(event, ids.length > 0 ? editor.getNode(ids[0]) : "root");
+};
+
+const closeMenu = () => {
+  menu.value = undefined;
+};
+
+const graph = () => vueModel.connection.value?.proto.graph;
+
+const act = async (action: MenuAction) => {
+  const m = menu.value;
+  closeMenu();
+  if (m === undefined)
+    return;
+  const node = m.node !== undefined ? editor.getNode(m.node) : undefined;
+  const block = node instanceof PrimitiveNode ? node : undefined;
+  const value = isValueNode(node) ? node : undefined;
+  switch (action) {
+    case "select-all":
+      editor.blockSelection?.selectAll();
+      break;
+    case "zoom-fit":
+      await AreaExtensions.zoomAt(editor.area, editor.getNodes());
+      break;
+    case "arrange": {
+      // Each block moves with its changenode's event.
+      const positions = await editor.arrangement?.() ?? new Map<string, Position>();
+      positions.forEach((p, id) => {
+        const target = editor.getNode(id);
+        const now = editor.area.nodeViews.get(id)?.position;
+        if (target instanceof PrimitiveNode && (now === undefined || now.x !== p.x || now.y !== p.y))
+          graph()?.request_changenode(target.label, {x: p.x, y: p.y});
+      });
+      break;
+    }
+    case "rename":
+      if (block !== undefined)
+        editor.blockSelection?.rename(block.id);
+      break;
+    case "edit-inputs":
+      if (block !== undefined)
+        editor.blockSelection?.editInputs(block.id);
+      break;
+    case "delete-block":
+      if (block !== undefined)
+        graph()?.request_removenode(block.label);
+      break;
+    case "delete-selection":
+      editor.blockSelection?.removeSelected();
+      break;
+    case "set-value":
+      if (block !== undefined && m.port !== undefined && m.socket !== undefined)
+        askValue(block.id, m.port, m.socket);
+      break;
+    case "change-value": {
+      const shown = value ?? (block !== undefined ? editor.getNodes().find((n): n is ValueNode =>
+        isValueNode(n) && n.block === block.id && n.port === m.port) : undefined);
+      if (shown !== undefined) {
+        shown.editRequested = true;
+        await editor.area.update("node", shown.id);
+      }
+      break;
+    }
+    case "clear-value":
+      if (m.target.kind === "value" || m.target.kind === "input")
+        graph()?.request_removeinitial(undefined, m.target.id, m.target.port, -1);
+      break;
+    case "disconnect":
+      if (block !== undefined && m.port !== undefined) {
+        for (const c of editor.getConnections().filter(c => c.target === block.id && c.targetInput === m.port)) {
+          const source = editor.getNode(c.source);
+          if (source !== undefined && !isValueNode(source))
+            graph()?.request_removeedge(source.label, block.label, c.sourceOutput, c.targetInput, -1, -1);
+        }
+      }
+      break;
+    case "delete-connection": {
+      const c = editor.getConnections().find(c => c.id === m.connection);
+      const source = c && editor.getNode(c.source);
+      const target = c && editor.getNode(c.target);
+      if (c !== undefined && source !== undefined && target !== undefined)
+        graph()?.request_removeedge(source.label, target.label, c.sourceOutput, c.targetInput, -1, -1);
+      break;
+    }
+  }
+};
+
+// A block from the menu's "Add block…", where the menu was opened.
+const addBlock = (type: string) => {
+  const at = menu.value?.at ?? {x: 0, y: 0};
+  closeMenu();
+  const name = vueModel.nextName(type, (n) => findNodeByName(n) !== undefined);
+  graph()?.request_addnode(name, type, Math.round(at.x), Math.round(at.y));
+};
+
 onMounted(() => {
-  createEditor(rete.value!).then(() => editor.onDrop = onDrop);
+  createEditor(rete.value!).then(() => {
+    editor.onDrop = onDrop;
+    editor.onMenuKey = menuKey;
+    editor.area.addPipe(context => {
+      if (context.type === "contextmenu")
+        openMenu(context.data.event, context.data.context);
+      return context;
+    });
+  });
   setTimeout(() => {
     editor.addPipe((ctx) => {
       if (vueModel.pipesDisabled) {
@@ -483,8 +658,10 @@ onMounted(() => {
 <template>
   <div class="hk-editor-pane" ref="pane">
     <main id="hk-editor" class="rete" ref="rete" data-testid="editor" :data-settled="settled"
-          @pointerdown="draft = undefined"></main>
+          @pointerdown="draft = undefined; closeMenu()"></main>
     <ValueDraft v-if="draft" :key="draft.block + '/' + draft.port" :block="draft.blockLabel" :port="draft.port"
                 :port-type="draft.portType" :x="draft.x" :y="draft.y" @close="draft = undefined"/>
+    <ContextMenu v-if="menu" :items="menu.items" :x="menu.x" :y="menu.y" :types="blockTypes"
+                 @action="act" @add-block="addBlock" @close="closeMenu"/>
   </div>
 </template>

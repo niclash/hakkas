@@ -7,10 +7,9 @@ import {Presets as VuePresets, VueArea2D, VuePlugin} from 'rete-vue-plugin';
 
 import {AutoArrangePlugin, Presets as ArrangePresets,} from 'rete-auto-arrange-plugin';
 
-import {ContextMenuExtra, ContextMenuPlugin, Presets as ContextMenuPresets,} from 'rete-context-menu-plugin';
 import {MinimapExtra, MinimapPlugin} from 'rete-minimap-plugin';
 import {RerouteExtensions, RerouteExtra, ReroutePlugin,} from 'rete-connection-reroute-plugin';
-import {isValueNode, Schemes, vueModel} from "@/components/model";
+import {isValueNode, PrimitiveNode, Schemes, vueModel} from "@/components/model";
 import ValueNodeView from "@/components/floweditor/ValueNodeView.vue";
 import ValueConnectionView from "@/components/floweditor/ValueConnectionView.vue";
 import {Position} from "rete-area-plugin/_types/types";
@@ -19,7 +18,6 @@ import {setupBlockSelection} from "@/components/floweditor/selection/editor";
 type AreaExtra =
     | Area2D<Schemes>
     | VueArea2D<Schemes>
-    | ContextMenuExtra
     | MinimapExtra
     | RerouteExtra;
 
@@ -31,6 +29,11 @@ export class FlowEditor extends NodeEditor<Schemes> {
     // A line was dropped: on nothing (`socket` null) or on a socket; `created` when that made a
     // connection. `initial` is the socket it was drawn from (06 §4.3).
     onDrop: ((initial: SocketData, socket: SocketData | null, created: boolean) => void) | undefined;
+    // The menu key (or Shift+F10) was pressed (06 §4.4).
+    onMenuKey: (() => void) | undefined;
+    // Where "Arrange blocks" would put each block, by the editor's node id (06 §4.4): computed
+    // by the auto-arrange plugin, applied by the engine.
+    arrangement: (() => Promise<Map<string, Position>>) | undefined;
 
     constructor(area: AreaPlugin<Schemes, AreaExtra>) {
         super();
@@ -45,22 +48,6 @@ export class FlowEditor extends NodeEditor<Schemes> {
 
 export let editor: FlowEditor;
 
-type MenuItems = ReturnType<typeof ContextMenuPresets.classic.setup<Schemes>>;
-
-// A block's menu gets Rename (06 §4.2), which opens the inspector's name field.
-function withRename(items: MenuItems): MenuItems {
-    return (context, plugin) => {
-        const collection = items(context, plugin);
-        if (context === 'root' || !('label' in context) || isValueNode(context))
-            return collection;
-        return {
-            ...collection,
-            list: [{label: 'Rename', key: 'rename', handler: () => editor.blockSelection?.rename(context.id)},
-                ...collection.list],
-        };
-    };
-}
-
 export async function createEditor(container: HTMLElement) {
     const area = new AreaPlugin<Schemes, AreaExtra>(container);
     editor = new FlowEditor(area);
@@ -73,27 +60,29 @@ export async function createEditor(container: HTMLElement) {
 
     const arrange = new AutoArrangePlugin<Schemes>();
     arrange.addPreset(ArrangePresets.classic.setup());
-    const contextMenu = new ContextMenuPlugin<Schemes>({
-        items: withRename(ContextMenuPresets.classic.setup([
-            ['Select All', () => {
-                editor.blockSelection?.selectAll();
-                return editor.getNodes()[0];
-            }],
-            ['Layout All', () => {
-                arrange.layout();
-                return editor.getNodes()[0];
-            }],
-            ['Zoom To Fit', () => {
-                AreaExtensions.zoomAt(area, editor.getNodes());
-                return editor.getNodes()[0];
-            }],
-        ])),
-    });
+    // The arrangement is computed only: each block is moved by its changenode's event.
+    editor.arrangement = async () => {
+        const nodes = editor.getNodes().filter(n => n instanceof PrimitiveNode);
+        const connections = editor.getConnections().filter(c => !isValueNode(editor.getNode(c.source)));
+        const keep = {setEditor() {}, setArea() {}, async apply() {}};
+        const {result} = await arrange.layout({nodes, connections, applier: keep as never});
+        const positions = new Map<string, Position>();
+        for (const child of result.children ?? [])
+            positions.set(child.id, {x: child.x ?? 0, y: child.y ?? 0});
+        return positions;
+    };
     area.use(vueRender);
     area.use(connection);
-    area.use(contextMenu);
     area.use(minimap);
 
+    // Only the main button's presses reach the reroute plugin (which listens through the Vue
+    // renderer): a right-click on a connection opens its menu (06 §4.4) instead of inserting a
+    // pin under the pointer.
+    vueRender.addPipe(context => {
+        if (context.type === 'pointerdown' && (context.data as { event: PointerEvent }).event.button !== 0)
+            return undefined;
+        return context;
+    });
     vueRender.use(reroutePlugin);
 
     connection.addPreset(ConnectionPresets.classic.setup());
@@ -119,7 +108,6 @@ export async function createEditor(container: HTMLElement) {
             },
         },
     }));
-    vueRender.addPreset(VuePresets.contextMenu.setup());
     vueRender.addPreset(VuePresets.minimap.setup());
     vueRender.addPreset(
         VuePresets.reroute.setup({
@@ -136,8 +124,6 @@ export async function createEditor(container: HTMLElement) {
         })
     );
     area.use(arrange);
-    await arrange.layout();
-    await AreaExtensions.zoomAt(area, editor.getNodes());
     editor.blockSelection = setupBlockSelection(editor, area, {
         move: (id, position) => vueModel.connection.value?.proto.graph.request_changenode(id, position),
         remove: id => vueModel.connection.value?.proto.graph.request_removenode(id),

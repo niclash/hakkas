@@ -1,5 +1,5 @@
 <template>
-  <aside class="hk-panel hk-inspector" data-testid="inspector" aria-label="Inspector">
+  <aside ref="panel" class="hk-panel hk-inspector" data-testid="inspector" aria-label="Inspector">
     <div class="hk-panel-header">
       <h2 class="hk-panel-title">Inspector</h2>
     </div>
@@ -178,6 +178,22 @@ watch(() => vueModel.renameRequest.value, () => {
   focusName();
 }, {flush: "post"});
 watch(view, focusName, {flush: "post"});
+
+// The block menu's "Edit inputs": the first input that takes a value.
+const panel = ref<HTMLElement | null>(null);
+let inputsWanted = false;
+const focusInputs = () => {
+  const first = panel.value?.querySelector<HTMLElement>("[data-testid=value-field], [data-testid=value-switch]");
+  if (!inputsWanted || first == null)
+    return;
+  inputsWanted = false;
+  first.focus();
+};
+watch(() => vueModel.inputsRequest.value, () => {
+  inputsWanted = true;
+  focusInputs();
+}, {flush: "post"});
+watch(view, focusInputs, {flush: "post"});
 
 onMounted(() => errorClaims.push(claim));
 onUnmounted(() => errorClaims.splice(errorClaims.indexOf(claim), 1));

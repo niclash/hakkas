@@ -704,12 +704,17 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   `ValueNodeView.vue`, `ValueDraft.vue`): a line dropped from a free input asks for a value; a
   double-click changes it; pulling the line off clears it. Placed beside the input, with no
   protocol change (the user's choice over upstream's `metadata` on `addinitial`).
-- [ ] **30. Context menus** (themed, 06 §4.1): replace the classic preset's menu by our own
+- [x] **30. Context menus** (themed, 06 §4.1): replace the classic preset's menu by our own
   component. On the canvas: add block (with search, placed where the menu was opened), paste,
   zoom to fit, auto-layout (sends a `changenode` per moved block). On a block: rename, set
   inputs, watch values, duplicate, copy, delete, "create composite" with a selection. On a
   connection: watch value, delete. On a port: expose as process port (task 35). Keyboard
   accessible, closes on Escape.
+  Done as `ContextMenu.vue` and `menus.ts` (06 §4.4), with the input and value-node items of task
+  29 (06 §4.3) and "Edit inputs" for "set inputs". Watch values, duplicate, copy, paste, create
+  composite and expose as process port join the menus with tasks 34–37. Also: a right-click no
+  longer inserts a reroute pin (only main-button presses reach the reroute plugin), and the
+  classic context menu plugin is unused (still a dependency of the 3D template, task 43).
 - [ ] **31. Palette and sockets**: a search field over the block types; drag a type onto the
   canvas to add it at the drop point (today it lands at 100,100); tooltips with the type's
   description and ports; sockets colored by port type (number, bool, string) with a legend in

@@ -709,18 +709,56 @@ h1, h2, h3 {
   border-color: var(--hk-accent);
 }
 
-#hk-editor [data-testid="context-menu"] .block {
-  color: var(--hk-text);
+/* The editor's context menus (06 §4.4). */
+.hk-menu {
+  position: absolute;
+  z-index: 20;
+  min-width: 200px;
+  max-width: 280px;
+  padding: 4px;
   background: var(--hk-surface);
-  border-bottom: var(--hk-border-width) solid var(--hk-border);
-}
-
-#hk-editor [data-testid="context-menu"] .block:hover {
-  background: var(--hk-surface-2);
-}
-
-#hk-editor [data-testid="context-menu"] .search {
   color: var(--hk-text);
-  border-color: var(--hk-border);
-  font-family: inherit;
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 8px;
+  box-shadow: var(--hk-shadow);
+}
+
+.hk-menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: var(--hk-text);
+  background: transparent;
+  border: var(--hk-border-width) solid transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.hk-menu-item:hover,
+.hk-menu-item:focus-visible,
+.hk-menu-item.active {
+  background: var(--hk-accent-soft);
+  border-color: var(--hk-accent);
+  outline: none;
+}
+
+.hk-menu-shortcut {
+  color: var(--hk-text-muted);
+  font-size: 12px;
+}
+
+.hk-menu-results {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.hk-menu-results .hk-empty {
+  padding: 5px 8px;
 }

@@ -8,7 +8,7 @@ import {AreaPlugin, Drag} from 'rete-area-plugin';
 import {isValueNode, PrimitiveNode, Schemes, vueModel} from '@/components/model';
 import {setupSelection} from './index';
 import {BlockSelection, MoveThrottle, Position, SelectionDrag} from './blocks';
-import {InputSource} from '@/components/initials';
+import {inputSources} from '@/components/floweditor/values';
 
 // What the selection does to the process, by block id (the node's label).
 export interface SelectionCommands {
@@ -34,25 +34,21 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
                                        commands: SelectionCommands) {
     // The selected blocks' ids and types for the inspector, once per change.
     let publishing = false;
+    const publishNow = () => {
+        vueModel.selectedBlocks.value = selection.ids().flatMap(id => {
+            const node = editor.getNode(id);
+            if (node === undefined || isValueNode(node))
+                return [];
+            return [{node: id, id: node.label, component: node.component, inputs: inputSources(editor, node)}];
+        });
+    };
     const publish = () => {
         if (publishing)
             return;
         publishing = true;
         queueMicrotask(() => {
             publishing = false;
-            vueModel.selectedBlocks.value = selection.ids().flatMap(id => {
-                const node = editor.getNode(id);
-                if (node === undefined || isValueNode(node))
-                    return [];
-                const inputs: Record<string, InputSource> = {};
-                for (const [port, value] of Object.entries(node.initials))
-                    inputs[port] = {kind: "fixed", value};
-                for (const c of editor.getConnections()) {
-                    if (c.target === id && !isValueNode(editor.getNode(c.source)))
-                        inputs[c.targetInput] = {kind: "connected", from: (editor.getNode(c.source)?.label ?? "?") + "." + c.sourceOutput};
-                }
-                return [{node: id, id: node.label, component: node.component, inputs}];
-            });
+            publishNow();
         });
     };
     // The process's blocks; value nodes (06 §4.3) are not selectable.
@@ -179,6 +175,9 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
         } else if (event.key === 'a' && (event.ctrlKey || event.metaKey) && !event.altKey) {
             event.preventDefault();
             selectAll();
+        } else if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+            event.preventDefault();
+            (editor as { onMenuKey?: () => void }).onMenuKey?.();
         } else if (event.key === 'F2') {
             if (selection.ids().length !== 1)
                 return;
@@ -197,9 +196,17 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
         selection,
         selectAll,
         removeSelected,
+        // Selects the block alone and focuses the inspector's first input value.
+        editInputs(id: string) {
+            selection.set([id]);
+            publishNow();
+            vueModel.inputsRequest.value++;
+        },
         // Selects the block alone and opens the inspector's name field.
         rename(id: string) {
             selection.set([id]);
+            // Before the request, so that the inspector already shows the block it focuses.
+            publishNow();
             vueModel.renameRequest.value++;
         },
         // A selected block, or what feeds its inputs, changed.

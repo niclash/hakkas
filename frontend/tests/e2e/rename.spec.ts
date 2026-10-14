@@ -90,7 +90,7 @@ test("the block's menu has Rename", async ({page, engine}) => {
     await openExample(page, engine.url);
     await title(page, "block1").click();
     await title(page, "block6").click({button: "right"});
-    await page.getByTestId("context-menu-item").getByText("Rename", {exact: true}).click();
+    await page.getByTestId("context-menu").locator("[data-action=rename]").click();
     await expect(nameField(page)).toBeFocused();
     await expect(nameField(page)).toHaveValue("block6");
     await page.keyboard.type("lower");

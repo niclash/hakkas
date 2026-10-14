@@ -2,7 +2,9 @@
 // input, placed just left of the input and moved with its block. Called from the graph event
 // handlers, so every change here follows an engine event.
 
-import {Connection, isValueNode, PrimitiveNode, ValueNode} from "@/components/model";
+import {NodeEditor} from "rete";
+import {Connection, isValueNode, PrimitiveNode, Schemes, ValueNode} from "@/components/model";
+import {InputSource} from "@/components/initials";
 import type {FlowEditor} from "./viewmodel/default";
 import {Position, valuePosition} from "./value-position";
 
@@ -73,4 +75,17 @@ export async function renameValues(editor: FlowEditor, block: PrimitiveNode) {
         value.blockLabel = block.label;
         await editor.area.update("node", value.id);
     }
+}
+
+// What feeds each of the block's inputs that has a connection or a fixed value.
+export function inputSources(editor: NodeEditor<Schemes>, block: PrimitiveNode): Record<string, InputSource> {
+    const inputs: Record<string, InputSource> = {};
+    for (const [port, value] of Object.entries(block.initials))
+        inputs[port] = {kind: "fixed", value};
+    for (const c of editor.getConnections()) {
+        const source = editor.getNode(c.source);
+        if (c.target === block.id && source !== undefined && !isValueNode(source))
+            inputs[c.targetInput] = {kind: "connected", from: source.label + "." + c.sourceOutput};
+    }
+    return inputs;
 }
