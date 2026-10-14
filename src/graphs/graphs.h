@@ -105,6 +105,7 @@ typedef struct Graphs {
 	GraphsSubscriber *subscribers; /* in subscription order */
 	GraphsSubscriber *cursor;      /* the next subscriber of the delivery in progress */
 	uint64_t seq;		       /* events delivered so far */
+	uint32_t quiet;		       /* > 0: events are not delivered (graphs_quiet) */
 } Graphs;
 
 /* Make gs an empty registry on rt, and make it rt's observer (so it hears
@@ -155,6 +156,18 @@ void graphs_unsubscribe(Graphs *gs, GraphsSubscriber *s);
  * to an unknown graph before scoping. */
 bool graphs_subscriber_scope(GraphsSubscriber *s, const char *graph_id);
 
+/* While quiet (on > 0 calls not yet ended by as many off calls), no event is
+ * delivered and none marks a graph unsaved: for building or dropping a
+ * component graph that only mirrors its type (app/type_files.h), which no
+ * client is to see as edits. */
+static inline void graphs_quiet(Graphs *gs, bool on)
+{
+	if (on)
+		gs->quiet++;
+	else if (gs->quiet > 0)
+		gs->quiet--;
+}
+
 /* ---- Refusal messages (02 §3.4.1) ----------------------------------------- */
 
 /* What a refusal is about. Fields a status does not use may be NULL. */
@@ -197,6 +210,25 @@ size_t graph_refusal_message(enum graph_status st, const GraphRefusal *ctx, char
 enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
 				   const char *description, const char *icon, Graph **out,
 				   GraphsMessage *msg);
+
+/* graph:clear with "main": false (02 §3.4.3): create an empty component
+ * graph — the definition of a composite type, id its type name — as
+ * graphs_new_graph does a process, but reporting nothing (it is no process:
+ * no GRAPH_CREATED, never a GRAPH_STATUS; graphs_start, _stop and _status
+ * refuse it with NOT_A_PROCESS "Not a process: <id>", and so do the links).
+ * id must not be NULL (INVALID_ID). Whether the name is free as a type name
+ * is the caller's to check (app/type_files.h). */
+enum graph_status graphs_new_component(Graphs *gs, const char *id, const char *name,
+				       const char *description, const char *icon, Graph **out,
+				       GraphsMessage *msg);
+
+/* graph:clear on an existing component graph: remove its graph ports and
+ * blocks (reporting each removal as the commands would) and set name,
+ * description and icon (NULL keeps one). Refused: INVALID_ID, UNKNOWN_GRAPH,
+ * GRAPH_EXISTS (the id is a process), NO_MEMORY. */
+enum graph_status graphs_clear_component(Graphs *gs, const char *id, const char *name,
+					 const char *description, const char *icon,
+					 GraphsMessage *msg);
 
 /* delete_graph: stop the graph if started (reporting GRAPH_STOPPED), remove
  * its links from and to other graphs (reporting LINK_REMOVED for each, every

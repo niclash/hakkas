@@ -115,4 +115,58 @@ enum graph_files_status type_files_change_group(GraphFiles *gf, const char *grap
 						const char *name, const char *description,
 						const char *icon, GraphsMessage *msg);
 
+/*
+ * ---- Component graphs (02 §3.4.3; decided with the user 2026-10-14, plan
+ * task 36) ----
+ *
+ * A component graph (graphs/graphs.h graphs_new_component) is the editable
+ * definition of a composite type, its id the type's name: edited with the
+ * graph commands, it becomes the type at network:persist. Every composite
+ * type has one: made at startup for each type file, and kept in step by the
+ * group commands.
+ */
+
+/* Build the component graph of the composite type def from its definition:
+ * its blocks (on a grid: a type keeps no positions), connections, initials
+ * and ports as graph ports; saved (it matches its file). Built quietly
+ * (graphs_quiet): it mirrors the type, so no client sees its blocks being
+ * added. GRAPH_FILES_ERR_INVALID if it cannot be built (logged; a
+ * graph with def's name exists already, say), _NO_MEMORY. */
+enum graph_files_status type_files_component_graph(GraphFiles *gf, const BlockTypeDef *def);
+
+/* Startup, after type_files_load_all (05 §1.4 step 6): the component graph
+ * of every composite type that has none. Returns how many were made. */
+size_t type_files_component_graphs(GraphFiles *gf);
+
+/* graph:clear with "main": false: create the component graph id (empty), or
+ * empty the existing one, setting name, description and icon (NULL keeps
+ * one, or gives the defaults of graphs_new_graph). Refused: "Invalid id",
+ * "Graph exists: <id>" (a process has that id), "Component exists: <id>" (a
+ * block type of that name has no component graph: a built-in type). *out is
+ * the graph. */
+enum graph_files_status type_files_clear_component(GraphFiles *gf, const char *id,
+						   const char *name, const char *description,
+						   const char *icon, Graph **out,
+						   GraphsMessage *msg);
+
+/* network:persist on a component graph: assemble the type from the whole
+ * graph — its blocks, the connections between them, their initials, and its
+ * graph ports as the type's ports (03 §5.2 with every node selected) — and
+ * register it under the graph's id, replacing the type of that name, then
+ * write its type file and report COMPONENT. Refused, changing nothing: "Not a
+ * component: <id>" (no component graph; graph_files_persist saves processes),
+ * "Empty component: <id>" (no block), "Component in use: <id>" (instances or
+ * containing types refer to the old type), "Component exists: <id>" (a
+ * built-in type), every refusal of the registration (03 §5.1, e.g.
+ * "Recursive component: <id>"), "Unable to save component: <id>". */
+enum graph_files_status type_files_persist_component(GraphFiles *gf, const char *id,
+						     GraphsMessage *msg);
+
+/* runtime:delete_graph on a component graph: unregister its type and delete
+ * its file, then delete the graph (GRAPH_DELETED). name must be the graph's
+ * name ("Graph name mismatch: <id>"); refused while the type is in use
+ * ("Component in use: <id>"). */
+enum graph_files_status type_files_delete_component(GraphFiles *gf, const char *id,
+						    const char *name, GraphsMessage *msg);
+
 #endif

@@ -161,6 +161,8 @@ Decisions (plan task 21; `src/graphs/graph.h` "Composite instances", `src/graphs
 - **Exposed port defaults**: an exposed port's descriptor carries the mapped inner port's effective default (its default, or `default_value` of its type), so a severed exposed input reverts to exactly the inner default.
 - **Change threshold**: each inner block uses its own type's default, then the engine-wide default (`01-architecture-overview.md` §3.3); there is no per-instance override (open question 7).
 
+**Defining a type as a graph** (decided with the user 2026-10-14, plan task 36; `02-wire-protocol.md` §3.4.3): every composite type also has a **component graph**, a graph that never runs (`"main": false`), whose blocks, connections and initials are the type's inside and whose graph inports and outports — each mapped to a port of one of its blocks — are the type's ports. A client creates a type by building such a graph (`graph:clear`, the graph commands) and persisting it; the type is then assembled from the graph as §5.2 assembles a selection of all its nodes, and stored in the type file below. The type file stays the persistence format; at startup each type file is registered and its component graph built from it.
+
 ### 5.1 Authoring and persistence format
 
 ```json

@@ -271,7 +271,7 @@ static void test_not_authenticated(void)
 			a.secret);
 	EXPECT_ERROR(&u, "Not authenticated", NULL);
 	/* An unknown command before login: gated first. */
-	e2e_send(&u, "graph", "clear", "{}");
+	e2e_send(&u, "graph", "merge", "{}");
 	EXPECT_ERROR(&u, "Not authenticated", NULL);
 	/* A secret that is not the connection's own does not work on a
 	 * logged-in connection either. */
@@ -908,6 +908,125 @@ static void test_groups(void)
 	close_clients();
 }
 
+/* ---- Component graphs (02 §3.4.3) ------------------------------------------------------ */
+
+#define PUMP_TYPE_FILE e2e_path(e2e_path(e2e_basedir, "types"), "e2e%2FPump.json")
+
+static void test_component_graphs(void)
+{
+	open_clients();
+
+	/* graph:clear, main false: a new, empty component graph; the reply goes
+	 * to the requester only, and no process appears (no new_graph, no
+	 * status). */
+	e2e_send(&a, "graph", "clear",
+		 "{'id':'e2e/Pump','name':'Pump','library':'e2e','main':false,"
+		 "'description':'A pump','icon':'cog'}");
+	EXPECT(&a, "graph", "clear",
+	       "{'id':'e2e/Pump','name':'Pump','library':'e2e','main':false,"
+	       "'description':'A pump','icon':'cog'}");
+	all_quiet();
+
+	/* Built with the graph commands; their events as for any graph, but no
+	 * status (it is no process). */
+	event1("graph", "addnode", "{'id':'p','graph':'e2e/Pump','component':'math/Add2'}", NULL);
+	event1("graph", "addnode", "{'id':'q','graph':'e2e/Pump','component':'math/Add2'}", NULL);
+	event1("graph", "addedge",
+	       "{'src':{'node':'p','port':'out'},'tgt':{'node':'q','port':'in1'},"
+	       "'graph':'e2e/Pump'}",
+	       NULL);
+	event1("graph", "addinitial",
+	       "{'tgt':{'node':'q','port':'in2'},'src':{'data':2},'graph':'e2e/Pump'}", NULL);
+	event1x("graph", "addinport",
+		"{'graph':'e2e/Pump','node':'p','port':'in1','public':'flow'}", "graph",
+		"addinport", "{'graph':'e2e/Pump','name':'flow','node':'p','port':'in1'}");
+	event1x("graph", "addoutport",
+		"{'graph':'e2e/Pump','node':'q','port':'out','public':'total'}", "graph",
+		"addoutport", "{'graph':'e2e/Pump','name':'total','node':'q','port':'out'}");
+	all_quiet();
+
+	/* It is no process. */
+	e2e_send(&a, "network", "start", "{'graph':'e2e/Pump'}");
+	EXPECT_ERROR(&a, "Not a process: e2e/Pump", "e2e/Pump");
+	e2e_send(&a, "network", "getstatus", "{'graph':'e2e/Pump'}");
+	EXPECT_ERROR(&a, "Not a process: e2e/Pump", "e2e/Pump");
+	all_quiet();
+
+	/* persist makes it the type: exactly the graph's ports, mapped to its
+	 * blocks; component:component to everyone; the type file written. */
+	e2e_send(&a, "network", "persist", "{'graph':'e2e/Pump'}");
+	expect_all(&b, &v, "component", "component",
+		   "{'name':'e2e/Pump','description':'A pump','subgraph':true,'icon':'cog',"
+		   "'inPorts':[{'id':'flow','type':'number','description':'*',"
+		   "'addressable':false}],'outPorts':[{'id':'total','type':'number',"
+		   "'description':'*','addressable':false}]}");
+	CHECK(pal_storage_exists(PUMP_TYPE_FILE));
+	e2e_send(&v, "component", "getsource", "{'name':'e2e/Pump'}");
+	const char *m = e2e_recv(&v);
+	/* (e2e_payload_str's buffer holds the start of the code.) */
+	static const char *const parts[] = {
+		"\\\"initials\\\":[{\\\"src\\\":2,\\\"tgt\\\":\\\"q.in2\\\"}]",
+		"\\\"inports\\\":[{\\\"name\\\":\\\"flow\\\",\\\"tgt\\\":\\\"p.in1\\\"}]",
+		"\\\"outports\\\":[{\\\"name\\\":\\\"total\\\",\\\"src\\\":\\\"q.out\\\"}]",
+	};
+	for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++)
+		CHECK(strstr(m, parts[i]) != NULL);
+
+	/* graph:connect shows it, main false. */
+	e2e_send(&v, "graph", "connect", "{'id':'e2e/Pump'}");
+	EXPECT(&v, "graph", "clear",
+	       "{'id':'e2e/Pump','name':'Pump','library':'e2e','main':false,"
+	       "'description':'A pump','icon':'cog'}");
+	for (int i = 0; i < 6; i++) /* 2 blocks, 2 ports, the initial, the edge */
+		CHECK(e2e_recv(&v) != NULL);
+	all_quiet();
+
+	/* An instance in a process; while it exists the type is neither
+	 * replaced nor deleted. */
+	new_graph1("{'id':'pg','name':'PG'}", NULL);
+	/* (v is scoped to e2e/Pump now: pg's block events do not reach it.) */
+	e2e_send(&a, "graph", "addnode", "{'id':'c','graph':'pg','component':'e2e/Pump'}");
+	expect_all(&b, NULL, "graph", "addnode", NULL);
+	e2e_send(&a, "network", "persist", "{'graph':'e2e/Pump'}");
+	EXPECT_ERROR(&a, "Component in use: e2e/Pump", "e2e/Pump");
+	e2e_send(&a, "runtime", "delete_graph", "{'id':'e2e/Pump','name':'Pump'}");
+	EXPECT_ERROR(&a, "Component in use: e2e/Pump", "e2e/Pump");
+	all_quiet();
+	e2e_send(&a, "graph", "removenode", "{'id':'c','graph':'pg'}");
+	expect_all(&b, NULL, "graph", "removenode", NULL);
+	all_quiet();
+
+	/* Refusals of graph:clear. */
+	e2e_send(&a, "graph", "clear", "{'id':'e2e/X','name':'X'}");
+	EXPECT_ERROR(&a, "Invalid field: main", "e2e/X");
+	e2e_send(&a, "graph", "clear", "{'id':'pg','main':false}");
+	EXPECT_ERROR(&a, "Graph exists: pg", "pg");
+	e2e_send(&a, "graph", "clear", "{'id':'math/Add2','main':false}");
+	EXPECT_ERROR(&a, "Component exists: math/Add2", "math/Add2");
+	e2e_send(&a, "graph", "clear", "{'id':'','main':false}");
+	EXPECT_ERROR(&a, "Invalid id", NULL);
+	/* An empty component graph is no type. */
+	e2e_send(&a, "graph", "clear", "{'id':'e2e/Empty','main':false}");
+	CHECK(e2e_match(e2e_recv(&a), "graph", "clear", NULL));
+	e2e_send(&a, "network", "persist", "{'graph':'e2e/Empty'}");
+	EXPECT_ERROR(&a, "Empty component: e2e/Empty", "e2e/Empty");
+	/* graph_files: a process persists into graphs/, not a component. */
+	e2e_send(&a, "runtime", "delete_graph", "{'id':'e2e/Empty','name':'<<new graph>>'}");
+	expect_all(&b, &v, "runtime", "delete_graph",
+		   "{'graph':'e2e/Empty','name':'<<new graph>>'}");
+	all_quiet();
+
+	/* runtime:delete_graph takes the type and its file with it. */
+	e2e_send(&a, "runtime", "delete_graph", "{'id':'e2e/Pump','name':'Pump'}");
+	expect_all(&b, &v, "runtime", "delete_graph", "{'graph':'e2e/Pump','name':'Pump'}");
+	CHECK(!pal_storage_exists(PUMP_TYPE_FILE));
+	e2e_send(&a, "graph", "addnode", "{'id':'d','graph':'pg','component':'e2e/Pump'}");
+	EXPECT_ERROR(&a, "Unknown component: e2e/Pump", "pg");
+	all_quiet();
+	event1("runtime", "delete_graph", "{'id':'pg','name':'PG'}", NULL);
+	close_clients();
+}
+
 /* ---- Refusals (02 §3.4.1) ------------------------------------------------------------- */
 
 typedef struct {
@@ -1034,6 +1153,7 @@ int main(void)
 	RUN(test_network);
 	RUN(test_graph);
 	RUN(test_groups);
+	RUN(test_component_graphs);
 	RUN(test_refusals);
 	e2e_stop();
 	e2e_teardown();

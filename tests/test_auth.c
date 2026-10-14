@@ -652,7 +652,7 @@ static void test_command_rules(void)
 	/* Unknown commands: gated, no capability, except in environment. */
 	AuthCommandRule r = auth_command_rule("environment", "whoami");
 	CHECK(!r.known && !r.gated && r.caps_any == 0);
-	const char *unknown[][2] = {{"graph", "clear"},	    {"runtime", "packet"},
+	const char *unknown[][2] = {{"graph", "merge"},	    {"runtime", "packet"},
 				    {"network", "data"},    {"component", "source"},
 				    {"trace", "begin"},	    {"bogus", "list"},
 				    {"Graph", "addnode"},   {NULL, "list"},

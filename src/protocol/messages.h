@@ -109,7 +109,9 @@ char *proto_msg_trace(const char *command, const char *graph);
 
 /* ---- graph:* (02 §3.4, the graph:connect snapshot of 02 §4.1.1) ---------------------- */
 
-/* graph:clear {"id","name","main":true,"description","icon"}. */
+/* graph:clear {"id","name","main":true,"description","icon"}; for a
+ * component graph {"id","name","library","main":false,"description","icon"}
+ * (02 §3.4.3). */
 char *proto_msg_graph_clear(const Graph *g);
 
 /* graph:addnode {"graph","component","id","metadata"}: the block's full

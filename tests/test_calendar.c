@@ -681,6 +681,25 @@ static void test_library(void)
 	CHECK(loaded == files);
 	CHECK_STREQ(logs, ""); /* every file name is its type's encoded name */
 
+	/* Each type also gets its component graph, its editable definition
+	 * (02 §3.4.3): blocks, connections and the type's ports as graph
+	 * ports; no process (it does not run). */
+	CHECK(type_files_component_graphs(&gf) == files);
+	const Graph *wg = graphs_find(&gs, "schedule/WeekSchedule");
+	CHECK(wg != NULL && wg->component);
+	if (wg != NULL) {
+		CHECK(wg->block_count == 3 && !wg->started && !wg->unsaved);
+		CHECK(wg->port_count[GRAPH_INPORT] == 3 && wg->port_count[GRAPH_OUTPORT] == 1);
+		CHECK_STREQ(wg->ports[GRAPH_INPORT][0].name, "range");
+		CHECK_STREQ(wg->ports[GRAPH_INPORT][0].block->name, "Time");
+		CHECK_STREQ(wg->name, "schedule/WeekSchedule");
+		CHECK_STREQ(wg->icon, "schedule");
+		GraphsMessage gm;
+		CHECK(graphs_start(&gs, "schedule/WeekSchedule", &gm) == GRAPH_ERR_NOT_A_PROCESS);
+		CHECK_STREQ(gm.text, "Not a process: schedule/WeekSchedule");
+	}
+	CHECK(type_files_component_graphs(&gf) == 0); /* each has one now */
+
 	static const char *const names[] = {"schedule/DaySchedule", "schedule/WeekSchedule",
 					    "schedule/MonthSchedule", "schedule/YearSchedule"};
 	for (size_t k = 0; k < sizeof(names) / sizeof(names[0]); k++) {

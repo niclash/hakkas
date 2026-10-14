@@ -357,11 +357,13 @@ enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, Grap
 		refusal = GRAPH_ERR_INVALID_ID;
 	else if ((g = graphs_find(gf->gs, id)) == NULL)
 		refusal = GRAPH_ERR_UNKNOWN_GRAPH;
+	else if (g->component) /* its type file is app/type_files.h's (02 §3.4.3) */
+		refusal = GRAPH_ERR_NOT_A_PROCESS;
 	if (refusal != GRAPH_OK) {
 		if (msg != NULL)
 			graph_refusal_message(refusal, &ctx, msg->text, sizeof(msg->text));
-		return refusal == GRAPH_ERR_INVALID_ID ? GRAPH_FILES_ERR_INVALID
-						       : GRAPH_FILES_ERR_NOT_FOUND;
+		return refusal == GRAPH_ERR_UNKNOWN_GRAPH ? GRAPH_FILES_ERR_NOT_FOUND
+							  : GRAPH_FILES_ERR_INVALID;
 	}
 
 	enum graph_files_status st = graph_files_save(gf, g);
@@ -933,6 +935,14 @@ enum graph_files_status graph_files_load_all(GraphFiles *gf, graph_files_loaded_
 enum graph_status graph_files_delete(GraphFiles *gf, const char *id, const char *name,
 				     GraphsMessage *msg)
 {
+	const Graph *g = graph_id_valid(id) ? graphs_find(gf->gs, id) : NULL;
+	if (g != NULL && g->component) { /* app/type_files.h's (02 §3.4.3) */
+		GraphRefusal ctx = {.graph = id};
+		if (msg != NULL)
+			graph_refusal_message(GRAPH_ERR_NOT_A_PROCESS, &ctx, msg->text,
+					      sizeof(msg->text));
+		return GRAPH_ERR_NOT_A_PROCESS;
+	}
 	char path[PAL_PATH_MAX];
 	bool have_path = graph_files_path(gf, GRAPH_FILES_GRAPHS_DIR, id, path, sizeof(path)) ==
 			 GRAPH_FILES_OK;

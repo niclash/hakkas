@@ -72,6 +72,8 @@ static void update_unsaved(Graphs *gs, Graph *g);
  * made its graph unsaved, that graph's status follows. */
 static void notify(Graphs *gs, const GraphEvent *ev)
 {
+	if (gs->quiet > 0)
+		return;
 	uint64_t seq = ++gs->seq;
 	for (GraphsSubscriber *s = gs->subscribers; s != NULL; s = gs->cursor) {
 		gs->cursor = s->next;
@@ -288,6 +290,9 @@ size_t graph_refusal_message(enum graph_status st, const GraphRefusal *ctx, char
 	case GRAPH_ERR_NO_SUCH_BINDING:
 		n = snprintf(buf, size, "%s", "No such binding");
 		break;
+	case GRAPH_ERR_NOT_A_PROCESS:
+		n = snprintf(buf, size, "Not a process: %s", graph);
+		break;
 	}
 	return n < 0 ? 0 : (size_t)n;
 }
@@ -341,9 +346,11 @@ static void endpoint_refusal(const Graph *g, enum graph_status st, const char *s
 
 /* ---- Runtime commands (02 §3.2) ---------------------------------------- */
 
-enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
-				   const char *description, const char *icon, Graph **out,
-				   GraphsMessage *msg)
+/* new_graph and new_component: a process, or a component graph (no
+ * GRAPH_CREATED: it is no process, 02 §3.4.3). */
+static enum graph_status new_graph(Graphs *gs, const char *id, const char *name,
+				   const char *description, const char *icon, bool component,
+				   Graph **out, GraphsMessage *msg)
 {
 	GraphRefusal ctx = {.graph = id};
 	char uuid[GRAPHS_UUID_SIZE];
@@ -376,11 +383,70 @@ enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
 		return finish(GRAPH_ERR_NO_MEMORY, &ctx, msg);
 	}
 
+	g->component = component;
 	gs->graphs[gs->count++] = g;
-	emit(gs, g, (GraphEvent){.type = GRAPH_EVENT_GRAPH_CREATED});
+	if (!component)
+		emit(gs, g, (GraphEvent){.type = GRAPH_EVENT_GRAPH_CREATED});
 	mark_changed(gs, g); /* until saved; a load clears it (graphs_mark_saved) */
 	if (out != NULL)
 		*out = g;
+	return finish(GRAPH_OK, &ctx, msg);
+}
+
+enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
+				   const char *description, const char *icon, Graph **out,
+				   GraphsMessage *msg)
+{
+	return new_graph(gs, id, name, description, icon, false, out, msg);
+}
+
+enum graph_status graphs_new_component(Graphs *gs, const char *id, const char *name,
+				       const char *description, const char *icon, Graph **out,
+				       GraphsMessage *msg)
+{
+	if (id == NULL) { /* a component graph's id is its type's name */
+		GraphRefusal ctx = {0};
+		return finish(GRAPH_ERR_INVALID_ID, &ctx, msg);
+	}
+	return new_graph(gs, id, name, description, icon, true, out, msg);
+}
+
+/* Replace s (owned) by a copy of v, if v is not NULL. */
+static bool set_str(char **s, const char *v)
+{
+	if (v == NULL)
+		return true;
+	char *copy = graph_str_dup(v);
+	if (copy == NULL)
+		return false;
+	free(*s);
+	*s = copy;
+	return true;
+}
+
+enum graph_status graphs_clear_component(Graphs *gs, const char *id, const char *name,
+					 const char *description, const char *icon,
+					 GraphsMessage *msg)
+{
+	GraphRefusal ctx = {.graph = id};
+	Graph *g;
+	enum graph_status st = lookup(gs, id, &g);
+	if (st != GRAPH_OK)
+		return finish(st, &ctx, msg);
+	if (!g->component)
+		return finish(GRAPH_ERR_GRAPH_EXISTS, &ctx, msg);
+	/* Its graph ports, then its blocks (each with its connections and
+	 * initials), newest first, reported as their removals. */
+	for (int dir = GRAPH_OUTPORT; dir >= GRAPH_INPORT; dir--) {
+		while (g->port_count[dir] > 0)
+			graph_remove_port(g, (enum graph_port_dir)dir,
+					  g->ports[dir][g->port_count[dir] - 1].name);
+	}
+	while (g->block_count > 0)
+		graph_remove_block(g, g->blocks[g->block_count - 1]->name);
+	if (!set_str(&g->name, name) || !set_str(&g->description, description) ||
+	    !set_str(&g->icon, icon))
+		return finish(GRAPH_ERR_NO_MEMORY, &ctx, msg);
 	return finish(GRAPH_OK, &ctx, msg);
 }
 
@@ -434,11 +500,20 @@ enum graph_status graphs_delete_graph(Graphs *gs, const char *id, const char *na
 
 /* ---- Network commands (02 §3.3) ------------------------------------------ */
 
+/* lookup, then: a component graph is no process (start, stop, getstatus). */
+static enum graph_status lookup_process(const Graphs *gs, const char *id, Graph **out)
+{
+	enum graph_status st = lookup(gs, id, out);
+	if (st == GRAPH_OK && (*out)->component)
+		return GRAPH_ERR_NOT_A_PROCESS;
+	return st;
+}
+
 enum graph_status graphs_start(Graphs *gs, const char *id, GraphsMessage *msg)
 {
 	GraphRefusal ctx = {.graph = id};
 	Graph *g;
-	enum graph_status st = lookup(gs, id, &g);
+	enum graph_status st = lookup_process(gs, id, &g);
 	if (st != GRAPH_OK)
 		return finish(st, &ctx, msg);
 	bool changed = !g->started;
@@ -461,7 +536,7 @@ enum graph_status graphs_stop(Graphs *gs, const char *id, GraphsMessage *msg)
 {
 	GraphRefusal ctx = {.graph = id};
 	Graph *g;
-	enum graph_status st = lookup(gs, id, &g);
+	enum graph_status st = lookup_process(gs, id, &g);
 	if (st != GRAPH_OK)
 		return finish(st, &ctx, msg);
 	bool changed = g->started;
@@ -472,8 +547,11 @@ enum graph_status graphs_stop(Graphs *gs, const char *id, GraphsMessage *msg)
 	return finish(GRAPH_OK, &ctx, msg);
 }
 
+/* GRAPH_STATUS for g; a component graph has none (it is no process). */
 static void emit_status(Graphs *gs, Graph *g)
 {
+	if (g->component)
+		return;
 	emit(gs, g,
 	     (GraphEvent){.type = GRAPH_EVENT_GRAPH_STATUS,
 			  .time_ms = g->time_started,
@@ -484,7 +562,7 @@ enum graph_status graphs_status(Graphs *gs, const char *id, GraphsMessage *msg)
 {
 	GraphRefusal ctx = {.graph = id};
 	Graph *g;
-	enum graph_status st = lookup(gs, id, &g);
+	enum graph_status st = lookup_process(gs, id, &g);
 	if (st != GRAPH_OK)
 		return finish(st, &ctx, msg);
 	emit_status(gs, g);
@@ -741,9 +819,13 @@ static enum graph_status lookup_link(const Graphs *gs, const char *from_graph,
 	ctx->graph = from_graph;
 	if ((*src = graphs_find(gs, from_graph)) == NULL)
 		return GRAPH_ERR_UNKNOWN_GRAPH;
+	if ((*src)->component)
+		return GRAPH_ERR_NOT_A_PROCESS;
 	ctx->graph = to_graph;
 	if ((*tgt = graphs_find(gs, to_graph)) == NULL)
 		return GRAPH_ERR_UNKNOWN_GRAPH;
+	if ((*tgt)->component)
+		return GRAPH_ERR_NOT_A_PROCESS;
 	return GRAPH_OK;
 }
 

@@ -232,6 +232,19 @@ enum graph_files_status type_files_load_all(const GraphFiles *gf, size_t *loaded
 
 /* ---- The group commands (02 §3.4.2) ----------------------------------------------- */
 
+/* Keep the component graph of the type called name in step with the type
+ * (02 §3.4.3): drop it, then build it again from def (NULL: only drop it). */
+static void sync_component_graph(GraphFiles *gf, const char *name, const BlockTypeDef *def)
+{
+	graphs_quiet(gf->gs, true);
+	Graph *g = graphs_find(gf->gs, name);
+	if (g != NULL && g->component)
+		(void)graphs_delete_graph(gf->gs, name, g->name, NULL);
+	if (def != NULL)
+		(void)type_files_component_graph(gf, def);
+	graphs_quiet(gf->gs, false);
+}
+
 static void set_message(GraphsMessage *msg, const char *text)
 {
 	if (msg != NULL)
@@ -323,6 +336,8 @@ enum graph_files_status type_files_add_group(GraphFiles *gf, const char *graph,
 		(void)composite_types_unregister(gf->gs, sel->name, NULL);
 		return unsaved(msg, fs, sel->name);
 	}
+	sync_component_graph(gf, sel->name, def);
+	g = graphs_find(gf->gs, graph); /* the context may be the graph just synced */
 	graphs_notify_group(gf->gs, g, GRAPH_EVENT_GROUP_ADDED, def, NULL);
 	graphs_notify_component(gf->gs, def);
 	set_message(msg, "");
@@ -340,6 +355,8 @@ enum graph_files_status type_files_remove_group(GraphFiles *gf, const char *grap
 	if (st != COMPOSITE_OK)
 		return refused(msg, st, &cm);
 	(void)type_files_delete(gf, name); /* a failure is logged; the removal stands */
+	sync_component_graph(gf, name, NULL);
+	g = graphs_find(gf->gs, graph); /* the context may be the graph just synced */
 	graphs_notify_group(gf->gs, g, GRAPH_EVENT_GROUP_REMOVED, NULL, name);
 	set_message(msg, "");
 	return GRAPH_FILES_OK;
@@ -372,6 +389,9 @@ enum graph_files_status type_files_rename_group(GraphFiles *gf, const char *grap
 		return refused(msg, st, &cm);
 	}
 	(void)type_files_delete(gf, from); /* a failure is logged; the rename stands */
+	sync_component_graph(gf, from, NULL);
+	sync_component_graph(gf, to, def);
+	g = graphs_find(gf->gs, graph); /* the context may be the graph just synced */
 	graphs_notify_group(gf->gs, g, GRAPH_EVENT_GROUP_RENAMED, def, from);
 	graphs_notify_component(gf->gs, def);
 	set_message(msg, "");
@@ -409,8 +429,307 @@ enum graph_files_status type_files_change_group(GraphFiles *gf, const char *grap
 		(void)type_files_save(gf, def); /* the previous values again */
 		return refused(msg, st, &cm);
 	}
+	sync_component_graph(gf, name, def);
+	g = graphs_find(gf->gs, graph); /* the context may be the graph just synced */
 	graphs_notify_group(gf->gs, g, GRAPH_EVENT_GROUP_CHANGED, def, NULL);
 	graphs_notify_component(gf->gs, def);
+	set_message(msg, "");
+	return GRAPH_FILES_OK;
+}
+
+/* ---- Component graphs (02 §3.4.3) ------------------------------------------------- */
+
+/* "Block.port" split on the last '.' into node and port (buf holds both). */
+static bool split_ref(const char *ref, char *buf, size_t size, const char **node,
+		      const char **port)
+{
+	if (ref == NULL || strlen(ref) >= size)
+		return false;
+	strcpy(buf, ref);
+	char *dot = strrchr(buf, '.');
+	if (dot == NULL)
+		return false;
+	*dot = '\0';
+	*node = buf;
+	*port = dot + 1;
+	return true;
+}
+
+/* The type of input port of node in g ("" if unknown). */
+static const char *input_type(const Graph *g, const char *node, const char *port)
+{
+	const Block *b = graph_find_block(g, node);
+	int32_t i = b != NULL && b->type != NULL ? block_input_index(b, port) : -1;
+	return i >= 0 ? b->type->inputs[i].type : "";
+}
+
+/* Positions for a type's blocks, which a type file does not keep (03 §5.1):
+ * a grid, four to a row. */
+static BlockMetadata grid_position(size_t i)
+{
+	BlockMetadata md = block_metadata_default();
+	md.x = BLOCK_DEFAULT_POSITION + (double)(i % 4) * 260.0;
+	md.y = BLOCK_DEFAULT_POSITION + (double)(i / 4) * 260.0;
+	return md;
+}
+
+static enum graph_files_status build_component_graph(GraphFiles *gf, const BlockTypeDef *def);
+
+enum graph_files_status type_files_component_graph(GraphFiles *gf, const BlockTypeDef *def)
+{
+	graphs_quiet(gf->gs, true);
+	enum graph_files_status st = build_component_graph(gf, def);
+	graphs_quiet(gf->gs, false);
+	return st;
+}
+
+/* item's string member key, or NULL. */
+static const char *member(const cJSON *item, const char *key)
+{
+	return cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(item, key));
+}
+
+/* The type file status of a refused graph operation st. */
+static enum graph_files_status files_status(enum graph_status st)
+{
+	return st == GRAPH_ERR_NO_MEMORY ? GRAPH_FILES_ERR_NO_MEMORY : GRAPH_FILES_ERR_INVALID;
+}
+
+/* The connections, initials and ports of def's document into the component
+ * graph name, which has its blocks. */
+static enum graph_status build_wiring(GraphFiles *gf, const Graph *g, const cJSON *doc,
+				      GraphsMessage *msg)
+{
+	const char *name = g->id;
+	char a[2 * GRAPH_ID_MAX + 2], b[2 * GRAPH_ID_MAX + 2];
+	const char *an, *ap, *bn, *bp;
+	enum graph_status st = GRAPH_OK;
+	const cJSON *item;
+	cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(doc, "connections"))
+	{
+		if (!split_ref(member(item, "src"), a, sizeof(a), &an, &ap) ||
+		    !split_ref(member(item, "tgt"), b, sizeof(b), &bn, &bp))
+			return GRAPH_ERR_INVALID_ARGUMENT;
+		st = graphs_add_edge(gf->gs, name, an, ap, bn, bp, NULL, msg);
+		if (st != GRAPH_OK)
+			return st;
+	}
+	cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(doc, "initials"))
+	{
+		if (!split_ref(member(item, "tgt"), b, sizeof(b), &bn, &bp))
+			return GRAPH_ERR_INVALID_ARGUMENT;
+		Linkable v;
+		const cJSON *data = cJSON_GetObjectItemCaseSensitive(item, "src");
+		st = graph_json_to_initial(data, input_type(g, bn, bp), &v);
+		if (st != GRAPH_OK)
+			return st;
+		st = graphs_add_initial(gf->gs, name, bn, bp, &v, msg);
+		linkable_clear(&v);
+		if (st != GRAPH_OK)
+			return st;
+	}
+	static const char *const keys[2] = {"inports", "outports"};
+	static const char *const refs[2] = {"tgt", "src"};
+	for (int dir = GRAPH_INPORT; dir <= GRAPH_OUTPORT; dir++) {
+		cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(doc, keys[dir]))
+		{
+			if (!split_ref(member(item, refs[dir]), b, sizeof(b), &bn, &bp))
+				return GRAPH_ERR_INVALID_ARGUMENT;
+			st = graphs_add_port(gf->gs, name, (enum graph_port_dir)dir,
+					     member(item, "name"), bn, bp, msg);
+			if (st != GRAPH_OK)
+				return st;
+		}
+	}
+	return GRAPH_OK;
+}
+
+static enum graph_files_status build_component_graph(GraphFiles *gf, const BlockTypeDef *def)
+{
+	cJSON *doc = composite_types_document(def);
+	if (doc == NULL)
+		return GRAPH_FILES_ERR_NO_MEMORY;
+	const char *name = def->name;
+	GraphsMessage msg;
+	Graph *g = NULL;
+	enum graph_status st = graphs_new_component(gf->gs, name, name, def->description,
+						    def->icon, &g, &msg);
+	const cJSON *item;
+	size_t i = 0;
+	cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(doc, "blocks"))
+	{
+		if (st != GRAPH_OK)
+			break;
+		BlockMetadata md = grid_position(i++);
+		st = graphs_add_node(gf->gs, name, member(item, "name"), member(item, "type"), &md,
+				     &msg);
+	}
+	if (st == GRAPH_OK)
+		st = build_wiring(gf, g, doc, &msg);
+	cJSON_Delete(doc);
+	if (st != GRAPH_OK) {
+		log_error("component graph %s: %s", name, msg.text);
+		if (g != NULL)
+			(void)graphs_delete_graph(gf->gs, name, g->name, NULL);
+		return files_status(st);
+	}
+	graphs_mark_saved(gf->gs, g, false);
+	return GRAPH_FILES_OK;
+}
+
+size_t type_files_component_graphs(GraphFiles *gf)
+{
+	size_t made = 0;
+	for (size_t i = 0; i < block_types_count(); i++) {
+		const BlockTypeDef *def = block_types_at(i);
+		if (composite_types_owns(def) && graphs_find(gf->gs, def->name) == NULL &&
+		    type_files_component_graph(gf, def) == GRAPH_FILES_OK)
+			made++;
+	}
+	return made;
+}
+
+/* The component graph called id, or NULL with its refusal in msg: "Invalid
+ * id", "Unknown graph: <id>", or "Not a component: <id>" for a process. */
+static Graph *component_graph(const GraphFiles *gf, const char *id, GraphsMessage *msg)
+{
+	Graph *g = group_graph(gf, id, msg);
+	if (g != NULL && !g->component) {
+		if (msg != NULL)
+			snprintf(msg->text, sizeof(msg->text), "Not a component: %.64s", id);
+		return NULL;
+	}
+	return g;
+}
+
+enum graph_files_status type_files_clear_component(GraphFiles *gf, const char *id,
+						   const char *name, const char *description,
+						   const char *icon, Graph **out,
+						   GraphsMessage *msg)
+{
+	*out = NULL;
+	Graph *g = graphs_find(gf->gs, id);
+	GraphRefusal r = {.graph = id};
+	enum graph_status st;
+	if (!graph_id_valid(id)) {
+		st = GRAPH_ERR_INVALID_ID;
+	} else if (g != NULL && !g->component) {
+		st = GRAPH_ERR_GRAPH_EXISTS;
+	} else if (g == NULL && block_types_get(id) != NULL) {
+		/* A built-in type's name, or a type made otherwise. */
+		if (msg != NULL)
+			snprintf(msg->text, sizeof(msg->text), "Component exists: %.64s", id);
+		return GRAPH_FILES_ERR_INVALID;
+	} else if (g == NULL) {
+		st = graphs_new_component(gf->gs, id, name, description, icon, &g, NULL);
+	} else {
+		st = graphs_clear_component(gf->gs, id, name, description, icon, NULL);
+	}
+	if (st != GRAPH_OK) {
+		if (msg != NULL)
+			graph_refusal_message(st, &r, msg->text, sizeof(msg->text));
+		return files_status(st);
+	}
+	*out = g;
+	set_message(msg, "");
+	return GRAPH_FILES_OK;
+}
+
+enum graph_files_status type_files_persist_component(GraphFiles *gf, const char *id,
+						     GraphsMessage *msg)
+{
+	Graph *g = component_graph(gf, id, msg);
+	if (g == NULL)
+		return GRAPH_FILES_ERR_INVALID;
+	if (g->block_count == 0) {
+		if (msg != NULL)
+			snprintf(msg->text, sizeof(msg->text), "Empty component: %.64s", id);
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	/* The type is the whole graph: every block, the connections between
+	 * them, their initials, and the graph's ports as its ports (03 §5.2 with
+	 * every node selected: nothing crosses the selection). */
+	const char **nodes = malloc(g->block_count * sizeof(*nodes));
+	if (nodes == NULL)
+		return GRAPH_FILES_ERR_NO_MEMORY;
+	for (uint32_t i = 0; i < g->block_count; i++)
+		nodes[i] = g->blocks[i]->name;
+	CompositeSelection sel = {.name = id, .description = g->description, .icon = g->icon,
+				  .nodes = nodes, .node_count = g->block_count};
+	cJSON *doc;
+	CompositeMessage cm;
+	enum composite_status st = composite_types_assemble(g, &sel, &doc, &cm);
+	free(nodes);
+	if (st != COMPOSITE_OK)
+		return refused(msg, st, &cm);
+
+	/* Replacing the type: refused while it is in use (instances refer to it,
+	 * 03 §5); the old definition comes back if the new one is refused. */
+	const BlockTypeDef *old = composite_named(id);
+	cJSON *old_doc = NULL;
+	if (old != NULL) {
+		if (composite_types_in_use(gf->gs, old)) {
+			cJSON_Delete(doc);
+			if (msg != NULL)
+				snprintf(msg->text, sizeof(msg->text), "Component in use: %.64s",
+					 id);
+			return GRAPH_FILES_ERR_INVALID;
+		}
+		old_doc = composite_types_document(old);
+		if (old_doc == NULL) {
+			cJSON_Delete(doc);
+			return GRAPH_FILES_ERR_NO_MEMORY;
+		}
+		(void)composite_types_unregister(gf->gs, id, NULL);
+	} else if (block_types_get(id) != NULL) {
+		cJSON_Delete(doc);
+		if (msg != NULL)
+			snprintf(msg->text, sizeof(msg->text), "Component exists: %.64s", id);
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	const BlockTypeDef *def;
+	st = composite_types_register(doc, &cm, &def);
+	cJSON_Delete(doc);
+	enum graph_files_status fs = GRAPH_FILES_OK;
+	if (st == COMPOSITE_OK) {
+		fs = type_files_save(gf, def);
+		if (fs != GRAPH_FILES_OK)
+			(void)composite_types_unregister(gf->gs, id, NULL);
+	}
+	if (st != COMPOSITE_OK || fs != GRAPH_FILES_OK) {
+		if (old_doc != NULL)
+			(void)composite_types_register(old_doc, NULL, NULL);
+		cJSON_Delete(old_doc);
+		return st != COMPOSITE_OK ? refused(msg, st, &cm) : unsaved(msg, fs, id);
+	}
+	cJSON_Delete(old_doc);
+	graphs_mark_saved(gf->gs, g, false);
+	graphs_notify_component(gf->gs, def);
+	set_message(msg, "");
+	return GRAPH_FILES_OK;
+}
+
+enum graph_files_status type_files_delete_component(GraphFiles *gf, const char *id,
+						    const char *name, GraphsMessage *msg)
+{
+	Graph *g = component_graph(gf, id, msg);
+	if (g == NULL)
+		return GRAPH_FILES_ERR_INVALID;
+	if (name == NULL || strcmp(name, g->name) != 0) {
+		GraphRefusal r = {.graph = id};
+		if (msg != NULL)
+			graph_refusal_message(GRAPH_ERR_NAME_MISMATCH, &r, msg->text,
+					      sizeof(msg->text));
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	if (composite_named(id) != NULL) {
+		CompositeMessage cm;
+		enum composite_status st = composite_types_unregister(gf->gs, id, &cm);
+		if (st != COMPOSITE_OK)
+			return refused(msg, st, &cm); /* "Component in use: <id>" */
+		(void)type_files_delete(gf, id); /* a failure is logged; the removal stands */
+	}
+	(void)graphs_delete_graph(gf->gs, id, name, NULL);
 	set_message(msg, "");
 	return GRAPH_FILES_OK;
 }

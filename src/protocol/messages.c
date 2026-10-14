@@ -329,9 +329,19 @@ static cJSON *data_object(const Linkable *v)
 char *proto_msg_graph_clear(const Graph *g)
 {
 	cJSON *p = object();
-	bool ok = p != NULL && add_str(p, "id", g->id) && add_str(p, "name", g->name) &&
-		  add_bool(p, "main", true) && add_str(p, "description", g->description) &&
-		  add_str(p, "icon", g->icon);
+	bool ok = p != NULL && add_str(p, "id", g->id) && add_str(p, "name", g->name);
+	if (ok && g->component) {
+		/* A component graph (02 §3.4.3): "main": false and its library,
+		 * the type name's family (before the first '/'; "" if none). */
+		const char *slash = strchr(g->id, '/');
+		size_t n = slash != NULL ? (size_t)(slash - g->id) : 0;
+		char library[GRAPH_ID_MAX + 1];
+		memcpy(library, g->id, n);
+		library[n] = '\0';
+		ok = add_str(p, "library", library);
+	}
+	ok = ok && add_bool(p, "main", !g->component) &&
+	     add_str(p, "description", g->description) && add_str(p, "icon", g->icon);
 	return finish("graph", "clear", p, ok);
 }
 

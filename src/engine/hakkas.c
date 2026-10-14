@@ -646,21 +646,39 @@ enum hakkas_status hakkas_process_status(Hakkas *h, const char *id, HakkasProces
 	const Graph *g = graphs_find(graphs_of(h), id);
 	if (g == NULL)
 		return refusal(GRAPH_ERR_UNKNOWN_GRAPH, &(GraphRefusal){.graph = id}, msg);
+	if (g->component)
+		return refusal(GRAPH_ERR_NOT_A_PROCESS, &(GraphRefusal){.graph = id}, msg);
 	status_of(g, out);
 	return HAKKAS_OK;
 }
 
+/* The i-th process, skipping component graphs (02 §3.4.3), or NULL. */
+static const Graph *process_at(const Hakkas *h, size_t i)
+{
+	const Graphs *gs = graphs_of(h);
+	for (uint32_t k = 0; k < graphs_count(gs); k++) {
+		const Graph *g = graphs_at(gs, k);
+		if (!g->component && i-- == 0)
+			return g;
+	}
+	return NULL;
+}
+
 size_t hakkas_process_count(const Hakkas *h)
 {
-	return graphs_count(graphs_of(h));
+	size_t n = 0;
+	for (uint32_t k = 0; k < graphs_count(graphs_of(h)); k++)
+		n += !graphs_at(graphs_of(h), k)->component;
+	return n;
 }
 
 bool hakkas_process_at(const Hakkas *h, size_t i, HakkasProcessStatus *out)
 {
 	memset(out, 0, sizeof(*out));
-	if (i >= graphs_count(graphs_of(h)))
+	const Graph *g = process_at(h, i);
+	if (g == NULL)
 		return false;
-	status_of(graphs_at(graphs_of(h), (uint32_t)i), out);
+	status_of(g, out);
 	return true;
 }
 

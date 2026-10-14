@@ -587,7 +587,7 @@ static void test_secret_gating(void)
 	/* Before login every gated command is refused, unknown ones included. */
 	command(&f, "component", "list", "{}", "");
 	expect_error(&f, "Not authenticated");
-	command(&f, "graph", "clear", "{}", "");
+	command(&f, "graph", "merge", "{}", "");
 	expect_error(&f, "Not authenticated");
 	command(&f, "runtime", "foo", "{}", "x");
 	expect_error(&f, "Not authenticated");
@@ -610,8 +610,8 @@ static void test_secret_gating(void)
 	expect_error(&f, "Not authenticated");
 	/* Unknown commands with a valid secret: the generic error, a long
 	 * command cut. */
-	command(&f, "graph", "clear", "{}", secret);
-	expect_error(&f, "Unknown command: graph:clear");
+	command(&f, "graph", "merge", "{}", secret);
+	expect_error(&f, "Unknown command: graph:merge");
 	char longcmd[200], want[200];
 	memset(longcmd, 'c', 100);
 	longcmd[100] = '\0';

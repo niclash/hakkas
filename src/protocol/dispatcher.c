@@ -534,6 +534,13 @@ static void cmd_delete_graph(ProtoConn *c, const Envelope *env)
 		return;
 	}
 	GraphsMessage msg;
+	/* A component graph takes its type with it (02 §3.4.3). */
+	const Graph *g = graphs_find(c->p->graphs, id);
+	if (g != NULL && g->component) {
+		if (type_files_delete_component(c->p->files, id, name, &msg) != GRAPH_FILES_OK)
+			reply_error(c, msg.text, known_graph(id));
+		return;
+	}
 	if (graph_files_delete(c->p->files, id, name, &msg) != GRAPH_OK)
 		reply_error(c, msg.text, known_graph(id));
 }
@@ -736,6 +743,36 @@ static void cmd_connect(ProtoConn *c, const Envelope *env)
 		return;
 	c->pending &= ~PENDING_CONNECT; /* a newer connect replaces a deferred one */
 	send_snapshot(c, id);
+}
+
+/* graph:clear with "main": false (02 §3.4.3): create or empty a component
+ * graph. The reply, to the requester only, is the graph's graph:clear. */
+static void cmd_graph_clear(ProtoConn *c, const Envelope *env)
+{
+	const char *id;
+	if (!need_str(c, env->payload, "id", NULL, &id))
+		return;
+	static const char *const keys[] = {"name", "library", "description", "icon"};
+	const char *v[4];
+	for (size_t i = 0; i < 4; i++) {
+		if (!opt_str_field(env->payload, keys[i], &v[i])) {
+			invalid_field(c, keys[i], id);
+			return;
+		}
+	}
+	/* Only component graphs: a process is created by runtime:new_graph. */
+	if (!cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(env->payload, "main"))) {
+		invalid_field(c, "main", id);
+		return;
+	}
+	GraphsMessage msg;
+	Graph *g;
+	if (type_files_clear_component(c->p->files, id, v[0], v[2], v[3], &g, &msg) !=
+	    GRAPH_FILES_OK) {
+		reply_error(c, msg.text, known_graph(id));
+		return;
+	}
+	reply(c, proto_msg_graph_clear(g));
 }
 
 static void cmd_rename(ProtoConn *c, const Envelope *env)
@@ -1181,6 +1218,14 @@ static void cmd_persist(ProtoConn *c, const Envelope *env)
 	if (!need_str(c, env->payload, "graph", NULL, &graph))
 		return;
 	GraphsMessage msg;
+	/* A component graph becomes its type (02 §3.4.3); a refusal goes to the
+	 * requester, success is the component:component broadcast. */
+	const Graph *g = graphs_find(c->p->graphs, graph);
+	if (g != NULL && g->component) {
+		if (type_files_persist_component(c->p->files, graph, &msg) != GRAPH_FILES_OK)
+			refused(c, &msg, graph);
+		return;
+	}
 	enum graph_files_status st = graph_files_persist(c->p->files, graph, &msg);
 	/* An invalid or unknown graph is a refusal to the requester; a failed
 	 * save was broadcast already (02 §3.3); success has no reply. */
@@ -1379,6 +1424,7 @@ static const ProtoCommand commands[] = {
 	{"network", "edges", cmd_edges},
 	{"graph", "list", cmd_graph_list},
 	{"graph", "connect", cmd_connect},
+	{"graph", "clear", cmd_graph_clear},
 	{"graph", "rename", cmd_rename},
 	{"graph", "addnode", cmd_addnode},
 	{"graph", "removenode", cmd_removenode},

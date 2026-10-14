@@ -78,6 +78,7 @@ static const CommandDef graph_commands[] = {
 	{"connect", true, READ_CAPS},
 	{"list", true, READ_CAPS},
 	{"rename", true, AUTH_CAP_PROTOCOL_GRAPH},
+	{"clear", true, AUTH_CAP_PROTOCOL_GRAPH}, /* a component graph, 02 §3.4.3 */
 	{"addnode", true, AUTH_CAP_PROTOCOL_GRAPH},
 	{"removenode", true, AUTH_CAP_PROTOCOL_GRAPH},
 	{"renamenode", true, AUTH_CAP_PROTOCOL_GRAPH},

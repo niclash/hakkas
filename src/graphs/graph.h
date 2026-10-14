@@ -160,6 +160,8 @@ enum graph_status {
 	GRAPH_ERR_INVALID_BINDING_DIRECTION = -19, /* "Invalid binding direction" */
 	GRAPH_ERR_ACTUATOR_DRIVEN = -20,	   /* "Actuator already driven: <channel>" */
 	GRAPH_ERR_NO_SUCH_BINDING = -21,	   /* "No such binding" */
+	/* A component graph (02 §3.4.3) is no process: it does not run. */
+	GRAPH_ERR_NOT_A_PROCESS = -22, /* "Not a process: <id>" */
 };
 
 /* ---- Inputs, outputs, links ------------------------------------------ */
@@ -353,6 +355,10 @@ struct Graph {
 	bool unsaved;
 	bool changed;
 	bool saved_started;
+	/* A component graph (02 §3.4.3, upstream's "main": false): the
+	 * definition of a composite block type, never a process — it does not
+	 * run, has no status and is persisted as the type's file. */
+	bool component;
 };
 
 /* ---- Events reported to the runtime's observer ------------------------ */

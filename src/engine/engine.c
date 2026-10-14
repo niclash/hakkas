@@ -242,6 +242,9 @@ bool engine_start(const Config *cfg, const EngineParams *params, Engine **out)
 			 " loaded: starting with the others",
 			 e->gf.datadir);
 	log_info("%zu composite type%s loaded", types, types == 1 ? "" : "s");
+	/* And each type's component graph, its editable definition
+	 * (02 §3.4.3); not processes, so the host's step 7 never sees them. */
+	(void)type_files_component_graphs(&e->gf);
 
 	/* Step 7 is the host's (05 §1.4, 00-README open question 12): the
 	 * engine loads and starts no process; the host does, through the
