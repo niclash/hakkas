@@ -902,7 +902,8 @@ static bool can_login(const char *path, const char *user, const char *password)
 	Authorizer az = auth_authorizer(auth);
 	AuthConn *c = az.ops->open(az.self, "127.0.0.1", NULL, NULL);
 	AuthChallenge ch;
-	bool ok = az.ops->challenge(az.self, c, user, "AAECAwQFBgcICQoLDA0ODw==", &ch) == AUTH_OK;
+	bool ok = az.ops->challenge(az.self, c, user, "AAECAwQFBgcICQoLDA0ODw==", NULL, &ch) ==
+		  AUTH_OK;
 
 	uint8_t salt[16], salted[32], client_key[32], stored[32], client_sig[32], proof[32];
 	size_t n = 0;
@@ -919,9 +920,9 @@ static bool can_login(const char *path, const char *user, const char *password)
 		proof[i] = client_key[i] ^ client_sig[i];
 	crypto_base64_encode(proof, 32, proof64, sizeof(proof64));
 	AuthProof p;
-	ok = ok && az.ops->verify_proof(az.self, c, user, ch.nonce, proof64, &p) == AUTH_OK;
-	char secret[AUTH_SECRET_SIZE];
-	ok = ok && az.ops->issue_secret(az.self, c, secret);
+	ok = ok && az.ops->verify_proof(az.self, c, user, ch.nonce, NULL, proof64, &p) == AUTH_OK;
+	char secret[AUTH_SECRET_SIZE], rid[AUTH_RESUME_SIZE];
+	ok = ok && az.ops->issue_secret(az.self, c, secret, rid);
 	az.ops->close(az.self, c);
 	auth_destroy(auth);
 	return ok;

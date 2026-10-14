@@ -1,4 +1,4 @@
-import {EDITOR, expect, test, VIEWER} from "./fixtures";
+import {EDITOR, expect, Page, test, VIEWER} from "./fixtures";
 import {loggedIn, login, processItem} from "./ui";
 
 // 06 §2: connection and login.
@@ -58,9 +58,66 @@ test("nothing secret reaches the browser's console", async ({page, engine}) => {
     const lines: string[] = [];
     page.on("console", m => lines.push(m.text()));
     await loggedIn(page, engine.url);
+    await page.reload();    // a resume too
+    await expect(page.getByTestId("logout")).toBeVisible();
     expect(lines.length).toBeGreaterThan(0);
+    const kept = JSON.parse(await page.evaluate(() => localStorage.getItem("hakkas.session") ?? "{}"));
     for (const line of lines) {
         expect(line).not.toContain(EDITOR.password);
-        expect(line).not.toMatch(/proof|nonce|"secret"/);
+        expect(line).not.toMatch(/proof|nonce|"secret"|resume/);
+        expect(line).not.toContain(kept.key);
     }
+});
+
+// 06 §2, 02 §2.3.1: a reload resumes the session.
+const KEPT = "hakkas.session";
+const kept = (page: Page) => page.evaluate(key => localStorage.getItem(key), KEPT);
+
+test("a reload stays logged in, again and again", async ({page, engine}) => {
+    await loggedIn(page, engine.url);
+    const first = await kept(page);
+    expect(first).not.toBeNull();
+    for (let i = 0; i < 2; i++) {
+        await page.reload();
+        await expect(page.getByTestId("logout")).toBeVisible();
+        await expect(processItem(page, "Simple Example")).toBeVisible();
+    }
+    // Each resume used up its id and kept a new one; the key stays, the password is not kept.
+    const now = JSON.parse((await kept(page))!);
+    expect(now.id).not.toBe(JSON.parse(first!).id);
+    expect(now.key).toBe(JSON.parse(first!).key);
+    expect(await kept(page)).not.toContain(EDITOR.password);
+});
+
+test("a viewer's session resumes too", async ({page, engine}) => {
+    await loggedIn(page, engine.url, VIEWER);
+    await page.reload();
+    await expect(page.getByTestId("logout")).toBeVisible();
+    await expect(processItem(page, "Simple Example")).toBeVisible();
+    expect(JSON.parse((await kept(page))!).user).toBe(VIEWER.user);
+});
+
+test("after a logout, a reload asks for the password", async ({page, engine}) => {
+    await loggedIn(page, engine.url);
+    await page.getByTestId("logout").click();
+    await expect(page.locator("#user")).toBeVisible();
+    expect(await kept(page)).toBeNull();
+    await page.reload();
+    await expect(page.locator("#user")).toBeVisible();
+    await expect(page.getByTestId("login-message")).toHaveCount(0);
+});
+
+test("a session that cannot be resumed shows the login form, without an error", async ({page, engine}) => {
+    await loggedIn(page, engine.url);
+    // An id the engine does not know (e.g. used by another tab, or from before a restart).
+    await page.evaluate(key => {
+        const v = JSON.parse(localStorage.getItem(key)!);
+        localStorage.setItem(key, JSON.stringify({...v, id: "AAAAAAAAAAAAAAAAAAAAAA"}));
+    }, KEPT);
+    await page.reload();
+    await expect(page.locator("#user")).toBeVisible();
+    await expect(page.locator("button[type=submit]")).toHaveText("Log in");
+    await expect(page.getByTestId("login-message")).toHaveCount(0);
+    expect(await kept(page)).toBeNull();
+    await loggedIn(page, engine.url);
 });

@@ -149,6 +149,18 @@ typedef struct {
 	uint64_t last_used; /* a use sequence number, for LRU eviction */
 } RateEntry;
 
+/* A chain's resume entry (02 §2.3.1). */
+typedef struct {
+	char id[AUTH_RESUME_SIZE]; /* "": the entry is free */
+	char user[USERS_NAME_MAX + 1];
+	uint8_t key[CRYPTO_SHA256_SIZE];	/* ResumeKey */
+	uint8_t stored_key[USERS_KEY_SIZE]; /* the user's, at the password login */
+	uint64_t chain;
+	uint64_t created;	/* the password login */
+	uint64_t last_activity; /* of any session of the chain */
+	uint64_t last_used;	/* a use sequence number, for LRU eviction */
+} ResumeEntry;
+
 struct Auth {
 	UserStore *users; /* borrowed; re-read into at every challenge */
 	auth_users_fn load_users;
@@ -163,6 +175,8 @@ struct Auth {
 	AuthConn *conns; /* every open connection */
 	RateEntry rate[HAKKAS_AUTH_RATE_ADDRS];
 	uint64_t use_seq;
+	ResumeEntry resume[HAKKAS_AUTH_RESUME_MAX];
+	uint64_t chain_seq;
 };
 
 struct AuthConn {
@@ -179,6 +193,7 @@ struct AuthConn {
 	char nonce[AUTH_NONCE_TEXT_SIZE];
 	char salt[AUTH_SALT_TEXT_SIZE];
 	uint32_t iterations;
+	char ch_resume[AUTH_RESUME_SIZE]; /* "": a password login */
 	uint64_t nonce_expires;
 
 	/* A delayed challenge (back-off): answered at pending_at. */
@@ -186,14 +201,20 @@ struct AuthConn {
 	uint64_t pending_at;
 	char pending_user[USERS_NAME_MAX + 1];
 	char pending_cnonce[AUTH_CNONCE_TEXT_MAX + 1];
+	char pending_resume[AUTH_RESUME_SIZE];
 
 	/* VERIFIED and AUTHENTICATED: the session. */
 	char name[USERS_NAME_MAX + 1];
 	enum user_role role;
 	uint32_t caps;
 	char secret[AUTH_SECRET_SIZE];
-	uint64_t created;
+	uint64_t created; /* the chain's password login */
 	uint64_t last_activity;
+	/* Its chain (02 §2.3.1); VERIFIED: the entry issue_secret makes. */
+	uint64_t chain;
+	uint8_t resume_key[CRYPTO_SHA256_SIZE];
+	uint8_t stored_key[USERS_KEY_SIZE];
+	bool resumed;
 };
 
 static uint64_t now_ms(const Auth *a)
@@ -213,6 +234,7 @@ static void clear_challenge(AuthConn *c)
 	crypto_zeroize(c->ch_user, sizeof(c->ch_user));
 	crypto_zeroize(c->nonce, sizeof(c->nonce));
 	crypto_zeroize(c->salt, sizeof(c->salt));
+	crypto_zeroize(c->ch_resume, sizeof(c->ch_resume));
 	c->iterations = 0;
 	c->nonce_expires = 0;
 }
@@ -223,14 +245,19 @@ static void clear_pending(AuthConn *c)
 	c->pending_at = 0;
 	crypto_zeroize(c->pending_user, sizeof(c->pending_user));
 	crypto_zeroize(c->pending_cnonce, sizeof(c->pending_cnonce));
+	crypto_zeroize(c->pending_resume, sizeof(c->pending_resume));
 }
 
 static void clear_session(AuthConn *c)
 {
 	crypto_zeroize(c->name, sizeof(c->name));
 	crypto_zeroize(c->secret, sizeof(c->secret));
+	crypto_zeroize(c->resume_key, sizeof(c->resume_key));
+	crypto_zeroize(c->stored_key, sizeof(c->stored_key));
 	c->caps = 0;
 	c->created = c->last_activity = 0;
+	c->chain = 0;
+	c->resumed = false;
 }
 
 /* Back to UNAUTHENTICATED, forgetting everything but the failure count. */
@@ -330,6 +357,91 @@ static void rate_success(Auth *a, const char *addr, uint64_t now)
 		memset(e, 0, sizeof(*e));
 }
 
+/* ---- Resume entries (02 §2.3.1) ---------------------------------------------------- */
+
+static void resume_free(ResumeEntry *e)
+{
+	crypto_zeroize(e, sizeof(*e));
+}
+
+static uint64_t resume_end(const Auth *a, const ResumeEntry *e)
+{
+	uint64_t idle = e->last_activity + a->idle_ms;
+	uint64_t life = e->created + a->max_ms;
+	return idle < life ? idle : life;
+}
+
+/* Frees the entries whose chain has expired. */
+static void resume_expire(Auth *a, uint64_t now)
+{
+	for (size_t i = 0; i < HAKKAS_AUTH_RESUME_MAX; i++) {
+		ResumeEntry *e = &a->resume[i];
+		if (e->id[0] != '\0' && now >= resume_end(a, e))
+			resume_free(e);
+	}
+}
+
+/* The live entry with this id, or NULL. */
+static ResumeEntry *resume_find(Auth *a, const char *id, uint64_t now)
+{
+	resume_expire(a, now);
+	for (size_t i = 0; i < HAKKAS_AUTH_RESUME_MAX; i++) {
+		ResumeEntry *e = &a->resume[i];
+		if (e->id[0] != '\0' && strlen(id) == AUTH_RESUME_LEN &&
+		    crypto_equal(e->id, id, AUTH_RESUME_LEN))
+			return e;
+	}
+	return NULL;
+}
+
+/* The chain's entry, or NULL. */
+static ResumeEntry *resume_of_chain(Auth *a, uint64_t chain)
+{
+	for (size_t i = 0; chain != 0 && i < HAKKAS_AUTH_RESUME_MAX; i++)
+		if (a->resume[i].id[0] != '\0' && a->resume[i].chain == chain)
+			return &a->resume[i];
+	return NULL;
+}
+
+/* A free entry, else the least recently used one (freed). */
+static ResumeEntry *resume_slot(Auth *a)
+{
+	ResumeEntry *e = &a->resume[0];
+	for (size_t i = 0; i < HAKKAS_AUTH_RESUME_MAX; i++) {
+		ResumeEntry *x = &a->resume[i];
+		if (x->id[0] == '\0')
+			return x;
+		if (x->last_used < e->last_used)
+			e = x;
+	}
+	resume_free(e);
+	return e;
+}
+
+/* Ends the entries of users no longer in the users file or with another
+ * stored_key (a password change). */
+static void resume_check_users(Auth *a)
+{
+	for (size_t i = 0; i < HAKKAS_AUTH_RESUME_MAX; i++) {
+		ResumeEntry *e = &a->resume[i];
+		if (e->id[0] == '\0')
+			continue;
+		const UserRecord *r = users_find(a->users, e->user);
+		if (r == NULL || !crypto_equal(r->stored_key, e->stored_key, USERS_KEY_SIZE))
+			resume_free(e);
+	}
+}
+
+/* Whether id is the base64url of AUTH_RESUME_RANDOM_BYTES bytes. */
+static bool resume_id_valid(const char *id)
+{
+	uint8_t buf[AUTH_RESUME_RANDOM_BYTES + 2];
+	size_t n = 0;
+	return id != NULL && strlen(id) == AUTH_RESUME_LEN &&
+	       crypto_base64url_decode(id, AUTH_RESUME_LEN, buf, sizeof(buf), &n) &&
+	       n == AUTH_RESUME_RANDOM_BYTES;
+}
+
 /* ---- Challenge (02 §2.3 step 1) ------------------------------------------------------ */
 
 /* Whether cnonce is the strict base64 of AUTH_CNONCE_MIN-AUTH_CNONCE_MAX
@@ -374,11 +486,12 @@ static void reload_users(Auth *a)
 	free(fresh);
 }
 
-/* Make the challenge for user (valid) and cnonce (valid) on c at now: c is
- * CHALLENGED and *out its reply. False (logged; c unchanged) if the random
- * source or a hash fails. */
+/* Make the challenge for user (valid), cnonce (valid) and resume (valid,
+ * or "" for a password login) on c at now: c is CHALLENGED and *out its
+ * reply. False (logged; c unchanged) if the random source or a hash
+ * fails. */
 static bool make_challenge(Auth *a, AuthConn *c, const char *user, const char *cnonce,
-			   uint64_t now, AuthChallenge *out)
+			   const char *resume, uint64_t now, AuthChallenge *out)
 {
 	uint8_t rnd[AUTH_NONCE_RANDOM_BYTES];
 	char rnd64[CRYPTO_BASE64_LEN(AUTH_NONCE_RANDOM_BYTES) + 1];
@@ -390,9 +503,14 @@ static bool make_challenge(Auth *a, AuthConn *c, const char *user, const char *c
 	crypto_zeroize(rnd, sizeof(rnd));
 
 	reload_users(a);
-	AuthChallenge ch;
+	resume_check_users(a);
+	AuthChallenge ch = {0};
 	const UserRecord *r = users_find(a->users, user);
-	if (r != NULL) {
+	if (resume[0] != '\0') {
+		/* No salt, no iterations: no key stretching (02 §2.3.1); the
+		 * same reply for an unknown id. */
+		ch.resume = true;
+	} else if (r != NULL) {
 		crypto_base64_encode(r->salt, USERS_SALT_SIZE, ch.salt, sizeof(ch.salt));
 		ch.iterations = r->iterations;
 	} else {
@@ -414,6 +532,7 @@ static bool make_challenge(Auth *a, AuthConn *c, const char *user, const char *c
 	snprintf(c->ch_user, sizeof(c->ch_user), "%s", user);
 	memcpy(c->nonce, ch.nonce, sizeof(c->nonce));
 	memcpy(c->salt, ch.salt, sizeof(c->salt));
+	snprintf(c->ch_resume, sizeof(c->ch_resume), "%s", resume);
 	c->iterations = ch.iterations;
 	c->nonce_expires = now + AUTH_NONCE_TTL_MS;
 	c->state = AUTH_STATE_CHALLENGED;
@@ -422,7 +541,7 @@ static bool make_challenge(Auth *a, AuthConn *c, const char *user, const char *c
 }
 
 static enum auth_result op_challenge(void *self, AuthConn *c, const char *user,
-				     const char *cnonce, AuthChallenge *out)
+				     const char *cnonce, const char *resume, AuthChallenge *out)
 {
 	Auth *a = self;
 	if (c->state == AUTH_STATE_AUTHENTICATED)
@@ -431,8 +550,11 @@ static enum auth_result op_challenge(void *self, AuthConn *c, const char *user,
 	clear_pending(c);
 	clear_session(c);
 	c->state = AUTH_STATE_UNAUTHENTICATED;
-	if (!users_name_valid(user) || !cnonce_valid(cnonce))
+	if (!users_name_valid(user) || !cnonce_valid(cnonce) ||
+	    (resume != NULL && !resume_id_valid(resume)))
 		return AUTH_FAILED;
+	if (resume == NULL)
+		resume = "";
 
 	uint64_t now = now_ms(a);
 	uint64_t ready = rate_ready_at(a, c->peer, now);
@@ -441,9 +563,10 @@ static enum auth_result op_challenge(void *self, AuthConn *c, const char *user,
 		c->pending_at = ready;
 		snprintf(c->pending_user, sizeof(c->pending_user), "%s", user);
 		snprintf(c->pending_cnonce, sizeof(c->pending_cnonce), "%s", cnonce);
+		snprintf(c->pending_resume, sizeof(c->pending_resume), "%s", resume);
 		return AUTH_DELAYED;
 	}
-	return make_challenge(a, c, user, cnonce, now, out) ? AUTH_OK : AUTH_FAILED;
+	return make_challenge(a, c, user, cnonce, resume, now, out) ? AUTH_OK : AUTH_FAILED;
 }
 
 /* ---- Login (02 §2.3 step 2) ------------------------------------------------------- */
@@ -462,48 +585,49 @@ static enum auth_result login_failed(Auth *a, AuthConn *c, const char *user, uin
 	return AUTH_FAILED;
 }
 
-static enum auth_result op_verify_proof(void *self, AuthConn *c, const char *user,
-					const char *nonce, const char *proof, AuthProof *out)
-{
-	Auth *a = self;
-	uint64_t now = now_ms(a);
-
-	/* The challenge is used up by this attempt, whatever its outcome. */
-	bool challenged = c->state == AUTH_STATE_CHALLENGED;
-	bool ok = challenged && now < c->nonce_expires;
-	char ch_user[USERS_NAME_MAX + 1], ch_nonce[AUTH_NONCE_TEXT_SIZE];
+/* The challenge a login answers, copied out of the connection (the login
+ * uses it up). */
+typedef struct {
+	char user[USERS_NAME_MAX + 1];
+	char nonce[AUTH_NONCE_TEXT_SIZE];
 	char salt[AUTH_SALT_TEXT_SIZE];
-	uint32_t iterations = c->iterations;
-	memcpy(ch_user, c->ch_user, sizeof(ch_user));
-	memcpy(ch_nonce, c->nonce, sizeof(ch_nonce));
-	memcpy(salt, c->salt, sizeof(salt));
-	clear_challenge(c);
-	if (c->state == AUTH_STATE_CHALLENGED || c->state == AUTH_STATE_VERIFIED)
-		c->state = AUTH_STATE_UNAUTHENTICATED;
-	if (!challenged)
-		return login_failed(a, c, user, now);
+	uint32_t iterations;
+	char resume[AUTH_RESUME_SIZE];
+} UsedChallenge;
 
-	ok = ok && user != NULL && strcmp(user, ch_user) == 0;
-	ok = ok && nonce != NULL && strlen(nonce) == strlen(ch_nonce) &&
-	     crypto_equal(nonce, ch_nonce, strlen(ch_nonce));
-	uint8_t received[CRYPTO_BASE64_DECODED_MAX(CRYPTO_BASE64_LEN(CRYPTO_SHA256_SIZE))] = {0};
+/* A decoded proof's buffer. */
+#define PROOF_BUF_SIZE CRYPTO_BASE64_DECODED_MAX(CRYPTO_BASE64_LEN(CRYPTO_SHA256_SIZE))
+
+/* Decodes a proof: the base64 of exactly 32 bytes. */
+static bool decode_proof(const char *proof, uint8_t out[PROOF_BUF_SIZE])
+{
 	size_t n = 0;
-	ok = ok && proof != NULL && strlen(proof) == CRYPTO_BASE64_LEN(CRYPTO_SHA256_SIZE) &&
-	     crypto_base64_decode(proof, strlen(proof), received, sizeof(received), &n) &&
-	     n == CRYPTO_SHA256_SIZE;
+	return proof != NULL && strlen(proof) == CRYPTO_BASE64_LEN(CRYPTO_SHA256_SIZE) &&
+	       crypto_base64_decode(proof, strlen(proof), out, PROOF_BUF_SIZE, &n) &&
+	       n == CRYPTO_SHA256_SIZE;
+}
+
+/* A password login (02 §2.3): whether the proof is right; then the user's
+ * record, the server signature, and the chain's resume key (02 §2.3.1). */
+static bool verify_password(Auth *a, const UsedChallenge *ch, const char *proof,
+			    const UserRecord **user, AuthProof *result,
+			    uint8_t resume_key[CRYPTO_SHA256_SIZE])
+{
+	uint8_t received[PROOF_BUF_SIZE] = {0};
+	bool ok = decode_proof(proof, received);
 
 	/* AuthMessage (02 §2.3, not RFC 5802's). */
 	char msg[USERS_NAME_MAX + AUTH_NONCE_TEXT_SIZE + AUTH_SALT_TEXT_SIZE + 16];
-	int len = snprintf(msg, sizeof(msg), "%s,%s,%s,%lu", ch_user, ch_nonce, salt,
-			   (unsigned long)iterations);
+	int len = snprintf(msg, sizeof(msg), "%s,%s,%s,%lu", ch->user, ch->nonce, ch->salt,
+			   (unsigned long)ch->iterations);
 	ok = ok && len > 0 && (size_t)len < sizeof(msg);
 
 	/* The same work for an unknown user, against a key nobody has. */
-	const UserRecord *r = users_find(a->users, ch_user);
+	const UserRecord *r = users_find(a->users, ch->user);
 	uint8_t fake[CRYPTO_SHA256_SIZE], sig[CRYPTO_SHA256_SIZE];
 	uint8_t client_key[CRYPTO_SHA256_SIZE], check[CRYPTO_SHA256_SIZE];
 	char fake_in[USERS_NAME_MAX + 8];
-	snprintf(fake_in, sizeof(fake_in), "key,%s", ch_user);
+	snprintf(fake_in, sizeof(fake_in), "key,%s", ch->user);
 	bool hashed = crypto_hmac_sha256(a->server_secret, a->server_secret_len, fake_in,
 					 strlen(fake_in), fake);
 	const uint8_t *stored = r != NULL ? r->stored_key : fake;
@@ -515,14 +639,18 @@ static enum auth_result op_verify_proof(void *self, AuthConn *c, const char *use
 	bool match = hashed && crypto_equal(check, stored, CRYPTO_SHA256_SIZE);
 	ok = ok && r != NULL && match;
 
-	AuthProof result;
 	if (ok) {
 		uint8_t server_sig[CRYPTO_SHA256_SIZE];
+		char key_in[sizeof("Resume Key,") + AUTH_NONCE_TEXT_SIZE];
+		snprintf(key_in, sizeof(key_in), "Resume Key,%s", ch->nonce);
 		ok = crypto_hmac_sha256(r->server_key, USERS_KEY_SIZE, msg, (size_t)len,
 					server_sig) &&
-		     crypto_base64_encode(server_sig, sizeof(server_sig), result.server_signature,
-					  sizeof(result.server_signature)) > 0;
+		     crypto_base64_encode(server_sig, sizeof(server_sig), result->server_signature,
+					  sizeof(result->server_signature)) > 0 &&
+		     crypto_hmac_sha256(r->stored_key, USERS_KEY_SIZE, key_in, strlen(key_in),
+					resume_key);
 		crypto_zeroize(server_sig, sizeof(server_sig));
+		crypto_zeroize(key_in, sizeof(key_in));
 	}
 	crypto_zeroize(received, sizeof(received));
 	crypto_zeroize(fake, sizeof(fake));
@@ -530,41 +658,164 @@ static enum auth_result op_verify_proof(void *self, AuthConn *c, const char *use
 	crypto_zeroize(client_key, sizeof(client_key));
 	crypto_zeroize(check, sizeof(check));
 	crypto_zeroize(msg, sizeof(msg));
-	crypto_zeroize(ch_nonce, sizeof(ch_nonce));
-	crypto_zeroize(salt, sizeof(salt));
-	if (!ok)
+	*user = r;
+	return ok;
+}
+
+/* A resume (02 §2.3.1): whether the proof is right for a live entry of the
+ * user; then the user's record, the server signature and the entry. */
+static bool verify_resume(Auth *a, const UsedChallenge *ch, const char *proof, uint64_t now,
+			  const UserRecord **user, AuthProof *result, ResumeEntry **entry)
+{
+	uint8_t received[PROOF_BUF_SIZE] = {0};
+	bool ok = decode_proof(proof, received);
+
+	char msg[sizeof("Server,") + USERS_NAME_MAX + AUTH_NONCE_TEXT_SIZE + AUTH_RESUME_SIZE + 4];
+	const size_t skip = strlen("Server,");
+	int len = snprintf(msg, sizeof(msg), "Server,%s,%s,%s", ch->user, ch->nonce, ch->resume);
+	ok = ok && len > 0 && (size_t)len < sizeof(msg);
+
+	/* The same work for an unknown id, against a key nobody has. */
+	ResumeEntry *e = resume_find(a, ch->resume, now);
+	if (e != NULL && strcmp(e->user, ch->user) != 0)
+		e = NULL;
+	const UserRecord *r = users_find(a->users, ch->user);
+	uint8_t fake[CRYPTO_SHA256_SIZE], expected[CRYPTO_SHA256_SIZE];
+	char fake_in[USERS_NAME_MAX + 8];
+	snprintf(fake_in, sizeof(fake_in), "resume,%s", ch->user);
+	bool hashed = crypto_hmac_sha256(a->server_secret, a->server_secret_len, fake_in,
+					 strlen(fake_in), fake);
+	const uint8_t *key = e != NULL ? e->key : fake;
+	hashed = hashed && len > 0 &&
+		 crypto_hmac_sha256(key, CRYPTO_SHA256_SIZE, msg + skip, (size_t)len - skip,
+				    expected);
+	bool match = hashed && crypto_equal(received, expected, CRYPTO_SHA256_SIZE);
+	ok = ok && e != NULL && r != NULL && match;
+
+	if (ok) {
+		uint8_t server_sig[CRYPTO_SHA256_SIZE];
+		ok = crypto_hmac_sha256(e->key, CRYPTO_SHA256_SIZE, msg, (size_t)len, server_sig) &&
+		     crypto_base64_encode(server_sig, sizeof(server_sig), result->server_signature,
+					  sizeof(result->server_signature)) > 0;
+		crypto_zeroize(server_sig, sizeof(server_sig));
+	}
+	crypto_zeroize(received, sizeof(received));
+	crypto_zeroize(fake, sizeof(fake));
+	crypto_zeroize(expected, sizeof(expected));
+	crypto_zeroize(msg, sizeof(msg));
+	*user = r;
+	*entry = e;
+	return ok;
+}
+
+static enum auth_result op_verify_proof(void *self, AuthConn *c, const char *user,
+					const char *nonce, const char *resume, const char *proof,
+					AuthProof *out)
+{
+	Auth *a = self;
+	uint64_t now = now_ms(a);
+
+	/* The challenge is used up by this attempt, whatever its outcome. */
+	bool challenged = c->state == AUTH_STATE_CHALLENGED;
+	bool ok = challenged && now < c->nonce_expires;
+	UsedChallenge ch;
+	memcpy(ch.user, c->ch_user, sizeof(ch.user));
+	memcpy(ch.nonce, c->nonce, sizeof(ch.nonce));
+	memcpy(ch.salt, c->salt, sizeof(ch.salt));
+	memcpy(ch.resume, c->ch_resume, sizeof(ch.resume));
+	ch.iterations = c->iterations;
+	clear_challenge(c);
+	if (c->state == AUTH_STATE_CHALLENGED || c->state == AUTH_STATE_VERIFIED)
+		c->state = AUTH_STATE_UNAUTHENTICATED;
+	if (!challenged)
 		return login_failed(a, c, user, now);
+
+	ok = ok && user != NULL && strcmp(user, ch.user) == 0;
+	ok = ok && nonce != NULL && strlen(nonce) == strlen(ch.nonce) &&
+	     crypto_equal(nonce, ch.nonce, strlen(ch.nonce));
+	/* A resume answers a resume challenge of the same id, a password login
+	 * a password challenge. */
+	bool resuming = ch.resume[0] != '\0';
+	ok = ok && (resuming ? resume != NULL && strcmp(resume, ch.resume) == 0 : resume == NULL);
+
+	AuthProof result;
+	const UserRecord *r = NULL;
+	ResumeEntry *e = NULL;
+	uint8_t key[CRYPTO_SHA256_SIZE];
+	bool verified = resuming ? verify_resume(a, &ch, proof, now, &r, &result, &e)
+				 : verify_password(a, &ch, proof, &r, &result, key);
+	ok = ok && verified;
+	crypto_zeroize(&ch, sizeof(ch));
+	if (!ok) {
+		crypto_zeroize(key, sizeof(key));
+		return login_failed(a, c, user, now);
+	}
 
 	result.role = r->role;
 	result.capabilities = auth_role_capabilities(r->role);
 	clear_session(c);
 	snprintf(c->name, sizeof(c->name), "%s", r->name);
 	c->role = r->role;
+	if (resuming) {
+		/* The id is used once: issue_secret gives the chain a new one. */
+		memcpy(c->resume_key, e->key, sizeof(c->resume_key));
+		memcpy(c->stored_key, e->stored_key, sizeof(c->stored_key));
+		c->chain = e->chain;
+		c->created = e->created;
+		c->resumed = true;
+		resume_free(e);
+	} else {
+		memcpy(c->resume_key, key, sizeof(c->resume_key));
+		memcpy(c->stored_key, r->stored_key, sizeof(c->stored_key));
+		c->chain = ++a->chain_seq;
+		c->created = now;
+	}
+	crypto_zeroize(key, sizeof(key));
 	c->state = AUTH_STATE_VERIFIED;
 	rate_success(a, c->peer, now);
-	log_info("login: user '%s' from %s as %s", r->name, c->peer, users_role_name(r->role));
+	log_info("login: user '%s' from %s as %s%s", r->name, c->peer, users_role_name(r->role),
+		 c->resumed ? " (resumed)" : "");
 	*out = result;
 	return AUTH_OK;
 }
 
 /* ---- Sessions (02 §2.5) ------------------------------------------------------------ */
 
-static bool op_issue_secret(void *self, AuthConn *c, char out[AUTH_SECRET_SIZE])
+static bool op_issue_secret(void *self, AuthConn *c, char out[AUTH_SECRET_SIZE],
+			    char resume[AUTH_RESUME_SIZE])
 {
 	Auth *a = self;
 	if (c->state != AUTH_STATE_VERIFIED)
 		return false;
-	uint8_t rnd[AUTH_SECRET_RANDOM_BYTES];
+	uint8_t rnd[AUTH_SECRET_RANDOM_BYTES + AUTH_RESUME_RANDOM_BYTES];
 	if (a->random_bytes(rnd, sizeof(rnd)) != PAL_OK) {
 		log_error("login: the random source failed");
 		reset(c);
 		return false;
 	}
-	crypto_base64url_encode(rnd, sizeof(rnd), c->secret, sizeof(c->secret));
-	crypto_zeroize(rnd, sizeof(rnd));
+	uint64_t now = now_ms(a);
+	crypto_base64url_encode(rnd, AUTH_SECRET_RANDOM_BYTES, c->secret, sizeof(c->secret));
 	memcpy(out, c->secret, AUTH_SECRET_SIZE);
+
+	/* The chain's entry (02 §2.3.1), with a new id. */
+	resume_expire(a, now);
+	ResumeEntry *e = resume_slot(a);
+	crypto_base64url_encode(rnd + AUTH_SECRET_RANDOM_BYTES, AUTH_RESUME_RANDOM_BYTES, e->id,
+				sizeof(e->id));
+	crypto_zeroize(rnd, sizeof(rnd));
+	snprintf(e->user, sizeof(e->user), "%s", c->name);
+	memcpy(e->key, c->resume_key, sizeof(e->key));
+	memcpy(e->stored_key, c->stored_key, sizeof(e->stored_key));
+	e->chain = c->chain;
+	e->created = c->created;
+	e->last_activity = now;
+	e->last_used = ++a->use_seq;
+	memcpy(resume, e->id, AUTH_RESUME_SIZE);
+	crypto_zeroize(c->resume_key, sizeof(c->resume_key));
+	crypto_zeroize(c->stored_key, sizeof(c->stored_key));
+
 	c->caps = auth_role_capabilities(c->role);
-	c->created = c->last_activity = now_ms(a);
+	c->last_activity = now;
 	c->state = AUTH_STATE_AUTHENTICATED;
 	return true;
 }
@@ -578,9 +829,13 @@ static bool op_validate_secret(void *self, AuthConn *c, const char *secret)
 
 static void op_revoke_secret(void *self, AuthConn *c)
 {
-	(void)self;
-	if (c->state == AUTH_STATE_AUTHENTICATED)
+	Auth *a = self;
+	if (c->state == AUTH_STATE_AUTHENTICATED) {
 		log_info("logout: user '%s' from %s", c->name, c->peer);
+		ResumeEntry *e = resume_of_chain(a, c->chain);
+		if (e != NULL)
+			resume_free(e);
+	}
 	reset(c);
 }
 
@@ -588,8 +843,15 @@ static void op_activity(void *self, AuthConn *c)
 {
 	Auth *a = self;
 	uint64_t now = now_ms(a);
-	if (session_live(c, now))
-		c->last_activity = now;
+	if (!session_live(c, now))
+		return;
+	c->last_activity = now;
+	/* The chain's idle timeout counts every session's activity. */
+	ResumeEntry *e = resume_of_chain(a, c->chain);
+	if (e != NULL) {
+		e->last_activity = now;
+		e->last_used = ++a->use_seq;
+	}
 }
 
 static uint32_t op_capabilities_for(void *self, const AuthConn *c)
@@ -675,11 +937,14 @@ uint64_t auth_tick(void *ctx, uint64_t now)
 		n = c->next;
 		if (c->pending && now >= c->pending_at) {
 			char user[USERS_NAME_MAX + 1], cnonce[AUTH_CNONCE_TEXT_MAX + 1];
+			char resume[AUTH_RESUME_SIZE];
 			memcpy(user, c->pending_user, sizeof(user));
 			memcpy(cnonce, c->pending_cnonce, sizeof(cnonce));
+			memcpy(resume, c->pending_resume, sizeof(resume));
 			clear_pending(c);
 			AuthChallenge ch;
-			bool made = make_challenge(a, c, user, cnonce, now, &ch);
+			bool made = make_challenge(a, c, user, cnonce, resume, now, &ch);
+			crypto_zeroize(resume, sizeof(resume));
 			if (c->events != NULL && c->events->on_challenge != NULL)
 				c->events->on_challenge(c->user, made ? &ch : NULL);
 		}
@@ -703,6 +968,10 @@ uint64_t auth_tick(void *ctx, uint64_t now)
 		if (c->state == AUTH_STATE_CHALLENGED)
 			next = min_u64(next, c->nonce_expires - now);
 	}
+	resume_expire(a, now);
+	for (size_t i = 0; i < HAKKAS_AUTH_RESUME_MAX; i++)
+		if (a->resume[i].id[0] != '\0')
+			next = min_u64(next, resume_end(a, &a->resume[i]) - now);
 	return next;
 }
 

@@ -80,12 +80,13 @@ char *proto_msg_output(const char *text);
 /* environment:logout without a payload (02 §1). */
 char *proto_msg_logout(void);
 
-/* environment:challenge {"salt","iterations","nonce"} (02 §2.3). */
+/* environment:challenge {"salt","iterations","nonce"} (02 §2.3); only
+ * {"nonce"} for a resume (02 §2.3.1). */
 char *proto_msg_challenge(const AuthChallenge *ch);
 
-/* environment:login {"secret","role","capabilities","server_signature"}
- * (02 §2.3). */
-char *proto_msg_login(const char *secret, const AuthProof *proof);
+/* environment:login {"secret","role","capabilities","server_signature",
+ * "resume"} (02 §2.3, §2.3.1). */
+char *proto_msg_login(const char *secret, const char *resume, const AuthProof *proof);
 
 /* runtime:runtime (02 §3.2.1): id, label, the build version,
  * allCapabilities, caps (none before login), type and namespace "hakkas",

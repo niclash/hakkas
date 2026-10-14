@@ -15,7 +15,7 @@
           <label class="hk-label" for="password">Password</label>
           <input class="hk-input" type="password" id="password" v-model="password" autocomplete="current-password" :disabled="busy">
         </div>
-        <button class="hk-button primary" type="submit" :disabled="busy || user === ''">{{ busy ? "Logging in..." : "Log in" }}</button>
+        <button class="hk-button primary" type="submit" :disabled="busy || user === ''">{{ resuming ? "Resuming the session..." : busy ? "Logging in..." : "Log in" }}</button>
         <p class="hk-login-message" role="alert" data-testid="login-message" v-if="message !== ''">{{ message }}</p>
       </form>
     </div>
@@ -27,6 +27,7 @@ import { ref } from "vue";
 
 defineProps<{
   busy: boolean,
+  resuming?: boolean,
   message: string,
 }>();
 

@@ -433,9 +433,15 @@ static void cmd_challenge(ProtoConn *c, const Envelope *env)
 {
 	const Authorizer *a = &c->p->auth;
 	AuthChallenge ch;
-	/* A missing or mistyped field is passed as NULL: "Login failed". */
+	/* A missing or mistyped field is passed as NULL: "Login failed". A
+	 * resume (02 §2.3.1) is a string "resume"; any other is a refusal. */
+	const char *resume;
+	if (!opt_str_field(env->payload, "resume", &resume)) {
+		send_challenge(c, NULL);
+		return;
+	}
 	enum auth_result r = a->ops->challenge(a->self, c->ac, str_field(env->payload, "user"),
-					       str_field(env->payload, "cnonce"), &ch);
+					       str_field(env->payload, "cnonce"), resume, &ch);
 	if (r == AUTH_OK)
 		send_challenge(c, &ch);
 	else if (r != AUTH_DELAYED) /* delayed: on_challenge replies */
@@ -446,15 +452,20 @@ static void cmd_login(ProtoConn *c, const Envelope *env)
 {
 	const Authorizer *a = &c->p->auth;
 	AuthProof proof;
+	const char *resume;
+	/* A mistyped "resume" is a wrong one: the login fails and counts. */
+	if (!opt_str_field(env->payload, "resume", &resume))
+		resume = "";
 	enum auth_result r = a->ops->verify_proof(
 		a->self, c->ac, str_field(env->payload, "user"), str_field(env->payload, "nonce"),
-		str_field(env->payload, "proof"), &proof);
+		resume, str_field(env->payload, "proof"), &proof);
 	if (r == AUTH_OK) {
-		char secret[AUTH_SECRET_SIZE];
-		if (a->ops->issue_secret(a->self, c->ac, secret)) {
+		char secret[AUTH_SECRET_SIZE], next[AUTH_RESUME_SIZE];
+		if (a->ops->issue_secret(a->self, c->ac, secret, next)) {
 			subscribe(c);
-			reply(c, proto_msg_login(secret, &proof));
+			reply(c, proto_msg_login(secret, next, &proof));
 			memset(secret, 0, sizeof(secret));
+			memset(next, 0, sizeof(next));
 			return;
 		}
 	}

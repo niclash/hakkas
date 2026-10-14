@@ -83,7 +83,33 @@
  *  - Logging (02 §2.5 item 8): a login's success (info) or failure (warn)
  *    with the user name and source address only; a session's end (info),
  *    a closing connection and a back-off (info). Never a secret, proof,
- *    nonce, salt, password or key.
+ *    nonce, salt, password, key or resume id.
+ *
+ * Resuming a session (02 §2.3.1, plan task 46): a login issues a resume id
+ * (issue_secret), kept in a table with the resume key both sides derive,
+ * ResumeKey = HMAC(StoredKey, "Resume Key," + nonce). A challenge and a
+ * login that carry a resume id resume the session of that id's chain
+ * without the password: the challenge has no salt and no iterations, the
+ * proof is HMAC(ResumeKey, user "," nonce "," id) and the server signature
+ * HMAC(ResumeKey, "Server," user "," nonce "," id). Decisions:
+ *  - A chain is the password login and the sessions resumed from it. It
+ *    has one entry: a resume replaces it with a new id (an id is used once)
+ *    and the same key. Every session of the chain has the password login's
+ *    start (created), so the maximum lifetime counts from it; the idle
+ *    timeout counts from the last activity of any of its sessions. The
+ *    entry ends with that deadline, at a logout of any of its sessions, and
+ *    when the users file read for a challenge no longer has its user or has
+ *    another stored_key (a password change); not when a connection closes
+ *    (a reload).
+ *  - A resumed session gets the user's role from the users file as read
+ *    for its challenge.
+ *  - A malformed id (not the base64url of AUTH_RESUME_RANDOM_BYTES bytes)
+ *    is a refused challenge (AUTH_FAILED, not counted); an unknown,
+ *    expired or another user's id gets a normal challenge and its login
+ *    fails after the same hashing. A failed resume does not end the entry
+ *    (an id is seen on the wire, so anyone could otherwise end a chain).
+ *  - The table has HAKKAS_AUTH_RESUME_MAX entries; a new one evicts the
+ *    least recently used (its session goes on; only resuming it fails).
  *
  * Threading: engine thread only. Callbacks (AuthEvents) are called from
  * auth_tick only and must not call close.
@@ -180,10 +206,18 @@ static inline bool auth_permits(uint32_t caps, const AuthCommandRule *rule)
 #define AUTH_BACKOFF_BASE_MS 1000
 #define AUTH_BACKOFF_MAX_MS 60000
 #define AUTH_QUIET_RESET_MS (15u * 60u * 1000u)
+#define AUTH_RESUME_RANDOM_BYTES 16  /* a resume id (02 §2.3.1) */
+#define AUTH_RESUME_LEN CRYPTO_BASE64URL_LEN(AUTH_RESUME_RANDOM_BYTES) /* 22 */
+#define AUTH_RESUME_SIZE (AUTH_RESUME_LEN + 1)
 
 /* Source addresses the rate limiter remembers; a port's build may define it. */
 #ifndef HAKKAS_AUTH_RATE_ADDRS
 #define HAKKAS_AUTH_RATE_ADDRS 16
+#endif
+
+/* Sessions that can be resumed (02 §2.3.1); a port's build may define it. */
+#ifndef HAKKAS_AUTH_RESUME_MAX
+#define HAKKAS_AUTH_RESUME_MAX 16
 #endif
 
 /* Text sizes, NUL included. */
@@ -208,8 +242,10 @@ enum auth_result {
 	AUTH_DELAYED,	   /* challenge: on_challenge replies later */
 };
 
-/* The environment:challenge reply's payload (02 §2.3). */
+/* The environment:challenge reply's payload (02 §2.3; 02 §2.3.1 when
+ * resume: then only the nonce, salt "" and iterations 0). */
 typedef struct {
+	bool resume;
 	char salt[AUTH_SALT_TEXT_SIZE]; /* base64 */
 	uint32_t iterations;
 	char nonce[AUTH_NONCE_TEXT_SIZE]; /* cnonce + base64 of the server's bytes */
@@ -246,23 +282,29 @@ typedef struct {
 	void (*close)(void *self, AuthConn *c);
 	/* A client message arrived (any message): the idle timeout restarts. */
 	void (*activity)(void *self, AuthConn *c);
-	/* environment:challenge {user, cnonce}. AUTH_OK (*out filled),
-	 * AUTH_DELAYED, AUTH_FAILED. */
+	/* environment:challenge {user, cnonce[, resume]}; resume NULL for a
+	 * password login. AUTH_OK (*out filled), AUTH_DELAYED, AUTH_FAILED. */
 	enum auth_result (*challenge)(void *self, AuthConn *c, const char *user,
-				      const char *cnonce, AuthChallenge *out);
-	/* environment:login {user, nonce, proof}. AUTH_OK (*out filled; the
-	 * connection is VERIFIED), AUTH_FAILED, AUTH_FAILED_CLOSE. */
+				      const char *cnonce, const char *resume,
+				      AuthChallenge *out);
+	/* environment:login {user, nonce[, resume], proof}; resume NULL for a
+	 * password login (it must match the challenge's). AUTH_OK (*out
+	 * filled; the connection is VERIFIED), AUTH_FAILED,
+	 * AUTH_FAILED_CLOSE. */
 	enum auth_result (*verify_proof)(void *self, AuthConn *c, const char *user,
-					 const char *nonce, const char *proof, AuthProof *out);
-	/* After verify_proof's AUTH_OK: start the session and write its secret
-	 * (AUTH_SECRET_LEN characters and a NUL) to out. False (connection
-	 * UNAUTHENTICATED; reply "Login failed") if not VERIFIED or the random
-	 * source failed. */
-	bool (*issue_secret)(void *self, AuthConn *c, char out[AUTH_SECRET_SIZE]);
+					 const char *nonce, const char *resume, const char *proof,
+					 AuthProof *out);
+	/* After verify_proof's AUTH_OK: start the session, write its secret
+	 * (AUTH_SECRET_LEN characters and a NUL) to out and the chain's new
+	 * resume id (AUTH_RESUME_LEN characters and a NUL, 02 §2.3.1) to
+	 * resume. False (connection UNAUTHENTICATED; reply "Login failed") if
+	 * not VERIFIED or the random source failed. */
+	bool (*issue_secret)(void *self, AuthConn *c, char out[AUTH_SECRET_SIZE],
+			     char resume[AUTH_RESUME_SIZE]);
 	/* Whether secret is this connection's current, unexpired one. */
 	bool (*validate_secret)(void *self, AuthConn *c, const char *secret);
-	/* environment:logout: the session (or challenge) ends;
-	 * UNAUTHENTICATED. */
+	/* environment:logout: the session (or challenge) ends, and its
+	 * chain's resume entry; UNAUTHENTICATED. */
 	void (*revoke_secret)(void *self, AuthConn *c);
 	/* The session's capabilities; 0 unless AUTHENTICATED and unexpired
 	 * (so non-zero means events may be delivered, 02 §2.5 item 6). */
@@ -328,8 +370,8 @@ void auth_destroy(Auth *a);
 Authorizer auth_authorizer(Auth *a);
 
 /* The tick hook (a loop_tick_fn, 01 §3.2.1; ctx is the Auth): ends expired
- * sessions (on_expired) and challenges, answers due delayed challenges
- * (on_challenge). Returns the ms until it next needs to run, or UINT64_MAX
+ * sessions (on_expired), challenges and resume entries, answers due delayed
+ * challenges (on_challenge). Returns the ms until it next needs to run, or UINT64_MAX
  * if nothing is pending. Register it with loop_add_tick (plan task 19). */
 uint64_t auth_tick(void *ctx, uint64_t now_ms);
 

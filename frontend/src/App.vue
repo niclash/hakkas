@@ -15,7 +15,7 @@
     </div>
     <FlowEditor :secret="secret"></FlowEditor>
   </div>
-  <Login v-else @login="login" :busy="loggingIn" :message="loginMessage"/>
+  <Login v-else @login="login" :busy="loggingIn" :resuming="resuming" :message="loginMessage"/>
 </template>
 
 <script lang="ts" setup>
@@ -27,14 +27,31 @@ import {Connection} from "@/components/protocols/websocket";
 import {attachModel, vueModel} from "@/components/model";
 import {OnLogin, OnLoginFailed} from "@/components/protocols/environment";
 import {NetworkErrorEvent} from "@/components/protocols/network";
+import {forgetSession, keepSession, keptSession} from "@/session";
 
 // The session secret; "" while logged out.
 const secret = ref("");
 const loggingIn = ref(false);
 const loginMessage = ref("");
+// Resuming the kept session (06 §2): a failure only shows the login form.
+const resuming = ref(false);
 
 // Every login uses a fresh connection, which ends at logout.
 const login = (user: string, password: string) => {
+  resuming.value = false;
+  connect(conn => conn.proto.environment.request_login(user, password));
+}
+
+// A reload resumes the kept session instead of asking for the password (02 §2.3.1).
+const resume = () => {
+  const session = keptSession();
+  if (session === undefined)
+    return;
+  resuming.value = true;
+  connect(conn => conn.proto.environment.request_resume(session));
+}
+
+const connect = (start: (conn: Connection) => void) => {
   vueModel.connection.value?.close();
   loggingIn.value = true;
   loginMessage.value = "";
@@ -49,7 +66,7 @@ const login = (user: string, password: string) => {
     if (secret.value === "")
       loginFailed(conn, e.message);
   });
-  conn.addOpenedListener(() => conn.proto.environment.request_login(user, password));
+  conn.addOpenedListener(() => start(conn));
   conn.addClosedListener(onClosed);
   conn.open();
 }
@@ -61,15 +78,23 @@ const loginFailed = (conn: Connection, message: string) => {
   conn.close();
   vueModel.connection.value = undefined;
   loggingIn.value = false;
+  if (resuming.value) {
+    // The session has ended (or its id was used by another tab): log in again.
+    forgetSession();
+    resuming.value = false;
+    message = "";
+  }
   loginMessage.value = message;
 }
 
 const logout = () => {
+  forgetSession();
   vueModel.connection.value?.proto.environment.request_logout();
 }
 
 // After a logout or a session expiry.
 const onLogout = (conn: Connection) => {
+  forgetSession();
   secret.value = "";
   conn.close();
   if (vueModel.connection.value === conn)
@@ -77,9 +102,15 @@ const onLogout = (conn: Connection) => {
 }
 
 const onLogin = (conn: Connection, payload: OnLogin) => {
+  // The id just used is gone: keep the new one.
+  if (payload.resume !== undefined)
+    keepSession(payload.resume);
+  else
+    forgetSession();
   conn.currentSecret = payload.secret;
   secret.value = payload.secret;
   loggingIn.value = false;
+  resuming.value = false;
   vueModel.errors.value = [];
   conn.proto.runtime.request_getruntime();
 };
@@ -89,6 +120,7 @@ const onClosed = (conn: Connection, event: CloseEvent) => {
     return;
   vueModel.connection.value = undefined;
   loggingIn.value = false;
+  resuming.value = false;
   if (secret.value === "" && loginMessage.value === "")
     loginMessage.value = "Cannot reach the server" + (event.reason ? ": " + event.reason : "");
   else if (secret.value !== "")
@@ -96,4 +128,5 @@ const onClosed = (conn: Connection, event: CloseEvent) => {
   secret.value = "";
 };
 
+resume();
 </script>

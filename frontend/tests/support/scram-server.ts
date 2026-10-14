@@ -50,3 +50,18 @@ export function verifyProof(record: UserRecord, nonce: string, proof: string): s
         return undefined;
     return hmac(Buffer.from(record.server_key, "base64"), message).toString("base64");
 }
+
+// Resuming a session (02 §2.3.1): the key both sides derive from a password login's nonce.
+export function resumeKey(record: UserRecord, nonce: string): Buffer {
+    return hmac(Buffer.from(record.stored_key, "base64"), "Resume Key," + nonce);
+}
+
+// Checks a resume's proof like the engine does; returns the server signature, or undefined.
+export function verifyResumeProof(key: Buffer, user: string, nonce: string, id: string,
+                                  proof: string): string | undefined {
+    const message = user + "," + nonce + "," + id;
+    const p = Buffer.from(proof, "base64");
+    if (p.length !== 32 || !timingSafeEqual(p, hmac(key, message)))
+        return undefined;
+    return hmac(key, "Server," + message).toString("base64");
+}

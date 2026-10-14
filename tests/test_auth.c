@@ -26,7 +26,8 @@ static uint64_t fake_clock(void *ctx)
 	return clock_ms;
 }
 
-static uint8_t rnd_next;
+/* Not periodic over a test's draws: resume ids must not repeat. */
+static uint32_t rnd_next;
 static bool rnd_fail;
 
 static enum pal_err fake_random(void *buf, size_t len)
@@ -34,7 +35,7 @@ static enum pal_err fake_random(void *buf, size_t len)
 	if (rnd_fail)
 		return PAL_ERR_UNAVAILABLE;
 	for (size_t i = 0; i < len; i++)
-		((uint8_t *)buf)[i] = rnd_next++;
+		((uint8_t *)buf)[i] = (uint8_t)((rnd_next++ * 2654435761u) >> 24);
 	return PAL_OK;
 }
 
@@ -55,6 +56,7 @@ static void log_sink(void *ctx, enum log_level level, const char *line, size_t l
 
 static UserStore users;
 static Auth *auth;
+static char rid[AUTH_RESUME_SIZE]; /* the last resume id issued */
 static Authorizer az;
 
 /* The callbacks, recording what they saw. */
@@ -163,16 +165,16 @@ static void client_proof(const char *user, const char *password, const AuthChall
 static bool login(AuthConn *c, const char *user, const char *password, char *secret)
 {
 	AuthChallenge ch;
-	if (az.ops->challenge(az.self, c, user, cnonce_of(1), &ch) != AUTH_OK)
+	if (az.ops->challenge(az.self, c, user, cnonce_of(1), NULL, &ch) != AUTH_OK)
 		return false;
 	char proof[64], sig[64];
 	client_proof(user, password, &ch, proof, sig);
 	AuthProof p;
-	if (az.ops->verify_proof(az.self, c, user, ch.nonce, proof, &p) != AUTH_OK)
+	if (az.ops->verify_proof(az.self, c, user, ch.nonce, NULL, proof, &p) != AUTH_OK)
 		return false;
 	CHECK_STREQ(p.server_signature, sig);
 	char s[AUTH_SECRET_SIZE];
-	if (!az.ops->issue_secret(az.self, c, s))
+	if (!az.ops->issue_secret(az.self, c, s, rid))
 		return false;
 	if (secret != NULL)
 		memcpy(secret, s, sizeof(s));
@@ -183,7 +185,7 @@ static bool login(AuthConn *c, const char *user, const char *password, char *sec
 static enum auth_result fail_once(AuthConn *c)
 {
 	AuthProof p;
-	return az.ops->verify_proof(az.self, c, "alice", "x", "y", &p);
+	return az.ops->verify_proof(az.self, c, "alice", "x", NULL, "y", &p);
 }
 
 /* ---- Login ------------------------------------------------------------------------- */
@@ -199,7 +201,7 @@ static void test_login(void)
 	 * base64 of 16 server bytes. */
 	AuthChallenge ch;
 	const char *cn = cnonce_of(7);
-	CHECK(az.ops->challenge(az.self, c, "alice", cn, &ch) == AUTH_OK);
+	CHECK(az.ops->challenge(az.self, c, "alice", cn, NULL, &ch) == AUTH_OK);
 	CHECK(az.ops->state(az.self, c) == AUTH_STATE_CHALLENGED);
 	char salt64[32];
 	crypto_base64_encode(users_find(&users, "alice")->salt, 16, salt64, sizeof(salt64));
@@ -217,7 +219,7 @@ static void test_login(void)
 	char proof[64], sig[64];
 	client_proof("alice", "pencil", &ch, proof, sig);
 	AuthProof p;
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_OK);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_OK);
 	CHECK(p.role == USER_ROLE_EDITOR);
 	CHECK(p.capabilities == auth_role_capabilities(USER_ROLE_EDITOR));
 	CHECK_STREQ(p.server_signature, sig);
@@ -226,7 +228,7 @@ static void test_login(void)
 
 	/* The session secret: 22 characters of base64url, 128 random bits. */
 	char secret[AUTH_SECRET_SIZE];
-	CHECK(az.ops->issue_secret(az.self, c, secret));
+	CHECK(az.ops->issue_secret(az.self, c, secret, rid));
 	CHECK(strlen(secret) == 22);
 	for (int i = 0; i < 22; i++)
 		CHECK(strchr("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
@@ -244,10 +246,10 @@ static void test_login(void)
 	CHECK(!az.ops->validate_secret(az.self, c, NULL));
 	other[21] = '\0';
 	CHECK(!az.ops->validate_secret(az.self, c, other));
-	CHECK(!az.ops->issue_secret(az.self, c, other)); /* only once per login */
+	CHECK(!az.ops->issue_secret(az.self, c, other, rid)); /* only once per login */
 
 	/* A challenge while logged in is refused: log out first. */
-	CHECK(az.ops->challenge(az.self, c, "alice", cn, &ch) == AUTH_FAILED);
+	CHECK(az.ops->challenge(az.self, c, "alice", cn, NULL, &ch) == AUTH_FAILED);
 	CHECK(az.ops->validate_secret(az.self, c, secret));
 
 	/* A viewer gets the viewer's capabilities. */
@@ -258,17 +260,17 @@ static void test_login(void)
 	/* issue_secret without a verified proof, or with a failing random
 	 * source. */
 	AuthConn *w = open_conn("192.0.2.3", NULL);
-	CHECK(!az.ops->issue_secret(az.self, w, secret));
-	CHECK(az.ops->challenge(az.self, w, "alice", cn, &ch) == AUTH_OK);
+	CHECK(!az.ops->issue_secret(az.self, w, secret, rid));
+	CHECK(az.ops->challenge(az.self, w, "alice", cn, NULL, &ch) == AUTH_OK);
 	client_proof("alice", "pencil", &ch, proof, sig);
-	CHECK(az.ops->verify_proof(az.self, w, "alice", ch.nonce, proof, &p) == AUTH_OK);
+	CHECK(az.ops->verify_proof(az.self, w, "alice", ch.nonce, NULL, proof, &p) == AUTH_OK);
 	rnd_fail = true;
-	CHECK(!az.ops->issue_secret(az.self, w, secret));
+	CHECK(!az.ops->issue_secret(az.self, w, secret, rid));
 	rnd_fail = false;
 	CHECK(az.ops->state(az.self, w) == AUTH_STATE_UNAUTHENTICATED);
 	/* A failing random source refuses a challenge too. */
 	rnd_fail = true;
-	CHECK(az.ops->challenge(az.self, w, "alice", cn, &ch) == AUTH_FAILED);
+	CHECK(az.ops->challenge(az.self, w, "alice", cn, NULL, &ch) == AUTH_FAILED);
 	rnd_fail = false;
 
 	close_conn(c);
@@ -303,7 +305,7 @@ static void test_unknown_user(void)
 	setup();
 	AuthConn *c = open_conn("192.0.2.20", NULL);
 	AuthChallenge ch, ch2, real;
-	CHECK(az.ops->challenge(az.self, c, "mallory", cnonce_of(2), &ch) == AUTH_OK);
+	CHECK(az.ops->challenge(az.self, c, "mallory", cnonce_of(2), NULL, &ch) == AUTH_OK);
 	/* salt = HMAC(server_secret, user)[0..16], the default count, the
 	 * same nonce shape: like a real reply. */
 	uint8_t h[32];
@@ -316,12 +318,12 @@ static void test_unknown_user(void)
 	CHECK(az.ops->state(az.self, c) == AUTH_STATE_CHALLENGED);
 	/* Deterministic: the same salt on every challenge and connection. */
 	AuthConn *d = open_conn("192.0.2.21", NULL);
-	CHECK(az.ops->challenge(az.self, d, "mallory", cnonce_of(3), &ch2) == AUTH_OK);
+	CHECK(az.ops->challenge(az.self, d, "mallory", cnonce_of(3), NULL, &ch2) == AUTH_OK);
 	CHECK_STREQ(ch2.salt, ch.salt);
 	CHECK(strcmp(ch2.nonce + strlen(cnonce_of(3)), ch.nonce + strlen(cnonce_of(2))) != 0);
 	/* A real user's reply has the same shape. */
 	users.users[0].iterations = USERS_DEFAULT_ITERATIONS;
-	CHECK(az.ops->challenge(az.self, d, "alice", cnonce_of(3), &real) == AUTH_OK);
+	CHECK(az.ops->challenge(az.self, d, "alice", cnonce_of(3), NULL, &real) == AUTH_OK);
 	CHECK(strlen(real.salt) == strlen(ch.salt) && real.iterations == ch.iterations);
 	CHECK(strlen(real.nonce) == strlen(ch2.nonce));
 	users.users[0].iterations = ITERATIONS;
@@ -331,7 +333,8 @@ static void test_unknown_user(void)
 	 * bytes do here). */
 	const char *proof = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 	AuthProof p;
-	CHECK(az.ops->verify_proof(az.self, c, "mallory", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "mallory", ch.nonce, NULL, proof, &p) ==
+	      AUTH_FAILED);
 	CHECK(az.ops->state(az.self, c) == AUTH_STATE_UNAUTHENTICATED);
 	close_conn(c);
 	close_conn(d);
@@ -346,7 +349,7 @@ static AuthConn *challenged(AuthChallenge *ch)
 	char addr[32];
 	snprintf(addr, sizeof(addr), "198.51.100.%d", ++addr_seq);
 	AuthConn *c = open_conn(addr, NULL);
-	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(addr_seq), ch) == AUTH_OK);
+	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(addr_seq), NULL, ch) == AUTH_OK);
 	return c;
 }
 
@@ -360,7 +363,7 @@ static void test_login_failures(void)
 	/* Wrong password. */
 	AuthConn *c = challenged(&ch);
 	client_proof("alice", "pencil!", &ch, proof, sig);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
 	CHECK(az.ops->state(az.self, c) == AUTH_STATE_UNAUTHENTICATED);
 	close_conn(c);
 
@@ -368,12 +371,12 @@ static void test_login_failures(void)
 	c = challenged(&ch);
 	client_proof("alice", "pencil", &ch, proof, sig);
 	clock_ms += AUTH_NONCE_TTL_MS - 1;
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_OK);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_OK);
 	close_conn(c);
 	c = challenged(&ch);
 	client_proof("alice", "pencil", &ch, proof, sig);
 	clock_ms += AUTH_NONCE_TTL_MS;
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
 	close_conn(c);
 	/* The tick hook also drops it. */
 	c = challenged(&ch);
@@ -385,27 +388,27 @@ static void test_login_failures(void)
 	/* A reused nonce: single use, after a failure and after a success. */
 	c = challenged(&ch);
 	client_proof("alice", "pencil", &ch, proof, sig);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, "AAAA", &p) == AUTH_FAILED);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, "AAAA", &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
 	close_conn(c);
 	c = challenged(&ch);
 	client_proof("alice", "pencil", &ch, proof, sig);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_OK);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_OK);
 	az.ops->revoke_secret(az.self, c);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
 	close_conn(c);
 	/* A new challenge replaces the old one. */
 	c = challenged(&ch);
 	client_proof("alice", "pencil", &ch, proof, sig);
 	AuthChallenge ch2;
-	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(99), &ch2) == AUTH_OK);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(99), NULL, &ch2) == AUTH_OK);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
 	close_conn(c);
 
 	/* A login without a challenge. */
 	c = challenged(&ch);
 	az.ops->revoke_secret(az.self, c);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
 	close_conn(c);
 
 	/* A proof of the wrong length or not base64; a wrong user or nonce. */
@@ -418,21 +421,22 @@ static void test_login_failures(void)
 	};
 	for (int i = 0; i < 5; i++) {
 		c = challenged(&ch);
-		CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, bad_proofs[i], &p) ==
+		CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, bad_proofs[i],
+					   &p) ==
 		      AUTH_FAILED);
 		close_conn(c);
 	}
 	c = challenged(&ch);
 	client_proof("alice", "pencil", &ch, proof, sig);
-	CHECK(az.ops->verify_proof(az.self, c, "victor", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "victor", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
 	close_conn(c);
 	c = challenged(&ch);
 	client_proof("alice", "pencil", &ch, proof, sig);
 	char nonce[AUTH_NONCE_TEXT_SIZE];
 	strcpy(nonce, ch.nonce);
 	nonce[strlen(nonce) - 3] ^= 1;
-	CHECK(az.ops->verify_proof(az.self, c, "alice", nonce, proof, &p) == AUTH_FAILED);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", NULL, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", nonce, NULL, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", NULL, NULL, proof, &p) == AUTH_FAILED);
 	close_conn(c);
 
 	/* Invalid challenges are refused, and not counted as failed logins. */
@@ -445,16 +449,17 @@ static void test_login_failures(void)
 		NULL,
 	};
 	for (int i = 0; i < 5; i++)
-		CHECK(az.ops->challenge(az.self, c, "alice", bad_cnonces[i], &ch) == AUTH_FAILED);
+		CHECK(az.ops->challenge(az.self, c, "alice", bad_cnonces[i], NULL, &ch) ==
+		      AUTH_FAILED);
 	uint8_t big[65] = {0};
 	char big64[128];
 	crypto_base64_encode(big, sizeof(big), big64, sizeof(big64));
-	CHECK(az.ops->challenge(az.self, c, "alice", big64, &ch) == AUTH_FAILED);
+	CHECK(az.ops->challenge(az.self, c, "alice", big64, NULL, &ch) == AUTH_FAILED);
 	crypto_base64_encode(big, 64, big64, sizeof(big64));
-	CHECK(az.ops->challenge(az.self, c, "alice", big64, &ch) == AUTH_OK);
+	CHECK(az.ops->challenge(az.self, c, "alice", big64, NULL, &ch) == AUTH_OK);
 	const char *bad_users[] = {"", "123456789012345678901234567890123", "a\nb", NULL};
 	for (int i = 0; i < 4; i++)
-		CHECK(az.ops->challenge(az.self, c, bad_users[i], cnonce_of(1), &ch) ==
+		CHECK(az.ops->challenge(az.self, c, bad_users[i], cnonce_of(1), NULL, &ch) ==
 		      AUTH_FAILED);
 	CHECK(az.ops->state(az.self, c) == AUTH_STATE_UNAUTHENTICATED);
 	CHECK(login(c, "alice", "pencil", NULL)); /* still allowed */
@@ -712,7 +717,7 @@ static enum auth_result try_challenge(const char *addr, AuthConn **out)
 {
 	AuthChallenge ch;
 	*out = open_conn(addr, NULL);
-	return az.ops->challenge(az.self, *out, "alice", cnonce_of(5), &ch);
+	return az.ops->challenge(az.self, *out, "alice", cnonce_of(5), NULL, &ch);
 }
 
 /* n failed logins from addr (new connections, so none is closed early). */
@@ -765,7 +770,7 @@ static void test_backoff(void)
 	CHECK(try_challenge(addr, &c) == AUTH_DELAYED);
 	AuthChallenge ch;
 	clock_ms += 10000;
-	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(6), &ch) == AUTH_DELAYED);
+	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(6), NULL, &ch) == AUTH_DELAYED);
 	CHECK(auth_tick(auth, clock_ms) == t_fail + 60000 - clock_ms);
 	challenge_calls = 0;
 	clock_ms = t_fail + 60000;
@@ -777,7 +782,8 @@ static void test_backoff(void)
 	char proof[64], sig[64];
 	client_proof("alice", "pencil", &delivered, proof, sig);
 	AuthProof p;
-	CHECK(az.ops->verify_proof(az.self, c, "alice", delivered.nonce, proof, &p) == AUTH_OK);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", delivered.nonce, NULL, proof, &p) ==
+	      AUTH_OK);
 	close_conn(c);
 	fail_n(addr, 4);
 	CHECK(try_challenge(addr, &c) == AUTH_OK);
@@ -854,6 +860,289 @@ static void test_lru(void)
 	teardown();
 }
 
+/* ---- Resuming (02 §2.3.1) --------------------------------------------------------- */
+
+/* What the browser keeps: {user, id, ResumeKey}. */
+typedef struct {
+	char user[USERS_NAME_MAX + 1];
+	char id[AUTH_RESUME_SIZE];
+	uint8_t key[32];
+} Kept;
+
+/* A password login of user on c, keeping what a resume needs. */
+static void login_keep(AuthConn *c, const char *user, const char *password, Kept *k)
+{
+	AuthChallenge ch;
+	CHECK(az.ops->challenge(az.self, c, user, cnonce_of(2), NULL, &ch) == AUTH_OK);
+	char proof[64], sig[64];
+	client_proof(user, password, &ch, proof, sig);
+	AuthProof p;
+	CHECK(az.ops->verify_proof(az.self, c, user, ch.nonce, NULL, proof, &p) == AUTH_OK);
+	char s[AUTH_SECRET_SIZE];
+	CHECK(az.ops->issue_secret(az.self, c, s, k->id));
+	CHECK(strlen(k->id) == AUTH_RESUME_LEN);
+
+	/* ResumeKey = HMAC(StoredKey, "Resume Key," + nonce). */
+	uint8_t salt[16], salted[32], client_key[32], stored[32];
+	size_t n = 0;
+	CHECK(crypto_base64_decode(ch.salt, strlen(ch.salt), salt, sizeof(salt), &n));
+	CHECK(crypto_pbkdf2_hmac_sha256(password, strlen(password), salt, 16, ch.iterations,
+					salted, 32));
+	CHECK(crypto_hmac_sha256(salted, 32, "Client Key", 10, client_key));
+	CHECK(crypto_sha256(client_key, 32, stored));
+	char in[256];
+	snprintf(in, sizeof(in), "Resume Key,%s", ch.nonce);
+	CHECK(crypto_hmac_sha256(stored, 32, in, strlen(in), k->key));
+	snprintf(k->user, sizeof(k->user), "%s", user);
+}
+
+/* The proof (and the server signature expected) of a resume as user with
+ * id and key, for the challenge's nonce. */
+static void resume_proof(const char *user, const char *id, const uint8_t key[32],
+			 const char *nonce, char proof64[64], char sig64[64])
+{
+	char msg[512];
+	uint8_t mac[32];
+	snprintf(msg, sizeof(msg), "Server,%s,%s,%s", user, nonce, id);
+	CHECK(crypto_hmac_sha256(key, 32, msg + 7, strlen(msg + 7), mac));
+	crypto_base64_encode(mac, 32, proof64, 64);
+	CHECK(crypto_hmac_sha256(key, 32, msg, strlen(msg), mac));
+	crypto_base64_encode(mac, 32, sig64, 64);
+}
+
+/* A resume on c with what k keeps; on success k has the new id. */
+static enum auth_result resume(AuthConn *c, Kept *k, AuthProof *p)
+{
+	AuthChallenge ch;
+	enum auth_result r = az.ops->challenge(az.self, c, k->user, cnonce_of(3), k->id, &ch);
+	if (r != AUTH_OK)
+		return r;
+	/* No key stretching: only the nonce. */
+	CHECK(ch.resume && ch.salt[0] == '\0' && ch.iterations == 0);
+	CHECK(strncmp(ch.nonce, cnonce_of(3), strlen(cnonce_of(3))) == 0);
+	char proof[64], sig[64];
+	resume_proof(k->user, k->id, k->key, ch.nonce, proof, sig);
+	r = az.ops->verify_proof(az.self, c, k->user, ch.nonce, k->id, proof, p);
+	if (r != AUTH_OK)
+		return r;
+	CHECK_STREQ(p->server_signature, sig);
+	char s[AUTH_SECRET_SIZE], next[AUTH_RESUME_SIZE];
+	CHECK(az.ops->issue_secret(az.self, c, s, next));
+	CHECK(strcmp(next, k->id) != 0); /* an id is used once */
+	memcpy(k->id, next, sizeof(next));
+	return AUTH_OK;
+}
+
+static void test_resume(void)
+{
+	setup();
+	logs[0] = '\0';
+	AuthConn *c = open_conn("192.0.2.90", NULL);
+	Kept k;
+	login_keep(c, "victor", "seeing", &k);
+	close_conn(c); /* a reload */
+
+	/* A new connection resumes: the user's role, a new id. */
+	AuthConn *d = open_conn("192.0.2.90", NULL);
+	Kept old = k;
+	AuthProof p;
+	CHECK(resume(d, &k, &p) == AUTH_OK);
+	CHECK(p.role == USER_ROLE_VIEWER &&
+	      p.capabilities == auth_role_capabilities(USER_ROLE_VIEWER));
+	CHECK(az.ops->state(az.self, d) == AUTH_STATE_AUTHENTICATED);
+	CHECK(az.ops->capabilities_for(az.self, d) == p.capabilities);
+	CHECK(strstr(logs, "login: user 'victor' from 192.0.2.90 as viewer (resumed)") != NULL);
+	close_conn(d);
+
+	/* The old id is used up. */
+	AuthConn *e = open_conn("192.0.2.90", NULL);
+	CHECK(resume(e, &old, &p) == AUTH_FAILED);
+	CHECK(az.ops->state(az.self, e) == AUTH_STATE_UNAUTHENTICATED);
+	/* ... and its failure did not end the chain. */
+	CHECK(resume(e, &k, &p) == AUTH_OK);
+	close_conn(e);
+
+	/* A wrong key, another user's id, an unknown id: a normal challenge,
+	 * then "Login failed", counted (the third closes); the entry stays. */
+	AuthConn *f = open_conn("192.0.2.91", NULL);
+	Kept wrong = k;
+	wrong.key[0] ^= 1;
+	CHECK(resume(f, &wrong, &p) == AUTH_FAILED);
+	snprintf(wrong.user, sizeof(wrong.user), "alice");
+	memcpy(wrong.key, k.key, sizeof(k.key));
+	CHECK(resume(f, &wrong, &p) == AUTH_FAILED);
+	Kept unknown = k;
+	unknown.id[0] = unknown.id[0] == 'A' ? 'B' : 'A';
+	CHECK(resume(f, &unknown, &p) == AUTH_FAILED_CLOSE);
+	close_conn(f);
+	AuthConn *g = open_conn("192.0.2.92", NULL);
+	CHECK(resume(g, &k, &p) == AUTH_OK);
+
+	/* A resume answers a resume challenge of the same id, a password
+	 * login a password challenge. */
+	AuthConn *h = open_conn("192.0.2.93", NULL);
+	AuthChallenge ch;
+	char proof[64], sig[64];
+	CHECK(az.ops->challenge(az.self, h, "victor", cnonce_of(4), NULL, &ch) == AUTH_OK);
+	resume_proof("victor", k.id, k.key, ch.nonce, proof, sig);
+	CHECK(az.ops->verify_proof(az.self, h, "victor", ch.nonce, k.id, proof, &p) == AUTH_FAILED);
+	CHECK(az.ops->challenge(az.self, h, "victor", cnonce_of(4), k.id, &ch) == AUTH_OK);
+	CHECK(az.ops->verify_proof(az.self, h, "victor", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
+	close_conn(h);
+
+	/* A malformed id is a refused challenge, not counted. */
+	AuthConn *m = open_conn("192.0.2.94", NULL);
+	const char *bad_ids[] = {"", "short", "AAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAA+",
+				 "AAAAAAAAAAAAAAAAAAAAA="};
+	for (size_t i = 0; i < sizeof(bad_ids) / sizeof(bad_ids[0]); i++)
+		CHECK(az.ops->challenge(az.self, m, "victor", cnonce_of(4), bad_ids[i], &ch) ==
+		      AUTH_FAILED);
+	close_conn(m);
+
+	/* The ids and keys are never logged. */
+	CHECK(strstr(logs, k.id) == NULL && strstr(logs, old.id) == NULL);
+	close_conn(g);
+	teardown();
+}
+
+static void test_resume_lifetime(void)
+{
+	setup();
+	AuthProof p;
+	/* The idle timeout counts from the chain's last activity, also after
+	 * the connection closed. */
+	AuthConn *c = open_conn("192.0.2.95", NULL);
+	Kept k;
+	login_keep(c, "alice", "pencil", &k);
+	uint64_t t0 = clock_ms;
+	clock_ms = t0 + 9000;
+	az.ops->activity(az.self, c);
+	close_conn(c);
+	clock_ms = t0 + 9000 + IDLE_S * 1000u - 1;
+	c = open_conn("192.0.2.95", NULL);
+	CHECK(resume(c, &k, &p) == AUTH_OK);
+	close_conn(c);
+	clock_ms += IDLE_S * 1000u;
+	CHECK(auth_tick(auth, clock_ms) == UINT64_MAX); /* the entry ended */
+	c = open_conn("192.0.2.95", NULL);
+	CHECK(resume(c, &k, &p) == AUTH_FAILED);
+
+	/* The maximum lifetime counts from the password login, through every
+	 * resume: the resumed session ends with it too. */
+	login_keep(c, "alice", "pencil", &k);
+	t0 = clock_ms;
+	for (int i = 1; i * 5000 < LIFE_S * 1000; i++) {
+		clock_ms = t0 + (uint64_t)i * 5000;
+		close_conn(c);
+		c = open_conn("192.0.2.95", NULL);
+		CHECK(resume(c, &k, &p) == AUTH_OK);
+	}
+	clock_ms = t0 + LIFE_S * 1000u - 1;
+	CHECK(az.ops->capabilities_for(az.self, c) != 0);
+	clock_ms++;
+	CHECK(az.ops->capabilities_for(az.self, c) == 0);
+	expired_calls = 0;
+	auth_tick(auth, clock_ms);
+	CHECK(expired_calls == 1);
+	close_conn(c);
+	c = open_conn("192.0.2.95", NULL);
+	CHECK(resume(c, &k, &p) == AUTH_FAILED);
+	close_conn(c);
+	teardown();
+}
+
+static void test_resume_revoked(void)
+{
+	setup();
+	AuthProof p;
+	/* Two tabs: b resumes a's chain; a's activity keeps the chain alive,
+	 * a's logout ends it. */
+	AuthConn *a = open_conn("192.0.2.96", NULL);
+	Kept k;
+	login_keep(a, "alice", "pencil", &k);
+	AuthConn *b = open_conn("192.0.2.96", NULL);
+	CHECK(resume(b, &k, &p) == AUTH_OK);
+	close_conn(b);
+	uint64_t t0 = clock_ms;
+	clock_ms = t0 + IDLE_S * 1000u - 1;
+	az.ops->activity(az.self, a);
+	clock_ms = t0 + IDLE_S * 1000u + 5000;
+	CHECK(az.ops->capabilities_for(az.self, a) != 0);
+	az.ops->revoke_secret(az.self, a);
+	b = open_conn("192.0.2.96", NULL);
+	CHECK(resume(b, &k, &p) == AUTH_FAILED);
+	close_conn(b);
+	close_conn(a);
+
+	/* A password change or the user's removal ends the user's entries
+	 * (checked at the next challenge); other users' stay. */
+	a = open_conn("192.0.2.97", NULL);
+	login_keep(a, "alice", "pencil", &k);
+	close_conn(a);
+	Kept v;
+	a = open_conn("192.0.2.97", NULL);
+	login_keep(a, "victor", "seeing", &v);
+	close_conn(a);
+	CHECK(users_passwd(&users, "alice", "crayon", 6, ITERATIONS, fake_random) == USERS_OK);
+	a = open_conn("192.0.2.97", NULL);
+	CHECK(resume(a, &k, &p) == AUTH_FAILED);
+	CHECK(resume(a, &v, &p) == AUTH_OK);
+	close_conn(a);
+	CHECK(users_remove(&users, "victor") == USERS_OK);
+	a = open_conn("192.0.2.98", NULL);
+	CHECK(resume(a, &v, &p) == AUTH_FAILED);
+	close_conn(a);
+	teardown();
+}
+
+static void test_resume_table(void)
+{
+	setup();
+	AuthProof p;
+	/* HAKKAS_AUTH_RESUME_MAX entries; a new one evicts the least recently
+	 * used (activity counts as use). */
+	Kept k[HAKKAS_AUTH_RESUME_MAX + 1];
+	AuthConn *c[HAKKAS_AUTH_RESUME_MAX + 1];
+	for (int i = 0; i < HAKKAS_AUTH_RESUME_MAX; i++) {
+		c[i] = open_conn("192.0.2.99", NULL);
+		login_keep(c[i], "alice", "pencil", &k[i]);
+	}
+	az.ops->activity(az.self, c[0]);
+	c[HAKKAS_AUTH_RESUME_MAX] = open_conn("192.0.2.99", NULL);
+	login_keep(c[HAKKAS_AUTH_RESUME_MAX], "alice", "pencil", &k[HAKKAS_AUTH_RESUME_MAX]);
+	/* The evicted chain's session goes on. */
+	CHECK(az.ops->capabilities_for(az.self, c[1]) != 0);
+	for (int i = 0; i <= HAKKAS_AUTH_RESUME_MAX; i++)
+		close_conn(c[i]);
+	AuthConn *d = open_conn("192.0.2.100", NULL);
+	CHECK(resume(d, &k[1], &p) == AUTH_FAILED);
+	CHECK(resume(d, &k[0], &p) == AUTH_OK);
+	close_conn(d);
+	for (int i = 2; i <= HAKKAS_AUTH_RESUME_MAX; i++) {
+		d = open_conn("192.0.2.100", NULL);
+		CHECK(resume(d, &k[i], &p) == AUTH_OK);
+		close_conn(d);
+	}
+
+	/* A delayed resume challenge (back-off) stays a resume. */
+	const char *addr = "192.0.2.101";
+	fail_n(addr, AUTH_BACKOFF_AFTER);
+	d = open_conn(addr, NULL);
+	AuthChallenge ch;
+	CHECK(az.ops->challenge(az.self, d, "alice", cnonce_of(3), k[0].id, &ch) == AUTH_DELAYED);
+	challenge_calls = 0;
+	clock_ms += AUTH_BACKOFF_BASE_MS;
+	auth_tick(auth, clock_ms);
+	CHECK(challenge_calls == 1 && delivered.resume && delivered.salt[0] == '\0');
+	char proof[64], sig[64];
+	resume_proof("alice", k[0].id, k[0].key, delivered.nonce, proof, sig);
+	CHECK(az.ops->verify_proof(az.self, d, "alice", delivered.nonce, k[0].id, proof, &p) ==
+	      AUTH_OK);
+	CHECK_STREQ(p.server_signature, sig);
+	close_conn(d);
+	teardown();
+}
+
 /* ---- Logging (02 §2.5 item 8) ------------------------------------------------------ */
 
 /* logs does not contain the text (nor, if base64, its first 12 characters). */
@@ -872,17 +1161,17 @@ static void test_logging(void)
 	logs[0] = '\0';
 	AuthConn *c = open_conn("192.0.2.70", NULL);
 	AuthChallenge ch, bad;
-	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(8), &ch) == AUTH_OK);
+	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(8), NULL, &ch) == AUTH_OK);
 	char proof[64], sig[64], wrong[64], sig2[64];
 	client_proof("alice", "pencil", &ch, proof, sig);
 	AuthProof p;
-	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, proof, &p) == AUTH_OK);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_OK);
 	char secret[AUTH_SECRET_SIZE];
-	CHECK(az.ops->issue_secret(az.self, c, secret));
+	CHECK(az.ops->issue_secret(az.self, c, secret, rid));
 	az.ops->revoke_secret(az.self, c);
-	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(9), &bad) == AUTH_OK);
+	CHECK(az.ops->challenge(az.self, c, "alice", cnonce_of(9), NULL, &bad) == AUTH_OK);
 	client_proof("alice", "pencil-wrong", &bad, wrong, sig2);
-	CHECK(az.ops->verify_proof(az.self, c, "alice", bad.nonce, wrong, &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, c, "alice", bad.nonce, NULL, wrong, &p) == AUTH_FAILED);
 	CHECK(login(c, "alice", "pencil", NULL));
 	clock_ms += IDLE_S * 1000u;
 	auth_tick(auth, clock_ms);
@@ -913,7 +1202,8 @@ static void test_logging(void)
 	/* A name that is not valid is not logged as such. */
 	logs[0] = '\0';
 	AuthConn *d = open_conn("192.0.2.71", NULL);
-	CHECK(az.ops->verify_proof(az.self, d, "evil\nwarn forged", "n", "p", &p) == AUTH_FAILED);
+	CHECK(az.ops->verify_proof(az.self, d, "evil\nwarn forged", "n", NULL, "p", &p) ==
+	      AUTH_FAILED);
 	CHECK(strstr(logs, "forged") == NULL && strstr(logs, "(invalid name)") != NULL);
 	close_conn(d);
 	teardown();
@@ -952,11 +1242,11 @@ static void test_create(void)
 	Authorizer x = auth_authorizer(a);
 	AuthConn *c = x.ops->open(x.self, "192.0.2.80", NULL, NULL);
 	AuthChallenge ch;
-	CHECK(x.ops->challenge(x.self, c, "alice", cnonce_of(1), &ch) == AUTH_OK);
+	CHECK(x.ops->challenge(x.self, c, "alice", cnonce_of(1), NULL, &ch) == AUTH_OK);
 	char proof[64], sig[64];
 	client_proof("alice", "pencil", &ch, proof, sig);
 	AuthProof p;
-	CHECK(x.ops->verify_proof(x.self, c, "alice", ch.nonce, proof, &p) == AUTH_FAILED);
+	CHECK(x.ops->verify_proof(x.self, c, "alice", ch.nonce, NULL, proof, &p) == AUTH_FAILED);
 	x.ops->close(x.self, c);
 	auth_destroy(a);
 }
@@ -976,6 +1266,10 @@ int main(void)
 	RUN(test_connection_close);
 	RUN(test_backoff);
 	RUN(test_lru);
+	RUN(test_resume);
+	RUN(test_resume_lifetime);
+	RUN(test_resume_revoked);
+	RUN(test_resume_table);
 	RUN(test_logging);
 	RUN(test_create);
 	log_remove_sink(log_sink, NULL);

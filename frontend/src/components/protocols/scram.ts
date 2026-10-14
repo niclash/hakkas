@@ -19,6 +19,11 @@ export interface LoginProof {
     serverSignature: string;    // base64, expected in the login reply
 }
 
+export interface PasswordProof extends LoginProof {
+    // The key that resumes the session (02 §2.3.1); it is never sent.
+    resumeKey: Uint8Array;
+}
+
 export function toBase64(bytes: Uint8Array): string {
     let s = "";
     for (const b of bytes)
@@ -39,7 +44,7 @@ export function clientNonce(): string {
     return toBase64(randomBytes(18));
 }
 
-export async function computeProof(user: string, password: string, challenge: Challenge): Promise<LoginProof> {
+export async function computeProof(user: string, password: string, challenge: Challenge): Promise<PasswordProof> {
     const salted = await pbkdf2Async(sha256, utf8ToBytes(password), fromBase64(challenge.salt),
         {c: challenge.iterations, dkLen: 32});
     const clientKey = hmac(sha256, salted, utf8ToBytes("Client Key"));
@@ -51,10 +56,21 @@ export async function computeProof(user: string, password: string, challenge: Ch
     const proof = new Uint8Array(32);
     for (let i = 0; i < 32; i++)
         proof[i] = clientKey[i] ^ clientSignature[i];
+    const resumeKey = hmac(sha256, storedKey, utf8ToBytes("Resume Key," + challenge.nonce));
     salted.fill(0);
     clientKey.fill(0);
     return {
         proof: toBase64(proof),
         serverSignature: toBase64(hmac(sha256, serverKey, authMessage)),
+        resumeKey,
+    };
+}
+
+// A resume's proof (02 §2.3.1): no key stretching, the resume key signs user, nonce and id.
+export function computeResumeProof(user: string, nonce: string, id: string, resumeKey: Uint8Array): LoginProof {
+    const authMessage = user + "," + nonce + "," + id;
+    return {
+        proof: toBase64(hmac(sha256, resumeKey, utf8ToBytes(authMessage))),
+        serverSignature: toBase64(hmac(sha256, resumeKey, utf8ToBytes("Server," + authMessage))),
     };
 }

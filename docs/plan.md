@@ -640,7 +640,7 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   load, save, a failed save, a new process, and a restart that keeps a running process saved.
   Also fixed: `test_cli`'s `run process` step used the default port 8080 and failed whenever
   another engine was running there.
-- [ ] **46. Resuming a session** (02 §2.3.1): the resume table in the authorizer (bounded, LRU,
+- [x] **46. Resuming a session** (02 §2.3.1): the resume table in the authorizer (bounded, LRU,
   checked against the users file at the challenge), the `resume` member of the login reply, the
   `resume` variants of `environment:challenge`/`login`, rotation, expiry with the chain's idle
   timeout and lifetime, revocation at logout, failures counted for the rate limits; logging
@@ -648,6 +648,9 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   `localStorage`, resume on load before showing the login, forget it at logout or when a resume
   fails. Unit tests (the derivation against an independent implementation, 06 §6), protocol
   tests, and an end-to-end test that a reload stays logged in.
+  Decisions made while implementing it are in 02 §2.3.1 (the chain keeps one key; a failed
+  resume does not end the entry) and 06 §2 (a failed resume shows the login form without an
+  error). The theme end-to-end test now logs out before its reload, which would resume.
 - [ ] **47. Block types** (03 §3): remove `math/And2`, `Or2`, `Xor`, `And4`, `Or4`; rename the
   comparisons to `compare/*` with the `math/*` names accepted as aliases by the graph and type
   file loaders (a save writes the new name); update 03's table, `describe`, the tests, and the

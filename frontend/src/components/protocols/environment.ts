@@ -1,21 +1,34 @@
 import {Connection} from "@/components/protocols/websocket";
-import {Challenge, clientNonce, computeProof} from "@/components/protocols/scram";
+import {Challenge, clientNonce, computeProof, computeResumeProof} from "@/components/protocols/scram";
+import {KeptSession} from "@/session";
 
 export interface OnLogin {
     secret: string;
     role: string;
     capabilities: string[];
+    // What resumes this session (02 §2.3.1); absent if the server issued no resume id.
+    resume?: KeptSession;
+}
+
+interface Pending {
+    user: string;
+    cnonce: string;
+    password: string;           // a password login; "" once the proof is computed
+    resume?: KeptSession;       // a resume
+    serverSignature?: string;
+    resumeKey?: Uint8Array;
 }
 
 export interface OnLoginFailed {
     message: string;
 }
 
-// The challenge-response login of specifications/02-wire-protocol.md §2.3. A server refusal
-// arrives as network:error "Login failed", which the network protocol reports.
+// The challenge-response login of specifications/02-wire-protocol.md §2.3, and resuming a
+// session (§2.3.1). A server refusal arrives as network:error "Login failed", which the network
+// protocol reports.
 export class EnvironmentProtocol {
     private connection: Connection;
-    private pending: { user: string, password: string, cnonce: string, serverSignature?: string } | undefined;
+    private pending: Pending | undefined;
     listeners: {
         onLogin: Function[],
         onLoginFailed: Function[],
@@ -69,6 +82,21 @@ export class EnvironmentProtocol {
         });
     }
 
+    // Resumes a kept session (02 §2.3.1); its id is used up whatever the outcome.
+    request_resume(session: KeptSession) {
+        const cnonce = clientNonce();
+        this.pending = {user: session.user, password: "", cnonce: cnonce, resume: session};
+        this.connection.send({
+            protocol: "environment",
+            command: "challenge",
+            payload: {
+                user: session.user,
+                cnonce: cnonce,
+                resume: session.id
+            }
+        });
+    }
+
     request_logout() {
         this.connection.send({
             protocol: "environment",
@@ -88,6 +116,23 @@ export class EnvironmentProtocol {
             this.failed("Unexpected login challenge");
             return;
         }
+        if (pending.resume !== undefined) {
+            const session = pending.resume;
+            const result = computeResumeProof(session.user, payload.nonce, session.id, session.key);
+            pending.serverSignature = result.serverSignature;
+            pending.resumeKey = session.key;
+            this.connection.send({
+                protocol: "environment",
+                command: "login",
+                payload: {
+                    user: session.user,
+                    nonce: payload.nonce,
+                    resume: session.id,
+                    proof: result.proof
+                }
+            });
+            return;
+        }
         let result;
         try {
             result = await computeProof(pending.user, pending.password, payload);
@@ -99,6 +144,7 @@ export class EnvironmentProtocol {
             return;     // abandoned meanwhile
         pending.password = "";
         pending.serverSignature = result.serverSignature;
+        pending.resumeKey = result.resumeKey;
         this.connection.send({
             protocol: "environment",
             command: "login",
@@ -119,6 +165,8 @@ export class EnvironmentProtocol {
             return;
         }
         const login: OnLogin = {secret: payload.secret, role: payload.role, capabilities: payload.capabilities};
+        if (typeof payload.resume === "string" && pending.resumeKey !== undefined)
+            login.resume = {user: pending.user, id: payload.resume, key: pending.resumeKey};
         for (let fn of this.listeners.onLogin) {
             fn(this.connection, login);
         }

@@ -171,7 +171,7 @@ Implementation decisions (plan task 16, `src/protocol/auth.h`):
 
 **Browser note**: `crypto.subtle` (WebCrypto) is only available in secure contexts (HTTPS or `localhost`). On a plain `http://<device-ip>` page the frontend must bundle a small JavaScript SHA-256/HMAC/PBKDF2 implementation. With a pure-JS PBKDF2, the frontend should expect `iterations` in the 10⁴–10⁵ range to take on the order of a second.
 
-### 2.3.1 Resuming a session (decided 2026-10-14 with the user; **not implemented yet**, plan task 46)
+### 2.3.1 Resuming a session (decided 2026-10-14 with the user; implemented in plan task 46)
 
 A protocol addition (`00-README.md` "Protocol compatibility policy") so that reloading the page does not ask for the password again (`06-frontend.md` §2). It keeps the threat model of §2.1: nothing sent on the wire lets an eavesdropper resume a session.
 
@@ -180,6 +180,14 @@ A protocol addition (`00-README.md` "Protocol compatibility policy") so that rel
 - **Validity**: an entry lasts as long as the session it came from could have — the idle timeout counted from the last activity of any session in its chain, the maximum lifetime from the password login (§2.5 item 3). `environment:logout` ends it (the client also forgets it); so does a password change or the user's removal (the entry is checked against the user's current `stored_key` when the users file is read for the challenge, §2.2). Entries live in memory: an engine restart ends them all, as it ends every session.
 - **Failures** are `"Login failed"` and count as failed logins for the rate limits (§2.5 item 7). The table is bounded (default 16 entries, a per-build override; the least recently used is evicted).
 - The existing session of another tab is not affected: sessions stay per connection; only the resume id moves on.
+
+Implementation decisions (plan task 46, `src/protocol/auth.h`):
+- **The wire**: the login reply's `resume` is its last member, after `server_signature`; the resume challenge's reply is `{"nonce"}` alone. An absent or `null` `resume` is a password login. Any other non-string `resume` in a challenge is refused with `"Login failed"` (not counted); in a login it counts as a wrong one. A resume login must answer a resume challenge with the same id, and a password login a password challenge; otherwise it fails and counts.
+- **A chain** is a password login and the sessions resumed from it; it has one entry. A resume replaces the entry's id with a new one and keeps the **same key**: the browser keeps only `ResumeKey`, not `StoredKey`, so it could not derive a new one, and the used id is dead anyway. Every session of the chain has the password login as its start, so the maximum lifetime counts from it; any session's client message counts as the chain's activity for the idle timeout. A `logout` from any session of the chain ends the entry; closing a connection (a reload) does not.
+- **The id** must be the base64url of 16 bytes (22 characters), else the challenge is refused (`"Login failed"`, not counted, like a malformed `cnonce`); a well-formed id that is unknown, expired, or another user's gets a normal challenge, and its login fails after the same hashing as a right one. A **failed resume does not end the entry**: an id is seen on the wire, so otherwise anyone could end someone's chain.
+- **The role** of a resumed session is the user's role in the users file as read for its challenge (§2.2), so a role change applies at the next resume. Every entry is checked at each challenge (password or resume) against the users file then read: an entry whose user is gone or whose `stored_key` differs is ended.
+- **The table** holds `HAKKAS_AUTH_RESUME_MAX` entries (default 16, a per-build override, about 150 bytes each); a new entry evicts the least recently used (activity counts as use). An evicted chain's open sessions go on; only resuming it fails.
+- **Logging** (§2.5 item 8): a resumed login logs `login: user '<name>' from <address> as <role> (resumed)`; a failed resume logs as a failed login. Never an id or a key.
 
 ### 2.4 Roles and capabilities
 
@@ -209,7 +217,7 @@ Implementation decisions (plan task 16, `auth_command_rule`/`auth_permits` in `s
 5. **Secret gating**: every message except `environment:challenge`, `environment:login`, and `runtime:getruntime` must carry the connection's current secret. An invalid, expired, or missing secret → `network:error` `"Not authenticated"`. The submitted value is never echoed back.
 6. **Event delivery requires authentication**: graph-change broadcasts, `network:data`, and log mirroring are only delivered to `AUTHENTICATED` connections. There is no passive, pre-login event stream.
 7. **Rate limiting**: a connection is closed after 3 failed logins. Per source address, consecutive failures trigger exponential back-off: after the 5th failure, further challenges from that address are delayed 1 s, doubling up to 60 s, and the counter resets after a success or 15 min of quiet. The table is bounded (default 16 addresses, least-recently-used eviction) so memory use is fixed on the MCU.
-8. **Logging**: never log secrets, proofs, nonces, salts, or passwords. Log the fact of a login success or failure with the user name and source address only.
+8. **Logging**: never log secrets, proofs, nonces, salts, passwords, resume ids or resume keys (§2.3.1). Log the fact of a login success or failure with the user name and source address only.
 9. **TLS (optional, default off)**: Zephyr ships TLS through its mbedTLS integration (TLS socket options in its socket API), and on POSIX OpenSSL/mbedTLS is available, so no custom TLS is needed. When `tls.enabled` is set, both ports serve TLS (`https://` / `wss://`) using a certificate and key from the configuration directory. It is off by default because of the RAM cost on the MCU and the browser warnings a self-signed LAN certificate causes. The handshake above is designed to stay safe without it. Not implemented yet (plan task 14, §0): with `tls.enabled` set the engine refuses to start. Without TLS, an eavesdropper can still see the traffic after login (graph contents, values), but can't recover the password or reuse the session.
 10. **Testability**: the authorization component is a small module behind an interface (`challenge`, `verify_proof`, `issue_secret`, `validate_secret`, `revoke_secret`, `capabilities_for`), so protocol-handler tests can substitute a fake implementation. Integration tests that need the real flow use a deliberately provisioned test users file, never a credential compiled into the build.
 

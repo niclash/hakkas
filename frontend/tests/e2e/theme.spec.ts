@@ -25,6 +25,9 @@ test("the selector lists the installed themes and switches at once", async ({pag
 test("the choice is kept in the browser, also on the login screen", async ({page, engine}) => {
     await loggedIn(page, engine.url);
     await page.getByTestId("theme").selectOption("dark");
+    // Logged out, so the reload shows the login screen (it would resume the session, 06 §2).
+    await page.getByTestId("logout").click();
+    await expect(page.locator("#user")).toBeVisible();
     await page.reload();
     await expect(page.locator("#user")).toBeVisible();
     expect(await themeHref(page)).toBe("/themes/dark.css");

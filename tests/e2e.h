@@ -136,6 +136,11 @@ typedef struct {
 	uint16_t close_code; /* its status code (0: none) */
 	unsigned pongs;	     /* pong frames received (skipped by e2e_recv) */
 	char secret[64];     /* the session's secret after e2e_login ("" before) */
+	/* What a browser keeps to resume the session (02 §2.3.1), after a
+	 * login or a resume: the user, the resume id and the ResumeKey. */
+	char user[40];
+	char resume[40];
+	uint8_t resume_key[32];
 	char *text;	     /* the last message received (e2e_recv) */
 	uint8_t *frame;	     /* its whole frame, header included */
 	size_t frame_len;
@@ -230,6 +235,11 @@ bool e2e_login_password(E2eClient *c, const char *user, const char *password);
 
 /* e2e_login_password with E2E_PASSWORD. */
 bool e2e_login(E2eClient *c, const char *user);
+
+/* Resumes (02 §2.3.1) on c the session that from keeps (its user, resume
+ * id and key): true with c->secret and what c keeps set (the server
+ * signature checked); false with the reply in c->text. */
+bool e2e_resume(E2eClient *c, const E2eClient *from);
 
 /* ---- Checks with the caller's line ------------------------------------------------ */
 

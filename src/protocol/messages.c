@@ -151,18 +151,21 @@ char *proto_msg_logout(void)
 char *proto_msg_challenge(const AuthChallenge *ch)
 {
 	cJSON *p = object();
-	bool ok = p != NULL && add_str(p, "salt", ch->salt) &&
-		  add_num(p, "iterations", ch->iterations) && add_str(p, "nonce", ch->nonce);
+	bool ok = p != NULL;
+	if (!ch->resume) /* a resume has no key stretching (02 §2.3.1) */
+		ok = ok && add_str(p, "salt", ch->salt) && add_num(p, "iterations", ch->iterations);
+	ok = ok && add_str(p, "nonce", ch->nonce);
 	return finish("environment", "challenge", p, ok);
 }
 
-char *proto_msg_login(const char *secret, const AuthProof *proof)
+char *proto_msg_login(const char *secret, const char *resume, const AuthProof *proof)
 {
 	cJSON *p = object();
 	bool ok = p != NULL && add_str(p, "secret", secret) &&
 		  add_str(p, "role", users_role_name(proof->role)) &&
 		  add(p, "capabilities", proto_msg_capabilities(proof->capabilities)) &&
-		  add_str(p, "server_signature", proof->server_signature);
+		  add_str(p, "server_signature", proof->server_signature) &&
+		  add_str(p, "resume", resume);
 	return finish("environment", "login", p, ok);
 }
 

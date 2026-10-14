@@ -178,6 +178,7 @@ static struct {
 	int activity;
 	int opens, closes;
 	bool saw_null_user, saw_null_cnonce, saw_null_nonce, saw_null_proof;
+	char saw_resume[32]; /* "(null)" for NULL */
 	int secrets;
 } fake;
 
@@ -209,13 +210,15 @@ static void fa_activity(void *self, AuthConn *c)
 }
 
 static enum auth_result fa_challenge(void *self, AuthConn *c, const char *user, const char *cnonce,
-				     AuthChallenge *out)
+				     const char *resume, AuthChallenge *out)
 {
 	(void)self;
 	(void)c;
 	fake.saw_null_user = user == NULL;
 	fake.saw_null_cnonce = cnonce == NULL;
+	snprintf(fake.saw_resume, sizeof(fake.saw_resume), "%s", resume ? resume : "(null)");
 	if (fake.challenge_result == AUTH_OK) {
+		out->resume = resume != NULL;
 		snprintf(out->salt, sizeof(out->salt), "c2FsdHNhbHRzYWx0c2FsdA==");
 		out->iterations = 4096;
 		snprintf(out->nonce, sizeof(out->nonce), "%sSERVER", cnonce ? cnonce : "");
@@ -224,10 +227,11 @@ static enum auth_result fa_challenge(void *self, AuthConn *c, const char *user, 
 }
 
 static enum auth_result fa_verify(void *self, AuthConn *c, const char *user, const char *nonce,
-				  const char *proof, AuthProof *out)
+				  const char *resume, const char *proof, AuthProof *out)
 {
 	(void)self;
 	(void)c;
+	snprintf(fake.saw_resume, sizeof(fake.saw_resume), "%s", resume ? resume : "(null)");
 	fake.saw_null_user = user == NULL;
 	fake.saw_null_nonce = nonce == NULL;
 	fake.saw_null_proof = proof == NULL;
@@ -239,11 +243,13 @@ static enum auth_result fa_verify(void *self, AuthConn *c, const char *user, con
 	return fake.verify_result;
 }
 
-static bool fa_issue(void *self, AuthConn *c, char out[AUTH_SECRET_SIZE])
+static bool fa_issue(void *self, AuthConn *c, char out[AUTH_SECRET_SIZE],
+		     char resume[AUTH_RESUME_SIZE])
 {
 	(void)self;
 	if (!fake.issue_ok)
 		return false;
+	snprintf(resume, AUTH_RESUME_SIZE, "resume%d", fake.secrets);
 	c->authenticated = true;
 	c->expired = false;
 	c->caps = auth_role_capabilities(fake.role);
@@ -700,12 +706,30 @@ static void test_login_flow(void)
 	CHECK(fake.saw_null_user && fake.saw_null_cnonce);
 	expect_error(&f, "Login failed");
 
+	/* A resume (02 §2.3.1): the id reaches the authorizer, the reply has
+	 * only the nonce; a mistyped id is refused without asking it. */
+	fake.challenge_result = AUTH_OK;
+	command(&f, "environment", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
+	CHECK_STREQ(fake.saw_resume, "(null)");
+	clear(&f);
+	command(&f, "environment", "challenge",
+		"{'user':'alice','cnonce':'Y25vbmNl','resume':'aWQ'}", "");
+	CHECK_STREQ(fake.saw_resume, "aWQ");
+	expect_one(&f, "{'protocol':'environment','command':'challenge','payload':"
+		       "{'nonce':'Y25vbmNlSERVER'}}");
+	fake.saw_resume[0] = '\0';
+	command(&f, "environment", "challenge",
+		"{'user':'alice','cnonce':'Y25vbmNl','resume':5}", "");
+	CHECK_STREQ(fake.saw_resume, "");
+	expect_error(&f, "Login failed");
+	fake.challenge_result = AUTH_FAILED;
+
 	/* Delayed: nothing now; the callback replies later. */
 	fake.challenge_result = AUTH_DELAYED;
 	command(&f, "environment", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
 	CHECK(f.count == 0);
 	AuthConn *ac = auth_of(&f);
-	AuthChallenge ch = {"c2FsdA==", 7, "Y25vbmNlX"};
+	AuthChallenge ch = {false, "c2FsdA==", 7, "Y25vbmNlX"};
 	ac->events->on_challenge(ac->user, &ch);
 	expect_one(&f, "{'protocol':'environment','command':'challenge','payload':"
 		       "{'salt':'c2FsdA==','iterations':7,'nonce':'Y25vbmNlX'}}");
@@ -716,12 +740,13 @@ static void test_login_flow(void)
 	fake.role = USER_ROLE_OPERATOR;
 	command(&f, "environment", "login", "{'user':'alice','nonce':'n','proof':'p'}", "");
 	CHECK(!fake.saw_null_user && !fake.saw_null_nonce && !fake.saw_null_proof);
+	CHECK_STREQ(fake.saw_resume, "(null)");
 	CHECK(f.count == 1);
 	CHECK_STREQ(msg(&f, 0),
 		    "{\"protocol\":\"environment\",\"command\":\"login\",\"payload\":{\"secret\":"
 		    "\"secret0\",\"role\":\"operator\",\"capabilities\":[\"protocol:component\","
 		    "\"graph:readonly\",\"network:status\",\"network:data\",\"network:control\"],"
-		    "\"server_signature\":\"c2lnbmF0dXJl\"}}");
+		    "\"server_signature\":\"c2lnbmF0dXJl\",\"resume\":\"resume0\"}}");
 	clear(&f);
 	CHECK(fa_caps(NULL, ac) != 0);
 
@@ -741,6 +766,15 @@ static void test_login_flow(void)
 	fake.verify_result = AUTH_FAILED;
 	command(&f, "environment", "login", "{'nonce':7}", "");
 	CHECK(fake.saw_null_user && fake.saw_null_nonce && fake.saw_null_proof);
+	expect_error(&f, "Login failed");
+	/* A resume's id reaches the authorizer; a mistyped one as "" (wrong). */
+	command(&f, "environment", "login",
+		"{'user':'alice','nonce':'n','resume':'aWQ','proof':'p'}", "");
+	CHECK_STREQ(fake.saw_resume, "aWQ");
+	expect_error(&f, "Login failed");
+	command(&f, "environment", "login",
+		"{'user':'alice','nonce':'n','resume':[],'proof':'p'}", "");
+	CHECK_STREQ(fake.saw_resume, "");
 	expect_error(&f, "Login failed");
 	CHECK(!f.closed);
 	/* The third failure closes with 1008 after the reply. */

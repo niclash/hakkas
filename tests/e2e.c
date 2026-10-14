@@ -796,6 +796,54 @@ bool e2e_login_password(E2eClient *c, const char *user, const char *password)
 	snprintf(c->secret, sizeof(c->secret), "%s", e2e_payload_str(reply, "secret"));
 	CHECK_STREQ(e2e_payload_str(reply, "server_signature"), ssig64);
 	CHECK(strlen(c->secret) == AUTH_SECRET_LEN);
+	/* ResumeKey = HMAC(StoredKey, "Resume Key," + nonce). */
+	snprintf(c->user, sizeof(c->user), "%s", user);
+	snprintf(c->resume, sizeof(c->resume), "%s", e2e_payload_str(reply, "resume"));
+	CHECK(strlen(c->resume) == AUTH_RESUME_LEN);
+	snprintf(am, sizeof(am), "Resume Key,%s", nonce);
+	CHECK(crypto_hmac_sha256(stored, 32, am, strlen(am), c->resume_key));
+	return true;
+}
+
+bool e2e_resume(E2eClient *c, const E2eClient *from)
+{
+	char payload[512];
+	snprintf(payload, sizeof(payload),
+		 "{'user':'%s','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg==','resume':'%s'}", from->user,
+		 from->resume);
+	e2e_send_secret(c, "environment", "challenge", payload, "");
+	const char *reply = e2e_recv(c);
+	if (!e2e_match(reply, "environment", "challenge", "{'nonce':'*'}"))
+		return false;
+	char nonce[256];
+	snprintf(nonce, sizeof(nonce), "%s", e2e_payload_str(reply, "nonce"));
+	CHECK(strncmp(nonce, "MDEyMzQ1Njc4OWFiY2RlZg==", 24) == 0 && strlen(nonce) == 48);
+
+	char am[512];
+	uint8_t mac[32];
+	char proof64[64], ssig64[64];
+	snprintf(am, sizeof(am), "Server,%s,%s,%s", from->user, nonce, from->resume);
+	CHECK(crypto_hmac_sha256(from->resume_key, 32, am + 7, strlen(am + 7), mac));
+	crypto_base64_encode(mac, 32, proof64, sizeof(proof64));
+	CHECK(crypto_hmac_sha256(from->resume_key, 32, am, strlen(am), mac));
+	crypto_base64_encode(mac, 32, ssig64, sizeof(ssig64));
+	snprintf(payload, sizeof(payload), "{'user':'%s','nonce':'%s','resume':'%s','proof':'%s'}",
+		 from->user, nonce, from->resume, proof64);
+	e2e_send_secret(c, "environment", "login", payload, "");
+	reply = e2e_recv(c);
+	if (!is_cmd(reply, "environment", "login"))
+		return false;
+	snprintf(c->secret, sizeof(c->secret), "%s", e2e_payload_str(reply, "secret"));
+	CHECK_STREQ(e2e_payload_str(reply, "server_signature"), ssig64);
+	CHECK(strlen(c->secret) == AUTH_SECRET_LEN);
+	char next[40];
+	snprintf(next, sizeof(next), "%s", e2e_payload_str(reply, "resume"));
+	CHECK(strlen(next) == AUTH_RESUME_LEN && strcmp(next, from->resume) != 0);
+	uint8_t key[32];
+	memcpy(key, from->resume_key, sizeof(key)); /* from may be c */
+	snprintf(c->user, sizeof(c->user), "%s", from->user);
+	memcpy(c->resume, next, sizeof(next));
+	memcpy(c->resume_key, key, sizeof(key));
 	return true;
 }
 

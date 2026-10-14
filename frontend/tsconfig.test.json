@@ -5,6 +5,7 @@
     "src/components/protocols/**/*.ts",
     "src/components/model.ts",
     "src/theme.ts",
+    "src/session.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

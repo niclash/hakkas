@@ -168,7 +168,7 @@ static void test_login(void)
 	CHECK(e2e_login(&c, "alice"));
 	CHECK(e2e_match(c.text, "environment", "login",
 			"{'secret':'*','role':'editor','capabilities':" EDITOR_CAPS
-			",'server_signature':'*'}"));
+			",'server_signature':'*','resume':'*'}"));
 	/* A challenge on an authenticated connection: "Login failed". */
 	e2e_send_secret(&c, "environment", "challenge",
 			"{'user':'alice','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg=='}", "");
@@ -179,15 +179,56 @@ static void test_login(void)
 	CHECK(e2e_connect(&c) && e2e_login(&c, "oscar"));
 	CHECK(e2e_match(c.text, "environment", "login",
 			"{'secret':'*','role':'operator','capabilities':" OPERATOR_CAPS
-			",'server_signature':'*'}"));
+			",'server_signature':'*','resume':'*'}"));
 	e2e_close(&c);
 	CHECK(e2e_connect(&c) && e2e_login(&c, "vera"));
 	CHECK(e2e_match(c.text, "environment", "login",
 			"{'secret':'*','role':'viewer','capabilities':" VIEWER_CAPS
-			",'server_signature':'*'}"));
+			",'server_signature':'*','resume':'*'}"));
 	/* environment's unknown commands: the generic error (not gated). */
 	e2e_send_secret(&c, "environment", "whoami", "{}", "");
 	EXPECT_ERROR(&c, "Unknown command: environment:whoami", NULL);
+	e2e_close(&c);
+}
+
+/* Resuming a session (02 §2.3.1): a reload logs in without the password. */
+static void test_resume(void)
+{
+	E2eClient first, resumed, c;
+	CHECK(e2e_connect(&first) && e2e_login(&first, "oscar"));
+	E2eClient kept = first;
+	e2e_close(&first);
+	/* A new connection: the operator's session again, with a new id. */
+	CHECK(e2e_connect(&resumed) && e2e_resume(&resumed, &kept));
+	CHECK(e2e_match(resumed.text, "environment", "login",
+			"{'secret':'*','role':'operator','capabilities':" OPERATOR_CAPS
+			",'server_signature':'*','resume':'*'}"));
+	CHECK(strstr(e2e_logs(), "login: user 'oscar' from 127.0.0.1 as operator (resumed)") !=
+	      NULL);
+	CHECK(strstr(e2e_logs(), kept.resume) == NULL);
+	CHECK(strstr(e2e_logs(), resumed.resume) == NULL);
+	/* Authenticated, as an operator. */
+	e2e_send_secret(&resumed, "graph", "addnode", "{}", resumed.secret);
+	EXPECT_ERROR(&resumed, "Not permitted: graph:addnode", NULL);
+	/* The old id is used up; a wrong key fails too ("Login failed"). */
+	CHECK(e2e_connect(&c));
+	CHECK(!e2e_resume(&c, &kept));
+	CHECK(e2e_match(c.text, "network", "error", "{'stack':'','message':'Login failed'}"));
+	E2eClient wrong = resumed;
+	wrong.resume_key[0] ^= 1;
+	CHECK(!e2e_resume(&c, &wrong));
+	CHECK(e2e_match(c.text, "network", "error", "{'stack':'','message':'Login failed'}"));
+	e2e_close(&c);
+	/* A logout ends the chain. */
+	kept = resumed;
+	e2e_send_secret(&resumed, "environment", "logout", "{}", resumed.secret);
+	CHECK(e2e_expect(&resumed, "environment", "logout", NULL));
+	e2e_close(&resumed);
+	CHECK(e2e_connect(&c));
+	CHECK(!e2e_resume(&c, &kept));
+	e2e_close(&c);
+	/* Succeed once, so the failures above delay no other test's login. */
+	CHECK(e2e_connect(&c) && e2e_login(&c, "oscar"));
 	e2e_close(&c);
 }
 
@@ -982,6 +1023,7 @@ int main(void)
 	}
 	RUN(test_login);
 	RUN(test_login_failed);
+	RUN(test_resume);
 	RUN(test_not_authenticated);
 	RUN(test_not_permitted);
 	RUN(test_logout);
