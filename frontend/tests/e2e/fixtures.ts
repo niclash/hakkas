@@ -37,6 +37,8 @@ export interface Engine {
     client(user?: TestUser): Promise<ProtocolClient>;
     // Stops the engine cleanly before the test ends (SIGINT).
     stop(): Promise<void>;
+    // Stops it and starts it again on the same ports, with the same files.
+    restart(): Promise<void>;
 }
 
 interface Options {
@@ -67,9 +69,8 @@ function graphFile(source: GraphSource): Record<string, unknown> {
     return typeof source === "string" ? JSON.parse(readFileSync(source, "utf8")) : source;
 }
 
-async function startEngine(dir: string): Promise<{ proc: ChildProcess, port: number, log: string[] }> {
-    const port = await freePortPair();
-    const log: string[] = [];
+async function startEngine(dir: string, port?: number, log: string[] = []): Promise<{ proc: ChildProcess, port: number, log: string[] }> {
+    port ??= await freePortPair();
     const proc = spawn(HAKKAS_BIN, [
         "--info", "--confdir", join(dir, "conf"), "--basedir", join(dir, "data"),
         "run", "--host", "127.0.0.1", "--port", String(port), "--webdir", DIST_DIR, "daemon",
@@ -125,7 +126,7 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
             writeFileSync(join(dir, "data", "graphs", graph.id + ".json"), JSON.stringify(graph));
         }
 
-        const {proc, port, log} = await startEngine(dir);
+        let {proc, port, log} = await startEngine(dir);
         const clients: ProtocolClient[] = [];
         await use({
             url: `http://127.0.0.1:${port}/`,
@@ -139,6 +140,11 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
             },
             stop: async () => {
                 await stopEngine(proc);
+            },
+            restart: async () => {
+                await stopEngine(proc);
+                log.length = 0;
+                ({proc} = await startEngine(dir, port, log));
             },
         });
         clients.forEach(c => c.close());

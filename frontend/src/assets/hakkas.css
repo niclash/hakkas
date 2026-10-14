@@ -122,6 +122,18 @@ h1, h2, h3 {
   font-weight: 600;
 }
 
+.hk-reconnecting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 16px 0;
+  padding: 6px 12px;
+  color: var(--hk-danger);
+  background: var(--hk-danger-bg);
+  border: var(--hk-border-width) solid var(--hk-danger);
+  border-radius: 8px;
+}
+
 .hk-role {
   font-size: 12px;
   color: var(--hk-text-muted);

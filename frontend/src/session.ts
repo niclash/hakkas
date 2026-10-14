@@ -46,3 +46,9 @@ export function forgetSession(storage?: SessionStorage) {
         // Nothing kept.
     }
 }
+
+// The wait before reconnecting attempt n (1, 2, …) after a lost connection (06 §2): 1, 2, 4, 8
+// and 16 seconds, then every 30 seconds.
+export function reconnectDelay(attempt: number): number {
+    return Math.min(1000 * 2 ** Math.max(0, attempt - 1), 30000);
+}

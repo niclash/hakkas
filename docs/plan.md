@@ -784,9 +784,12 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   a connection reached the input meanwhile, and leaving the field sent it again. The two
   browser tests that provoked refusals as a viewer now use an editor (a clip of an unknown
   type; a command held back while another client connects the input).
-- [ ] **39. Connection resilience**: reconnect after a lost connection with back-off, resuming
+- [x] **39. Connection resilience**: reconnect after a lost connection with back-off, resuming
   the session (task 46) rather than asking for the password, then reopen the process that was open and resend the watches (task 34).
   Dragging throttle for slow links if task 26 has not covered it.
+  Done (06 §2): the editor stays read-only with stale values while it reconnects (1–30 s
+  back-off), resuming the session; it is then rebuilt and reopens the process with its watches.
+  The dragging throttle was task 26's. The e2e fixture gained `restart()` (same ports).
 - [ ] **40. Addresses**: the open process in the URL (`/process/<id>`; the web server's SPA
   fallback serves it, 05 §3), so a process can be bookmarked and the browser's back button
   works; after login the URL's process opens.

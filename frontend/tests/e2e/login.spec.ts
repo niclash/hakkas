@@ -54,10 +54,14 @@ test.describe("with a short session", () => {
     });
 });
 
-test("a lost connection says so on the login screen", async ({page, engine}) => {
+test("while the engine is away the editor keeps trying; Logout gives up", async ({page, engine}) => {
     await loggedIn(page, engine.url);
     await engine.stop();
-    await expect(page.getByTestId("login-message")).toHaveText("The connection to the server was lost");
+    await expect(page.getByTestId("reconnecting")).toBeVisible();
+    await expect(page.getByTestId("reconnecting")).toContainText("attempt 2", {timeout: 8000});
+    await page.getByTestId("logout").click();
+    await expect(page.locator("#user")).toBeVisible();
+    await expect(page.getByTestId("login-message")).toHaveCount(0);
 });
 
 test("nothing secret reaches the browser's console", async ({page, engine}) => {
