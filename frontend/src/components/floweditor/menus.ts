@@ -6,7 +6,7 @@ import {InputSource} from "@/components/initials";
 
 // `watched`: whether the input (a block: any of its inputs) has its live value watched (06 §4.7).
 export type MenuTarget =
-    | { kind: "canvas", watchingAll?: boolean }
+    | { kind: "canvas", watchingAll?: boolean, canPaste?: boolean }
     | { kind: "block", id: string, selected: number, watched?: boolean }   // `selected`: blocks selected with it
     | { kind: "input", id: string, port: string, source: InputSource, watched?: boolean }
     | { kind: "value", id: string, port: string, watched?: boolean }       // a value node or its line (06 §4.3)
@@ -21,7 +21,7 @@ export type MenuAction =
     | "delete-connection"
     | "watch" | "unwatch" | "watch-inputs" | "unwatch-inputs" | "watch-all" | "unwatch-all"
     | "expose-input" | "expose-output" | "rename-port" | "remove-port"
-    | "create-composite";
+    | "create-composite" | "copy" | "duplicate" | "paste";
 
 export interface MenuItem {
     action: MenuAction;
@@ -37,6 +37,7 @@ export function menuFor(target: MenuTarget): MenuItem[] {
         case "canvas":
             return [
                 {action: "add-block", label: "Add block…"},
+                ...(target.canPaste ? [{action: "paste", label: "Paste here", shortcut: "Ctrl+V"} as MenuItem] : []),
                 {action: "select-all", label: "Select all", shortcut: "Ctrl+A"},
                 {action: "zoom-fit", label: "Zoom to fit"},
                 {action: "arrange", label: "Arrange blocks"},
@@ -51,6 +52,8 @@ export function menuFor(target: MenuTarget): MenuItem[] {
                 target.watched
                     ? {action: "unwatch-inputs", label: "Stop watching inputs"}
                     : {action: "watch-inputs", label: "Watch inputs"},
+                {action: "copy", label: target.selected > 1 ? `Copy ${target.selected} blocks` : "Copy", shortcut: "Ctrl+C"},
+                {action: "duplicate", label: "Duplicate", shortcut: "Ctrl+D"},
                 {action: "create-composite", label: target.selected > 1
                         ? `Create composite type from ${target.selected} blocks…` : "Create composite type…"},
                 target.selected > 1

@@ -8,18 +8,21 @@ const actions = (target: Parameters<typeof menuFor>[0]) => menuFor(target).map(i
 describe("menuFor", () => {
     it("the canvas", () => {
         expect(actions({kind: "canvas"})).toEqual(["add-block", "select-all", "zoom-fit", "arrange", "watch-all"]);
+        expect(actions({kind: "canvas", canPaste: true})).toEqual(["add-block", "paste", "select-all", "zoom-fit", "arrange", "watch-all"]);
         expect(actions({kind: "canvas", watchingAll: true})).toContain("unwatch-all");
     });
 
     it("a block, alone or in a selection", () => {
         expect(actions({kind: "block", id: "a", selected: 0}))
-            .toEqual(["rename", "edit-inputs", "watch-inputs", "create-composite", "delete-block"]);
+            .toEqual(["rename", "edit-inputs", "watch-inputs", "copy", "duplicate", "create-composite", "delete-block"]);
         expect(actions({kind: "block", id: "a", selected: 1, watched: true}))
-            .toEqual(["rename", "edit-inputs", "unwatch-inputs", "create-composite", "delete-block"]);
+            .toEqual(["rename", "edit-inputs", "unwatch-inputs", "copy", "duplicate", "create-composite", "delete-block"]);
         const many = menuFor({kind: "block", id: "a", selected: 3});
-        expect(many.map(i => i.action)).toEqual(["rename", "edit-inputs", "watch-inputs", "create-composite", "delete-selection"]);
-        expect(many[3].label).toBe("Create composite type from 3 blocks…");
-        expect(many[4].label).toBe("Delete 3 blocks");
+        expect(many.map(i => i.action))
+            .toEqual(["rename", "edit-inputs", "watch-inputs", "copy", "duplicate", "create-composite", "delete-selection"]);
+        expect(many[3].label).toBe("Copy 3 blocks");
+        expect(many[5].label).toBe("Create composite type from 3 blocks…");
+        expect(many[6].label).toBe("Delete 3 blocks");
     });
 
     it("an input, by what feeds it", () => {

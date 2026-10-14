@@ -17,6 +17,7 @@
     "src/components/processes.ts",
     "src/components/watches.ts",
     "src/components/composite.ts",
+    "src/components/clipboard.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

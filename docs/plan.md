@@ -767,10 +767,13 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   any block port can be ticked and named), opening a type from the palette, Save type, Delete
   type. Not yet: renaming a type or changing its description from the frontend; a type file's
   explicit port descriptions are not kept when the type is saved from its graph.
-- [ ] **37. Copy, paste, duplicate**: the selection with its inner connections and fixed values
+- [x] **37. Copy, paste, duplicate**: the selection with its inner connections and fixed values
   as a clipboard (in the page; also to the system clipboard as JSON), pasted into the same or
   another process as `addnode` + `addinitial` + `addedge` commands, with new names where
   taken and an offset position; each part appears as its event arrives.
+  Done (06 §4.10, `clipboard.ts`, `floweditor/copypaste.ts`): Ctrl+C/V through the browser's
+  copy/paste events (the system clipboard also on plain http), Ctrl+D and the menus' Copy,
+  Duplicate and Paste here; the pasted blocks are selected as they arrive.
 
 ### 5c. The application
 

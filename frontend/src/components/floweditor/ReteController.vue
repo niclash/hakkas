@@ -17,6 +17,7 @@ import {MenuAction, menuFor, MenuItem, MenuTarget} from "./menus";
 import {Point} from "@/components/watches";
 import ValueDraft from "./ValueDraft.vue";
 import CompositeDialog from "./CompositeDialog.vue";
+import {blockArrived, copySelection, duplicateSelection, hasClip, pasteClipAt, setupCopyPaste} from "./copypaste";
 import {Link, ProcessPort, SelBlock} from "@/components/composite";
 import {BLOCK_TYPE_MIME} from "@/components/palette";
 import {
@@ -143,6 +144,7 @@ const callbacks = {
       await editor.addNode(node);
       await editor.area.translate(node.id, payload.metadata);
       await placePorts(editor);
+      blockArrived(editor, payload.id, node.id);
       scheduleFit();
     } finally {
       endTransaction();
@@ -460,7 +462,7 @@ const openMenu = (event: MouseEvent, context: unknown) => {
   const where = {x: event.clientX - origin.left, y: event.clientY - origin.top, at: editor.pointAt(event.clientX, event.clientY)};
   let open: Omit<OpenMenu, "items" | "x" | "y" | "at"> | undefined;
   if (context === "root") {
-    open = {target: {kind: "canvas", watchingAll: live.all}};
+    open = {target: {kind: "canvas", watchingAll: live.all, canPaste: hasClip()}};
   } else if (context instanceof ValueNode) {
     const value = context as ValueNode;
     const input = {node: value.blockLabel, port: value.port};
@@ -617,6 +619,19 @@ const act = async (action: MenuAction) => {
     case "remove-port":
       if (m.target.kind === "port")
         graph()?.request_removeport(m.target.direction, m.target.name);
+      break;
+    case "copy":
+    case "duplicate":
+      // The selection, if the block is in it; else the block alone.
+      if (block !== undefined && !editor.blockSelection?.selection.has(block.id))
+        editor.blockSelection?.selection.set([block.id]);
+      if (action === "copy")
+        copySelection(editor);
+      else
+        duplicateSelection(editor);
+      break;
+    case "paste":
+      pasteClipAt(editor, m.at);
       break;
     case "create-composite": {
       // The selection, if the block is in it; else the block alone.
@@ -845,6 +860,7 @@ onMounted(() => {
   createEditor(rete.value!).then(() => {
     editor.onDrop = onDrop;
     attachLive(editor);
+    setupCopyPaste(editor);
     editor.onMenuKey = menuKey;
     editor.area.addPipe(context => {
       if (context.type === "contextmenu")
