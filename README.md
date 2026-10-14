@@ -82,6 +82,19 @@ default 1024).
 
 ## Running
 
+The quickest way to try the whole system — engine and frontend:
+
+```sh
+./build-debug.sh && ./dist-debug/run-debug.sh
+```
+
+`build-debug.sh` builds the debug engine and the frontend (it needs Node.js 18 or later) and
+puts them together in `dist-debug/` (not committed); `run-debug.sh` asks for a user to create
+on its first run, then serves `http://localhost:8080/` with the example process. Options of
+`run` are passed on (`./dist-debug/run-debug.sh --port 9000`), `LOG=--fine` sets the log
+level. A rebuild replaces `dist-debug/bin` and `dist-debug/web` and keeps `conf/` and `data/`.
+The sections below show what it does by hand.
+
 `hakkas run daemon` starts the engine with every graph saved in `<basedir>/graphs/`;
 `hakkas run process a.json:b.json` with the given graph files instead, and
 `hakkas run processes processes.json` with the processes of a process list: either a plain

@@ -14,3 +14,6 @@
 /.vscode/
 /.cache/
 /compile_commands.json
+
+# ./build-debug.sh output: the engine, the frontend, and their configuration and data
+/dist-debug/
