@@ -31,6 +31,9 @@
   --hk-node-selected: #1f66d1;
   --hk-socket: #6b7d90;
   --hk-socket-border: #ffffff;
+  --hk-socket-number: #2f6fbf;
+  --hk-socket-bool: #c46a00;
+  --hk-socket-string: #2e8b57;
   --hk-connection: #5679a3;
   --hk-minimap-bg: rgba(255, 255, 255, 0.9);
   --hk-minimap-node: #bfc8d2;

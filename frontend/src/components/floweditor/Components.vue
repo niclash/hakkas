@@ -1,40 +1,49 @@
 <template>
-  <section class="hk-panel">
+  <section ref="panel" class="hk-panel">
     <div class="hk-panel-header">
       <h2 class="hk-panel-title">Block types</h2>
     </div>
-    <details class="hk-group" open v-for="(components, section) in groupComponents()" :key="section">
-      <summary>{{ section }}</summary>
-      <button v-for="component in components" :key="component.fullId" class="hk-palette-item"
-              data-testid="block-type" :data-type="component.fullId" :title="component.description"
-              @click="emit('onSelection', component.fullId)">
-        {{ component.name }}
+    <input class="hk-input hk-palette-search" type="search" data-testid="palette-search" v-model="search"
+           placeholder="Search" aria-label="Search block types" spellcheck="false" autocomplete="off"
+           @keydown.escape="search = ''"/>
+    <details class="hk-group" open v-for="(entries, family) in groups" :key="family" :data-family="family">
+      <summary>{{ family }}</summary>
+      <button v-for="entry in entries" :key="entry.name" class="hk-palette-item" draggable="true"
+              data-testid="block-type" :data-type="entry.name" :title="entry.tooltip"
+              @click="emit('onSelection', entry.name)" @dragstart="dragStart($event, entry.name)">
+        {{ entry.short }}
       </button>
     </details>
+    <p v-if="Object.keys(groups).length === 0" class="hk-empty" data-testid="palette-none">No block type matches</p>
   </section>
 </template>
 
 <script lang="ts" setup>
-import {ComponentEvent} from "@/components/protocols/component";
+import {computed, nextTick, ref, watch} from "vue";
 import {vueModel} from '../model';
+import {BLOCK_TYPE_MIME, paletteGroups} from "@/components/palette";
 
-// The block types come from the session's component:component events (model.ts attachModel).
-const groupComponents = () => {
-  const groups: Record<string, ComponentEvent[]> = {};
-  vueModel.components.value.forEach(component => {
-    const slash = component.name.indexOf('/');
-    const section = slash < 0 ? "" : component.name.substring(0, slash);
-    const name = component.name.substring(slash + 1);
-    if (!groups[section]) {
-      groups[section] = [];
-    }
-    groups[section].push({...component, name: name, fullId: component.name});
-  });
-  return groups;
+// The block types from the session's component:component events (model.ts attachModel), by
+// family (06 §4.5). A click adds one in the middle of the view; dragging one onto the editor
+// adds it where it is dropped.
+const search = ref("");
+const groups = computed(() => paletteGroups(vueModel.components.value, search.value));
+const panel = ref<HTMLElement | null>(null);
+
+// A search opens every family with a match, also one that was closed.
+watch(search, async () => {
+  await nextTick();
+  panel.value?.querySelectorAll("details").forEach(d => d.open = true);
+});
+
+const dragStart = (event: DragEvent, type: string) => {
+  event.dataTransfer?.setData(BLOCK_TYPE_MIME, type);
+  event.dataTransfer?.setData("text/plain", type);
+  if (event.dataTransfer)
+    event.dataTransfer.effectAllowed = "copy";
 };
 
 const emit = defineEmits<{
   onSelection: [value: string]
 }>();
-
 </script>

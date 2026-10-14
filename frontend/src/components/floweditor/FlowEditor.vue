@@ -25,9 +25,11 @@ const openProcess = (processId: string) => {
   vueModel.connection.value?.proto.graph.request_connect(processId);
 }
 
+// A block picked in the palette goes in the middle of the view (06 §4.5).
 const addComponent = (componentType: string) => {
   const newNodeName = vueModel.nextName(componentType, (name) => reteEditor.getNodes().some(n => n.label === name));
-  vueModel.connection.value?.proto.graph.request_addnode(newNodeName, componentType, 100, 100);
+  const at = reteEditor.viewCenter();
+  vueModel.connection.value?.proto.graph.request_addnode(newNodeName, componentType, Math.round(at.x - 90), Math.round(at.y - 60));
 }
 
 const comps = ref(null);

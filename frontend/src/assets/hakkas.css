@@ -664,6 +664,66 @@ h1, h2, h3 {
   border-color: var(--hk-node-selected);
 }
 
+/* Sockets by port type, with their legend (06 §4.5). */
+#hk-editor .hk-socket {
+  display: inline-block;
+  cursor: pointer;
+  border-radius: 50%;
+  vertical-align: middle;
+  box-sizing: border-box;
+  z-index: 2;
+}
+
+#hk-editor .socket.hk-socket-number,
+.hk-socket-dot.hk-socket-number {
+  background: var(--hk-socket-number);
+}
+
+#hk-editor .socket.hk-socket-bool,
+.hk-socket-dot.hk-socket-bool {
+  background: var(--hk-socket-bool);
+}
+
+#hk-editor .socket.hk-socket-string,
+.hk-socket-dot.hk-socket-string {
+  background: var(--hk-socket-string);
+}
+
+.hk-socket-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 4px 8px;
+  list-style: none;
+  font-size: 12px;
+  color: var(--hk-text-muted);
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.hk-socket-legend li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hk-socket-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--hk-socket-border);
+}
+
+.hk-palette-search {
+  margin-bottom: 6px;
+}
+
 #hk-editor [data-testid="connection"] path {
   stroke: var(--hk-connection);
   stroke-width: 3px;

@@ -8,7 +8,16 @@ import {ClearEvent} from "@/components/protocols/graph";
 import {SelectedBlock} from "@/components/inspector";
 import {NetworkErrorEvent, StartedEvent, StatusEvent, StoppedEvent} from "@/components/protocols/network";
 
-const socket = new Classic.Socket('socket');
+// One socket per port type, named after it (06 §4.5): its color and tooltip show the type.
+const sockets = new Map<string, Classic.Socket>();
+export function socketFor(portType: string): Classic.Socket {
+    let socket = sockets.get(portType);
+    if (socket === undefined) {
+        socket = new Classic.Socket(portType);
+        sockets.set(portType, socket);
+    }
+    return socket;
+}
 
 export let componentTemplates: Record<string, ComponentEvent> = {};
 
@@ -61,10 +70,10 @@ export class PrimitiveNode extends Classic.Node {
         let outHeight = outports.length * 36;
         this.height = 70 + inHeight + outHeight;
         for (let outport of outports) {
-            this.addOutput(outport.id, new Classic.Output(socket, outport.id));
+            this.addOutput(outport.id, new Classic.Output(socketFor(outport.type ?? ""), outport.id));
         }
         for (let inport of inports) {
-            this.addInput(inport.id, new Classic.Input(socket, inport.id ));
+            this.addInput(inport.id, new Classic.Input(socketFor(inport.type ?? ""), inport.id));
         }
     }
 
@@ -106,7 +115,7 @@ export class ValueNode extends Classic.Node {
         this.port = port;
         this.portType = block.inputType(port);
         this.value = value;
-        this.addOutput("value", new Classic.Output(socket, ""));
+        this.addOutput("value", new Classic.Output(socketFor(this.portType), ""));
     }
 }
 

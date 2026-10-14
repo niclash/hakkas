@@ -12,6 +12,7 @@ import {RerouteExtensions, RerouteExtra, ReroutePlugin,} from 'rete-connection-r
 import {isValueNode, PrimitiveNode, Schemes, vueModel} from "@/components/model";
 import ValueNodeView from "@/components/floweditor/ValueNodeView.vue";
 import ValueConnectionView from "@/components/floweditor/ValueConnectionView.vue";
+import SocketView from "@/components/floweditor/SocketView.vue";
 import {Position} from "rete-area-plugin/_types/types";
 import {setupBlockSelection} from "@/components/floweditor/selection/editor";
 
@@ -38,6 +39,19 @@ export class FlowEditor extends NodeEditor<Schemes> {
     constructor(area: AreaPlugin<Schemes, AreaExtra>) {
         super();
         this.area = area;
+    }
+
+    // A point on the screen in the editor's coordinates (where a block put there goes).
+    pointAt(clientX: number, clientY: number): Position {
+        const box = this.area.container.getBoundingClientRect();
+        const {x, y, k} = this.area.area.transform;
+        return {x: (clientX - box.left - x) / k, y: (clientY - box.top - y) / k};
+    }
+
+    // The middle of what the editor shows, in its coordinates.
+    viewCenter(): Position {
+        const box = this.area.container.getBoundingClientRect();
+        return this.pointAt(box.left + box.width / 2, box.top + box.height / 2);
     }
 
     setPosition(id: string, {x, y}: Position): Promise<boolean | undefined> {
@@ -101,6 +115,10 @@ export async function createEditor(container: HTMLElement) {
             // Fixed values are drawn as value nodes (06 §4.3).
             node(context) {
                 return isValueNode(context.payload) ? ValueNodeView : VuePresets.classic.Node;
+            },
+            // Sockets show their port's type (06 §4.5).
+            socket() {
+                return SocketView;
             },
             connection(context) {
                 return isValueNode(editor.getNode(context.payload.source))

@@ -9,6 +9,7 @@ import {inputSources, placeValues, renameValues, showValue} from "./values";
 import ContextMenu from "./ContextMenu.vue";
 import {MenuAction, menuFor, MenuItem, MenuTarget} from "./menus";
 import ValueDraft from "./ValueDraft.vue";
+import {BLOCK_TYPE_MIME} from "@/components/palette";
 import {
   AddEdgeEvent,
   AddGroupEvent,
@@ -415,11 +416,6 @@ interface OpenMenu {
 const menu = ref<OpenMenu | undefined>();
 const blockTypes = computed(() => vueModel.components.value.map(c => c.name));
 
-const editorPoint = (clientX: number, clientY: number): Position => {
-  const box = editor.area.container.getBoundingClientRect();
-  const {x, y, k} = editor.area.area.transform;
-  return {x: (clientX - box.left - x) / k, y: (clientY - box.top - y) / k};
-};
 
 // The most specific of the nested contextmenu events (a block's, then the canvas's) opens it.
 const opened = new WeakSet<Event>();
@@ -431,7 +427,7 @@ const openMenu = (event: MouseEvent, context: unknown) => {
   opened.add(event);
   draft.value = undefined;
   const origin = pane.value.getBoundingClientRect();
-  const where = {x: event.clientX - origin.left, y: event.clientY - origin.top, at: editorPoint(event.clientX, event.clientY)};
+  const where = {x: event.clientX - origin.left, y: event.clientY - origin.top, at: editor.pointAt(event.clientX, event.clientY)};
   let open: Omit<OpenMenu, "items" | "x" | "y" | "at"> | undefined;
   if (context === "root") {
     open = {target: {kind: "canvas"}};
@@ -560,9 +556,36 @@ const act = async (action: MenuAction) => {
 const addBlock = (type: string) => {
   const at = menu.value?.at ?? {x: 0, y: 0};
   closeMenu();
+  addBlockAt(type, at);
+};
+
+const addBlockAt = (type: string, at: Position) => {
   const name = vueModel.nextName(type, (n) => findNodeByName(n) !== undefined);
   graph()?.request_addnode(name, type, Math.round(at.x), Math.round(at.y));
 };
+
+// A block type dragged from the palette (06 §4.5) is added where it is dropped.
+const dragOver = (event: DragEvent) => {
+  if (event.dataTransfer?.types.includes(BLOCK_TYPE_MIME)) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+};
+
+const drop = (event: DragEvent) => {
+  const type = event.dataTransfer?.getData(BLOCK_TYPE_MIME);
+  if (!type)
+    return;
+  event.preventDefault();
+  addBlockAt(type, editor.pointAt(event.clientX, event.clientY));
+};
+
+// The socket colors' legend (06 §4.5).
+const socketLegend = [
+  {kind: "number", label: "number"},
+  {kind: "bool", label: "bool"},
+  {kind: "string", label: "string"},
+];
 
 onMounted(() => {
   createEditor(rete.value!).then(() => {
@@ -658,7 +681,12 @@ onMounted(() => {
 <template>
   <div class="hk-editor-pane" ref="pane">
     <main id="hk-editor" class="rete" ref="rete" data-testid="editor" :data-settled="settled"
-          @pointerdown="draft = undefined; closeMenu()"></main>
+          @pointerdown="draft = undefined; closeMenu()" @dragover="dragOver" @drop="drop"></main>
+    <ul class="hk-socket-legend" data-testid="socket-legend" aria-label="Port types">
+      <li v-for="entry in socketLegend" :key="entry.kind">
+        <span class="hk-socket-dot" :class="'hk-socket-' + entry.kind"></span>{{ entry.label }}
+      </li>
+    </ul>
     <ValueDraft v-if="draft" :key="draft.block + '/' + draft.port" :block="draft.blockLabel" :port="draft.port"
                 :port-type="draft.portType" :x="draft.x" :y="draft.y" @close="draft = undefined"/>
     <ContextMenu v-if="menu" :items="menu.items" :x="menu.x" :y="menu.y" :types="blockTypes"

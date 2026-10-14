@@ -715,10 +715,12 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   composite and expose as process port join the menus with tasks 34–37. Also: a right-click no
   longer inserts a reroute pin (only main-button presses reach the reroute plugin), and the
   classic context menu plugin is unused (still a dependency of the 3D template, task 43).
-- [ ] **31. Palette and sockets**: a search field over the block types; drag a type onto the
+- [x] **31. Palette and sockets**: a search field over the block types; drag a type onto the
   canvas to add it at the drop point (today it lands at 100,100); tooltips with the type's
   description and ports; sockets colored by port type (number, bool, string) with a legend in
   the themes (new `--hk-*` variables in all three).
+  Done (06 §4.5, `palette.ts`, `SocketView.vue`): one Rete socket per port type; a click now adds
+  in the middle of the view; the search matches as the menu's Add block… does.
 
 ### 5b. Processes
 
