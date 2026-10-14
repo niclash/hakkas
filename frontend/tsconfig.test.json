@@ -21,6 +21,7 @@
     "src/components/clipboard.ts",
     "src/components/roles.ts",
     "src/components/messages.ts",
+    "src/components/undo.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

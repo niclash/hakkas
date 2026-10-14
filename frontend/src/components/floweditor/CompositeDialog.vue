@@ -59,6 +59,7 @@
 import {computed, onMounted, onUnmounted, ref, watch} from "vue";
 import {errorClaims, vueModel} from "@/components/model";
 import {checkPorts, checkTypeName, componentCommands, defaultPorts, Link, ProcessPort, SelBlock} from "@/components/composite";
+import {unrecorded} from "./history";
 
 // Creating a composite block type from the selected blocks (06 §4.9): the type's name, its
 // description, and which block ports it exposes under which names. The type is built as its
@@ -92,12 +93,15 @@ const create = () => {
     return;
   busy.value = true;
   building = t;
-  for (const c of componentCommands(t, label, description.value, props.blocks, props.links, rows.value)) {
-    if (c.protocol === "graph")
-      conn.proto.graph.request_raw(c.command, {...c.payload});
-    else
-      conn.proto.network.request_persist(t);
-  }
+  // The type's graph is built, not edited: nothing of it is undone (06 §4.13).
+  unrecorded(() => {
+    for (const c of componentCommands(t, label, description.value, props.blocks, props.links, rows.value)) {
+      if (c.protocol === "graph")
+        conn.proto.graph.request_raw(c.command, {...c.payload});
+      else
+        conn.proto.network.request_persist(t);
+    }
+  });
 };
 
 // Done when the type is announced.

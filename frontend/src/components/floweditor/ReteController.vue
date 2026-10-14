@@ -19,6 +19,7 @@ import {allowed} from "@/components/roles";
 import ValueDraft from "./ValueDraft.vue";
 import CompositeDialog from "./CompositeDialog.vue";
 import {blockArrived, copySelection, duplicateSelection, hasClip, pasteClipAt, setupCopyPaste} from "./copypaste";
+import {eventApplied, setupHistory} from "./history";
 import {Link, ProcessPort, SelBlock} from "@/components/composite";
 import {BLOCK_TYPE_MIME} from "@/components/palette";
 import {
@@ -70,10 +71,11 @@ let eventQueue: Promise<void> = Promise.resolve();
 // Until the first graph:connect the connection receives the events of every graph; only the
 // open graph's are shown.
 const enqueue = (handler: (payload: any) => Promise<void> | void) => (payload: any) => {
-  eventQueue = eventQueue.then(() => {
+  eventQueue = eventQueue.then(async () => {
     if (payload.graph !== undefined && payload.graph !== vueModel.currentGraph.id)
       return;
-    return handler(payload);
+    await handler(payload);
+    eventApplied();   // an undo or redo waiting for its events (06 §4.13)
   }).catch((e) => console.log("Graph event failed:", e));
 };
 
@@ -864,6 +866,7 @@ onMounted(() => {
     editor.onDrop = onDrop;
     attachLive(editor);
     setupCopyPaste(editor);
+    setupHistory(editor, showNotice);
     editor.onMenuKey = menuKey;
     editor.area.addPipe(context => {
       if (context.type === "contextmenu")

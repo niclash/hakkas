@@ -9,6 +9,7 @@ import {can, isValueNode, PrimitiveNode, Schemes, vueModel} from '@/components/m
 import {setupSelection} from './index';
 import {BlockSelection, MoveThrottle, Position, SelectionDrag} from './blocks';
 import {inputSources} from '@/components/floweditor/values';
+import * as history from '@/components/floweditor/history';
 
 // What the selection does to the process, by block id (the node's label).
 export interface SelectionCommands {
@@ -111,6 +112,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
                         start.set(selected, {...view.position});
                 }
                 drag = {id, moved: false, selection: new SelectionDrag(id, start)};
+                history.begin();   // the whole drag is one undo step (06 §4.13)
                 break;
             }
             case 'nodetranslate':
@@ -125,6 +127,8 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
                 return undefined;
             case 'nodedragged':
                 throttle.flush();
+                if (drag !== undefined)
+                    history.end();
                 selection.release(drag?.moved ?? false);
                 drag = undefined;
                 break;

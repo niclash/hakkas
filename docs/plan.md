@@ -800,9 +800,12 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   the top bar; the runtime's label and version (`runtime:runtime`) in an "about" view.
   Done (06 §4.12, `messages.ts`, `MessagesPanel.vue`, `AboutDialog.vue`); the login event now
   carries the user name.
-- [ ] **42. Undo/redo** — later: the client's own commands, undone by their inverse commands
+- [x] **42. Undo/redo** — later: the client's own commands, undone by their inverse commands
   (`removenode` for `addnode`, …) sent to the engine like any other, so other users see them
   too; an undo whose state was changed by someone else meanwhile is refused or skipped.
+  Done (06 §4.13, `undo.ts`, `floweditor/history.ts`; decided with the user: sessionStorage,
+  500 steps per process, a step changed by someone else skipped with a message). Ctrl+Z,
+  Ctrl+Shift+Z / Ctrl+Y; steps checked before being undone or redone.
 - [ ] **43. A smaller bundle** (06 §5): drop the unused 3D editor template (three.js) and the
   icon fonts nothing uses, build `.gz` assets only for the device, and record the size
   against the flash budget.

@@ -105,7 +105,12 @@ export class Connection {
         }
     }
 
+    // Told of every message sent, before it goes (06 §4.13: the undo history records this tab's
+    // graph commands).
+    static sendHook: ((packet: Packet) => void) | undefined;
+
     send(packet: Packet): void {
+        Connection.sendHook?.(packet);
         packet.secret = this.currentSecret ? this.currentSecret : "";
         console.log("<==", loggable(packet.protocol, packet.command, packet.payload));
         let data = JSON.stringify(packet);
