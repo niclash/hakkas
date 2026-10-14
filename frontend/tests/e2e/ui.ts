@@ -53,8 +53,21 @@ export async function blockPosition(page: Page, id: string): Promise<{ x: number
     return {x: Number(m[1]), y: Number(m[2])};
 }
 
+// A block's inputs, each with its fixed value when it has one ("in1 = 12"): the value is
+// drawn as a value node connected to the input (06 §4.3).
 export async function inputLabels(page: Page, id: string): Promise<string[]> {
-    return (await block(page, id).getByTestId("input-title").allTextContents()).map(t => t.trim());
+    const ports = (await block(page, id).getByTestId("input-title").allTextContents()).map(t => t.trim());
+    const labels: string[] = [];
+    for (const port of ports) {
+        const node = valueNode(page, id, port);
+        labels.push(await node.count() === 1 ? port + " = " + (await node.getByTestId("value-text").textContent())!.trim() : port);
+    }
+    return labels;
+}
+
+// The value node of an input (06 §4.3).
+export function valueNode(page: Page, id: string, port: string): Locator {
+    return page.locator(`[data-testid=value-node][data-target="${id}.${port}"]`);
 }
 
 // The selected blocks' ids (06 §4).

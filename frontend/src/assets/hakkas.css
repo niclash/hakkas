@@ -508,9 +508,91 @@ h1, h2, h3 {
    outranks those rules, so the theme decides. */
 
 .hk-editor-pane {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
+}
+
+/* A fixed value beside its input (06 §4.3). */
+#hk-editor .hk-value-node {
+  position: relative;
+  box-sizing: border-box;
+  width: 110px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-left: 8px;
+  background: var(--hk-node-bg);
+  color: var(--hk-node-text);
+  border: var(--hk-node-border-width) dashed var(--hk-node-border);
+  border-radius: 18px;
+  font-size: 13px;
+  cursor: text;
+  user-select: none;
+}
+
+#hk-editor .hk-value-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+#hk-editor .hk-value-field {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--hk-text);
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-focus);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+#hk-editor .hk-value-field[aria-invalid="true"] {
+  border-color: var(--hk-danger);
+}
+
+#hk-editor .hk-value-socket {
+  margin-right: -12px;
+}
+
+#hk-editor .hk-value-error {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--hk-danger);
+}
+
+.hk-value-draft {
+  position: absolute;
+  z-index: 10;
+  width: 180px;
+  transform: translate(calc(-100% - 12px), -50%);
+  padding: 6px;
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 8px;
+  box-shadow: var(--hk-shadow);
+}
+
+.hk-value-draft-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hk-value-draft .hk-inspector-note {
+  margin: 4px 0 0;
+  font-size: 12px;
 }
 
 #hk-editor {
@@ -585,6 +667,22 @@ h1, h2, h3 {
 #hk-editor [data-testid="connection"] path {
   stroke: var(--hk-connection);
   stroke-width: 3px;
+}
+
+#hk-editor .hk-value-connection {
+  overflow: visible !important;
+  position: absolute;
+  pointer-events: none;
+  width: 9999px;
+  height: 9999px;
+}
+
+#hk-editor .hk-value-connection path {
+  fill: none;
+  stroke: var(--hk-connection);
+  stroke-width: 3px;
+  stroke-dasharray: 6 4;
+  pointer-events: auto;
 }
 
 #hk-editor .pin {

@@ -700,6 +700,10 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   30 (Rete's classic menu does not know which input was clicked). The engine sends no port
   `default` in `component:component`, so "Default" shows no value: a protocol question for
   the user.
+  Then, at the user's request, fixed values drawn as value nodes (06 §4.3, `values.ts`,
+  `ValueNodeView.vue`, `ValueDraft.vue`): a line dropped from a free input asks for a value; a
+  double-click changes it; pulling the line off clears it. Placed beside the input, with no
+  protocol change (the user's choice over upstream's `metadata` on `addinitial`).
 - [ ] **30. Context menus** (themed, 06 §4.1): replace the classic preset's menu by our own
   component. On the canvas: add block (with search, placed where the menu was opened), paste,
   zoom to fit, auto-layout (sends a `changenode` per moved block). On a block: rename, set

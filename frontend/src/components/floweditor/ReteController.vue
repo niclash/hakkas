@@ -3,7 +3,10 @@
 import {onMounted, ref} from "vue";
 import {createEditor} from './viewmodel';
 import {editor} from './viewmodel/default';
-import {componentTemplates, Connection, Node, PrimitiveNode, vueModel} from "../model";
+import {componentTemplates, Connection, isValueNode, PrimitiveNode, ValueNode, vueModel} from "../model";
+import {SocketData} from "rete-connection-plugin";
+import {placeValues, renameValues, showValue} from "./values";
+import ValueDraft from "./ValueDraft.vue";
 import {
   AddEdgeEvent,
   AddGroupEvent,
@@ -80,16 +83,9 @@ const scheduleFit = () => {
   }, 150);
 }
 
-const findNodeByName = (name: string): Node | undefined => {
-  let result: Node[] = [];
-  editor.getNodes().forEach((n: Node) => {
-    if (n.label === name)
-      result.push(n);
-  });
-  if (result.length > 0)
-    return result[0]
-  return undefined;
-}
+// A block by its id in the process (value nodes are not blocks).
+const findNodeByName = (name: string): PrimitiveNode | undefined =>
+  editor.getNodes().find((n): n is PrimitiveNode => n instanceof PrimitiveNode && n.label === name);
 
 const cloneDescriptors = (ports: Port[]): Port[] => {
   let clone: Port[] = [];
@@ -159,6 +155,7 @@ const callbacks = {
       if (node !== undefined) {
         node.label = payload.to;
         await editor.area.update('node', node.id);
+        await renameValues(editor, node);
         editor.blockSelection?.refresh();
       }
     } finally {
@@ -172,6 +169,7 @@ const callbacks = {
       let node = findNodeByName(payload.id);
       if (node !== undefined) {
         await editor.setPosition(node.id, payload.metadata as Position);
+        await placeValues(editor, node);
       }
     } finally {
       endTransaction();
@@ -239,9 +237,10 @@ const callbacks = {
     try {
       let tgtNode = findNodeByName(payload.tgt.node);
       if (tgtNode !== undefined) {
-        tgtNode.setInitial(payload.tgt.port, String(payload.src.data));
-        await editor.area.update('node', tgtNode.id);
+        await showValue(editor, tgtNode, payload.tgt.port, String(payload.src.data));
         editor.blockSelection?.refresh();
+        if (draft.value?.block === tgtNode.id && draft.value.port === payload.tgt.port)
+          draft.value = undefined;
       }
     } finally {
       endTransaction();
@@ -253,8 +252,7 @@ const callbacks = {
     try {
       let tgtNode = findNodeByName(payload.tgt.node);
       if (tgtNode !== undefined) {
-        tgtNode.setInitial(payload.tgt.port, undefined);
-        await editor.area.update('node', tgtNode.id);
+        await showValue(editor, tgtNode, payload.tgt.port, undefined);
         editor.blockSelection?.refresh();
       }
     } finally {
@@ -353,8 +351,54 @@ const callbacks = {
   }
 }
 
+// A value as the event carries it (a string), sent again as its port's type reads it.
+const valueData = (value: string, portType: string): string | number | boolean => {
+  if (portType === "bool")
+    return value === "true";
+  if (portType === "string")
+    return value;
+  const n = Number(value);
+  return value.trim() !== "" && Number.isFinite(n) ? n : value;
+};
+
+// A line drawn from a free input and dropped on the canvas asks for a fixed value (06 §4.3),
+// in a box beside the input until the engine's event shows the value node.
+const pane = ref<HTMLElement | null>(null);
+const draft = ref<{ block: string, blockLabel: string, port: string, portType: string, x: number, y: number } | undefined>();
+
+// A value node's line picked up from its input, until it is dropped.
+let carrying: ValueNode | undefined;
+
+const onDrop = (initial: SocketData, socket: SocketData | null, created: boolean) => {
+  const carried = carrying;
+  if (carried !== undefined) {
+    // Dropped on an input, it makes a connection: connectioncreate moves the value (Rete
+    // reports the drop first). Dropped elsewhere, the value is removed.
+    if (created)
+      return;
+    carrying = undefined;
+    if (editor.getNode(carried.id) !== undefined)
+      vueModel.connection.value?.proto.graph.request_removeinitial(undefined, carried.blockLabel, carried.port, -1);
+    return;
+  }
+  if (!created && socket === null && initial.side === 'input')
+    askValue(initial.nodeId, initial.key, initial.element);
+};
+
+const askValue = (nodeId: string, port: string, socket: HTMLElement) => {
+  const block = editor.getNode(nodeId);
+  if (!(block instanceof PrimitiveNode) || pane.value === null)
+    return;
+  const at = socket.getBoundingClientRect();
+  const origin = pane.value.getBoundingClientRect();
+  draft.value = {
+    block: block.id, blockLabel: block.label, port, portType: block.inputType(port),
+    x: at.left - origin.left, y: at.top + at.height / 2 - origin.top,
+  };
+};
+
 onMounted(() => {
-  createEditor(rete.value!);
+  createEditor(rete.value!).then(() => editor.onDrop = onDrop);
   setTimeout(() => {
     editor.addPipe((ctx) => {
       if (vueModel.pipesDisabled) {
@@ -368,10 +412,27 @@ onMounted(() => {
           graphProtocol?.request_addnode(nodeName, componentType, 300, 300);
           return undefined;
         case 'noderemove':
-          // e.g. the context menu's Delete; the Delete key goes through the selection.
-          graphProtocol?.request_removenode(ctx.data.label);
+          // e.g. the context menu's Delete; the Delete key goes through the selection. A value
+          // node's Delete is its connection's removal, which comes first.
+          if (!isValueNode(ctx.data))
+            graphProtocol?.request_removenode(ctx.data.label);
           return undefined;
-        case 'connectioncreate':
+        case 'connectioncreate': {
+          // A value node's line dropped on an input: the value moves there (picked up from its
+          // input), or is copied there (drawn from the value node).
+          const value = editor.getNode(ctx.data.source);
+          if (isValueNode(value)) {
+            const target = editor.getNode(ctx.data.target);
+            const carried = carrying === value;
+            carrying = undefined;
+            if (!(target instanceof PrimitiveNode) || (target.id === value.block && ctx.data.targetInput === value.port))
+              return undefined;
+            if (carried)
+              graphProtocol?.request_removeinitial(undefined, value.blockLabel, value.port, -1);
+            graphProtocol?.request_addinitial(valueData(value.value, value.portType), target.label, ctx.data.targetInput, -1, undefined);
+            return undefined;
+          }
+        }
           let fromNode: string | undefined = editor.getNode(ctx.data.source)?.label;
           let fromPort: string = ctx.data.sourceOutput;
           let fromIndex: number = -1;
@@ -383,6 +444,18 @@ onMounted(() => {
           graphProtocol?.request_addedge(fromNode, toNode, fromPort, toPort, fromIndex, toIndex, {});
           return undefined;
         case 'connectionremove':
+          // A value node's line removed (e.g. the menu's Delete): the input goes back to its
+          // default. Picked up to be dragged, nothing is sent until it is dropped (onDrop).
+          const fixed = editor.getNode(ctx.data.source);
+          const picked = editor.picking;
+          editor.picking = false;
+          if (isValueNode(fixed)) {
+            if (picked)
+              carrying = fixed;
+            else
+              graphProtocol?.request_removeinitial(undefined, fixed.blockLabel, fixed.port, -1);
+            return undefined;
+          }
           let srcNode = editor.getNode(ctx.data.source)?.label;
           let tgtNode = editor.getNode(ctx.data.target)?.label;
           if (srcNode === undefined || tgtNode === undefined)
@@ -408,7 +481,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="hk-editor-pane">
-    <main id="hk-editor" class="rete" ref="rete" data-testid="editor" :data-settled="settled"></main>
+  <div class="hk-editor-pane" ref="pane">
+    <main id="hk-editor" class="rete" ref="rete" data-testid="editor" :data-settled="settled"
+          @pointerdown="draft = undefined"></main>
+    <ValueDraft v-if="draft" :key="draft.block + '/' + draft.port" :block="draft.blockLabel" :port="draft.port"
+                :port-type="draft.portType" :x="draft.x" :y="draft.y" @close="draft = undefined"/>
   </div>
 </template>

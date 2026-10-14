@@ -5,8 +5,7 @@
 
 import {NodeEditor} from 'rete';
 import {AreaPlugin, Drag} from 'rete-area-plugin';
-import {Schemes} from '@/components/model';
-import {vueModel} from '@/components/model';
+import {isValueNode, PrimitiveNode, Schemes, vueModel} from '@/components/model';
 import {setupSelection} from './index';
 import {BlockSelection, MoveThrottle, Position, SelectionDrag} from './blocks';
 import {InputSource} from '@/components/initials';
@@ -43,19 +42,22 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
             publishing = false;
             vueModel.selectedBlocks.value = selection.ids().flatMap(id => {
                 const node = editor.getNode(id);
-                if (node === undefined)
+                if (node === undefined || isValueNode(node))
                     return [];
                 const inputs: Record<string, InputSource> = {};
                 for (const [port, value] of Object.entries(node.initials))
                     inputs[port] = {kind: "fixed", value};
                 for (const c of editor.getConnections()) {
-                    if (c.target === id)
+                    if (c.target === id && !isValueNode(editor.getNode(c.source)))
                         inputs[c.targetInput] = {kind: "connected", from: (editor.getNode(c.source)?.label ?? "?") + "." + c.sourceOutput};
                 }
                 return [{node: id, id: node.label, component: node.component, inputs}];
             });
         });
     };
+    // The process's blocks; value nodes (06 §4.3) are not selectable.
+    const isBlock = (id: string) => editor.getNode(id) instanceof PrimitiveNode;
+
     const selection = new BlockSelection((id, selected) => {
         const node = editor.getNode(id);
         if (node !== undefined && node.selected !== selected) {
@@ -90,7 +92,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
     }));
     const marquee = setupSelection(area, {
         starts: event => event.button === 0 && accumulates(event),
-        selected: ids => selection.add(ids.map(String)),
+        selected: ids => selection.add(ids.map(String).filter(isBlock)),
     });
     marquee.setMode('center');
     marquee.setShape('marquee');
@@ -101,6 +103,10 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
         switch (context.type) {
             case 'nodepicked': {
                 const id = context.data.id;
+                if (!isBlock(id)) {
+                    drag = undefined;
+                    break;
+                }
                 selection.press(id, pressAccumulates);
                 const start = new Map<string, Position>();
                 for (const selected of selection.ids()) {
@@ -154,7 +160,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
         return context;
     });
 
-    const selectAll = () => selection.set(editor.getNodes().map(n => n.id));
+    const selectAll = () => selection.set(editor.getNodes().filter(n => isBlock(n.id)).map(n => n.id));
 
     // Each block's removal comes back as its event, which unselects it.
     const removeSelected = () => {

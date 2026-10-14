@@ -12,9 +12,10 @@ const socket = new Classic.Socket('socket');
 
 export let componentTemplates: Record<string, ComponentEvent> = {};
 
-export type Node = PrimitiveNode;
+export type Node = PrimitiveNode | ValueNode;
 type Conn =
     | Connection<PrimitiveNode, PrimitiveNode>
+    | Connection<ValueNode, PrimitiveNode>
     ;
 
 export class Connection<A extends Node, B extends Node> extends Classic.Connection<A, B> {
@@ -67,19 +68,49 @@ export class PrimitiveNode extends Classic.Node {
         }
     }
 
-    // The inputs' initials (literals wired to them), as the events carry them.
+    // The inputs' initials (literals wired to them), as the events carry them; each is drawn as
+    // a ValueNode connected to its input.
     readonly initials: Record<string, string> = {};
 
-    // Shows an input's initial in its label; undefined removes it.
     setInitial(port: string, data: string | undefined) {
         if (data === undefined)
             delete this.initials[port];
         else
             this.initials[port] = data;
-        let input = this.inputs[port];
-        if (input !== undefined)
-            input.label = data === undefined ? port : port + " = " + data;
     }
+
+    // The type of an input's port ("" when unknown).
+    inputType(port: string): string {
+        return this.inports.find(p => p.id === port)?.type ?? "";
+    }
+}
+
+// A fixed value (an initial, 02 §3.4) drawn as a small node connected to its input (06 §4.3).
+// It is not a block of the process: it has no id there, cannot be selected or dragged, and is
+// placed beside its input (it stores no position, as the graph file's connection from a value
+// does not).
+export class ValueNode extends Classic.Node {
+    readonly block: string;     // the editor's id of the block whose input it feeds
+    readonly port: string;
+    readonly portType: string;
+    value: string;              // as the event carries it
+    blockLabel: string;         // the block's id in the process, for commands
+    width = 110;
+    height = 36;
+
+    constructor(block: PrimitiveNode, port: string, value: string) {
+        super("");
+        this.block = block.id;
+        this.blockLabel = block.label;
+        this.port = port;
+        this.portType = block.inputType(port);
+        this.value = value;
+        this.addOutput("value", new Classic.Output(socket, ""));
+    }
+}
+
+export function isValueNode(node: Node | undefined): node is ValueNode {
+    return node instanceof ValueNode;
 }
 
 export const vueModel: {

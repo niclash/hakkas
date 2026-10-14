@@ -1,5 +1,5 @@
 import {Page} from "@playwright/test";
-import {expect, test} from "./fixtures";
+import {expect, test, VIEWER} from "./fixtures";
 import {block, blockIds, blockPosition, blocks, connections, inputLabels, loggedIn, openProcess} from "./ui";
 
 // 02 §1.1, 06 §3: the view changes only from the engine's events — whoever sent the command.
@@ -82,8 +82,25 @@ test("dragging a block moves it through the engine", async ({page, engine}) => {
 });
 
 test("a refused command changes nothing and shows the engine's error", async ({page, engine}) => {
+    // A viewer may not change a process (02 §2.4); the read-only editor is plan task 38.
+    await loggedIn(page, engine.url, VIEWER);
+    await openProcess(page, "Simple Example");
+    const from = block(page, "block8").getByTestId("output-out").getByTestId("output-socket");
+    const to = block(page, "block7").getByTestId("input-in3").getByTestId("input-socket");
+    await from.hover();
+    await page.mouse.down();
+    await to.hover();
+    await page.mouse.up();
+
+    await expect(page.getByTestId("error")).toContainText("Not permitted: graph:addedge");
+    await expect(connections(page)).toHaveCount(6);
+    expect(await inputLabels(page, "block7")).toEqual(["in1", "in2", "in3", "in4"]);
+});
+
+test("a connection drawn onto an input with a fixed value replaces the value", async ({page, engine}) => {
     await openExample(page, engine.url);
-    // block8.in1 has an initial, so a connection into it is refused (02 §3.4.1, no fan-in).
+    const other = await engine.client();
+    await other.connectGraph(G);
     const from = block(page, "block1").getByTestId("output-out").getByTestId("output-socket");
     const to = block(page, "block8").getByTestId("input-in1").getByTestId("input-socket");
     await from.hover();
@@ -91,9 +108,11 @@ test("a refused command changes nothing and shows the engine's error", async ({p
     await to.hover();
     await page.mouse.up();
 
-    await expect(page.getByTestId("error")).toContainText("Input already connected: block8.in1");
-    await expect(connections(page)).toHaveCount(6);
-    expect(await inputLabels(page, "block8")).toEqual(["in1 = 12", "in2 = 23"]);
+    expect((await other.next(m => m.command === "removeinitial")).payload).toMatchObject({tgt: {node: "block8", port: "in1"}});
+    expect((await other.next(m => m.command === "addedge")).payload)
+        .toMatchObject({src: {node: "block1", port: "out"}, tgt: {node: "block8", port: "in1"}});
+    await expect(connections(page)).toHaveCount(7);
+    await expect.poll(() => inputLabels(page, "block8")).toEqual(["in1", "in2 = 23"]);
 });
 
 test("a connection drawn in the editor is made by the engine", async ({page, engine}) => {
