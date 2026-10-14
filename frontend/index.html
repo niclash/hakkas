@@ -5,6 +5,20 @@
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hakkas</title>
+    <link id="hakkas-theme" rel="stylesheet" href="/themes/light.css">
+    <script>
+      // The theme before the first paint, by the rules of src/theme.ts (06 §4.1): the
+      // viewer's choice, else high contrast, dark or light from the system's settings.
+      (function () {
+        var id;
+        try { id = localStorage.getItem("hakkas.theme"); } catch (e) {}
+        if (!id || !/^[a-z0-9-]{1,32}$/.test(id))
+          id = matchMedia("(prefers-contrast: more)").matches ? "high-contrast"
+             : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.getElementById("hakkas-theme").href = "/themes/" + id + ".css";
+        document.documentElement.dataset.theme = id;
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

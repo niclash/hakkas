@@ -1,35 +1,17 @@
 <template>
-  <div class="accordion" id="componentsAccordion">
-    <div v-for="(components, section) in groupComponents()" :key="section">
-      <div class="accordion-item">
-        <h2 class="accordion-header" id="section{{section}}">
-          <button
-              class="accordion-button"
-              type="button"
-              data-bs-toggle="collapse"
-              :data-bs-target="'#collapse' + section"
-              aria-expanded="true"
-              :aria-controls="'collapse' + section"
-          >
-            {{ section }}
-          </button>
-        </h2>
-        <div
-            :id="'collapse' + section"
-            class="accordion-collapse collapse show"
-            :aria-labelledby="'section' + section"
-            data-bs-parent="#componentsAccordion"
-        >
-          <div class="accordion-body container"> <!-- Apply container class here -->
-            <button v-for="component in components" :key="component.fullId" data-testid="block-type" :data-type="component.fullId" @click="emit('onSelection', component.fullId)">
-                <!--<img :src="component.icon" alt="icon" />-->
-              {{ component.name }}
-            </button>
-          </div>
-        </div>
-      </div>
+  <section class="hk-panel">
+    <div class="hk-panel-header">
+      <h2 class="hk-panel-title">Block types</h2>
     </div>
-  </div>
+    <details class="hk-group" open v-for="(components, section) in groupComponents()" :key="section">
+      <summary>{{ section }}</summary>
+      <button v-for="component in components" :key="component.fullId" class="hk-palette-item"
+              data-testid="block-type" :data-type="component.fullId" :title="component.description"
+              @click="emit('onSelection', component.fullId)">
+        {{ component.name }}
+      </button>
+    </details>
+  </section>
 </template>
 
 <script lang="ts" setup>
@@ -56,12 +38,3 @@ const emit = defineEmits<{
 }>();
 
 </script>
-
-<style scoped>
-button {
-  border: 0;
-  font-size: small;
-  display: block;
-  background-color: transparent;
-}
-</style>

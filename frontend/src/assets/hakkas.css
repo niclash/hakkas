@@ -1,0 +1,500 @@
+/* The frontend's styles (06 §4.1). Every color comes from a variable that the theme
+   stylesheet (public/themes/<id>.css) sets; this file sets none of them. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--hk-bg);
+  color: var(--hk-text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+}
+
+h1, h2, h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+:focus-visible {
+  outline: 2px solid var(--hk-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Controls ------------------------------------------------------------------- */
+
+.hk-button {
+  font: inherit;
+  color: var(--hk-text);
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.hk-button:hover {
+  background: var(--hk-surface-2);
+}
+
+.hk-button.primary {
+  color: var(--hk-accent-text);
+  background: var(--hk-accent);
+  border-color: var(--hk-accent);
+  font-weight: 600;
+}
+
+.hk-button.primary:hover {
+  background: var(--hk-accent-hover);
+  border-color: var(--hk-accent-hover);
+}
+
+.hk-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.hk-button.small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.hk-input,
+.hk-select {
+  font: inherit;
+  color: var(--hk-text);
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.hk-input {
+  width: 100%;
+}
+
+.hk-label {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--hk-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---- The application's frame ------------------------------------------------------ */
+
+.hk-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.hk-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--hk-surface);
+  border-bottom: var(--hk-border-width) solid var(--hk-border);
+}
+
+.hk-logo {
+  height: 32px;
+}
+
+.hk-product {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.hk-spacer {
+  flex: 1;
+}
+
+.hk-theme {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--hk-text-muted);
+  font-size: 12px;
+}
+
+.hk-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 16px 0;
+}
+
+.hk-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  color: var(--hk-danger);
+  background: var(--hk-danger-bg);
+  border: var(--hk-border-width) solid var(--hk-danger);
+  border-radius: 6px;
+}
+
+.hk-error span {
+  flex: 1;
+}
+
+.hk-icon-button {
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.hk-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+  padding: 12px 16px 16px;
+}
+
+.hk-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 240px;
+  flex-shrink: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.hk-panel {
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 8px;
+  box-shadow: var(--hk-shadow);
+  padding: 10px;
+}
+
+.hk-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.hk-panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hk-text-muted);
+}
+
+/* ---- Lists: processes and block types --------------------------------------------- */
+
+.hk-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hk-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: var(--hk-border-width) solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hk-list-item:hover {
+  background: var(--hk-surface-2);
+}
+
+.hk-list-item.active {
+  background: var(--hk-accent-soft);
+  border-color: var(--hk-accent);
+  font-weight: 600;
+}
+
+.hk-empty {
+  color: var(--hk-text-muted);
+  font-style: italic;
+}
+
+.hk-state {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid var(--hk-stopped);
+}
+
+.hk-state.running {
+  background: var(--hk-running);
+  border-color: var(--hk-running);
+}
+
+.hk-group + .hk-group {
+  margin-top: 4px;
+}
+
+.hk-group > summary {
+  padding: 4px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.hk-group > summary:hover {
+  background: var(--hk-surface-2);
+}
+
+.hk-palette-item {
+  display: block;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: var(--hk-text);
+  background: transparent;
+  border: var(--hk-border-width) solid transparent;
+  border-radius: 6px;
+  padding: 3px 8px 3px 20px;
+  cursor: pointer;
+}
+
+.hk-palette-item:hover {
+  background: var(--hk-accent-soft);
+  border-color: var(--hk-accent);
+}
+
+/* ---- Dialogs and the login screen ------------------------------------------------- */
+
+.hk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.hk-dialog {
+  min-width: 340px;
+  padding: 20px;
+  background: var(--hk-surface);
+  color: var(--hk-text);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 10px;
+  box-shadow: var(--hk-shadow);
+}
+
+.hk-dialog h4 {
+  margin: 0 0 14px;
+  font-size: 16px;
+}
+
+.hk-field {
+  margin-bottom: 12px;
+}
+
+.hk-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.hk-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 16px;
+}
+
+.hk-login-card {
+  width: 340px;
+  padding: 28px;
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 12px;
+  box-shadow: var(--hk-shadow);
+}
+
+.hk-login-card header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.hk-login-card h1 {
+  font-size: 22px;
+}
+
+.hk-login-card .hk-subtitle {
+  margin: 0 0 20px;
+  color: var(--hk-text-muted);
+  font-size: 13px;
+}
+
+.hk-login-card .hk-button {
+  width: 100%;
+  padding: 8px;
+  margin-top: 6px;
+}
+
+.hk-login-message {
+  margin: 14px 0 0;
+  padding: 6px 10px;
+  color: var(--hk-danger);
+  background: var(--hk-danger-bg);
+  border: var(--hk-border-width) solid var(--hk-danger);
+  border-radius: 6px;
+}
+
+/* ---- The editor (Rete) -------------------------------------------------------------
+   Rete's classic preset styles its parts in scoped CSS with fixed colors; the id selector
+   outranks those rules, so the theme decides. */
+
+.hk-editor-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+#hk-editor {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: var(--hk-canvas);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: left;
+  line-height: 1;
+}
+
+#hk-editor .node {
+  background: var(--hk-node-bg);
+  border: var(--hk-node-border-width) solid var(--hk-node-border);
+  border-radius: 8px;
+  box-shadow: var(--hk-shadow);
+}
+
+#hk-editor .node:hover {
+  background: var(--hk-node-bg);
+  border-color: var(--hk-node-selected);
+}
+
+#hk-editor .node.selected {
+  background: var(--hk-node-bg);
+  border-color: var(--hk-node-selected);
+  box-shadow: 0 0 0 2px var(--hk-node-selected);
+}
+
+#hk-editor .node .title {
+  color: var(--hk-node-title-text);
+  background: var(--hk-node-title-bg);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 7px 10px;
+  margin-bottom: 4px;
+  border-radius: 7px 7px 0 0;
+  border-bottom: var(--hk-node-border-width) solid var(--hk-node-border);
+}
+
+#hk-editor .node .input-title,
+#hk-editor .node .output-title {
+  color: var(--hk-node-text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+#hk-editor .socket {
+  background: var(--hk-socket);
+  border: 2px solid var(--hk-socket-border);
+  width: 18px;
+  height: 18px;
+  margin: 9px;
+}
+
+#hk-editor .socket.output {
+  margin-right: -9px;
+}
+
+#hk-editor .socket.input {
+  margin-left: -9px;
+}
+
+#hk-editor .socket:hover {
+  border-color: var(--hk-node-selected);
+}
+
+#hk-editor [data-testid="connection"] path {
+  stroke: var(--hk-connection);
+  stroke-width: 3px;
+}
+
+#hk-editor .pin {
+  background: var(--hk-connection);
+  border-color: var(--hk-socket-border);
+}
+
+#hk-editor .pin.selected {
+  background: var(--hk-node-selected);
+}
+
+#hk-editor .minimap {
+  background: var(--hk-minimap-bg);
+  border: var(--hk-border-width) solid var(--hk-border);
+}
+
+#hk-editor .mini-node {
+  background: var(--hk-minimap-node);
+  border-color: var(--hk-minimap-node);
+}
+
+#hk-editor .mini-viewport {
+  background: var(--hk-minimap-viewport);
+  border-color: var(--hk-accent);
+}
+
+#hk-editor [data-testid="context-menu"] .block {
+  color: var(--hk-text);
+  background: var(--hk-surface);
+  border-bottom: var(--hk-border-width) solid var(--hk-border);
+}
+
+#hk-editor [data-testid="context-menu"] .block:hover {
+  background: var(--hk-surface-2);
+}
+
+#hk-editor [data-testid="context-menu"] .search {
+  color: var(--hk-text);
+  border-color: var(--hk-border);
+  font-family: inherit;
+}

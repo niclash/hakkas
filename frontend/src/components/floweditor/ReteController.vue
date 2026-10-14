@@ -430,20 +430,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="col">
-    <main class="rete" ref="rete" data-testid="editor" :data-settled="settled"></main>
+  <div class="hk-editor-pane">
+    <main id="hk-editor" class="rete" ref="rete" data-testid="editor" :data-settled="settled"></main>
   </div>
 </template>
-
-<style scoped>
-.rete {
-  position: relative;
-  height: 85vh;
-  font-size: 1rem;
-  background: white;
-  border-radius: 1em;
-  text-align: left;
-  border: 3px solid #55b881;
-  line-height: 1;
-}
-</style>

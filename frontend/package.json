@@ -10,12 +10,11 @@
     "build-only": "vite build",
     "type-check": "vue-tsc --build --force",
     "test": "vitest run",
-    "test:e2e": "vite build && playwright test"
+    "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
     "@noble/hashes": "^1.4.0",
     "@types/three": "^0.162.0",
-    "bootstrap": "^5.3.3",
     "elkjs": "^0.8.2",
     "intersects": "^2.7.2",
     "material-icons": "^1.13.12",

@@ -1,29 +1,28 @@
 <template>
-  <div v-if="secret !== ''">
-    <div>
-      <img alt="Bali Automation logotype" src="@/assets/logo.svg" height="64px"/>
-      <div class="button-container">
-        <button class="btn btn-secondary" data-testid="logout" @click="logout()">Logout</button>
-      </div>
-      <div class="spacer"/>
-    </div>
-    <div class="errors" v-if="vueModel.errors.value.length > 0">
-      <div class="alert alert-danger alert-dismissible py-1" data-testid="error" v-for="(error, i) in vueModel.errors.value" :key="i">
-        {{ error }}
-        <button type="button" class="btn-close py-2" @click="vueModel.errors.value.splice(i, 1)"></button>
+  <div v-if="secret !== ''" class="hk-app">
+    <header class="hk-topbar">
+      <img alt="Bali Automation logotype" src="@/assets/logo.svg" class="hk-logo"/>
+      <span class="hk-product">Hakkas</span>
+      <span class="hk-spacer"></span>
+      <ThemeSelector/>
+      <button class="hk-button" data-testid="logout" @click="logout()">Logout</button>
+    </header>
+    <div class="hk-errors" v-if="vueModel.errors.value.length > 0">
+      <div class="hk-error" role="alert" data-testid="error" v-for="(error, i) in vueModel.errors.value" :key="i">
+        <span>{{ error }}</span>
+        <button type="button" class="hk-icon-button" aria-label="Dismiss" @click="vueModel.errors.value.splice(i, 1)">&times;</button>
       </div>
     </div>
     <FlowEditor :secret="secret"></FlowEditor>
   </div>
-  <div v-else>
-    <Login @login="login" :busy="loggingIn" :message="loginMessage"/>
-  </div>
+  <Login v-else @login="login" :busy="loggingIn" :message="loginMessage"/>
 </template>
 
 <script lang="ts" setup>
 import FlowEditor from "./components/floweditor/FlowEditor.vue";
 import {ref} from "vue";
 import Login from "@/components/Login.vue";
+import ThemeSelector from "@/components/ThemeSelector.vue";
 import {Connection} from "@/components/protocols/websocket";
 import {attachModel, vueModel} from "@/components/model";
 import {OnLogin, OnLoginFailed} from "@/components/protocols/environment";
@@ -98,31 +97,3 @@ const onClosed = (conn: Connection, event: CloseEvent) => {
 };
 
 </script>
-
-<style scoped>
-img {
-  position: absolute;
-  left: 20px;
-  top: 10px;
-}
-
-.spacer {
-  margin-bottom: 70px
-}
-
-.button-container {
-  display: flex;
-  gap: 10px; /* Optional: Adds spacing between the buttons */
-  justify-content: flex-end;
-}
-
-button {
-  /* position: absolute; */
-  right: 10px;
-  top: 20px;
-}
-
-.errors {
-  margin: 0 12px;
-}
-</style>

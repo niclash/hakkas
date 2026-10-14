@@ -1,0 +1,39 @@
+/* Hakkas theme: High contrast — white and yellow on black, heavy borders. A theme only
+   sets the variables that src/assets/hakkas.css uses (06 §4.1); themes.json lists the
+   installed themes. */
+:root {
+  color-scheme: dark;
+
+  --hk-bg: #000000;
+  --hk-surface: #000000;
+  --hk-surface-2: #1a1a1a;
+  --hk-text: #ffffff;
+  --hk-text-muted: #ffffff;
+  --hk-border: #ffffff;
+  --hk-border-width: 2px;
+  --hk-accent: #ffff00;
+  --hk-accent-hover: #ffff80;
+  --hk-accent-text: #000000;
+  --hk-accent-soft: #333300;
+  --hk-focus: #00ffff;
+  --hk-danger: #ff8080;
+  --hk-danger-bg: #000000;
+  --hk-running: #00ff00;
+  --hk-stopped: #ffffff;
+  --hk-shadow: none;
+
+  --hk-canvas: #000000;
+  --hk-node-bg: #000000;
+  --hk-node-border: #ffffff;
+  --hk-node-border-width: 2px;
+  --hk-node-title-bg: #ffffff;
+  --hk-node-title-text: #000000;
+  --hk-node-text: #ffffff;
+  --hk-node-selected: #ffff00;
+  --hk-socket: #00ffff;
+  --hk-socket-border: #000000;
+  --hk-connection: #00ffff;
+  --hk-minimap-bg: #000000;
+  --hk-minimap-node: #ffffff;
+  --hk-minimap-viewport: rgba(255, 255, 0, 0.3);
+}

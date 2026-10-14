@@ -4,6 +4,7 @@
     "env.d.ts",
     "src/components/protocols/**/*.ts",
     "src/components/model.ts",
+    "src/theme.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

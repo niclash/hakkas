@@ -1,0 +1,38 @@
+/* Hakkas theme: Dark. A theme only sets the variables that src/assets/hakkas.css uses
+   (06 §4.1); themes.json lists the installed themes. */
+:root {
+  color-scheme: dark;
+
+  --hk-bg: #0e1318;
+  --hk-surface: #161c23;
+  --hk-surface-2: #1f2730;
+  --hk-text: #d9dfe6;
+  --hk-text-muted: #8d99a6;
+  --hk-border: #2b3541;
+  --hk-border-width: 1px;
+  --hk-accent: #4d9bff;
+  --hk-accent-hover: #6cadff;
+  --hk-accent-text: #0a0f15;
+  --hk-accent-soft: #1b2b40;
+  --hk-focus: #6cadff;
+  --hk-danger: #ff8a80;
+  --hk-danger-bg: #3a1d1c;
+  --hk-running: #3fb950;
+  --hk-stopped: #6e7781;
+  --hk-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+
+  --hk-canvas: #11171d;
+  --hk-node-bg: #1b232c;
+  --hk-node-border: #35414e;
+  --hk-node-border-width: 1px;
+  --hk-node-title-bg: #233244;
+  --hk-node-title-text: #e6edf3;
+  --hk-node-text: #b9c3cd;
+  --hk-node-selected: #4d9bff;
+  --hk-socket: #8aa1b8;
+  --hk-socket-border: #11171d;
+  --hk-connection: #6b9bd6;
+  --hk-minimap-bg: rgba(22, 28, 35, 0.92);
+  --hk-minimap-node: #3a4756;
+  --hk-minimap-viewport: rgba(77, 155, 255, 0.18);
+}

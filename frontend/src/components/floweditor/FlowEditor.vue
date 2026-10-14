@@ -46,16 +46,12 @@ onMounted(() => {
 
 
 <template>
-  <div class="container-fluid">
-    <div class="row">
-      <div class="col-auto">
-        <Processes ref="procs" :current="vueModel.currentGraphId.value" @onSelection="(processName:string) => {openProcess(processName)}">Processes!</Processes>
-      </div>
-      <div class="col-auto">
-        <Components ref="comps" @onSelection="(compType:string) => {addComponent(compType)}">Components!</Components>
-      </div>
-      <ReteEditor ref="editor"/>
-    </div>
+  <div class="hk-workspace">
+    <aside class="hk-sidebar">
+      <Processes ref="procs" :current="vueModel.currentGraphId.value" @onSelection="(processName:string) => {openProcess(processName)}"/>
+      <Components ref="comps" @onSelection="(compType:string) => {addComponent(compType)}"/>
+    </aside>
+    <ReteEditor ref="editor"/>
   </div>
 </template>
 
