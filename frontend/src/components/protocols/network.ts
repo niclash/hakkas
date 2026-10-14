@@ -46,6 +46,7 @@ export interface StartedEvent {
 }
 
 export interface StatusEvent {
+    unsaved?: boolean;      // 02 §3.3, "Unsaved state"
     started: boolean;
     description: string;
     running: boolean;
@@ -190,42 +191,46 @@ export class NetworkProtocol {
         }
     }
 
-    request_start() {
+    // For `graph`, or the open process.
+    request_start(graph: string = this.connection.currentGraph) {
         this.connection.send({
             protocol: "network",
             command: "start",
             payload: {
-                graph: this.connection.currentGraph,
+                graph: graph,
             },
         });
     }
 
-    request_stop() {
+    // For `graph`, or the open process.
+    request_stop(graph: string = this.connection.currentGraph) {
         this.connection.send({
             protocol: "network",
             command: "stop",
             payload: {
-                graph: this.connection.currentGraph,
+                graph: graph,
             },
         });
     }
 
-    request_getstatus() {
+    // For `graph`, or the open process.
+    request_getstatus(graph: string = this.connection.currentGraph) {
         this.connection.send({
             protocol: "network",
             command: "getstatus",
             payload: {
-                graph: this.connection.currentGraph,
+                graph: graph,
             },
         });
     }
 
-    request_persist() {
+    // For `graph`, or the open process.
+    request_persist(graph: string = this.connection.currentGraph) {
         this.connection.send({
             protocol: "network",
             command: "persist",
             payload: {
-                graph: this.connection.currentGraph,
+                graph: graph,
             }
         });
     }

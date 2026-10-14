@@ -41,6 +41,8 @@ export class Graph {
         this.running = false;
         this.started = false;
         this.uptime = 0;
+        this.uptimeAt = Date.now();
+        this.unsaved = false;
     }
 
     name: string;
@@ -49,7 +51,9 @@ export class Graph {
     debug: boolean;
     running: boolean;
     started: boolean;
-    uptime: number;
+    uptime: number;     // seconds, at uptimeAt (ms)
+    uptimeAt: number;
+    unsaved: boolean;   // differs from its graph file (02 §3.3, "Unsaved state")
 }
 
 export class PrimitiveNode extends Classic.Node {
@@ -203,14 +207,15 @@ export function attachModel(conn: WsConnection) {
     });
     proto.network.addListener("onNetworkStatus", (s: StatusEvent) => {
         Object.assign(graph(s.graph), {
-            name: s.name, description: s.description, running: s.running, started: s.started, uptime: s.uptime
+            name: s.name, description: s.description, running: s.running, started: s.started, uptime: s.uptime,
+            uptimeAt: Date.now(), unsaved: s.unsaved ?? false
         });
     });
     proto.network.addListener("onNetworkStarted", (s: StartedEvent) => {
-        Object.assign(graph(s.graph), {running: true, started: true});
+        Object.assign(graph(s.graph), {running: true, started: true, uptime: 0, uptimeAt: Date.now()});
     });
     proto.network.addListener("onNetworkStopped", (s: StoppedEvent) => {
-        Object.assign(graph(s.graph), {running: false, started: false, uptime: 0});
+        Object.assign(graph(s.graph), {running: false, started: false, uptime: s.uptime ?? 0, uptimeAt: Date.now()});
     });
     proto.network.addListener("onNetworkError", (e: NetworkErrorEvent) => {
         if (!errorClaims.some(claim => claim(e.message)))
@@ -221,6 +226,11 @@ export function attachModel(conn: WsConnection) {
     });
     proto.runtime.addListener("onDeleteGraphPacket", (p: { graph: string }) => {
         vueModel.graphs.value.delete(p.graph);
+        // The open process is gone: nothing is open (the editor clears).
+        if (vueModel.currentGraphId.value === p.graph) {
+            vueModel.currentGraphId.value = "";
+            vueModel.currentGraph = {id: "", name: "", icon: "", description: "", library: "", main: false};
+        }
     });
     proto.graph.addListener("onGraphClear", (p: ClearEvent) => {
         vueModel.currentGraphId.value = p.id;

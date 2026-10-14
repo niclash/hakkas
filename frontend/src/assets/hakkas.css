@@ -416,6 +416,106 @@ h1, h2, h3 {
   margin-top: 12px;
 }
 
+/* ---- The process list (06 §4.6) ---------------------------------------------------- */
+
+.hk-process {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.hk-process-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hk-process-name-field {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+}
+
+.hk-unsaved {
+  color: var(--hk-accent);
+  font-size: 10px;
+}
+
+.hk-process-actions {
+  display: flex;
+  gap: 0;
+  opacity: 0;
+}
+
+.hk-process:hover .hk-process-actions,
+.hk-process.active .hk-process-actions,
+.hk-process:focus-within .hk-process-actions {
+  opacity: 1;
+}
+
+.hk-process-actions .hk-icon-button {
+  color: var(--hk-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.hk-process-actions .hk-icon-button:hover:not(:disabled) {
+  color: var(--hk-text);
+}
+
+.hk-process-actions .hk-icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.hk-process-details {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  padding-left: 17px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--hk-text-muted);
+}
+
+.hk-process-description {
+  overflow-wrap: anywhere;
+}
+
+.hk-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 100;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  color: var(--hk-text);
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 8px;
+  box-shadow: var(--hk-shadow);
+  animation: hk-notice 3s ease-in-out forwards;
+}
+
+@keyframes hk-notice {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.hk-dialog-error {
+  color: var(--hk-danger);
+}
+
+.hk-button.danger {
+  color: var(--hk-danger);
+  background: var(--hk-danger-bg);
+  border-color: var(--hk-danger);
+}
+
 /* ---- Dialogs and the login screen ------------------------------------------------- */
 
 .hk-overlay {

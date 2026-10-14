@@ -353,6 +353,15 @@ export class GraphProtocol {
         });
     }
 
+    // Renames a process (02 §3.4 `rename`); its id never changes.
+    request_rename(id: string, from: string, to: string) {
+        this.connection.send({
+            protocol: "graph",
+            command: "rename",
+            payload: {id, from, to}
+        });
+    }
+
     request_renamenode(from: string, to: string) {
         console.log("Request renamenode " + from + " ----> " + to);
         this.connection.send({

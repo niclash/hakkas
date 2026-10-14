@@ -1,5 +1,6 @@
 <script setup lang="ts">
 
+// A modal dialog. `cancelLabel: null` shows only the OK button.
 defineProps({
   onOk: {
     type: Function,
@@ -8,6 +9,18 @@ defineProps({
   onCancel: {
     type: Function,
     required: true
+  },
+  okLabel: {
+    type: String,
+    default: "OK"
+  },
+  cancelLabel: {
+    type: [String, null],
+    default: "Cancel"
+  },
+  danger: {
+    type: Boolean,
+    default: false
   }
 })
 defineEmits({})
@@ -15,11 +28,11 @@ defineEmits({})
 
 <template>
   <div class="hk-overlay">
-    <div class="hk-dialog" role="dialog">
+    <div class="hk-dialog" role="dialog" aria-modal="true" @keydown.escape="onCancel()">
       <slot/>
       <div class="hk-actions">
-        <button class="hk-button" @click="onCancel()">Cancel</button>
-        <button class="hk-button primary" @click="onOk()">OK</button>
+        <button v-if="cancelLabel !== null" class="hk-button" data-testid="dialog-cancel" @click="onCancel()">{{ cancelLabel }}</button>
+        <button class="hk-button primary" :class="{danger}" data-testid="dialog-ok" @click="onOk()">{{ okLabel }}</button>
       </div>
     </div>
   </div>

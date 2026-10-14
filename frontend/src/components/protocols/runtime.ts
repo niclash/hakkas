@@ -138,12 +138,15 @@ export class RuntimeProtocol {
         });
     }
 
-    request_new_graph(graphName: string, description: string, icon: string) {
+    // `id`: the new process's id, chosen by the client so that it knows the process when its
+    // runtime:new_graph arrives (02 §3.2); the engine picks one when it is absent.
+    request_new_graph(graphName: string, description: string, icon: string, id?: string) {
         console.log("Request new graph:" + graphName);
         this.connection.send({
             protocol: "runtime",
             command: "new_graph",
             payload: {
+                ...(id !== undefined ? {id} : {}),
                 name: graphName,
                 description: description,
                 icon: icon,

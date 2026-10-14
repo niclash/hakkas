@@ -724,7 +724,7 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
 
 ### 5b. Processes
 
-- [ ] **32. Process management** (02 §3.2–§3.4): rename (`graph:rename`, in place in the list),
+- [x] **32. Process management** (02 §3.2–§3.4): rename (`graph:rename`, in place in the list),
   start/stop (`network:start`/`stop`, the running mark from the events; a start or stop makes
   the process unsaved, and saving stores whether it starts at boot, D2), save (a Save button
   and an "unsaved" mark from `network:status`'s `unsaved`, after task 45; a discreet notice on
@@ -732,6 +732,9 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   naming the process), create (existing "New...": open the new process when its
   `runtime:new_graph` arrives from this client's request). The description shown, read-only
   (D3). Uptime from `network:status`.
+  Done (06 §4.6, `Processes.vue`, `ProcessItem.vue`, `processes.ts`). No protocol change: start,
+  stop and rename are followed by `network:getstatus`, since their own events reach only the
+  process's subscribers. The e2e fixture gained `dataDir` and `allowedErrors` (a failed save).
 - [x] **33. Startup activation** — merged into task 32 (D2: the saved `started` state).
 - [ ] **34. Live values** (`network:edges`/`network:data`, 02 §4.2): watch a connection (context
   menu, inspector, or a "watch all" toggle for the open process) and show its value as a label

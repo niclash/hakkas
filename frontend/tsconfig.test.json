@@ -13,6 +13,7 @@
     "src/components/floweditor/value-position.ts",
     "src/components/floweditor/menus.ts",
     "src/components/palette.ts",
+    "src/components/processes.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

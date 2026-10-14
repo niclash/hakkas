@@ -30,6 +30,7 @@ export type GraphSource = string | Record<string, unknown>;
 export interface Engine {
     url: string;            // the page, http://127.0.0.1:<port>/
     port: number;
+    dataDir: string;        // its datadir (graphs/, types/)
     log(): string;
     // A second client on the WebSocket, logged in (another user of the same engine).
     client(user?: TestUser): Promise<ProtocolClient>;
@@ -40,6 +41,7 @@ export interface Engine {
 interface Options {
     graphs: GraphSource[];                  // the processes in <datadir>/graphs/
     config: Record<string, unknown>;        // merged into hakkas.json
+    allowedErrors: RegExp[];                // error lines the test causes on purpose
 }
 
 async function portFree(port: number): Promise<boolean> {
@@ -107,8 +109,9 @@ async function stopEngine(proc: ChildProcess): Promise<number | null> {
 export const test = base.extend<Options & { engine: Engine, pageErrors: string[] }>({
     graphs: [[EXAMPLE_GRAPH], {option: true}],
     config: [{}, {option: true}],
+    allowedErrors: [[], {option: true}],
 
-    engine: async ({graphs, config}, use, testInfo) => {
+    engine: async ({graphs, config, allowedErrors}, use, testInfo) => {
         const dir = mkdtempSync(join(tmpdir(), "hakkas-e2e-"));
         mkdirSync(join(dir, "conf"));
         mkdirSync(join(dir, "data", "graphs"), {recursive: true});
@@ -126,6 +129,7 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
         await use({
             url: `http://127.0.0.1:${port}/`,
             port,
+            dataDir: join(dir, "data"),
             log: () => log.join("\n"),
             client: async (user = EDITOR) => {
                 const client = await ProtocolClient.connect(port, user.user, user.password);
@@ -142,7 +146,8 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
         rmSync(dir, {recursive: true, force: true});
         // The engine stops cleanly (05 §1.2) and logged no error.
         expect(code, "the engine's exit code").toBe(0);
-        expect(log.filter(l => l.startsWith("error")), "errors in the engine's log").toEqual([]);
+        expect(log.filter(l => l.startsWith("error") && !allowedErrors.some(e => e.test(l))),
+            "errors in the engine's log").toEqual([]);
     },
 
     // Page errors and failed graph events, collected for every test and checked at its end.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 
-import {computed, onMounted, ref} from "vue";
+import {computed, onMounted, ref, watch} from "vue";
 import {createEditor} from './viewmodel';
 import {editor} from './viewmodel/default';
 import {componentTemplates, Connection, isValueNode, PrimitiveNode, ValueNode, vueModel} from "../model";
@@ -586,6 +586,22 @@ const socketLegend = [
   {kind: "bool", label: "bool"},
   {kind: "string", label: "string"},
 ];
+
+// The open process was deleted (06 §4.6): the editor shows nothing.
+watch(() => vueModel.currentGraphId.value, id => {
+  if (id !== "")
+    return;
+  eventQueue = eventQueue.then(async () => {
+    vueModel.pipesDisabled = true;
+    try {
+      menu.value = undefined;
+      draft.value = undefined;
+      await editor.clear();
+    } finally {
+      vueModel.pipesDisabled = false;
+    }
+  });
+});
 
 onMounted(() => {
   createEditor(rete.value!).then(() => {
