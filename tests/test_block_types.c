@@ -145,17 +145,12 @@ static const struct expected_type table[] = {
 	{"math/Subtract", "remove", "out = in1-in2", 2, "number", NULL},
 	{"math/Modulo", "percent", "out = in1 MOD in2", 2, "number", NULL},
 	{"math/Remainder", "percent", "out = in1 REMAINDER in2", 2, "number", NULL},
-	{"math/And2", "logic", "out = in1 AND in2", 2, "number", NULL},
-	{"math/Or2", "logic", "out = in1 OR in2", 2, "number", NULL},
-	{"math/Xor", "logic", "out = in1 XOR in2", 2, "number", NULL},
-	{"math/And4", "logic", "out = in1 AND in2 AND in3 AND in4", 4, "number", NULL},
-	{"math/Or4", "logic", "out = in1 OR in2 OR in3 OR in4", 4, "number", NULL},
-	{"math/Greater", "compare", "out = in1 > in2", 2, "bool", NULL},
-	{"math/Less", "compare", "out = in1 < in2", 2, "bool", NULL},
-	{"math/Equal", "compare", "out = in1 == in2", 2, "bool", NULL},
-	{"math/NotEqual", "compare", "out = in1 != in2", 2, "bool", NULL},
-	{"math/LessEqual", "compare", "out = in1 <= in2", 2, "bool", NULL},
-	{"math/GreaterEqual", "compare", "out = in1 >= in2", 2, "bool", NULL},
+	{"compare/Greater", "compare", "out = in1 > in2", 2, "bool", NULL},
+	{"compare/Less", "compare", "out = in1 < in2", 2, "bool", NULL},
+	{"compare/Equal", "compare", "out = in1 == in2", 2, "bool", NULL},
+	{"compare/NotEqual", "compare", "out = in1 != in2", 2, "bool", NULL},
+	{"compare/LessEqual", "compare", "out = in1 <= in2", 2, "bool", NULL},
+	{"compare/GreaterEqual", "compare", "out = in1 >= in2", 2, "bool", NULL},
 	{"logic/And", "logic", "out = in1 AND in2 (boolean)", 2, "bool", "bool"},
 	{"logic/Or", "logic", "out = in1 OR in2 (boolean)", 2, "bool", "bool"},
 	{"logic/Xor", "logic", "out = in1 XOR in2 (boolean)", 2, "bool", "bool"},
@@ -465,16 +460,6 @@ static bool is_nan(Linkable v)
 	return ok;
 }
 
-static bool is_i64(Linkable v, int64_t expected)
-{
-	bool ok = v.type == LINKABLE_I64 && v.as.i64 == expected;
-	if (!ok)
-		fprintf(stderr, "  got type %d, expected i64 %lld\n", (int)v.type,
-			(long long)expected);
-	linkable_clear(&v);
-	return ok;
-}
-
 static bool is_bool(Linkable v, bool expected)
 {
 	bool ok = v.type == LINKABLE_BOOL && v.as.b == expected;
@@ -510,12 +495,9 @@ static void test_mixed_input_types(void)
 	Linkable in[2] = {unset, f(3)};
 	CHECK(is_f64(run("math/Mult2", in, 2), 0.0));
 	CHECK(is_f64(run4("math/Add4", i(1), s("2"), b(true), s("0.5")), 4.5));
-	/* Bitwise inputs go through to_i64: strings parse as integers only. */
-	CHECK(is_i64(run2("math/Or2", s("12"), s("1.5")), 12));
-	CHECK(is_i64(run2("math/Or2", b(true), f(6.9)), 7));
-	CHECK(is_bool(run2("math/Greater", s("10"), f(9.5)), true));
-	CHECK(is_bool(run2("math/Equal", b(true), i(1)), true));
-	CHECK(is_bool(run2("math/Equal", s("1"), s("1.0")), true));
+	CHECK(is_bool(run2("compare/Greater", s("10"), f(9.5)), true));
+	CHECK(is_bool(run2("compare/Equal", b(true), i(1)), true));
+	CHECK(is_bool(run2("compare/Equal", s("1"), s("1.0")), true));
 }
 
 static void test_divide(void)
@@ -577,30 +559,30 @@ static void test_remainder(void)
 	CHECK(is_f64(run2("math/Remainder", f(-5), f(INFINITY)), -5.0));
 }
 
-static void test_bitwise(void)
+/* Former names (03 §3, plan task 47): the comparisons were math/...; the
+ * file loaders map them to compare/... The removed bitwise types have no
+ * alias. */
+static void test_aliases(void)
 {
-	CHECK(is_i64(run2("math/And2", i(0xC), i(0xA)), 0x8));
-	CHECK(is_i64(run2("math/Or2", i(0xC), i(0xA)), 0xE));
-	CHECK(is_i64(run2("math/Xor", i(0xC), i(0xA)), 0x6));
-	CHECK(is_i64(run4("math/And4", i(0xF), i(0xE), i(0x7), i(0x6)), 0x6));
-	CHECK(is_i64(run4("math/Or4", i(1), i(2), i(4), i(8)), 0xF));
-	/* Negative values are two's complement. */
-	CHECK(is_i64(run2("math/And2", i(-1), i(0x55)), 0x55));
-	CHECK(is_i64(run2("math/Xor", i(-1), i(0)), -1));
-	CHECK(is_i64(run2("math/Or2", i(INT64_MIN), i(1)), INT64_MIN + 1));
-	/* Full 64-bit values survive (i64 output, not f64). */
-	CHECK(is_i64(run2("math/Or2", i(INT64_MAX - 1), i(1)), INT64_MAX));
-	/* Doubles truncate toward zero and saturate (01 §2.1). */
-	CHECK(is_i64(run2("math/And2", f(7.9), f(-1)), 7));
-	CHECK(is_i64(run2("math/Or2", f(-2.5), f(0)), -2));
-	CHECK(is_i64(run2("math/Or2", f(NAN), f(0)), 0));
-	CHECK(is_i64(run2("math/Or2", f(INFINITY), f(0)), INT64_MAX));
-	CHECK(is_i64(run2("math/Or2", f(-1e300), f(0)), INT64_MIN));
-	/* And4 with unconnected inputs (default 0) is 0; Or4 is the OR of the rest. */
-	Linkable in[2] = {i(-1), i(-1)};
-	CHECK(is_i64(run("math/And4", in, 2), 0));
-	Linkable in2[2] = {i(3), i(4)};
-	CHECK(is_i64(run("math/Or4", in2, 2), 7));
+	static const char *const moved[] = {"Greater",	 "Less",      "Equal",
+					    "NotEqual", "LessEqual", "GreaterEqual"};
+	for (size_t k = 0; k < sizeof(moved) / sizeof(moved[0]); k++) {
+		char old_name[32], name[32];
+		snprintf(old_name, sizeof(old_name), "math/%s", moved[k]);
+		snprintf(name, sizeof(name), "compare/%s", moved[k]);
+		CHECK_STREQ(block_types_alias(old_name), name);
+		CHECK(block_types_get(old_name) == NULL);
+		CHECK(block_types_get(block_types_alias(old_name)) != NULL);
+	}
+	static const char *const removed[] = {"math/And2", "math/Or2", "math/Xor", "math/And4",
+					      "math/Or4"};
+	for (size_t k = 0; k < sizeof(removed) / sizeof(removed[0]); k++) {
+		CHECK_STREQ(block_types_alias(removed[k]), removed[k]);
+		CHECK(block_types_get(removed[k]) == NULL);
+	}
+	CHECK_STREQ(block_types_alias("math/Add2"), "math/Add2");
+	CHECK_STREQ(block_types_alias("compare/Less"), "compare/Less");
+	CHECK(block_types_alias(NULL) == NULL);
 }
 
 static void test_comparisons(void)
@@ -609,12 +591,12 @@ static void test_comparisons(void)
 		const char *type;
 		bool lt, eq, gt, nan;
 	} cmp[] = {
-		{"math/Greater", false, false, true, false},
-		{"math/Less", true, false, false, false},
-		{"math/Equal", false, true, false, false},
-		{"math/NotEqual", true, false, true, true},
-		{"math/LessEqual", true, true, false, false},
-		{"math/GreaterEqual", false, true, true, false},
+		{"compare/Greater", false, false, true, false},
+		{"compare/Less", true, false, false, false},
+		{"compare/Equal", false, true, false, false},
+		{"compare/NotEqual", true, false, true, true},
+		{"compare/LessEqual", true, true, false, false},
+		{"compare/GreaterEqual", false, true, true, false},
 	};
 	for (size_t k = 0; k < sizeof(cmp) / sizeof(cmp[0]); k++) {
 		const char *t = cmp[k].type;
@@ -700,7 +682,7 @@ int main(void)
 	RUN(test_divide);
 	RUN(test_modulo);
 	RUN(test_remainder);
-	RUN(test_bitwise);
+	RUN(test_aliases);
 	RUN(test_comparisons);
 	RUN(test_linear);
 	RUN(test_logic);

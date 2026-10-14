@@ -3,8 +3,7 @@
  * combining calendar primitives and other bool signals. Stateless,
  * event-driven (compute_on_input, TIMER_NONE); every input is read with
  * to_bool (01 §2.1: true only for a true bool, a non-zero number or the text
- * "true"), the output is a bool. The math/And2 family are bitwise integer
- * operations with number outputs; these are not.
+ * "true"), the output is a bool.
  */
 #include <math.h>
 #include <stdbool.h>

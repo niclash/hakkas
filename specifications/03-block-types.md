@@ -39,9 +39,9 @@ Decisions (plan task 8), on timers (`01-architecture-overview.md` §3.2 item 7 a
 
 ## 3. Built-in block types
 
-Unless noted, the following are stateless, event-driven blocks (`compute_on_input = true`, `TIMER_NONE`), with ports named `in1..inN → out` and every port of type `"number"` with default `0`. The comparison blocks' `out` port is of type `"bool"`; the `logic/*` blocks' ports are all `"bool"` with default `false`. Every type uses the engine-wide change threshold unless a type default is listed here. The table's order is the registration order (`01-architecture-overview.md` §2.3), family by family: `math/`, `logic/`, `process/`, `timing/` (decided, plan task 24).
+Unless noted, the following are stateless, event-driven blocks (`compute_on_input = true`, `TIMER_NONE`), with ports named `in1..inN → out` and every port of type `"number"` with default `0`. The comparison blocks' `out` port is of type `"bool"`; the `logic/*` blocks' ports are all `"bool"` with default `false`. Every type uses the engine-wide change threshold unless a type default is listed here. The table's order is the registration order (`01-architecture-overview.md` §2.3), family by family: `math/`, `compare/`, `logic/`, `process/`, `timing/` (decided, plan task 24; `compare/` since plan task 47).
 
-**Decided 2026-10-14 with the user, not implemented yet (plan task 47)**: the bitwise integer blocks `math/And2`, `math/Or2`, `math/Xor`, `math/And4` and `math/Or4` are removed (boolean logic is `logic/*`); the comparisons move to their own category under the names `compare/Greater`, `compare/Less`, `compare/Equal`, `compare/NotEqual`, `compare/LessEqual` and `compare/GreaterEqual`. Graph and type files that name the old comparison names still load: the loader accepts `math/<comparison>` as an alias of `compare/<comparison>`, and a save writes the new name. A file naming a removed bitwise block loads it as a placeholder (`05-app-lifecycle-persistence.md` §2.2). The table below is the current state until that task lands.
+**Former names** (decided 2026-10-14 with the user, implemented in plan task 47): the bitwise integer blocks `math/And2`, `math/Or2`, `math/Xor`, `math/And4` and `math/Or4` were removed (boolean logic is `logic/*`), and the comparisons moved from `math/` to their own family, `compare/` (`math/Greater` is now `compare/Greater`, and so on). Graph and composite type files that name a comparison's `math/` name still load: the loaders (`05-app-lifecycle-persistence.md` §2.2, §2.3) map it to the `compare/` name, so the block is the `compare/` type and a save writes the new name (`block_types_alias`, `src/blocktypes/block_types.h`). Only the file loaders do: commands (`graph:addnode`, `describe type`, the C API) take the current names. A graph file naming a removed bitwise block loads it as a placeholder (`05-app-lifecycle-persistence.md` §2.2); a composite type using one does not load (`"Unknown component: math/And2"`, §5.1).
 
 | Name | Icon | Description | Formula |
 |---|---|---|---|
@@ -52,17 +52,12 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `math/Subtract` | remove | `out = in1-in2` | `to_f64(in1)-to_f64(in2)` |
 | `math/Modulo` | percent | `out = in1 MOD in2` | `to_f64(in1) mod to_f64(in2)` (floored modulo, see below) |
 | `math/Remainder` | percent | `out = in1 REMAINDER in2` | `to_f64(in1) % to_f64(in2)` (truncating remainder, C `fmod`) |
-| `math/And2` | logic | `out = in1 AND in2` | `to_i64(in1) & to_i64(in2)` (bitwise) |
-| `math/Or2` | logic | `out = in1 OR in2` | `to_i64(in1) \| to_i64(in2)` |
-| `math/Xor` | logic | `out = in1 XOR in2` | `to_i64(in1) ^ to_i64(in2)` |
-| `math/And4` | logic | `out = in1 AND in2 AND in3 AND in4` | bitwise AND chain |
-| `math/Or4` | logic | `out = in1 OR in2 OR in3 OR in4` | bitwise OR chain |
-| `math/Greater` | compare | `out = in1 > in2` | `to_f64(in1) > to_f64(in2)` (bool result) |
-| `math/Less` | compare | `out = in1 < in2` | `to_f64(in1) < to_f64(in2)` (bool result) |
-| `math/Equal` | compare | `out = in1 == in2` | `to_f64(in1) == to_f64(in2)` (bool result) |
-| `math/NotEqual` | compare | `out = in1 != in2` | `to_f64(in1) != to_f64(in2)` (bool result) |
-| `math/LessEqual` | compare | `out = in1 <= in2` | `to_f64(in1) <= to_f64(in2)` (bool result) |
-| `math/GreaterEqual` | compare | `out = in1 >= in2` | `to_f64(in1) >= to_f64(in2)` (bool result) |
+| `compare/Greater` | compare | `out = in1 > in2` | `to_f64(in1) > to_f64(in2)` (bool result) |
+| `compare/Less` | compare | `out = in1 < in2` | `to_f64(in1) < to_f64(in2)` (bool result) |
+| `compare/Equal` | compare | `out = in1 == in2` | `to_f64(in1) == to_f64(in2)` (bool result) |
+| `compare/NotEqual` | compare | `out = in1 != in2` | `to_f64(in1) != to_f64(in2)` (bool result) |
+| `compare/LessEqual` | compare | `out = in1 <= in2` | `to_f64(in1) <= to_f64(in2)` (bool result) |
+| `compare/GreaterEqual` | compare | `out = in1 >= in2` | `to_f64(in1) >= to_f64(in2)` (bool result) |
 | `logic/And` | logic | `out = in1 AND in2 (boolean)` | `to_bool(in1) && to_bool(in2)`; bool ports, see §6.2 |
 | `logic/Or` | logic | `out = in1 OR in2 (boolean)` | `to_bool(in1) \|\| to_bool(in2)` |
 | `logic/Xor` | logic | `out = in1 XOR in2 (boolean)` | `to_bool(in1) != to_bool(in2)` |
@@ -79,7 +74,7 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `timing/WeekOfYear` | date_range | true during the selected ISO weeks | calendar primitive, §6.2 |
 
 **Results and edge cases** (decided, plan task 5):
-- The arithmetic blocks and `process/Linear` output an f64; the comparisons a bool; the bitwise blocks (`And2`, `Or2`, `Xor`, `And4`, `Or4`) an **i64**, so all 64 bits of the result survive (an f64 would round values beyond 2^53). Their port type is still `"number"`.
+- The arithmetic blocks and `process/Linear` output an f64; the comparisons a bool.
 - `math/Modulo` is the **floored** modulo `a − b·floor(a/b)`, computed exactly from `fmod`: a non-zero result has the sign of the divisor (`-7 mod 3 = 2`, `7 mod -3 = -2`), a zero result is `+0` for a positive divisor and `-0` for a negative one. NaN when either operand is NaN, the divisor is `±0`, or the dividend is infinite. With an infinite divisor the result is the dividend if it has the divisor's sign (or is zero), else the divisor (`-5 mod Infinity = Infinity`). This is exactly Python's float `%`; like it, a tiny result of the sign opposite to the divisor can round up to the divisor itself.
 - `math/Remainder` is C's `fmod` (`a − b·trunc(a/b)`): the result has the sign of the dividend (`-7 % 3 = -1`). NaN when either operand is NaN, the divisor is `±0`, or the dividend is infinite; the dividend itself for an infinite divisor.
 - Comparisons follow IEEE-754: with a NaN operand every comparison is `false` except `NotEqual`, which is `true`; `0 == -0`.
@@ -281,7 +276,7 @@ Calendar primitives — each a scheduled block (`TIMER_SCHEDULED`) that reads th
 
 **Selector strings** (all day/week/month/year selectors): a single value, a range, a list, or a mix — `"3"`, `"1-5"`, `"6,7"`, `"1-3,5"` — so e.g. Monday–Friday is one `DayOfWeek` block with `"1-5"`.
 
-**Boolean logic**: `logic/And`, `logic/Or`, `logic/Not` and `logic/Xor` with `bool` inputs and a `bool` output, for combining calendar primitives (the `math/And2`/`Or2` blocks are bitwise integer operations with number outputs).
+**Boolean logic**: `logic/And`, `logic/Or`, `logic/Not` and `logic/Xor` with `bool` inputs and a `bool` output, for combining calendar primitives.
 
 **Standard schedule types** (day, week, month schedules, …) are composites of the primitives and logic blocks. They are **not built into hakkas**: they are supplied separately as a **standard library** of composite type files (§5.1), which a deployment installs into its `types/` directory if it wants them. Once installed they are ordinary user types.
 
@@ -296,7 +291,7 @@ Decisions (plan task 24; `src/blocktypes/calendar.h`, `calendar.c`, `logic.c`, `
 - **Timers**: every compute returns the delay to the next instant at which `out` may change: for `MinuteRange` the next start or end of the range, for the day-based primitives the next local midnight at which the day's match differs. The boundary is a local time, converted to UTC as the first instant at which local time reaches it (`tz_next_reach`); the block also wakes at every daylight-saving transition (where local time jumps without passing the boundaries in between) and re-evaluates. A wake-up that changes nothing propagates nothing. A day-based primitive looks at most 400 days ahead; if its match changes on none of them (week 53, which is years away in most years, or a selector that matches every day), it wakes after that and looks again. An input change computes at once and re-arms the timer (§2).
 - **Daylight-saving edges**, as above: in spring the skipped local hour does not exist; a boundary inside it is reached at the jump, so a range starting in it begins at the jump, one ending in it ends at the jump, and one lying entirely in it (`"02:00-03:00"` in Sweden) is not true that day. In autumn the repeated hour is evaluated on local wall-clock time: a range in it (`"02:30-02:45"`) is true twice, and one covering it (`"01:00-03:00"`) is true for three hours. A day starts at local midnight in whatever offset is in effect.
 - **Wall-clock steps** (the clock set by the user, an NTP correction, the first synchronization): the runtime re-runs every armed calendar primitive at once (`01-architecture-overview.md` §3.4).
-- **`logic/*`**: `logic/And`, `logic/Or`, `logic/Xor` with inputs `in1`, `in2`, and `logic/Not` with input `in`; every port `"bool"` with default `false`, every input read with `to_bool`; port descriptions `"Operand 1"`, `"Operand 2"`, `"Operand"`, `out` → `"Result"`; icon `logic`. Registered after the `math/` family (the §3 table).
+- **`logic/*`**: `logic/And`, `logic/Or`, `logic/Xor` with inputs `in1`, `in2`, and `logic/Not` with input `in`; every port `"bool"` with default `false`, every input read with `to_bool`; port descriptions `"Operand 1"`, `"Operand 2"`, `"Operand"`, `out` → `"Result"`; icon `logic`. Registered after the `compare/` family (the §3 table).
 - **The standard library** is the directory **`library/schedules/`** of the repository: one composite type file (§5.1, hakkas terms, `"connections"`) per type, named as `<datadir>/types/` names it (the encoded type name, `05-app-lifecycle-persistence.md` §2.3, e.g. `schedule%2FWeekSchedule.json`). A deployment installs it by copying the files into `<datadir>/types/`; they are then ordinary user types, loaded at startup (`05-app-lifecycle-persistence.md` §1.4 step 6). The types, all with icon `schedule` and the output `out` (bool):
   - `schedule/DaySchedule` — input `range`: `timing/MinuteRange` alone, true every day within the range;
   - `schedule/WeekSchedule` — inputs `range`, `days`, `sunday_first`: `timing/MinuteRange` AND `timing/DayOfWeek`;

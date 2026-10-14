@@ -44,6 +44,24 @@ bool block_types_unregister(const char *name)
 	return true;
 }
 
+/* Former names of built-in types (03 §3), each with its current name. */
+static const struct {
+	const char *old_name, *name;
+} aliases[] = {
+	{"math/Greater", "compare/Greater"},	   {"math/Less", "compare/Less"},
+	{"math/Equal", "compare/Equal"},	   {"math/NotEqual", "compare/NotEqual"},
+	{"math/LessEqual", "compare/LessEqual"}, {"math/GreaterEqual", "compare/GreaterEqual"},
+};
+
+const char *block_types_alias(const char *name)
+{
+	for (size_t i = 0; name != NULL && i < sizeof(aliases) / sizeof(aliases[0]); i++) {
+		if (strcmp(name, aliases[i].old_name) == 0)
+			return aliases[i].name;
+	}
+	return name;
+}
+
 const BlockTypeDef *block_types_get(const char *name)
 {
 	if (name == NULL)
@@ -81,6 +99,8 @@ static enum block_types_err register_all(const BlockTypeDef *defs, size_t n)
 enum block_types_err block_types_register_builtins(void)
 {
 	enum block_types_err err = register_all(math_block_types, math_block_types_count);
+	if (err == BLOCK_TYPES_OK)
+		err = register_all(compare_block_types, compare_block_types_count);
 	if (err == BLOCK_TYPES_OK)
 		err = register_all(logic_block_types, logic_block_types_count);
 	if (err == BLOCK_TYPES_OK)

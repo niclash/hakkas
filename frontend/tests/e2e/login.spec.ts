@@ -11,6 +11,12 @@ test("logging in shows every block type and every process", async ({page, engine
     await loggedIn(page, engine.url);
     await expect(page.getByTestId("block-type")).toHaveCount(count);
     await expect(page.locator("[data-type='math/Add2']")).toBeVisible();
+    // 03 §3 (plan task 47): the comparisons are their own section; the bitwise blocks are gone.
+    const compare = page.locator("details.hk-group").filter({has: page.locator("summary", {hasText: /^compare$/})});
+    await expect(compare.getByTestId("block-type")).toHaveText(
+        ["Greater", "Less", "Equal", "NotEqual", "LessEqual", "GreaterEqual"]);
+    for (const removed of ["math/And2", "math/Or2", "math/Xor", "math/And4", "math/Or4", "math/Greater"])
+        await expect(page.locator(`[data-type='${removed}']`)).toHaveCount(0);
     await expect(page.getByTestId("process")).toHaveCount(1);
     await expect(processItem(page, "Simple Example")).toBeVisible();
 });

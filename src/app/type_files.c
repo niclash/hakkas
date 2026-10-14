@@ -97,7 +97,8 @@ static const char *missing_inner_type(const cJSON *doc)
 	cJSON_ArrayForEach(e, blocks)
 	{
 		const cJSON *type = cJSON_GetObjectItemCaseSensitive(e, "type");
-		if (cJSON_IsString(type) && block_types_get(type->valuestring) == NULL)
+		if (cJSON_IsString(type) &&
+		    block_types_get(block_types_alias(type->valuestring)) == NULL)
 			return type->valuestring;
 	}
 	return NULL;

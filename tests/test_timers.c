@@ -569,7 +569,7 @@ static InputWatch watch = {.on_value = log_value};
 static Block *interval(void)
 {
 	Block *i = add("I", "timing/Interval");
-	Block *e = add("E", "math/Equal");
+	Block *e = add("E", "compare/Equal");
 	CHECK(graph_connect(gr, "I", "out", "E", "in1", NULL) == GRAPH_OK);
 	block_watch_input(e, 0, &watch);
 	trace[0] = '\0';

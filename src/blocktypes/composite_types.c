@@ -366,7 +366,8 @@ static enum composite_status build_blocks(Build *bd, const cJSON *doc)
 	const cJSON *e;
 	cJSON_ArrayForEach(e, member(doc, "blocks"))
 	{
-		const char *type_name = string_of(e, "type");
+		/* A former built-in name is its current one (03 §3). */
+		const char *type_name = block_types_alias(string_of(e, "type"));
 		const BlockTypeDef *type = block_types_get(type_name);
 		if (strcmp(type_name, name) == 0 || (type != NULL && contains(type, name)))
 			return fail(bd->msg, COMPOSITE_ERR_RECURSIVE, "Recursive component: %s",

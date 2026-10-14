@@ -665,6 +665,36 @@ static void test_placeholders(void)
 
 /* ---- Invalid entries and malformed files (05 §2.2) ----------------------------- */
 
+/* Former type names (03 §3, plan task 47): a comparison's math/ name loads
+ * as compare/... and is saved so; a removed bitwise block is a placeholder. */
+#define ALIASED_FILE(greater)                                                                      \
+	"{'id':'a','name':'A','description':'','icon':'','started':false,"                         \
+	"'blocks':{'G':{'component':'" greater "','metadata':{'x':50,'y':50}},"                   \
+	"'O':{'component':'math/Or2','metadata':{'x':60,'y':50}},"                                 \
+	"'N':{'component':'logic/Not','metadata':{'x':70,'y':50}}},"                               \
+	"'connections':[{'src':{'data':3},'tgt':{'block':'G','port':'in1'}},"                      \
+	"{'src':{'block':'G','port':'out'},'tgt':{'block':'N','port':'in'}},"                      \
+	"{'src':{'block':'O','port':'out'},'tgt':{'block':'G','port':'in2'}}],"                    \
+	"'inports':[],'outports':[]}"
+
+static void test_aliases(void)
+{
+	setup("aliases");
+	Graph *g = load(ALIASED_FILE("math/Greater"), GRAPH_FILES_OK);
+	CHECK_STREQ(logs, "warn v: block O: unknown component math/Or2, kept as a placeholder\n");
+	const Block *b = graph_find_block(g, "G");
+	CHECK(b != NULL && b->type == block_types_get("compare/Greater"));
+	CHECK_STREQ(block_component(b), "compare/Greater");
+	CHECK(block_is_placeholder(graph_find_block(g, "O")));
+	CHECK(graphs_start(&gs, "a", NULL) == GRAPH_OK);
+	runtime_drain(&rt, 100);
+	CHECK_STREQ(input_value(g, "N", "in"), "true"); /* 3 > 0 */
+	CHECK(graphs_stop(&gs, "a", NULL) == GRAPH_OK);
+	/* Saved with the current name; the placeholder keeps its own. */
+	check_saved(g, jq(ALIASED_FILE("compare/Greater")));
+	teardown();
+}
+
 static void test_invalid_entries(void)
 {
 	setup("invalid");
@@ -1115,6 +1145,7 @@ int main(void)
 	RUN(test_hand_written);
 	RUN(test_started);
 	RUN(test_placeholders);
+	RUN(test_aliases);
 	RUN(test_invalid_entries);
 	RUN(test_block_keys);
 	RUN(test_examples);

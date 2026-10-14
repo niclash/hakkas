@@ -181,7 +181,7 @@ static void test_sensor_thread(void)
 	/* a.out = a.in1 + a.in2 drives relay[1] (true once it is non-zero);
 	 * b compares: b.out = a.out >= 200 drives relay[2]. */
 	CHECK(hakkas_block_add(h, "p", "a", "math/Add2", NULL, NULL) == HAKKAS_OK);
-	CHECK(hakkas_block_add(h, "p", "b", "math/GreaterEqual", NULL, NULL) == HAKKAS_OK);
+	CHECK(hakkas_block_add(h, "p", "b", "compare/GreaterEqual", NULL, NULL) == HAKKAS_OK);
 	CHECK(hakkas_connection_add(h, "p", "a", "out", "b", "in1", NULL, NULL) == HAKKAS_OK);
 	HakkasValue limit = linkable_from_f64(THREAD_VALUES);
 	CHECK(hakkas_initial_add(h, "p", "b", "in2", &limit, NULL) == HAKKAS_OK);

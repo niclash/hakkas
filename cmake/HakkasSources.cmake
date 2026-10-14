@@ -17,6 +17,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/app/type_files.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/block_types.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/calendar.c
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/compare.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/composite_types.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/logic.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c

@@ -651,10 +651,14 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   Decisions made while implementing it are in 02 §2.3.1 (the chain keeps one key; a failed
   resume does not end the entry) and 06 §2 (a failed resume shows the login form without an
   error). The theme end-to-end test now logs out before its reload, which would resume.
-- [ ] **47. Block types** (03 §3): remove `math/And2`, `Or2`, `Xor`, `And4`, `Or4`; rename the
+- [x] **47. Block types** (03 §3): remove `math/And2`, `Or2`, `Xor`, `And4`, `Or4`; rename the
   comparisons to `compare/*` with the `math/*` names accepted as aliases by the graph and type
   file loaders (a save writes the new name); update 03's table, `describe`, the tests, and the
   palette's end-to-end expectations.
+  Done as `src/blocktypes/compare.c` and `block_types_alias`, used by the graph file and type
+  file loaders only (so `describe topology` prints the new names; `describe type` and commands
+  take the current names). A graph file's bitwise block becomes a placeholder; a composite type
+  using one does not load.
 
 ### 5a. Working with blocks
 

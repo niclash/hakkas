@@ -2,7 +2,8 @@
  * Internal to blocktypes/: the built-in type families (03 §3), each a static
  * const array of definitions in the order of the 03 §3 table, registered by
  * block_types_register_builtins in that order, family by family: math/,
- * logic/, process/, timing/ (Interval, then the calendar primitives).
+ * compare/, logic/, process/, timing/ (Interval, then the calendar
+ * primitives).
  */
 #ifndef HAKKAS_BLOCKTYPES_BUILTINS_H
 #define HAKKAS_BLOCKTYPES_BUILTINS_H
@@ -14,6 +15,10 @@
 /* math/... (blocktypes/math.c). */
 extern const BlockTypeDef math_block_types[];
 extern const size_t math_block_types_count;
+
+/* compare/Greater ... compare/GreaterEqual (blocktypes/compare.c). */
+extern const BlockTypeDef compare_block_types[];
+extern const size_t compare_block_types_count;
 
 /* logic/And, Or, Xor, Not (blocktypes/logic.c). */
 extern const BlockTypeDef logic_block_types[];

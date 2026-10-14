@@ -81,7 +81,7 @@ The order of the work is phase 5 of `docs/plan.md`. Decided with the user for it
 - **A process's description** stays read-only in the UI for now (set at creation; no command changes it).
 - **Composite types** are view-only for now: create, describe, rename and remove them, and look inside one; editing an existing type's inside is wanted in the long term and needs its own design (what happens to running instances).
 - **Fewer logins**: reloading the page does not ask for the password again — the session is resumed with a resume key (`02-wire-protocol.md` §2.3.1, a protocol addition), kept in the browser's `localStorage` until the session would have expired or the user logs out. Implemented (§2, plan task 46).
-- **Block categories**: the bitwise `math/And2` … blocks go and the comparisons move to `compare/` (`03-block-types.md` §3); the palette's sections are the type names' prefixes, as now.
+- **Block categories**: the bitwise `math/And2` … blocks are gone and the comparisons are `compare/*` (`03-block-types.md` §3, plan task 47); the palette's sections are the type names' prefixes, so `compare` is a section of its own.
 
 What the frontend does today is §2–§4: log in (and resume after a reload), list the block types and processes, open a process and draw it, and follow every change the engine broadcasts. The editing commands are sent from the editor's hooks — `addnode` (from the block palette), `removenode`, `addedge`, `removeedge`, and `changenode` while a block is dragged — and `runtime:new_graph` from the process list, but they have only been tried in passing. Missing, roughly in the order they are likely to be needed:
 

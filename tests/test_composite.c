@@ -886,6 +886,40 @@ static void test_load_all(void)
 	teardown();
 }
 
+/* Former type names (03 §3, plan task 47): an inner math/ comparison is
+ * compare/... (also when types/ is loaded, and in the saved document); a
+ * removed bitwise type is unknown. */
+static void test_aliases(void)
+{
+	setup();
+	CompositeMessage m;
+	CHECK(reg("{'name':'t/Lt','blocks':[{'name':'L','type':'math/Less'}],'inports':[{'name':"
+		  "'a','tgt':'L.in1'}],'outports':[{'name':'lt','src':'L.out'}]}",
+		  &m) == COMPOSITE_OK);
+	CHECK(strstr(source("t/Lt"), "\"type\":\"compare/Less\"") != NULL);
+	CHECK(strstr(source("t/Lt"), "math/Less") == NULL);
+	refused("{'name':'t/B','blocks':[{'name':'x','type':'math/And2'}]}",
+		COMPOSITE_ERR_UNKNOWN_TYPE, "Unknown component: math/And2");
+	composite_types_reset();
+
+	GraphFiles other;
+	char dir[PAL_PATH_MAX + 16], types[PAL_PATH_MAX], path[PAL_PATH_MAX + 128];
+	snprintf(dir, sizeof(dir), "%s/aliases", root);
+	CHECK(pal_storage_mkdir(dir) == PAL_OK);
+	CHECK(graph_files_init(&other, &gs, dir));
+	CHECK(graph_files_dir(&other, GRAPH_FILES_TYPES_DIR, types, sizeof(types)) ==
+	      GRAPH_FILES_OK);
+	CHECK(pal_storage_mkdir(types) == PAL_OK);
+	snprintf(path, sizeof(path), "%s/t%%2FEq.json", types);
+	const char *t = jq("{'name':'t/Eq','blocks':[{'name':'E','type':'math/Equal'}]}");
+	CHECK(pal_storage_write(path, t, strlen(t)) == PAL_OK);
+	size_t loaded = 0;
+	CHECK(type_files_load_all(&other, &loaded) == GRAPH_FILES_OK && loaded == 1);
+	const BlockTypeDef *eq = block_types_get("t/Eq");
+	CHECK(eq != NULL && strstr(source("t/Eq"), "compare/Equal") != NULL);
+	teardown();
+}
+
 /* ---- Creating a group from a selection (03 §5.2) --------------------------------- */
 
 static char *assembled(const Graph *g, const char *name, const char *const *nodes, size_t n)
@@ -1010,6 +1044,7 @@ int main(void)
 	RUN(test_graph_file);
 	RUN(test_registry_ops);
 	RUN(test_load_all);
+	RUN(test_aliases);
 	RUN(test_assemble);
 
 	block_types_reset();

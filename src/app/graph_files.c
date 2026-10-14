@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "app/file_names.h"
+#include "blocktypes/block_types.h"
 #include "cJSON.h"
 #include "graphs/graph_json.h"
 #include "system/log.h"
@@ -430,6 +431,8 @@ static enum graph_files_status load_block(Loader *ld, const cJSON *entry)
 		log_warn("%s: block %s skipped: no component", ld->origin, name);
 		return GRAPH_FILES_OK;
 	}
+	/* A former built-in name is its current one (03 §3): a save writes it. */
+	component = block_types_alias(component);
 	BlockMetadata md;
 	enum graph_status st =
 		graph_json_to_metadata(cJSON_GetObjectItemCaseSensitive(entry, "metadata"), &md);

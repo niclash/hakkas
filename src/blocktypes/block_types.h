@@ -55,6 +55,13 @@ bool block_types_unregister(const char *name);
 /* The type called name (exact, case-sensitive match), or NULL. */
 const BlockTypeDef *block_types_get(const char *name);
 
+/* The current name of a built-in type that a file may name by a former
+ * name (03 §3: math/Greater ... math/GreaterEqual are compare/...); any
+ * other name (NULL included) as it is. The graph and type file loaders map
+ * every type name through it, so a save writes the current name; commands
+ * use the current names only. */
+const char *block_types_alias(const char *name);
+
 /* The number of registered types. */
 size_t block_types_count(void);
 
