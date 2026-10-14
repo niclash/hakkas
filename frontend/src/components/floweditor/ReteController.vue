@@ -363,6 +363,7 @@ onMounted(() => {
           graphProtocol?.request_addnode(nodeName, componentType, 300, 300);
           return undefined;
         case 'noderemove':
+          // e.g. the context menu's Delete; the Delete key goes through the selection.
           graphProtocol?.request_removenode(ctx.data.label);
           return undefined;
         case 'connectioncreate':
@@ -383,34 +384,6 @@ onMounted(() => {
             return undefined;
           graphProtocol?.request_removeedge(srcNode, tgtNode, ctx.data.sourceOutput, ctx.data.targetInput, -1, -1);
           return undefined;
-      }
-      return ctx;
-    });
-    editor.area.addPipe((ctx) => {
-      let graphProtocol = vueModel.connection.value?.proto.graph;
-      if (vueModel.pipesDisabled) {
-        return ctx;
-      }
-      if (graphProtocol) {
-        // if( ctx.type !== "pointermove" && ctx.type.indexOf("render") == -1 )
-        //   console.log("Area Context:", ctx);
-        switch (ctx.type) {
-          case 'nodetranslate':
-            let node = editor.getNode(ctx.data.id);
-            if (node !== undefined) {
-              let nodeName = node.label;
-              graphProtocol.request_changenode(nodeName, ctx.data.position);
-            }
-            return undefined;
-          case 'nodetranslated':
-          case 'nodedragged':
-          case 'unmount':
-          case 'pointerup':
-          case 'pointermove':
-          case 'render':
-          case 'rendered':
-            return ctx;
-        }
       }
       return ctx;
     });

@@ -56,3 +56,15 @@ export async function blockPosition(page: Page, id: string): Promise<{ x: number
 export async function inputLabels(page: Page, id: string): Promise<string[]> {
     return (await block(page, id).getByTestId("input-title").allTextContents()).map(t => t.trim());
 }
+
+// The selected blocks' ids (06 §4).
+export async function selectedIds(page: Page): Promise<string[]> {
+    return (await page.locator("[data-testid=node].selected").getByTestId("title").allTextContents())
+        .map(t => t.trim()).sort();
+}
+
+// The middle of a block on the screen.
+export async function blockCentre(page: Page, id: string): Promise<{ x: number, y: number }> {
+    const box = (await block(page, id).boundingBox())!;
+    return {x: box.x + box.width / 2, y: box.y + box.height / 2};
+}

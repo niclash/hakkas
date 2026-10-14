@@ -1,6 +1,6 @@
-import {NodeEditor, NodeId} from 'rete';
+import {NodeEditor} from 'rete';
 
-import {Area2D, AreaExtensions, AreaPlugin, Drag} from 'rete-area-plugin';
+import {Area2D, AreaExtensions, AreaPlugin} from 'rete-area-plugin';
 import {ConnectionPlugin, Presets as ConnectionPresets,} from 'rete-connection-plugin';
 
 import {Presets as VuePresets, VueArea2D, VuePlugin} from 'rete-vue-plugin';
@@ -10,9 +10,9 @@ import {AutoArrangePlugin, Presets as ArrangePresets,} from 'rete-auto-arrange-p
 import {ContextMenuExtra, ContextMenuPlugin, Presets as ContextMenuPresets,} from 'rete-context-menu-plugin';
 import {MinimapExtra, MinimapPlugin} from 'rete-minimap-plugin';
 import {RerouteExtensions, RerouteExtra, ReroutePlugin,} from 'rete-connection-reroute-plugin';
-import {Schemes} from "@/components/model";
+import {Schemes, vueModel} from "@/components/model";
 import {Position} from "rete-area-plugin/_types/types";
-import {setupSelection} from "@/components/floweditor/selection";
+import {setupBlockSelection} from "@/components/floweditor/selection/editor";
 
 type AreaExtra =
     | Area2D<Schemes>
@@ -23,7 +23,7 @@ type AreaExtra =
 
 export class FlowEditor extends NodeEditor<Schemes> {
     area: AreaPlugin<Schemes, AreaExtra>;
-    nodeSelector: { select: (nodeId: NodeId, accumulate: boolean) => void; unselect: (nodeId: NodeId) => void } | undefined;
+    blockSelection: ReturnType<typeof setupBlockSelection> | undefined;
 
     constructor(area: AreaPlugin<Schemes, AreaExtra>) {
         super();
@@ -53,10 +53,7 @@ export async function createEditor(container: HTMLElement) {
     const contextMenu = new ContextMenuPlugin<Schemes>({
         items: ContextMenuPresets.classic.setup([
             ['Select All', () => {
-                AreaExtensions.selector().unselectAll();
-                editor.getNodes().forEach( (n) => {
-                    editor.nodeSelector?.select(n.id, true);
-                })
+                editor.blockSelection?.selectAll();
                 return editor.getNodes()[0];
             }],
             ['Layout All', () => {
@@ -98,44 +95,16 @@ export async function createEditor(container: HTMLElement) {
     area.use(arrange);
     await arrange.layout();
     await AreaExtensions.zoomAt(area, editor.getNodes());
-    const selector = AreaExtensions.selector();
-    const accumulating = AreaExtensions.accumulateOnCtrl();
-    editor.nodeSelector = AreaExtensions.selectableNodes(area, selector, {accumulating});
-
-
-    const selection = setupSelection(area, {
-        selected(ids) {
-            const [first, ...rest] = ids
-
-            selector.unselectAll()
-            if (first) {
-                editor.nodeSelector?.select(first, false);
-            }
-            for (const id of rest) {
-                editor.nodeSelector?.select(id, true);
-            }
-        },
+    editor.blockSelection = setupBlockSelection(editor, area, {
+        move: (id, position) => vueModel.connection.value?.proto.graph.request_changenode(id, position),
+        remove: id => vueModel.connection.value?.proto.graph.request_removenode(id),
     });
-    selection.setMode("center");
-    selection.setShape("marquee");
-    RerouteExtensions.selectablePins(reroutePlugin, selector, accumulating);
+    // Reroute pins are the view's own, not the engine's.
+    RerouteExtensions.selectablePins(reroutePlugin, AreaExtensions.selector(), AreaExtensions.accumulateOnCtrl());
     return {
-        setSelectionMode: selection.setMode,
-        setSelectionShape: selection.setShape,
-        setSelectionButton(button: 0 | 1) {
-            const panningButton = button ? 0 : 1
-
-            area.area.setDragHandler(new Drag({
-                down: e => {
-                    if (e.pointerType === 'mouse' && e.button !== panningButton) return false
-                    e.preventDefault()
-                    return true
-                },
-                move: () => true
-            }))
-
-            selection.setButton(button)
+        destroy: () => {
+            editor.blockSelection?.destroy();
+            area.destroy();
         },
-        destroy: () => area.destroy(),
     };
 }

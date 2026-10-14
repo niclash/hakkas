@@ -29,7 +29,8 @@ export type Shape = 'lasso' | 'marquee'
 
 type Options = {
   selected: (ids: NodeId[]) => unknown
-  button?: number
+  // Whether a pointer pressed on the canvas starts a marquee (default: the middle button).
+  starts?: (event: PointerEvent) => boolean
   mode?: Mode
   shape?: Shape
 }
@@ -39,7 +40,7 @@ export function setupSelection<S extends BaseSchemes, K>(area: AreaPlugin<S, K>,
   const lasso = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
   const { container } = area
   const selected = options?.selected ?? (() => null)
-  let currentButton = options?.button ?? 1
+  const starts = options?.starts ?? ((event: PointerEvent) => event.button === 1)
   let currentMode = options?.mode ?? 'rect'
   let currentShape = options?.shape ?? 'lasso'
 
@@ -53,10 +54,11 @@ export function setupSelection<S extends BaseSchemes, K>(area: AreaPlugin<S, K>,
 
   container.addEventListener('pointerdown', start);
   container.addEventListener('pointermove', move);
-  container.addEventListener('pointerup', up);
+  // The marquee ends wherever the pointer is released.
+  window.addEventListener('pointerup', up);
 
   function start(event: PointerEvent) {
-    if (event.button !== currentButton) return
+    if (!starts(event)) return
     isActive = true;
 
     points = [getPoint(event, container)];
@@ -104,6 +106,7 @@ export function setupSelection<S extends BaseSchemes, K>(area: AreaPlugin<S, K>,
   }
 
   function up() {
+    if (!isActive) return;
     const { x, y, k } = area.area.transform
     const editorPoints = points.map(point => screenToEditorCoordinates(point, { x, y }, k))
 
@@ -130,13 +133,10 @@ export function setupSelection<S extends BaseSchemes, K>(area: AreaPlugin<S, K>,
     setShape(shape: Shape) {
       currentShape = shape
     },
-    setButton(button: 0 | 1) {
-      currentButton = button
-    },
     destroy: () => {
       container.removeEventListener('pointerdown', start);
       container.removeEventListener('pointermove', move);
-      container.removeEventListener('pointerup', up);
+      window.removeEventListener('pointerup', up);
     }
   }
 }

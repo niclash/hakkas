@@ -662,7 +662,7 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
 
 ### 5a. Working with blocks
 
-- [ ] **26. Selection** (06 §4): select one block by click, more with Ctrl/Shift-click or the
+- [x] **26. Selection** (06 §4): select one block by click, more with Ctrl/Shift-click or the
   marquee (Rete's selector is already set up), clear with Escape or a click on the canvas,
   select all with Ctrl+A. Delete/Backspace removes the selection (`removenode` per block,
   connections go with them). Moving a selection moves every selected block: the editor blocks
@@ -671,6 +671,11 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   new position (throttled to one
   command per animation frame and per block, the final positions on release; 06 §7). The
   selection is local view state (not engine state); blocks removed by an event leave it.
+  Checked first: the other selected blocks did move, but locally — Rete's `selectableNodes`
+  moved them when the dragged block's event came back, without commands. It is replaced by
+  `floweditor/selection/` (`blocks.ts`, unit tested; `editor.ts`, the wiring), 06 §4.0. The
+  marquee is a Shift/Ctrl-drag on the canvas (a plain drag pans) and adds to the selection;
+  Ctrl/Shift-click on a selected block unselects it.
 - [ ] **27. Inspector panel**: a panel beside the editor for the selected block — its id, its
   type and the type's description, and every port with its type and description (from
   `component:component`); with several blocks selected, their count and the common actions.
