@@ -7,28 +7,31 @@ const actions = (target: Parameters<typeof menuFor>[0]) => menuFor(target).map(i
 
 describe("menuFor", () => {
     it("the canvas", () => {
-        expect(actions({kind: "canvas"})).toEqual(["add-block", "select-all", "zoom-fit", "arrange"]);
+        expect(actions({kind: "canvas"})).toEqual(["add-block", "select-all", "zoom-fit", "arrange", "watch-all"]);
+        expect(actions({kind: "canvas", watchingAll: true})).toContain("unwatch-all");
     });
 
     it("a block, alone or in a selection", () => {
-        expect(actions({kind: "block", id: "a", selected: 0})).toEqual(["rename", "edit-inputs", "delete-block"]);
-        expect(actions({kind: "block", id: "a", selected: 1})).toEqual(["rename", "edit-inputs", "delete-block"]);
+        expect(actions({kind: "block", id: "a", selected: 0})).toEqual(["rename", "edit-inputs", "watch-inputs", "delete-block"]);
+        expect(actions({kind: "block", id: "a", selected: 1, watched: true}))
+            .toEqual(["rename", "edit-inputs", "unwatch-inputs", "delete-block"]);
         const many = menuFor({kind: "block", id: "a", selected: 3});
-        expect(many.map(i => i.action)).toEqual(["rename", "edit-inputs", "delete-selection"]);
-        expect(many[2].label).toBe("Delete 3 blocks");
+        expect(many.map(i => i.action)).toEqual(["rename", "edit-inputs", "watch-inputs", "delete-selection"]);
+        expect(many[3].label).toBe("Delete 3 blocks");
     });
 
     it("an input, by what feeds it", () => {
-        expect(actions({kind: "input", id: "a", port: "in", source: {kind: "default"}})).toEqual(["set-value"]);
-        expect(actions({kind: "input", id: "a", port: "in", source: {kind: "fixed", value: "1"}}))
-            .toEqual(["change-value", "clear-value"]);
+        expect(actions({kind: "input", id: "a", port: "in", source: {kind: "default"}})).toEqual(["set-value", "watch"]);
+        expect(actions({kind: "input", id: "a", port: "in", source: {kind: "fixed", value: "1"}, watched: true}))
+            .toEqual(["change-value", "clear-value", "unwatch"]);
         expect(actions({kind: "input", id: "a", port: "in", source: {kind: "connected", from: "b.out"}}))
-            .toEqual(["disconnect"]);
+            .toEqual(["disconnect", "watch"]);
     });
 
     it("a value node and a connection", () => {
-        expect(actions({kind: "value", id: "a", port: "in"})).toEqual(["change-value", "clear-value"]);
-        expect(actions({kind: "connection"})).toEqual(["delete-connection"]);
+        expect(actions({kind: "value", id: "a", port: "in"})).toEqual(["change-value", "clear-value", "watch"]);
+        expect(actions({kind: "connection"})).toEqual(["delete-connection", "watch"]);
+        expect(actions({kind: "connection", watched: true})).toEqual(["delete-connection", "unwatch"]);
     });
 });
 

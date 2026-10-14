@@ -34,8 +34,16 @@
             <dt>
               <span class="hk-inspector-port-id" data-testid="port-id">{{ port.id }}</span>
               <span class="hk-inspector-port-type" data-testid="port-type">{{ port.type }}</span>
+              <button v-if="group.key === 'inputs'" type="button" class="hk-icon-button hk-watch" data-testid="port-watch"
+                      :aria-pressed="watched(port.id)" :aria-label="'Watch the live value of ' + port.id"
+                      :title="watched(port.id) ? 'Stop watching' : 'Watch the live value'"
+                      @click="toggleWatch(port.id)">◉</button>
             </dt>
             <dd v-if="port.description" data-testid="port-description">{{ port.description }}</dd>
+            <dd v-if="group.key === 'inputs' && watched(port.id)" class="hk-inspector-live" data-testid="port-live"
+                :class="{stale: liveOf(port.id)?.stale}">
+              Live: {{ liveText(port) }}
+            </dd>
             <dd v-if="group.key === 'inputs'">
               <InputValue :block="view.id" :port="port"/>
             </dd>
@@ -67,6 +75,8 @@ import {inspect, PortView} from "@/components/inspector";
 import {ComponentEvent} from "@/components/protocols/component";
 import {editor} from "@/components/floweditor/viewmodel/default";
 import InputValue from "@/components/InputValue.vue";
+import {isWatched, liveValue, unwatch, watch as watchInputs} from "@/components/floweditor/live";
+import {formatLive} from "@/components/watches";
 
 // The selected blocks (06 §4.2): the view's own state, so nothing here changes the process
 // except through the engine's commands.
@@ -89,6 +99,16 @@ const portGroups = computed(() => {
 });
 
 const removeSelected = () => editor.blockSelection?.removeSelected();
+
+// Live values of the block's inputs (06 §4.7).
+const point = (port: string) => ({node: shownId() ?? "", port});
+const watched = (port: string) => isWatched(point(port));
+const liveOf = (port: string) => liveValue(point(port));
+const liveText = (port: PortView) => {
+  const v = liveOf(port.id);
+  return v === undefined ? "waiting…" : formatLive(port.type, v.data);
+};
+const toggleWatch = (port: string) => watched(port) ? unwatch([point(port)]) : watchInputs([point(port)]);
 
 // Renaming the block (06 §4.2): the field holds what is typed; the block's id changes only
 // with the engine's graph:renamenode event, and a refusal is shown under the field.

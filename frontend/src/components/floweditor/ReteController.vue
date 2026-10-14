@@ -6,8 +6,13 @@ import {editor} from './viewmodel/default';
 import {componentTemplates, Connection, isValueNode, PrimitiveNode, ValueNode, vueModel} from "../model";
 import {SocketData} from "rete-connection-plugin";
 import {inputSources, placeValues, renameValues, showValue} from "./values";
+import {
+  attachLive, blockRemoved, blockRenamed, connectionLost, connectionsChanged, dataArrived, inputsOf, isWatched,
+  live, processOpened, unwatch, watch as watchInputs, watchAll
+} from "./live";
 import ContextMenu from "./ContextMenu.vue";
 import {MenuAction, menuFor, MenuItem, MenuTarget} from "./menus";
+import {Point} from "@/components/watches";
 import ValueDraft from "./ValueDraft.vue";
 import {BLOCK_TYPE_MIME} from "@/components/palette";
 import {
@@ -114,6 +119,7 @@ const callbacks = {
     vueModel.currentGraph = payload;
     try {
       await editor.clear();
+      processOpened(payload.id);
       fitPending = true;
       scheduleFit();
     } finally {
@@ -144,6 +150,7 @@ const callbacks = {
       let node = findNodeByName(payload.id)?.id;
       if (node !== undefined) {
         await editor.removeNode(node);
+        blockRemoved(payload.id);
       }
     } finally {
       endTransaction();
@@ -159,6 +166,7 @@ const callbacks = {
         node.label = payload.to;
         await editor.area.update('node', node.id);
         await renameValues(editor, node);
+        blockRenamed(oldName, payload.to);
         editor.blockSelection?.refresh();
       }
     } finally {
@@ -194,6 +202,7 @@ const callbacks = {
         let link = new Connection(srcNode, srcPort as any, tgtNode, tgtPort as any); // Using 'as any' if type checking is problematic with generic keys
         await editor.addConnection(link);
         editor.blockSelection?.refresh();
+        connectionsChanged();
         scheduleFit();
       }
     } finally {
@@ -219,6 +228,7 @@ const callbacks = {
         if (matchingConnections.length > 0) {
           await editor.removeConnection(matchingConnections[0].id);
           editor.blockSelection?.refresh();
+          connectionsChanged();
         }
       }
     } finally {
@@ -412,6 +422,7 @@ interface OpenMenu {
   port?: string;
   socket?: HTMLElement;   // the input's socket
   connection?: string;
+  input?: Point;          // the input whose live value the menu watches (06 §4.7)
 }
 const menu = ref<OpenMenu | undefined>();
 const blockTypes = computed(() => vueModel.components.value.map(c => c.name));
@@ -430,28 +441,32 @@ const openMenu = (event: MouseEvent, context: unknown) => {
   const where = {x: event.clientX - origin.left, y: event.clientY - origin.top, at: editor.pointAt(event.clientX, event.clientY)};
   let open: Omit<OpenMenu, "items" | "x" | "y" | "at"> | undefined;
   if (context === "root") {
-    open = {target: {kind: "canvas"}};
+    open = {target: {kind: "canvas", watchingAll: live.all}};
   } else if (context instanceof ValueNode) {
     const value = context as ValueNode;
-    open = {target: {kind: "value", id: value.blockLabel, port: value.port}, node: value.id};
+    const input = {node: value.blockLabel, port: value.port};
+    open = {target: {kind: "value", id: value.blockLabel, port: value.port, watched: isWatched(input)}, node: value.id, input};
   } else if (context instanceof PrimitiveNode) {
     const row = event.target instanceof Element ? event.target.closest<HTMLElement>(".input[data-testid^='input-']") : null;
     const port = row?.dataset.testid?.substring("input-".length);
     if (row !== null && port !== undefined && port in context.inputs) {
       const source = inputSources(editor, context)[port] ?? {kind: "default"};
-      open = {target: {kind: "input", id: context.label, port, source}, node: context.id, port,
-        socket: row.querySelector<HTMLElement>("[data-testid=input-socket]") ?? undefined};
+      const input = {node: context.label, port};
+      open = {target: {kind: "input", id: context.label, port, source, watched: isWatched(input)}, node: context.id, port,
+        socket: row.querySelector<HTMLElement>("[data-testid=input-socket]") ?? undefined, input};
     } else {
       const selection = editor.blockSelection?.selection;
       const selected = selection?.has(context.id) ? selection.ids().length : 0;
-      open = {target: {kind: "block", id: context.label, selected}, node: context.id};
+      open = {target: {kind: "block", id: context.label, selected, watched: inputsOf(context).some(isWatched)},
+        node: context.id};
     }
   } else if (context !== null && typeof context === "object" && "source" in context) {
     const c = context as { id: string, source: string, target: string, targetInput: string };
     const source = editor.getNode(c.source);
+    const input = {node: editor.getNode(c.target)?.label ?? "", port: c.targetInput};
     open = isValueNode(source)
-      ? {target: {kind: "value", id: source.blockLabel, port: source.port}, node: source.id}
-      : {target: {kind: "connection"}, connection: c.id};
+      ? {target: {kind: "value", id: source.blockLabel, port: source.port, watched: isWatched(input)}, node: source.id, input}
+      : {target: {kind: "connection", watched: isWatched(input)}, connection: c.id, input};
   }
   if (open !== undefined)
     menu.value = {...open, ...where, items: menuFor(open.target)};
@@ -541,6 +556,26 @@ const act = async (action: MenuAction) => {
         }
       }
       break;
+    case "watch":
+      if (m.input !== undefined)
+        watchInputs([m.input]);
+      break;
+    case "unwatch":
+      if (m.input !== undefined)
+        unwatch([m.input]);
+      break;
+    case "watch-inputs":
+      if (block !== undefined)
+        watchInputs(inputsOf(block));
+      break;
+    case "unwatch-inputs":
+      if (block !== undefined)
+        unwatch(inputsOf(block));
+      break;
+    case "watch-all":
+    case "unwatch-all":
+      watchAll(action === "watch-all");
+      break;
     case "delete-connection": {
       const c = editor.getConnections().find(c => c.id === m.connection);
       const source = c && editor.getNode(c.source);
@@ -597,6 +632,7 @@ watch(() => vueModel.currentGraphId.value, id => {
       menu.value = undefined;
       draft.value = undefined;
       await editor.clear();
+      processOpened("");
     } finally {
       vueModel.pipesDisabled = false;
     }
@@ -606,6 +642,7 @@ watch(() => vueModel.currentGraphId.value, id => {
 onMounted(() => {
   createEditor(rete.value!).then(() => {
     editor.onDrop = onDrop;
+    attachLive(editor);
     editor.onMenuKey = menuKey;
     editor.area.addPipe(context => {
       if (context.type === "contextmenu")
@@ -682,6 +719,8 @@ onMounted(() => {
   }, 100);
   let conn = vueModel.connection.value;
   if (conn !== undefined) {
+    conn.proto.network.addListener("onNetworkData", dataArrived);
+    conn.addClosedListener(connectionLost);
     let graph = conn.proto.graph;
     for (const key in callbacks){
       if (Object.prototype.hasOwnProperty.call(callbacks, key)) {

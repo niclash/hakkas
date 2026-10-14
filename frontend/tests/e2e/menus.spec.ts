@@ -29,7 +29,7 @@ test("the canvas menu, by keyboard: arrows, Escape", async ({page, engine}) => {
     await openExample(page, engine.url);
     const at = await emptyCanvas(page);
     await page.mouse.click(at.x, at.y, {button: "right"});
-    expect(await actions(page)).toEqual(["add-block", "select-all", "zoom-fit", "arrange"]);
+    expect(await actions(page)).toEqual(["add-block", "select-all", "zoom-fit", "arrange", "watch-all"]);
     await expect(item(page, "add-block")).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(item(page, "select-all")).toBeFocused();
@@ -79,7 +79,7 @@ test("a block's menu: rename, edit inputs, delete it or the selection", async ({
     await other.connectGraph(G);
 
     await title(page, "block7").click({button: "right"});
-    expect(await actions(page)).toEqual(["rename", "edit-inputs", "delete-block"]);
+    expect(await actions(page)).toEqual(["rename", "edit-inputs", "watch-inputs", "delete-block"]);
     await item(page, "edit-inputs").click();
     expect(await selectedIds(page)).toEqual(["block7"]);
     // The first input that takes a value (in1 and in2 are connected).
@@ -104,14 +104,14 @@ test("an input's menu: set, change and clear a fixed value, or disconnect", asyn
     await other.connectGraph(G);
 
     await inputRow(page, "block7", "in3").click({button: "right"});
-    expect(await actions(page)).toEqual(["set-value"]);
+    expect(await actions(page)).toEqual(["set-value", "watch"]);
     await item(page, "set-value").click();
     await page.getByTestId("value-draft-field").fill("2");
     await page.getByTestId("value-draft-field").press("Enter");
     await expect.poll(() => inputLabels(page, "block7")).toEqual(["in1", "in2", "in3 = 2", "in4"]);
 
     await inputRow(page, "block8", "in1").click({button: "right"});
-    expect(await actions(page)).toEqual(["change-value", "clear-value"]);
+    expect(await actions(page)).toEqual(["change-value", "clear-value", "watch"]);
     await item(page, "change-value").click();
     const field = valueNode(page, "block8", "in1").getByTestId("value-node-field");
     await expect(field).toBeFocused();
@@ -120,13 +120,13 @@ test("an input's menu: set, change and clear a fixed value, or disconnect", asyn
     await expect.poll(() => inputLabels(page, "block8")).toEqual(["in1 = 13", "in2 = 23"]);
 
     await valueNode(page, "block8", "in2").click({button: "right"});
-    expect(await actions(page)).toEqual(["change-value", "clear-value"]);
+    expect(await actions(page)).toEqual(["change-value", "clear-value", "watch"]);
     await item(page, "clear-value").click();
     expect((await other.next(m => m.command === "removeinitial")).payload).toMatchObject({tgt: {node: "block8", port: "in2"}});
     await expect.poll(() => inputLabels(page, "block8")).toEqual(["in1 = 13", "in2"]);
 
     await inputRow(page, "block7", "in1").click({button: "right"});
-    expect(await actions(page)).toEqual(["disconnect"]);
+    expect(await actions(page)).toEqual(["disconnect", "watch"]);
     await item(page, "disconnect").click();
     expect((await other.next(m => m.command === "removeedge")).payload)
         .toMatchObject({src: {node: "block3", port: "out"}, tgt: {node: "block7", port: "in1"}});
@@ -138,7 +138,7 @@ test("a connection's menu deletes it", async ({page, engine}) => {
     const other = await engine.client();
     await other.connectGraph(G);
     await connections(page).first().locator("path").click({button: "right"});
-    expect(await actions(page)).toEqual(["delete-connection"]);
+    expect(await actions(page)).toEqual(["delete-connection", "watch"]);
     await item(page, "delete-connection").click();
     await other.next(m => m.command === "removeedge");
     await expect(connections(page)).toHaveCount(5);

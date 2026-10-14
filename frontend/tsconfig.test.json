@@ -14,6 +14,7 @@
     "src/components/floweditor/menus.ts",
     "src/components/palette.ts",
     "src/components/processes.ts",
+    "src/components/watches.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

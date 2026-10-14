@@ -11,7 +11,7 @@ import {MinimapExtra, MinimapPlugin} from 'rete-minimap-plugin';
 import {RerouteExtensions, RerouteExtra, ReroutePlugin,} from 'rete-connection-reroute-plugin';
 import {isValueNode, PrimitiveNode, Schemes, vueModel} from "@/components/model";
 import ValueNodeView from "@/components/floweditor/ValueNodeView.vue";
-import ValueConnectionView from "@/components/floweditor/ValueConnectionView.vue";
+import ConnectionView from "@/components/floweditor/ConnectionView.vue";
 import SocketView from "@/components/floweditor/SocketView.vue";
 import {Position} from "rete-area-plugin/_types/types";
 import {setupBlockSelection} from "@/components/floweditor/selection/editor";
@@ -120,9 +120,9 @@ export async function createEditor(container: HTMLElement) {
             socket() {
                 return SocketView;
             },
-            connection(context) {
-                return isValueNode(editor.getNode(context.payload.source))
-                    ? ValueConnectionView : VuePresets.classic.Connection;
+            // Connections and value lines, with their live values (06 §4.7).
+            connection() {
+                return ConnectionView;
             },
         },
     }));

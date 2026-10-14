@@ -736,13 +736,16 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   stop and rename are followed by `network:getstatus`, since their own events reach only the
   process's subscribers. The e2e fixture gained `dataDir` and `allowedErrors` (a failed save).
 - [x] **33. Startup activation** — merged into task 32 (D2: the saved `started` state).
-- [ ] **34. Live values** (`network:edges`/`network:data`, 02 §4.2): watch a connection (context
+- [x] **34. Live values** (`network:edges`/`network:data`, 02 §4.2): watch a connection (context
   menu, inspector, or a "watch all" toggle for the open process) and show its value as a label
   on the connection; watch a block's inputs, including unconnected ones with a fixed value.
   The client keeps the set of watches and sends it whole (a request replaces the previous set);
   the set is cleared when another process is opened and resent after a reconnect. Values as
   the engine sends them (strings), formatted by the port's type; a stale mark when the
   connection is lost.
+  Done (06 §4.7, `watches.ts`, `floweditor/live.ts`, `ConnectionView.vue`, which now draws
+  connections and value lines alike). The stale mark is set on a lost connection but is seen
+  only once task 39 keeps the view while reconnecting.
 - [ ] **35. Process ports** (`graph:addinport`/`addoutport`/`remove…`/`rename…`, 02 §3.4): a
   process's inputs and outputs, through which processes are linked (01 §2.2): expose a block's
   input or output as a process port (context menu on the port, a name dialog), draw them as

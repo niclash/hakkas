@@ -375,6 +375,30 @@ h1, h2, h3 {
   font-size: 12px;
 }
 
+.hk-inspector-port dt .hk-watch {
+  font-size: 13px;
+  color: var(--hk-text-muted);
+  padding: 0 2px;
+}
+
+.hk-inspector-port dt .hk-watch[aria-pressed="true"] {
+  color: var(--hk-accent);
+}
+
+.hk-inspector-port dt .hk-inspector-port-type {
+  margin-left: auto;
+}
+
+.hk-inspector-port dd.hk-inspector-live {
+  color: var(--hk-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.hk-inspector-port dd.hk-inspector-live.stale {
+  color: var(--hk-text-muted);
+  text-decoration: line-through;
+}
+
 .hk-inspector-port dd {
   margin: 2px 0 0;
   color: var(--hk-text-muted);
@@ -829,12 +853,48 @@ h1, h2, h3 {
   stroke-width: 3px;
 }
 
+#hk-editor .hk-connection,
 #hk-editor .hk-value-connection {
   overflow: visible !important;
   position: absolute;
   pointer-events: none;
   width: 9999px;
   height: 9999px;
+}
+
+#hk-editor .hk-connection path {
+  fill: none;
+  stroke: var(--hk-connection);
+  stroke-width: 3px;
+  pointer-events: auto;
+}
+
+/* A live value on its connection (06 §4.7). */
+#hk-editor .hk-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  pointer-events: none;
+}
+
+#hk-editor .hk-live span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--hk-accent-text);
+  background: var(--hk-accent);
+  border-radius: 10px;
+}
+
+#hk-editor .hk-live.stale span {
+  color: var(--hk-text-muted);
+  background: var(--hk-surface-2);
+  text-decoration: line-through;
 }
 
 #hk-editor .hk-value-connection path {
