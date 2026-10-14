@@ -1,6 +1,6 @@
 <template>
   <div class="hk-value-node" data-testid="value-node" :data-target="data.blockLabel + '.' + data.port"
-       :class="{editing}" :title="editing ? '' : 'Double-click to change'" @dblclick.stop="edit">
+       :class="{editing}" :title="editing || !can.edit ? '' : 'Double-click to change'" @dblclick.stop="edit">
     <input v-if="editing" ref="field" class="hk-value-field" data-testid="value-node-field" v-model="draft"
            :inputmode="kind === 'number' ? 'decimal' : 'text'" spellcheck="false" autocomplete="off"
            :aria-label="data.port + ' value'" :aria-invalid="error !== ''"
@@ -16,7 +16,7 @@
 <script lang="ts" setup>
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
 import {Ref} from "rete-vue-plugin";
-import {errorClaims, ValueNode, vueModel} from "@/components/model";
+import {can, errorClaims, ValueNode, vueModel} from "@/components/model";
 import {initialRefusals, parseTyped, sameValue, valueEditor} from "@/components/initials";
 
 // A fixed value drawn beside its input (06 §4.3). Double-click changes it: a field for a number
@@ -37,6 +37,8 @@ const add = (value: number | string | boolean) => {
 };
 
 const edit = async () => {
+  if (!can.value.edit)
+    return;
   if (kind.value === "bool") {
     add(props.data.value !== "true");
     return;

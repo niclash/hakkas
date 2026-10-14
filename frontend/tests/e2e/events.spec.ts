@@ -1,5 +1,5 @@
 import {Page} from "@playwright/test";
-import {expect, test, VIEWER} from "./fixtures";
+import {expect, test} from "./fixtures";
 import {block, blockIds, blockPosition, blocks, connections, inputLabels, loggedIn, openProcess} from "./ui";
 
 // 02 §1.1, 06 §3: the view changes only from the engine's events — whoever sent the command.
@@ -82,19 +82,18 @@ test("dragging a block moves it through the engine", async ({page, engine}) => {
 });
 
 test("a refused command changes nothing and shows the engine's error", async ({page, engine}) => {
-    // A viewer may not change a process (02 §2.4); the read-only editor is plan task 38.
-    await loggedIn(page, engine.url, VIEWER);
-    await openProcess(page, "Simple Example");
-    const from = block(page, "block8").getByTestId("output-out").getByTestId("output-socket");
-    const to = block(page, "block7").getByTestId("input-in3").getByTestId("input-socket");
-    await from.hover();
-    await page.mouse.down();
-    await to.hover();
-    await page.mouse.up();
-
-    await expect(page.getByTestId("error")).toContainText("Not permitted: graph:addedge");
+    await openExample(page, engine.url);
+    // A pasted clip (06 §4.10) naming a block type this engine does not have.
+    const clip = {format: "hakkas/blocks", version: 1, links: [],
+        blocks: [{id: "ghost", component: "nowhere/Missing", x: 0, y: 0, initials: {}}]};
+    await page.evaluate(text => {
+        const data = new DataTransfer();
+        data.setData("text/plain", text);
+        document.dispatchEvent(new ClipboardEvent("paste", {clipboardData: data, bubbles: true}));
+    }, JSON.stringify(clip));
+    await expect(page.getByTestId("error")).toContainText("Unknown component: nowhere/Missing");
+    await expect(blocks(page)).toHaveCount(8);
     await expect(connections(page)).toHaveCount(6);
-    expect(await inputLabels(page, "block7")).toEqual(["in1", "in2", "in3", "in4"]);
 });
 
 test("a connection drawn onto an input with a fixed value replaces the value", async ({page, engine}) => {

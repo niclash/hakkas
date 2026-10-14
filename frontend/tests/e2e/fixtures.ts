@@ -23,6 +23,7 @@ export interface TestUser {
 // The users every engine has.
 export const EDITOR: TestUser = {user: "alice", password: "alice-password", role: "editor"};
 export const VIEWER: TestUser = {user: "victor", password: "victor-password", role: "viewer"};
+export const OPERATOR: TestUser = {user: "olga", password: "olga-password", role: "operator"};
 
 // A graph file's content (05 §2.1), or the path of one.
 export type GraphSource = string | Record<string, unknown>;
@@ -118,7 +119,7 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
         const auth = {server_secret: randomBytes(32).toString("base64"), ...(config.auth as object ?? {})};
         writeFileSync(join(dir, "conf", "hakkas.json"), JSON.stringify({...config, auth}));
         writeFileSync(join(dir, "conf", "users.json"), JSON.stringify(
-            [EDITOR, VIEWER].map(u => makeUser(u.user, u.password, u.role))));
+            [EDITOR, VIEWER, OPERATOR].map(u => makeUser(u.user, u.password, u.role))));
         for (const source of graphs) {
             const graph = graphFile(source);
             writeFileSync(join(dir, "data", "graphs", graph.id + ".json"), JSON.stringify(graph));

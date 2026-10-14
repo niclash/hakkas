@@ -5,7 +5,7 @@
 
 import {NodeEditor} from 'rete';
 import {AreaPlugin, Drag} from 'rete-area-plugin';
-import {isValueNode, PrimitiveNode, Schemes, vueModel} from '@/components/model';
+import {can, isValueNode, PrimitiveNode, Schemes, vueModel} from '@/components/model';
 import {setupSelection} from './index';
 import {BlockSelection, MoveThrottle, Position, SelectionDrag} from './blocks';
 import {inputSources} from '@/components/floweditor/values';
@@ -117,7 +117,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
                 // Events from the engine move blocks; the user's drag only sends commands.
                 if (vueModel.pipesDisabled)
                     return context;
-                if (drag !== undefined && drag.id === context.data.id) {
+                if (drag !== undefined && drag.id === context.data.id && can.value.edit) {
                     drag.moved = true;
                     drag.selection.positions(context.data.position)
                         .forEach((position, id) => throttle.move(id, position));
@@ -178,6 +178,8 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
         } else if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
             event.preventDefault();
             (editor as { onMenuKey?: () => void }).onMenuKey?.();
+        } else if (!can.value.edit) {
+            return; // the keys below change the process (06 §4.11)
         } else if (event.key === 'F2') {
             if (selection.ids().length !== 1)
                 return;

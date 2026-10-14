@@ -122,6 +122,14 @@ h1, h2, h3 {
   font-weight: 600;
 }
 
+.hk-role {
+  font-size: 12px;
+  color: var(--hk-text-muted);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
 .hk-spacer {
   flex: 1;
 }

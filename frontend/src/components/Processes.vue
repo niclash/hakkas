@@ -2,7 +2,7 @@
   <section class="hk-panel">
     <div class="hk-panel-header">
       <h2 class="hk-panel-title">Processes</h2>
-      <button class="hk-button small" type="button" data-testid="process-new" @click="openNewProcessPopup()">New...</button>
+      <button v-if="can.manage" class="hk-button small" type="button" data-testid="process-new" @click="openNewProcessPopup()">New...</button>
     </div>
     <ul class="hk-list">
       <ProcessItem v-for="[id, graph] in vueModel.graphs.value" :key="id" :id="id" :graph="graph"
@@ -44,7 +44,7 @@
 
 <script lang="ts" setup>
 import {onMounted, onUnmounted, ref, watch} from "vue";
-import {errorClaims, vueModel} from './model';
+import {can, errorClaims, vueModel} from './model';
 import Popup from "@/components/Popup.vue";
 import ProcessItem from "@/components/ProcessItem.vue";
 import {isSaveFailure, newProcessId} from "@/components/processes";
@@ -109,7 +109,7 @@ const claimSaveFailure = (message: string): boolean => {
 const keydown = (event: KeyboardEvent) => {
   if (event.key === "s" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
     event.preventDefault();
-    if (props.current !== "")
+    if (props.current !== "" && can.value.persist && vueModel.graphs.value.has(props.current))
       save(props.current);
   }
 };

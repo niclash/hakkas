@@ -11,7 +11,7 @@
     <template v-else-if="view.kind === 'one'">
       <form class="hk-inspector-name" @submit.prevent="commitName">
         <label class="hk-inspector-heading" for="hk-inspector-name">Name</label>
-        <input id="hk-inspector-name" ref="nameField" class="hk-input" data-testid="inspector-name"
+        <input id="hk-inspector-name" ref="nameField" class="hk-input" data-testid="inspector-name" :readonly="!can.edit"
                v-model="draft" spellcheck="false" autocomplete="off" :aria-invalid="nameError !== ''"
                aria-describedby="hk-inspector-name-error"
                @focus="editing = true" @blur="blurName" @keydown.escape.stop.prevent="revertName"/>
@@ -34,7 +34,7 @@
             <dt>
               <span class="hk-inspector-port-id" data-testid="port-id">{{ port.id }}</span>
               <span class="hk-inspector-port-type" data-testid="port-type">{{ port.type }}</span>
-              <button v-if="group.key === 'inputs'" type="button" class="hk-icon-button hk-watch" data-testid="port-watch"
+              <button v-if="group.key === 'inputs' && can.watch" type="button" class="hk-icon-button hk-watch" data-testid="port-watch"
                       :aria-pressed="watched(port.id)" :aria-label="'Watch the live value of ' + port.id"
                       :title="watched(port.id) ? 'Stop watching' : 'Watch the live value'"
                       @click="toggleWatch(port.id)">◉</button>
@@ -51,7 +51,7 @@
         </dl>
       </section>
       <div class="hk-actions">
-        <button type="button" class="hk-button" data-testid="inspector-delete" @click="removeSelected">Delete</button>
+        <button v-if="can.edit" type="button" class="hk-button" data-testid="inspector-delete" @click="removeSelected">Delete</button>
       </div>
     </template>
 
@@ -59,7 +59,7 @@
       <h3 class="hk-inspector-id" data-testid="inspector-count">{{ view.ids.length }} blocks selected</h3>
       <p class="hk-inspector-list" data-testid="inspector-ids">{{ view.ids.join(", ") }}</p>
       <div class="hk-actions">
-        <button type="button" class="hk-button" data-testid="inspector-delete" @click="removeSelected">
+        <button v-if="can.edit" type="button" class="hk-button" data-testid="inspector-delete" @click="removeSelected">
           Delete {{ view.ids.length }} blocks
         </button>
       </div>
@@ -69,7 +69,7 @@
 
 <script lang="ts" setup>
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
-import {errorClaims, vueModel} from "@/components/model";
+import {can, errorClaims, vueModel} from "@/components/model";
 import {PendingRename} from "@/components/renaming";
 import {inspect, PortView} from "@/components/inspector";
 import {ComponentEvent} from "@/components/protocols/component";
@@ -152,7 +152,7 @@ watch(view, () => {
 
 const commitName = () => {
   const id = shownId();
-  if (id === undefined || pending.active)
+  if (id === undefined || pending.active || !can.value.edit)
     return;
   nameError.value = "";
   if (draft.value === id)

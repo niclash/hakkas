@@ -4,7 +4,7 @@
 // last clip too, for the context menu's Paste. Pasting sends commands; the pasted blocks become
 // the selection as their events arrive.
 
-import {PrimitiveNode, vueModel} from "@/components/model";
+import {can, PrimitiveNode, vueModel} from "@/components/model";
 import {Clip, CLIP_FORMAT, clipOrigin, makeClip, parseClip, pasteCommands} from "@/components/clipboard";
 import type {FlowEditor} from "./viewmodel/default";
 
@@ -40,6 +40,8 @@ function selectionClip(editor: FlowEditor): Clip | undefined {
 }
 
 function paste(editor: FlowEditor, c: Clip, dx: number, dy: number) {
+    if (!can.value.edit)
+        return;
     const graph = vueModel.currentGraphId.value;
     const proto = vueModel.connection.value?.proto.graph;
     if (graph === "" || proto === undefined)

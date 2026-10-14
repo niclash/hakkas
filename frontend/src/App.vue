@@ -4,6 +4,7 @@
       <img alt="Bali Automation logotype" src="@/assets/logo.svg" class="hk-logo"/>
       <span class="hk-product">Hakkas</span>
       <span class="hk-spacer"></span>
+      <span v-if="roleLabel(can)" class="hk-role" data-testid="role">{{ roleLabel(can) }}</span>
       <ThemeSelector/>
       <button class="hk-button" data-testid="logout" @click="logout()">Logout</button>
     </header>
@@ -24,7 +25,8 @@ import {ref} from "vue";
 import Login from "@/components/Login.vue";
 import ThemeSelector from "@/components/ThemeSelector.vue";
 import {Connection} from "@/components/protocols/websocket";
-import {attachModel, vueModel} from "@/components/model";
+import {attachModel, can, vueModel} from "@/components/model";
+import {roleLabel} from "@/components/roles";
 import {OnLogin, OnLoginFailed} from "@/components/protocols/environment";
 import {NetworkErrorEvent} from "@/components/protocols/network";
 import {forgetSession, keepSession, keptSession} from "@/session";
@@ -108,6 +110,7 @@ const onLogin = (conn: Connection, payload: OnLogin) => {
   else
     forgetSession();
   conn.currentSecret = payload.secret;
+  vueModel.capabilities.value = payload.capabilities ?? [];
   secret.value = payload.secret;
   loggingIn.value = false;
   resuming.value = false;

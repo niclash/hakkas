@@ -1,5 +1,5 @@
 import {Page} from "@playwright/test";
-import {expect, test, VIEWER} from "./fixtures";
+import {expect, test} from "./fixtures";
 import {EXAMPLE_GRAPH} from "./paths";
 import {block, blocks, inputLabels, loggedIn, openProcess} from "./ui";
 
@@ -76,21 +76,30 @@ test("a value being typed is sent when another block is clicked", async ({page, 
 });
 
 test("a refused value is shown at the input, not with the other errors", async ({page, engine}) => {
-    // A viewer may not change a process (02 §2.4); the read-only editor is plan task 38.
-    await loggedIn(page, engine.url, VIEWER);
-    await openProcess(page, "Simple Example");
+    await openExample(page, engine.url);
+    const other = await engine.client();
     await select(page, "block7");
+    // The page's addinitial is held back while another client connects that input, so the
+    // engine refuses it (no fan-in, 02 §3.4.1).
+    await page.evaluate(() => {
+        const w = window as any;
+        const send = WebSocket.prototype.send;
+        w.__held = [];
+        WebSocket.prototype.send = function (data: any) {
+            if (typeof data === "string" && data.includes('"addinitial"'))
+                w.__held.push(() => send.call(this, data));
+            else
+                send.call(this, data);
+        };
+    });
     const field = input(page, "in3").getByTestId("value-field");
     await field.fill("1");
     await field.press("Enter");
-    await expect(input(page, "in3").getByTestId("value-error")).toHaveText("Not permitted: graph:addinitial");
-    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await other.command("graph", "addedge", {graph: G, src: {node: "block8", port: "out"}, tgt: {node: "block7", port: "in3"}});
+    await expect(input(page, "in3").getByTestId("input-state")).toHaveText("Connected from block8.out");
+    await page.evaluate(() => (window as any).__held.forEach((f: () => void) => f()));
+    await expect(input(page, "in3").getByTestId("value-error")).toHaveText("Input already connected: block7.in3");
     await expect(page.getByTestId("error")).toHaveCount(0);
-    expect(await inputLabels(page, "block7")).toEqual(["in1", "in2", "in3", "in4"]);
-
-    await select(page, "block8");
-    await input(page, "in1").getByTestId("value-clear").click();
-    await expect(input(page, "in1").getByTestId("value-error")).toHaveText("Not permitted: graph:removeinitial");
 });
 
 test.describe("with bool and string inputs", () => {

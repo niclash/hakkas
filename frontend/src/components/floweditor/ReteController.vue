@@ -3,7 +3,7 @@
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
 import {createEditor} from './viewmodel';
 import {editor} from './viewmodel/default';
-import {componentTemplates, Connection, errorClaims, isPortNode, isValueNode, PortNode, PrimitiveNode, ValueNode, vueModel} from "../model";
+import {can, componentTemplates, Connection, errorClaims, isPortNode, isValueNode, PortNode, PrimitiveNode, ValueNode, vueModel} from "../model";
 import {SocketData} from "rete-connection-plugin";
 import {inputSources, placeValues, renameValues, showValue} from "./values";
 import {placePorts, portNodes, removePort, renamePort, showPort} from "./ports";
@@ -15,6 +15,7 @@ import {
 import ContextMenu from "./ContextMenu.vue";
 import {MenuAction, menuFor, MenuItem, MenuTarget} from "./menus";
 import {Point} from "@/components/watches";
+import {allowed} from "@/components/roles";
 import ValueDraft from "./ValueDraft.vue";
 import CompositeDialog from "./CompositeDialog.vue";
 import {blockArrived, copySelection, duplicateSelection, hasClip, pasteClipAt, setupCopyPaste} from "./copypaste";
@@ -415,7 +416,7 @@ const onDrop = (initial: SocketData, socket: SocketData | null, created: boolean
       vueModel.connection.value?.proto.graph.request_removeinitial(undefined, carried.blockLabel, carried.port, -1);
     return;
   }
-  if (!created && socket === null && initial.side === 'input')
+  if (!created && socket === null && initial.side === 'input' && can.value.edit)
     askValue(initial.nodeId, initial.key, initial.element);
 };
 
@@ -499,8 +500,10 @@ const openMenu = (event: MouseEvent, context: unknown) => {
       ? {target: {kind: "value", id: source.blockLabel, port: source.port, watched: isWatched(input)}, node: source.id, input}
       : {target: {kind: "connection", watched: isWatched(input)}, connection: c.id, input};
   }
-  if (open !== undefined)
-    menu.value = {...open, ...where, items: menuFor(open.target)};
+  // Only what the session may do (06 §4.11); nothing at all: no menu.
+  const items = open === undefined ? [] : menuFor(open.target).filter(i => allowed(i.action, can.value));
+  if (open !== undefined && items.length > 0)
+    menu.value = {...open, ...where, items};
 };
 
 // The menu key: the menu of the first selected block, else the canvas's, in the middle.
@@ -988,8 +991,8 @@ onMounted(() => {
         — changes take effect when saved; a type in use cannot be changed.</span>
       <span class="hk-spacer"></span>
       <span v-if="typeError" class="hk-inspector-note" role="alert" data-testid="type-error">{{ typeError }}</span>
-      <button type="button" class="hk-button" data-testid="type-save" @click="saveType">Save type</button>
-      <button type="button" class="hk-button danger" data-testid="type-delete" @click="confirmDeleteType = true">Delete type</button>
+      <button v-if="can.persist" type="button" class="hk-button" data-testid="type-save" @click="saveType">Save type</button>
+      <button v-if="can.manage" type="button" class="hk-button danger" data-testid="type-delete" @click="confirmDeleteType = true">Delete type</button>
     </div>
     <Popup v-if="confirmDeleteType" :onOk="deleteType" :onCancel="() => confirmDeleteType = false" okLabel="Delete" :danger="true">
       <h4>Delete block type</h4>

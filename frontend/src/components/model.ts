@@ -2,7 +2,8 @@ import {ClassicPreset as Classic, GetSchemes} from "rete";
 import {ComponentEvent} from "@/components/protocols/component";
 import {Port} from "@/components/protocols/protocols";
 import {Ref, UnwrapRef} from "@vue/reactivity";
-import {ref, shallowRef, ShallowRef} from "vue";
+import {computed, ref, shallowRef, ShallowRef} from "vue";
+import {permissions} from "@/components/roles";
 import {Connection as WsConnection} from "@/components/protocols/websocket";
 import {ClearEvent} from "@/components/protocols/graph";
 import {SelectedBlock} from "@/components/inspector";
@@ -171,6 +172,8 @@ export const vueModel: {
     inputsRequest: Ref<number>,
     // The open graph when it is a component graph, a block type's definition (02 §3.4.3).
     currentComponent: Ref<ClearEvent | undefined>,
+    // The session's capabilities, from its login (02 §2.4).
+    capabilities: Ref<string[]>,
     components: Ref<UnwrapRef<ComponentEvent[]>>,
     selectedComponent: string,
     connection: ShallowRef<WsConnection | undefined>,
@@ -186,6 +189,7 @@ export const vueModel: {
     renameRequest: ref(0),
     inputsRequest: ref(0),
     currentComponent: ref(undefined),
+    capabilities: ref([]),
     connection: shallowRef(undefined),
     errors: ref([]),
     selectedComponent: "",
@@ -204,6 +208,9 @@ export const vueModel: {
 // each one tells whether it took the message.
 export const errorClaims: ((message: string, graph?: string) => boolean)[] = [];
 
+// What the session may do (06 §4.11): the UI offers only that.
+export const can = computed(() => permissions(vueModel.capabilities.value));
+
 export function showError(message: string) {
     vueModel.errors.value.push(message);
     if (vueModel.errors.value.length > 5)
@@ -220,6 +227,7 @@ export function attachModel(conn: WsConnection) {
     vueModel.currentGraphId.value = "";
     vueModel.selectedBlocks.value = [];
     vueModel.currentComponent.value = undefined;
+    vueModel.capabilities.value = [];
 
     const graph = (id: string): Graph => {
         let g = vueModel.graphs.value.get(id);

@@ -6,16 +6,16 @@
     <template v-else>
       <div class="hk-inspector-value-row">
         <label v-if="editor === 'bool'" class="hk-switch">
-          <input type="checkbox" role="switch" data-testid="value-switch" :checked="shownBool"
+          <input type="checkbox" role="switch" data-testid="value-switch" :checked="shownBool" :disabled="!can.edit"
                  :aria-label="port.id + ' value'" @change="sendBool(($event.target as HTMLInputElement).checked)"/>
           <span>{{ shownBool ? "true" : "false" }}</span>
         </label>
-        <input v-else ref="field" class="hk-input" data-testid="value-field" v-model="draft"
+        <input v-else ref="field" class="hk-input" data-testid="value-field" v-model="draft" :readonly="!can.edit"
                :inputmode="editor === 'number' ? 'decimal' : 'text'" spellcheck="false" autocomplete="off"
                :placeholder="resting" :aria-label="port.id + ' value'"
                :aria-invalid="error !== ''" @focus="editing = true" @blur="leave"
                @keydown.enter.prevent="send" @keydown.escape.stop.prevent="revert"/>
-        <button v-if="source.kind === 'fixed'" type="button" class="hk-icon-button" data-testid="value-clear"
+        <button v-if="source.kind === 'fixed' && can.edit" type="button" class="hk-icon-button" data-testid="value-clear"
                 :aria-label="'Use the default of ' + port.id" title="Use the default" @click="clear">&times;</button>
       </div>
       <p class="hk-inspector-source" data-testid="input-state">
@@ -28,7 +28,7 @@
 
 <script lang="ts" setup>
 import {computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch} from "vue";
-import {errorClaims, vueModel} from "@/components/model";
+import {can, errorClaims, vueModel} from "@/components/model";
 import {PortView} from "@/components/inspector";
 import {initialRefusals, InputSource, parseTyped, restingValue, sameValue, valueEditor} from "@/components/initials";
 
@@ -46,11 +46,16 @@ const field = ref<HTMLInputElement | null>(null);
 const draft = ref(fixed.value ?? "");
 const editing = ref(false);
 const error = ref("");
-// The refusals of the command sent and not answered yet.
+// The refusals of the command sent and not answered yet, and the text it was sent for (not
+// sent again when the field is left).
 let pending: string[] | undefined;
+let sentText: string | undefined;
 
-watch(source, () => {
-  pending = undefined;
+watch(source, now => {
+  // The command's own event ends it; a connection made meanwhile does not (its refusal is
+  // still to come).
+  if (now.kind !== "connected")
+    pending = undefined;
   if (!editing.value || draft.value === (fixed.value ?? "")) {
     draft.value = fixed.value ?? "";
     error.value = "";
@@ -74,6 +79,8 @@ const clear = () => {
 const sendBool = (checked: boolean) => add(checked);
 
 const send = () => {
+  if (!can.value.edit)
+    return;
   const typed = parseTyped(editor.value === "string" ? "string" : "number", draft.value);
   if ("error" in typed) {
     error.value = typed.error;
@@ -90,6 +97,7 @@ const send = () => {
     error.value = "";
     return;
   }
+  sentText = draft.value;
   add(typed.value);
 };
 
@@ -98,7 +106,7 @@ const leave = () => {
   editing.value = false;
   if (error.value !== "")
     revert();
-  else if (draft.value !== (fixed.value ?? ""))
+  else if (draft.value !== (fixed.value ?? "") && !(pending !== undefined && draft.value === sentText))
     send();
 };
 
@@ -120,7 +128,8 @@ const claim = (message: string): boolean => {
 // Clicking another block keeps the focus in the field (the editor takes the pointer) and
 // replaces this input: a value being typed is sent first.
 onBeforeUnmount(() => {
-  if (editing.value && error.value === "" && draft.value !== (fixed.value ?? ""))
+  if (editing.value && error.value === "" && draft.value !== (fixed.value ?? "")
+      && !(pending !== undefined && draft.value === sentText))
     send();
 });
 

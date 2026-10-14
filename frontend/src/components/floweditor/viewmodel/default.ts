@@ -9,7 +9,7 @@ import {AutoArrangePlugin, Presets as ArrangePresets,} from 'rete-auto-arrange-p
 
 import {MinimapExtra, MinimapPlugin} from 'rete-minimap-plugin';
 import {RerouteExtensions, RerouteExtra, ReroutePlugin,} from 'rete-connection-reroute-plugin';
-import {isPortNode, isValueNode, PrimitiveNode, Schemes, vueModel} from "@/components/model";
+import {can, isPortNode, isValueNode, PrimitiveNode, Schemes, vueModel} from "@/components/model";
 import PortNodeView from "@/components/floweditor/PortNodeView.vue";
 import ValueNodeView from "@/components/floweditor/ValueNodeView.vue";
 import ConnectionView from "@/components/floweditor/ConnectionView.vue";
@@ -104,6 +104,9 @@ export async function createEditor(container: HTMLElement) {
     connection.addPreset(ConnectionPresets.classic.setup());
     connection.addPipe(context => {
         if (context.type === 'connectionpick') {
+            // Lines are drawn and pulled only by who may edit (06 §4.11).
+            if (!can.value.edit)
+                return undefined;
             editor.picking = true;
         } else if (context.type === 'connectiondrop') {
             editor.picking = false;

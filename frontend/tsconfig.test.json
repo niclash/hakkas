@@ -18,6 +18,7 @@
     "src/components/watches.ts",
     "src/components/composite.ts",
     "src/components/clipboard.ts",
+    "src/components/roles.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

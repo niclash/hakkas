@@ -777,9 +777,13 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
 
 ### 5c. The application
 
-- [ ] **38. Roles** (02 §2.4): from the login's capabilities — a viewer gets a read-only editor
+- [x] **38. Roles** (02 §2.4): from the login's capabilities — a viewer gets a read-only editor
   (no palette, menus without edit actions, no dragging), an operator also start/stop; the
   engine's refusals stay the guard, the UI only stops offering what would be refused.
+  Done (06 §4.11, `roles.ts`). Also fixed: an input's pending value command was dropped when
+  a connection reached the input meanwhile, and leaving the field sent it again. The two
+  browser tests that provoked refusals as a viewer now use an editor (a clip of an unknown
+  type; a command held back while another client connects the input).
 - [ ] **39. Connection resilience**: reconnect after a lost connection with back-off, resuming
   the session (task 46) rather than asking for the password, then reopen the process that was open and resend the watches (task 34).
   Dragging throttle for slow links if task 26 has not covered it.

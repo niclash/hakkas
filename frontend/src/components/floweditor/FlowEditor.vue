@@ -5,7 +5,7 @@ import {Connection as WsConnection, Connection, Packet} from "@/components/proto
 import {onMounted, ref, watch} from "vue";
 import ReteEditor from "@/components/floweditor/ReteController.vue";
 import Inspector from "@/components/Inspector.vue";
-import {vueModel} from "@/components/model";
+import {can, vueModel} from "@/components/model";
 import {editor as reteEditor} from "@/components/floweditor/viewmodel/default";
 import {RuntimeEvent} from "@/components/protocols/runtime";
 
@@ -52,7 +52,7 @@ onMounted(() => {
   <div class="hk-workspace">
     <aside class="hk-sidebar">
       <Processes ref="procs" :current="vueModel.currentGraphId.value" @onSelection="(processName:string) => {openProcess(processName)}"/>
-      <Components ref="comps" @onSelection="(compType:string) => {addComponent(compType)}"
+      <Components v-if="can.edit" ref="comps" @onSelection="(compType:string) => {addComponent(compType)}"
                   @openType="(type: string) => openProcess(type)"/>
     </aside>
     <ReteEditor ref="editor"/>

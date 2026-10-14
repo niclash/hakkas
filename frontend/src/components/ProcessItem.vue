@@ -6,21 +6,21 @@
     <input v-if="renaming" ref="field" class="hk-input hk-process-name-field" data-testid="process-name-field"
            v-model="draft" :aria-label="'New name of ' + graph.name" spellcheck="false" autocomplete="off"
            @click.stop @keydown.enter.prevent="commit" @keydown.escape.stop.prevent="cancel" @blur="commit"/>
-    <span v-else class="hk-process-name" data-testid="process-name" :title="graph.name" @dblclick.stop="rename">{{ graph.name }}</span>
+    <span v-else class="hk-process-name" data-testid="process-name" :title="graph.name" @dblclick.stop="can.edit && rename()">{{ graph.name }}</span>
     <span v-if="graph.unsaved" class="hk-unsaved" data-testid="process-unsaved" title="Unsaved changes"
           aria-label="Unsaved changes">●</span>
     <span class="hk-process-actions">
-      <button type="button" class="hk-icon-button" data-testid="process-run"
+      <button v-if="can.control" type="button" class="hk-icon-button" data-testid="process-run"
               :aria-label="(graph.running ? 'Stop ' : 'Start ') + graph.name" :title="graph.running ? 'Stop' : 'Start'"
               @click.stop="graph.running ? emit('stop') : emit('start')">{{ graph.running ? "■" : "▶" }}</button>
-      <button type="button" class="hk-icon-button" data-testid="process-save" :disabled="!graph.unsaved"
+      <button v-if="can.persist" type="button" class="hk-icon-button" data-testid="process-save" :disabled="!graph.unsaved"
               :aria-label="'Save ' + graph.name" title="Save (Ctrl+S)" @click.stop="emit('save')">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor"
             d="M2 1h10l3 3v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm1 1v4h8V2H3zm5 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
       </button>
-      <button type="button" class="hk-icon-button" data-testid="process-rename" :aria-label="'Rename ' + graph.name"
+      <button v-if="can.edit" type="button" class="hk-icon-button" data-testid="process-rename" :aria-label="'Rename ' + graph.name"
               title="Rename" @click.stop="rename">✎</button>
-      <button type="button" class="hk-icon-button" data-testid="process-delete" :aria-label="'Delete ' + graph.name"
+      <button v-if="can.manage" type="button" class="hk-icon-button" data-testid="process-delete" :aria-label="'Delete ' + graph.name"
               title="Delete" @click.stop="emit('delete')">&times;</button>
     </span>
     <div v-if="active" class="hk-process-details" data-testid="process-details">
@@ -32,7 +32,7 @@
 
 <script lang="ts" setup>
 import {computed, nextTick, ref} from "vue";
-import {Graph} from "@/components/model";
+import {can, Graph} from "@/components/model";
 import {formatUptime, uptimeNow} from "@/components/processes";
 
 // One process in the list (06 §4.6): its running mark, name, unsaved mark and actions. The name
