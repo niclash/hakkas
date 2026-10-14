@@ -210,10 +210,12 @@ no environment, any bindings file is refused, and the wall clock is the host's.
 
 The calendar blocks (`timing/MinuteRange`, `DayOfWeek`, `DayOfMonth`, `MonthOfYear`, `DayOfYear`,
 `WeekOfYear`) and `logic/And`/`Or`/`Xor`/`Not` are built in; the standard schedule types made of
-them are not. To install them, copy the type files into the data directory's `types/`:
+them are not. To install them, copy the type files into the data directory's `types/`, named
+as the engine names a type's file (the encoded type name, `schedule%2F<file>`, 05 §2.3):
 
 ```sh
-mkdir -p data/types && cp library/schedules/*.json data/types/
+mkdir -p data/types
+for f in library/schedules/*.json; do cp "$f" "data/types/schedule%2F$(basename "$f")"; done
 ```
 
 They load at the next startup as ordinary user types. The calendar blocks evaluate in local time

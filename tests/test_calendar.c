@@ -618,7 +618,8 @@ static enum pal_err fixed_random(void *buf, size_t len)
 }
 
 /* Copy every .json file of the library into dir, as a deployment installs
- * them. Returns the number copied. */
+ * them: under the encoded type name, schedule%2F<file> (03 §6.2). Returns the
+ * number copied. */
 static size_t install_library(const char *dir)
 {
 	DIR *d = opendir(HAKKAS_LIBRARY_DIR);
@@ -633,7 +634,7 @@ static size_t install_library(const char *dir)
 			continue;
 		char from[2 * PAL_PATH_MAX], to[2 * PAL_PATH_MAX], buf[8192];
 		snprintf(from, sizeof(from), "%s/%s", HAKKAS_LIBRARY_DIR, e->d_name);
-		snprintf(to, sizeof(to), "%s/%s", dir, e->d_name);
+		snprintf(to, sizeof(to), "%s/schedule%%2F%s", dir, e->d_name);
 		FILE *in = fopen(from, "rb"), *o = fopen(to, "wb");
 		CHECK(in != NULL && o != NULL);
 		if (in != NULL && o != NULL) {
