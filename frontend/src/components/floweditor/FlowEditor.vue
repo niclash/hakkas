@@ -52,7 +52,8 @@ onMounted(() => {
   <div class="hk-workspace">
     <aside class="hk-sidebar">
       <Processes ref="procs" :current="vueModel.currentGraphId.value" @onSelection="(processName:string) => {openProcess(processName)}"/>
-      <Components ref="comps" @onSelection="(compType:string) => {addComponent(compType)}"/>
+      <Components ref="comps" @onSelection="(compType:string) => {addComponent(compType)}"
+                  @openType="(type: string) => openProcess(type)"/>
     </aside>
     <ReteEditor ref="editor"/>
     <Inspector/>

@@ -12,12 +12,14 @@ describe("menuFor", () => {
     });
 
     it("a block, alone or in a selection", () => {
-        expect(actions({kind: "block", id: "a", selected: 0})).toEqual(["rename", "edit-inputs", "watch-inputs", "delete-block"]);
+        expect(actions({kind: "block", id: "a", selected: 0}))
+            .toEqual(["rename", "edit-inputs", "watch-inputs", "create-composite", "delete-block"]);
         expect(actions({kind: "block", id: "a", selected: 1, watched: true}))
-            .toEqual(["rename", "edit-inputs", "unwatch-inputs", "delete-block"]);
+            .toEqual(["rename", "edit-inputs", "unwatch-inputs", "create-composite", "delete-block"]);
         const many = menuFor({kind: "block", id: "a", selected: 3});
-        expect(many.map(i => i.action)).toEqual(["rename", "edit-inputs", "watch-inputs", "delete-selection"]);
-        expect(many[3].label).toBe("Delete 3 blocks");
+        expect(many.map(i => i.action)).toEqual(["rename", "edit-inputs", "watch-inputs", "create-composite", "delete-selection"]);
+        expect(many[3].label).toBe("Create composite type from 3 blocks…");
+        expect(many[4].label).toBe("Delete 3 blocks");
     });
 
     it("an input, by what feeds it", () => {

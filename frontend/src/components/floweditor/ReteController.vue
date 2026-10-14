@@ -16,6 +16,8 @@ import ContextMenu from "./ContextMenu.vue";
 import {MenuAction, menuFor, MenuItem, MenuTarget} from "./menus";
 import {Point} from "@/components/watches";
 import ValueDraft from "./ValueDraft.vue";
+import CompositeDialog from "./CompositeDialog.vue";
+import {Link, ProcessPort, SelBlock} from "@/components/composite";
 import {BLOCK_TYPE_MIME} from "@/components/palette";
 import {
   AddEdgeEvent,
@@ -616,6 +618,13 @@ const act = async (action: MenuAction) => {
       if (m.target.kind === "port")
         graph()?.request_removeport(m.target.direction, m.target.name);
       break;
+    case "create-composite": {
+      // The selection, if the block is in it; else the block alone.
+      const ids = block === undefined ? [] : editor.blockSelection?.selection.has(block.id)
+          ? editor.blockSelection.selection.ids() : [block.id];
+      openComposite(ids);
+      break;
+    }
     case "delete-connection": {
       const c = editor.getConnections().find(c => c.id === m.connection);
       const source = c && editor.getNode(c.source);
@@ -692,6 +701,93 @@ const claimPortRefusal = (message: string): boolean => {
 };
 errorClaims.push(claimPortRefusal);
 onUnmounted(() => errorClaims.splice(errorClaims.indexOf(claimPortRefusal), 1));
+
+// Creating a composite type from blocks (06 §4.9): the dialog gets the blocks, the connections
+// among the process's blocks and its process ports, by the blocks' ids in the process.
+const compositeDialog = ref<{ blocks: SelBlock[], links: Link[], processPorts: ProcessPort[] } | undefined>();
+const notice = ref("");
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+const showNotice = (text: string) => {
+  notice.value = text;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => notice.value = "", 3000);
+};
+
+const openComposite = (ids: string[]) => {
+  const blocks: SelBlock[] = ids.flatMap(id => {
+    const node = editor.getNode(id);
+    const at = editor.area.nodeViews.get(id)?.position;
+    if (!(node instanceof PrimitiveNode) || at === undefined)
+      return [];
+    return [{
+      id: node.label, component: node.component, x: Math.round(at.x), y: Math.round(at.y),
+      inputs: node.inports.map(p => ({port: p.id, type: p.type ?? ""})),
+      outputs: node.outports.map(p => ({port: p.id, type: p.type ?? ""})),
+      initials: {...node.initials},
+    }];
+  });
+  if (blocks.length === 0)
+    return;
+  const links: Link[] = editor.getConnections().flatMap(c => {
+    const s = editor.getNode(c.source), t = editor.getNode(c.target);
+    return s instanceof PrimitiveNode && t instanceof PrimitiveNode
+      ? [{src: {node: s.label, port: c.sourceOutput}, tgt: {node: t.label, port: c.targetInput}}] : [];
+  });
+  const processPorts: ProcessPort[] = portNodes(editor).flatMap(p => {
+    const b = editor.getNode(p.block);
+    return b instanceof PrimitiveNode ? [{direction: p.direction, name: p.name, node: b.label, port: p.port}] : [];
+  });
+  compositeDialog.value = {blocks, links, processPorts};
+};
+
+const compositeCreated = (type: string) => {
+  compositeDialog.value = undefined;
+  showNotice(`Created block type “${type}”`);
+};
+
+// A block type's component graph, open in the editor (06 §4.9): saving makes it the type again,
+// deleting removes the type.
+const savingType = ref("");
+const typeError = ref("");
+const deletingType = ref(false);
+const saveType = () => {
+  const t = vueModel.currentComponent.value;
+  if (t === undefined)
+    return;
+  typeError.value = "";
+  savingType.value = t.id;
+  typeBefore = vueModel.components.value.find(c => c.name === t.id);
+  vueModel.connection.value?.proto.network.request_persist(t.id);
+};
+// Saved when the type's component:component arrives: a new entry in the list.
+let typeBefore: unknown;
+watch(() => vueModel.components.value.find(c => c.name === savingType.value), c => {
+  if (c !== undefined && c !== typeBefore && savingType.value !== "") {
+    showNotice(`Saved block type “${savingType.value}”`);
+    savingType.value = "";
+  }
+});
+const claimTypeError = (message: string, graph?: string): boolean => {
+  const t = vueModel.currentComponent.value;
+  if (t === undefined || graph !== t.id || (savingType.value === "" && !deletingType.value))
+    return false;
+  savingType.value = "";
+  deletingType.value = false;
+  typeError.value = message;
+  return true;
+};
+errorClaims.push(claimTypeError);
+onUnmounted(() => errorClaims.splice(errorClaims.indexOf(claimTypeError), 1));
+const confirmDeleteType = ref(false);
+const deleteType = () => {
+  const t = vueModel.currentComponent.value;
+  confirmDeleteType.value = false;
+  if (t === undefined)
+    return;
+  typeError.value = "";
+  deletingType.value = true;
+  vueModel.connection.value?.proto.runtime.request_delete_graph(t.id, t.name);
+};
 
 // A block from the menu's "Add block…", where the menu was opened.
 const addBlock = (type: string) => {
@@ -868,6 +964,22 @@ onMounted(() => {
         <p v-if="portError" class="hk-inspector-note" role="alert" data-testid="port-name-error">{{ portError }}</p>
       </div>
     </Popup>
+    <CompositeDialog v-if="compositeDialog" :blocks="compositeDialog.blocks" :links="compositeDialog.links"
+                     :process-ports="compositeDialog.processPorts" @close="compositeDialog = undefined"
+                     @created="compositeCreated"/>
+    <div v-if="vueModel.currentComponent.value" class="hk-type-banner" data-testid="type-banner">
+      <span>Block type <strong data-testid="type-banner-name">{{ vueModel.currentComponent.value.id }}</strong>
+        — changes take effect when saved; a type in use cannot be changed.</span>
+      <span class="hk-spacer"></span>
+      <span v-if="typeError" class="hk-inspector-note" role="alert" data-testid="type-error">{{ typeError }}</span>
+      <button type="button" class="hk-button" data-testid="type-save" @click="saveType">Save type</button>
+      <button type="button" class="hk-button danger" data-testid="type-delete" @click="confirmDeleteType = true">Delete type</button>
+    </div>
+    <Popup v-if="confirmDeleteType" :onOk="deleteType" :onCancel="() => confirmDeleteType = false" okLabel="Delete" :danger="true">
+      <h4>Delete block type</h4>
+      <p data-testid="delete-type-question">Delete “{{ vueModel.currentComponent.value?.id }}”? Its file is removed too.</p>
+    </Popup>
+    <div v-if="notice" class="hk-notice" role="status" data-testid="notice">{{ notice }}</div>
     <ContextMenu v-if="menu" :items="menu.items" :x="menu.x" :y="menu.y" :types="blockTypes"
                  @action="act" @add-block="addBlock" @close="closeMenu"/>
   </div>

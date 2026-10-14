@@ -754,12 +754,19 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   themselves have no wire messages yet (00-README open question 13), so they are not shown.
   Done (06 §4.8, `ports.ts`, `port-layout.ts`, `PortNodeView.vue`). The client's port event
   types named the broadcast's `name` `public`; fixed.
-- [ ] **36. Composite types** (02 §3.4.2, 03 §5; "save as component", open question 4): create
+- [x] **36. Composite types** (02 §3.4.2, 03 §5; "save as component", open question 4): create
   one from the selection (name, description, icon) → `graph:addgroup`; the palette lists
   composites in their category with a mark; change description/icon (`changegroup`), rename
   and remove (`renamegroup`/`removegroup`; refused while in use — shown); view the inside of a
   type read-only, drawn from `component:getsource`. Editing a type's inside is later (D4). Replacing the selection by
   an instance of the new type is a separate, later option (open question 4, "collapse").
+  Done, revised with the user (2026-10-14): a type is defined as a **component graph**
+  (upstream's `"main": false`; 02 §3.4.3) — engine: `graph:clear`, persist into the type,
+  delete, one built per type file at startup, the group commands kept in step; frontend (06
+  §4.9): *Create composite type…* with a port mapping dialog (crossing connections ticked,
+  any block port can be ticked and named), opening a type from the palette, Save type, Delete
+  type. Not yet: renaming a type or changing its description from the frontend; a type file's
+  explicit port descriptions are not kept when the type is saved from its graph.
 - [ ] **37. Copy, paste, duplicate**: the selection with its inner connections and fixed values
   as a clipboard (in the page; also to the system clipboard as JSON), pasted into the same or
   another process as `addnode` + `addinitial` + `addedge` commands, with new names where

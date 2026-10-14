@@ -540,6 +540,91 @@ h1, h2, h3 {
   border-color: var(--hk-danger);
 }
 
+/* ---- Composite types (06 §4.9) ---------------------------------------------------- */
+
+.hk-palette-row {
+  display: flex;
+  align-items: center;
+}
+
+.hk-palette-row .hk-palette-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.hk-palette-open {
+  font-size: 14px;
+  color: var(--hk-text-muted);
+}
+
+.hk-palette-open:hover {
+  color: var(--hk-accent);
+}
+
+.hk-composite-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.hk-composite-ports {
+  border: 0;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.hk-composite-ports table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.hk-composite-ports th,
+.hk-composite-ports td {
+  text-align: left;
+  padding: 3px 4px;
+  vertical-align: middle;
+}
+
+.hk-composite-ports thead th {
+  font-size: 12px;
+  color: var(--hk-text-muted);
+}
+
+.hk-composite-group {
+  padding-top: 8px !important;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hk-text-muted);
+}
+
+.hk-composite-ref {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.hk-composite-why {
+  display: block;
+  font-size: 12px;
+  color: var(--hk-text-muted);
+}
+
+.hk-type-banner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--hk-accent-soft);
+  border: var(--hk-border-width) solid var(--hk-accent);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
 /* ---- Dialogs and the login screen ------------------------------------------------- */
 
 .hk-overlay {

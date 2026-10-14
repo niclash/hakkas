@@ -169,6 +169,8 @@ export const vueModel: {
     renameRequest: Ref<number>,
     // Incremented to ask the inspector to focus its first input's value (the context menu).
     inputsRequest: Ref<number>,
+    // The open graph when it is a component graph, a block type's definition (02 §3.4.3).
+    currentComponent: Ref<ClearEvent | undefined>,
     components: Ref<UnwrapRef<ComponentEvent[]>>,
     selectedComponent: string,
     connection: ShallowRef<WsConnection | undefined>,
@@ -183,6 +185,7 @@ export const vueModel: {
     selectedBlocks: ref([]),
     renameRequest: ref(0),
     inputsRequest: ref(0),
+    currentComponent: ref(undefined),
     connection: shallowRef(undefined),
     errors: ref([]),
     selectedComponent: "",
@@ -199,7 +202,7 @@ export const vueModel: {
 
 // Parts of the UI that show some refusals themselves, at the field the command came from:
 // each one tells whether it took the message.
-export const errorClaims: ((message: string) => boolean)[] = [];
+export const errorClaims: ((message: string, graph?: string) => boolean)[] = [];
 
 export function showError(message: string) {
     vueModel.errors.value.push(message);
@@ -216,6 +219,7 @@ export function attachModel(conn: WsConnection) {
     vueModel.currentGraph = {id: "", name: "", icon: "", description: "", library: "", main: false};
     vueModel.currentGraphId.value = "";
     vueModel.selectedBlocks.value = [];
+    vueModel.currentComponent.value = undefined;
 
     const graph = (id: string): Graph => {
         let g = vueModel.graphs.value.get(id);
@@ -249,7 +253,7 @@ export function attachModel(conn: WsConnection) {
         Object.assign(graph(s.graph), {running: false, started: false, uptime: s.uptime ?? 0, uptimeAt: Date.now()});
     });
     proto.network.addListener("onNetworkError", (e: NetworkErrorEvent) => {
-        if (!errorClaims.some(claim => claim(e.message)))
+        if (!errorClaims.some(claim => claim(e.message, e.graph)))
             showError(e.message);
     });
     proto.runtime.addListener("onNewGraphPacket", (p: { graph: string, name: string, description: string }) => {
@@ -257,6 +261,15 @@ export function attachModel(conn: WsConnection) {
     });
     proto.runtime.addListener("onDeleteGraphPacket", (p: { graph: string }) => {
         vueModel.graphs.value.delete(p.graph);
+        // A component graph's deletion removes its type (02 §3.4.3): no component:* says so.
+        const list = vueModel.components.value;
+        const type = list.findIndex(c => c.name === p.graph && c.subgraph);
+        if (type >= 0) {
+            list.splice(type, 1);
+            delete componentTemplates[p.graph];
+        }
+        if (vueModel.currentComponent.value?.id === p.graph)
+            vueModel.currentComponent.value = undefined;
         // The open process is gone: nothing is open (the editor clears).
         if (vueModel.currentGraphId.value === p.graph) {
             vueModel.currentGraphId.value = "";
@@ -265,9 +278,16 @@ export function attachModel(conn: WsConnection) {
     });
     proto.graph.addListener("onGraphClear", (p: ClearEvent) => {
         vueModel.currentGraphId.value = p.id;
-        Object.assign(graph(p.id), {name: p.name, description: p.description});
+        // A component graph is no process: it is not in the process list.
+        vueModel.currentComponent.value = p.main === false ? p : undefined;
+        if (p.main !== false)
+            Object.assign(graph(p.id), {name: p.name, description: p.description});
     });
     proto.graph.addListener("onGraphRename", (p: { id: string, to: string }) => {
-        graph(p.id).name = p.to;
+        const shown = vueModel.currentComponent.value;
+        if (shown?.id === p.id)
+            vueModel.currentComponent.value = {...shown, name: p.to};
+        else if (vueModel.graphs.value.has(p.id))
+            graph(p.id).name = p.to;
     });
 }

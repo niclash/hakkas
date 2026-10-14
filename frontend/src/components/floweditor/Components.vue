@@ -8,11 +8,16 @@
            @keydown.escape="search = ''"/>
     <details class="hk-group" open v-for="(entries, family) in groups" :key="family" :data-family="family">
       <summary>{{ family }}</summary>
-      <button v-for="entry in entries" :key="entry.name" class="hk-palette-item" draggable="true"
-              data-testid="block-type" :data-type="entry.name" :title="entry.tooltip"
-              @click="emit('onSelection', entry.name)" @dragstart="dragStart($event, entry.name)">
-        {{ entry.short }}
-      </button>
+      <div v-for="entry in entries" :key="entry.name" class="hk-palette-row">
+        <button class="hk-palette-item" draggable="true"
+                data-testid="block-type" :data-type="entry.name" :title="entry.tooltip"
+                @click="emit('onSelection', entry.name)" @dragstart="dragStart($event, entry.name)">
+          {{ entry.short }}
+        </button>
+        <button v-if="entry.subgraph" type="button" class="hk-icon-button hk-palette-open" data-testid="open-type"
+                :data-type="entry.name" :aria-label="'Open block type ' + entry.name" title="Open the type's inside"
+                @click="emit('openType', entry.name)">↗</button>
+      </div>
     </details>
     <p v-if="Object.keys(groups).length === 0" class="hk-empty" data-testid="palette-none">No block type matches</p>
   </section>
@@ -44,6 +49,7 @@ const dragStart = (event: DragEvent, type: string) => {
 };
 
 const emit = defineEmits<{
-  onSelection: [value: string]
+  onSelection: [value: string],
+  openType: [type: string],
 }>();
 </script>

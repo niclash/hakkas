@@ -20,7 +20,8 @@ export type MenuAction =
     | "set-value" | "change-value" | "clear-value" | "disconnect"
     | "delete-connection"
     | "watch" | "unwatch" | "watch-inputs" | "unwatch-inputs" | "watch-all" | "unwatch-all"
-    | "expose-input" | "expose-output" | "rename-port" | "remove-port";
+    | "expose-input" | "expose-output" | "rename-port" | "remove-port"
+    | "create-composite";
 
 export interface MenuItem {
     action: MenuAction;
@@ -50,6 +51,8 @@ export function menuFor(target: MenuTarget): MenuItem[] {
                 target.watched
                     ? {action: "unwatch-inputs", label: "Stop watching inputs"}
                     : {action: "watch-inputs", label: "Watch inputs"},
+                {action: "create-composite", label: target.selected > 1
+                        ? `Create composite type from ${target.selected} blocks…` : "Create composite type…"},
                 target.selected > 1
                     ? {action: "delete-selection", label: `Delete ${target.selected} blocks`, shortcut: "Del"}
                     : {action: "delete-block", label: "Delete", shortcut: "Del"},

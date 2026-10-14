@@ -18,7 +18,7 @@ export interface ClearEvent {
     id: string;
     name: string;
     library: string;
-    main: boolean;
+    main: boolean;     // false: a component graph, a block type's definition (02 §3.4.3)
     icon: string;
     description: string;
 }
@@ -174,6 +174,7 @@ export class GraphProtocol {
     private currentGraph: string = "";
     listeners: {
         onGraphClear: Function[],
+        onComponentGraph: Function[],
         onGraphRename: Function[],
         onGraphAddNode: Function[],
         onGraphRemoveNode: Function[],
@@ -200,6 +201,7 @@ export class GraphProtocol {
         this.connection = connection;
         this.listeners = {
             onGraphClear: [],
+            onComponentGraph: [],
             onGraphRename: [],
             onGraphAddNode: [],
             onGraphRemoveNode: [],
@@ -296,8 +298,12 @@ export class GraphProtocol {
         });
     }
 
+    // The graph asked for by the last request_connect: its graph:clear starts its snapshot.
+    private connecting = "";
+
     request_connect(graphName: string) {
         console.log("Request connect:" + graphName);
+        this.connecting = graphName;
         this.connection.send({
             protocol: "graph",
             command: "connect",
@@ -345,6 +351,12 @@ export class GraphProtocol {
                 graph: this.currentGraph
             }
         });
+    }
+
+    // A graph command with its payload as given (the graph named in it, which need not be the
+    // open one): e.g. building a component graph (02 §3.4.3).
+    request_raw(command: string, payload: object) {
+        this.connection.send({protocol: "graph", command, payload});
     }
 
     // Process ports (02 §3.4): a block's input or output exposed under a public name.
@@ -550,6 +562,13 @@ export class GraphProtocol {
     }
 
     clear(payload: ClearEvent) {
+        // Not the graph being opened: the reply to this client's own graph:clear, which made
+        // a component graph (02 §3.4.3).
+        if (payload.id !== this.connecting) {
+            for (let fn of this.listeners.onComponentGraph)
+                fn(payload);
+            return;
+        }
         this.currentGraph = payload.id;
         this.connection.currentGraph = payload.id;
         for (let fn of this.listeners.onGraphClear) {

@@ -16,6 +16,7 @@
     "src/components/palette.ts",
     "src/components/processes.ts",
     "src/components/watches.ts",
+    "src/components/composite.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

@@ -11,6 +11,7 @@ export interface PaletteEntry {
     name: string;      // the type's full name, e.g. "math/Add2"
     short: string;     // its name after the family, e.g. "Add2"
     tooltip: string;
+    subgraph: boolean; // a composite type: it can be opened (06 §4.9)
 }
 
 // The types grouped by family (the prefix before "/"), in the order they arrived, keeping only
@@ -23,7 +24,10 @@ export function paletteGroups(types: ComponentEvent[], search: string): Record<s
             continue;
         const slash = type.name.indexOf("/");
         const family = slash < 0 ? "" : type.name.substring(0, slash);
-        (groups[family] ??= []).push({name: type.name, short: type.name.substring(slash + 1), tooltip: typeTooltip(type)});
+        (groups[family] ??= []).push({
+            name: type.name, short: type.name.substring(slash + 1), tooltip: typeTooltip(type),
+            subgraph: type.subgraph === true,
+        });
     }
     return groups;
 }
