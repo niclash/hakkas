@@ -136,6 +136,9 @@ browser gets `404`. A package build serves the installed frontend instead: confi
 `<prefix>/bin` and copies `frontend/dist` to `<prefix>/share/hakkas/web`, the default `webdir`
 of that build (06 §1).
 
+For a device's flash, `npm run build:device` also writes `frontend/dist-device`: every file
+stored only as `<file>.gz` (about 0.5 MB), which the web server serves compressed (06 §5).
+
 It reaches the WebSocket on the page's own port + 1 (02 §0) and changes its view only from the
 engine's events (02 §1.1). For live reloading, `npm run dev` serves it from Vite instead; then
 tell it where the WebSocket is and let the engine accept Vite's origin:

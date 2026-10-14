@@ -1,7 +1,7 @@
 <script setup lang="ts">
 
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
-import {createEditor} from './viewmodel';
+import {createEditor} from './viewmodel/default';
 import {editor} from './viewmodel/default';
 import {can, componentTemplates, Connection, errorClaims, isPortNode, isValueNode, PortNode, PrimitiveNode, ValueNode, vueModel} from "../model";
 import {SocketData} from "rete-connection-plugin";

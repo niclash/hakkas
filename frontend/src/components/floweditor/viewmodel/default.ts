@@ -5,7 +5,7 @@ import {ConnectionPlugin, Presets as ConnectionPresets, SocketData} from 'rete-c
 
 import {Presets as VuePresets, VueArea2D, VuePlugin} from 'rete-vue-plugin';
 
-import {AutoArrangePlugin, Presets as ArrangePresets,} from 'rete-auto-arrange-plugin';
+import type {AutoArrangePlugin} from 'rete-auto-arrange-plugin';
 
 import {MinimapExtra, MinimapPlugin} from 'rete-minimap-plugin';
 import {RerouteExtensions, RerouteExtra, ReroutePlugin,} from 'rete-connection-reroute-plugin';
@@ -73,15 +73,25 @@ export async function createEditor(container: HTMLElement) {
 
     editor.use(area);
 
-    const arrange = new AutoArrangePlugin<Schemes>();
-    arrange.addPreset(ArrangePresets.classic.setup());
+    // The auto-arrange plugin and its layout engine (elkjs, most of the editor's code by size)
+    // are loaded the first time "Arrange blocks" is used (06 §5).
+    let arrange: AutoArrangePlugin<Schemes> | undefined;
+    const arranger = async () => {
+        if (arrange === undefined) {
+            const {AutoArrangePlugin, Presets} = await import('rete-auto-arrange-plugin');
+            arrange = new AutoArrangePlugin<Schemes>();
+            arrange.addPreset(Presets.classic.setup());
+            area.use(arrange);
+        }
+        return arrange;
+    };
     // The arrangement is computed only: each block is moved by its changenode's event.
     editor.arrangement = async () => {
         const nodes = editor.getNodes().filter(n => n instanceof PrimitiveNode);
         const connections = editor.getConnections().filter(c =>
             editor.getNode(c.source) instanceof PrimitiveNode && editor.getNode(c.target) instanceof PrimitiveNode);
         const keep = {setEditor() {}, setArea() {}, async apply() {}};
-        const {result} = await arrange.layout({nodes, connections, applier: keep as never});
+        const {result} = await (await arranger()).layout({nodes, connections, applier: keep as never});
         const positions = new Map<string, Position>();
         for (const child of result.children ?? [])
             positions.set(child.id, {x: child.x ?? 0, y: child.y ?? 0});
@@ -148,7 +158,6 @@ export async function createEditor(container: HTMLElement) {
             },
         })
     );
-    area.use(arrange);
     editor.blockSelection = setupBlockSelection(editor, area, {
         move: (id, position) => vueModel.connection.value?.proto.graph.request_changenode(id, position),
         remove: id => vueModel.connection.value?.proto.graph.request_removenode(id),

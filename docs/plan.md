@@ -715,7 +715,7 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   29 (06 §4.3) and "Edit inputs" for "set inputs". Watch values, duplicate, copy, paste, create
   composite and expose as process port join the menus with tasks 34–37. Also: a right-click no
   longer inserts a reroute pin (only main-button presses reach the reroute plugin), and the
-  classic context menu plugin is unused (still a dependency of the 3D template, task 43).
+  classic context menu plugin is unused (removed with the 3D template in task 43).
 - [x] **31. Palette and sockets**: a search field over the block types; drag a type onto the
   canvas to add it at the drop point (today it lands at 100,100); tooltips with the type's
   description and ports; sockets colored by port type (number, bool, string) with a legend in
@@ -806,9 +806,12 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   Done (06 §4.13, `undo.ts`, `floweditor/history.ts`; decided with the user: sessionStorage,
   500 steps per process, a step changed by someone else skipped with a message). Ctrl+Z,
   Ctrl+Shift+Z / Ctrl+Y; steps checked before being undone or redone.
-- [ ] **43. A smaller bundle** (06 §5): drop the unused 3D editor template (three.js) and the
+- [x] **43. A smaller bundle** (06 §5): drop the unused 3D editor template (three.js) and the
   icon fonts nothing uses, build `.gz` assets only for the device, and record the size
   against the flash budget.
+  Done (06 §5): the templates, three.js, the unused Rete plugins, the icon fonts and Sass gone;
+  elkjs loaded only for Arrange blocks; `npm run build:device` writes `dist-device`, gzip
+  only, 518 KiB (about 3 % of the 16 MB flash). The whole browser suite passes against it.
 - [x] **44. Block categories** — merged into task 47 (D5); the palette's sections follow the
   type names.
 
