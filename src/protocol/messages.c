@@ -238,7 +238,7 @@ static char *graph_status(const Graph *g, const GraphEvent *ev)
 		  add_str(p, "description", g->description) &&
 		  add_num(p, "uptime", seconds(ev->uptime_ms)) &&
 		  add_bool(p, "running", g->started) && add_bool(p, "started", g->started) &&
-		  add_bool(p, "debug", false);
+		  add_bool(p, "debug", false) && add_bool(p, "unsaved", g->unsaved);
 	return finish("network", "status", p, ok);
 }
 

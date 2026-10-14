@@ -40,6 +40,7 @@ static void test_live_values(void)
 {
 	CHECK(e2e_connect(&e) && e2e_login(&e, "alice"));
 	cmd("runtime", "new_graph", "{'id':'flow','name':'Flow'}");
+	EXPECT(&e, "network", "status", NULL); /* new: unsaved (02 §3.3) */
 	/* a1 -> a2 -> a3, all math/Add2 (03 §3). */
 	cmd("graph", "addnode", "{'id':'a1','graph':'flow','component':'math/Add2'}");
 	cmd("graph", "addnode", "{'id':'a2','graph':'flow','component':'math/Add2'}");
@@ -178,6 +179,9 @@ static void test_interval(void)
 static void test_persist_restart(void)
 {
 	e2e_send(&e, "network", "persist", "{'graph':'flow'}");
+	EXPECT(&e, "network", "status",
+	       "{'graph':'flow','name':'Flow','description':'','uptime':'*','running':true,"
+	       "'started':true,'debug':false,'unsaved':false}"); /* saved (02 §3.3) */
 	QUIET(&e);
 	CHECK(pal_storage_exists(e2e_path(e2e_path(e2e_basedir, "graphs"), "flow.json")));
 	e2e_send(&e, "graph", "connect", "{'id':'flow'}");
@@ -203,11 +207,11 @@ static void test_persist_restart(void)
 	}
 	e2e_free_msgs(after, nafter);
 	e2e_free_msgs(before, nbefore);
-	/* Started, as it was persisted; its values flow. */
+	/* Started, as it was persisted, and so not unsaved; its values flow. */
 	e2e_send(&e, "network", "getstatus", "{'graph':'flow'}");
 	EXPECT(&e, "network", "status",
 	       "{'graph':'flow','name':'Flow','description':'','uptime':'*','running':true,"
-	       "'started':true,'debug':false}");
+	       "'started':true,'debug':false,'unsaved':false}");
 	static const char edges[] =
 		"{'graph':'flow','edges':[{'src':{'node':'w','port':'out'},'tgt':{'node':'a3',"
 		"'port':'in1'}},{'src':{'node':'w','port':'out'},'tgt':{'node':'s',"

@@ -488,9 +488,13 @@ static void test_run(void)
 	CHECK(run("--confdir", conf, "run", "--port", "0", "daemon", NULL) == CLI_EXIT_USAGE);
 	CHECK(!pal_storage_exists(join(conf, "hakkas.json")));
 
-	/* A graph file that does not load refuses run process. */
-	CHECK(run("--confdir", conf, "--basedir", base, "run", "--host", "127.0.0.1", "process",
-		  join(base, "missing.json"), NULL) == CLI_EXIT_FAILURE);
+	/* A graph file that does not load refuses run process. Free ports, so
+	 * that the engine gets as far as loading (another engine may be using
+	 * the default ones). */
+	char missing_port[8];
+	snprintf(missing_port, sizeof(missing_port), "%u", (unsigned)free_port_pair());
+	CHECK(run("--confdir", conf, "--basedir", base, "run", "--host", "127.0.0.1", "--port",
+		  missing_port, "process", join(base, "missing.json"), NULL) == CLI_EXIT_FAILURE);
 	CHECK(strstr(logs, "error run process: a graph file did not load") != NULL);
 	/* Step 1 has generated the server secret (05 §1.1). */
 	CHECK(pal_storage_exists(join(conf, "hakkas.json")));

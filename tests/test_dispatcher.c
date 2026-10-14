@@ -419,6 +419,17 @@ static void expect_one(FakeConn *f, const char *expected)
 	clear(f);
 }
 
+/* Expect a new graph's runtime:new_graph, equal to created, then its status,
+ * unsaved (02 §3.3); then clear. */
+static void expect_created(FakeConn *f, const char *created)
+{
+	CHECK(f->count == 2);
+	CHECK(json_equal(msg(f, 0), created));
+	CHECK(f->count == 2 && strstr(msg(f, 1), "\"command\":\"status\"") != NULL &&
+	      strstr(msg(f, 1), "\"unsaved\":true}") != NULL);
+	clear(f);
+}
+
 static void expect_error(FakeConn *f, const char *message)
 {
 	expect_one(f, error_json(message));
@@ -758,14 +769,15 @@ static void test_expiry(void)
 	conn_open(&b);
 	login_as(&a, USER_ROLE_EDITOR);
 	const char *sb = login_as(&b, USER_ROLE_EDITOR);
+	/* new_graph and the new graph's status (unsaved, 02 §3.3) each. */
 	command(&b, "runtime", "new_graph", "{'id':'g1'}", sb);
-	CHECK(a.count == 1 && b.count == 1);
+	CHECK(a.count == 2 && b.count == 2);
 	clear(&a);
 	clear(&b);
 	/* The deadline passed: no delivery even before the tick. */
 	auth_of(&a)->expired = true;
 	command(&b, "runtime", "new_graph", "{'id':'g2'}", sb);
-	CHECK(a.count == 0 && b.count == 1);
+	CHECK(a.count == 0 && b.count == 2);
 	clear(&b);
 	/* The tick ends it: logout, and no more events. */
 	AuthConn *ac = auth_of(&a);
@@ -776,12 +788,12 @@ static void test_expiry(void)
 	CHECK_STREQ(msg(&a, 0), "{\"protocol\":\"environment\",\"command\":\"logout\"}");
 	clear(&a);
 	command(&b, "runtime", "new_graph", "{'id':'g3'}", sb);
-	CHECK(a.count == 0 && b.count == 1);
+	CHECK(a.count == 0 && b.count == 2);
 	clear(&b);
 	/* A new login gets events again. */
 	login_as(&a, USER_ROLE_VIEWER);
 	command(&b, "runtime", "new_graph", "{'id':'g4'}", sb);
-	CHECK(a.count == 1 && b.count == 1);
+	CHECK(a.count == 2 && b.count == 2);
 	conn_close(&a);
 	conn_close(&b);
 	teardown();
@@ -851,10 +863,11 @@ static void test_getruntime(void)
 	CHECK_STREQ(msg(&f, types + 1), ready);
 	static const char *const status[] = {
 		"{'protocol':'network','command':'status','payload':{'graph':'g1','name':'One',"
-		"'description':'first','uptime':0,'running':false,'started':false,'debug':false}}",
+		"'description':'first','uptime':0,'running':false,'started':false,'debug':false,"
+		"'unsaved':true}}",
 		"{'protocol':'network','command':'status','payload':{'graph':'g2','name':"
 		"'<<new graph>>','description':'','uptime':0,'running':false,'started':false,"
-		"'debug':false}}",
+		"'debug':false,'unsaved':true}}",
 	};
 	CHECK(json_equal(msg(&f, types + 2), status[0]));
 	CHECK(json_equal(msg(&f, types + 3), status[1]));
@@ -876,7 +889,7 @@ static void test_getruntime(void)
 	CHECK(json_equal(msg(&f, types + 2),
 			 "{'protocol':'network','command':'status','payload':{'graph':'g1','name':"
 			 "'One','description':'first','uptime':62,'running':true,'started':true,"
-			 "'debug':false}}"));
+			 "'debug':false,'unsaved':true}}"));
 	conn_close(&f);
 	conn_close(&other);
 	conn_close(&anon);
@@ -909,14 +922,14 @@ static void test_new_delete_graph(void)
 	static const char *const created =
 		"{'protocol':'runtime','command':'new_graph','payload':{'graph':'g1','name':'One',"
 		"'description':'d','icon':'i'}}";
-	expect_one(&a, created);
-	expect_one(&b, created);
-	expect_one(&viewer, created);
+	expect_created(&a, created);
+	expect_created(&b, created);
+	expect_created(&viewer, created);
 	CHECK(anon.count == 0);
 
 	/* Defaults; null is the same as absent. */
 	command(&a, "runtime", "new_graph", "{'name':null}", sa);
-	CHECK(a.count == 1 && b.count == 1);
+	CHECK(a.count == 2 && b.count == 2);
 	cJSON *m = cJSON_Parse(msg(&a, 0));
 	const cJSON *pl = cJSON_GetObjectItemCaseSensitive(m, "payload");
 	const char *id = cJSON_GetObjectItemCaseSensitive(pl, "graph")->valuestring;
@@ -995,10 +1008,10 @@ static void test_new_delete_graph(void)
 	CHECK(protocol_conn_scope(viewer.pc, "elsewhere"));
 	CHECK(!protocol_conn_scope(viewer.pc, ""));
 	command(&a, "runtime", "new_graph", "{'id':'g5'}", sa);
-	CHECK(viewer.count == 1);
+	CHECK(viewer.count == 2); /* new_graph and its status, both system-wide */
 	clear(&viewer);
 	CHECK(graphs_start(&gs, "g5", NULL) == GRAPH_OK);
-	CHECK(viewer.count == 0 && a.count == 2);
+	CHECK(viewer.count == 0 && a.count == 3);
 	clear(&a);
 	clear(&b);
 
@@ -1616,9 +1629,9 @@ static void test_graph_commands(void)
 	command(&k.v, "graph", "list", "{}", k.sv);
 	static const char *const list[] = {
 		"{'protocol':'network','command':'status','payload':{'graph':'g1','name':'Uno',"
-		"'description':'','uptime':0,'running':false,'started':false,'debug':false}}",
+		"'description':'','uptime':0,'running':false,'started':false,'debug':false,'unsaved':true}}",
 		"{'protocol':'network','command':'status','payload':{'graph':'g2','name':'Two',"
-		"'description':'','uptime':0,'running':false,'started':false,'debug':false}}",
+		"'description':'','uptime':0,'running':false,'started':false,'debug':false,'unsaved':true}}",
 	};
 	expect_all(all, 3, list, 2);
 
@@ -1851,7 +1864,7 @@ static void test_scoping(void)
 	clear(&b);
 	clear(&u);
 	command(&a, "runtime", "new_graph", "{'id':'g3'}", sa);
-	CHECK(a.count == 1 && b.count == 1 && u.count == 1);
+	CHECK(a.count == 2 && b.count == 2 && u.count == 2); /* and its status */
 	clear(&a);
 	clear(&b);
 	clear(&u);
@@ -1978,8 +1991,11 @@ static void test_connect_snapshot(void)
 	command(&f, "environment", "logout", "{}", "");
 	clear(&f);
 	s = login_as(&f, USER_ROLE_EDITOR);
+	/* gs was loaded, so saved: its first change is followed by its status
+	 * (02 §3.3). */
 	command(&f, "graph", "changenode", "{'id':'p','metadata':{'x':3},'graph':'gs'}", s);
-	CHECK(f.count == 1 && json_equal(msg(&f, 0),
+	CHECK(f.count == 2 && strstr(msg(&f, 1), "\"unsaved\":true}") != NULL);
+	CHECK(f.count == 2 && json_equal(msg(&f, 0),
 					 "{'protocol':'graph','command':'changenode','payload':{"
 					 "'id':'p','graph':'gs','metadata':{'x':3,'y':9}}}"));
 	clear(&f);
@@ -2036,7 +2052,7 @@ static void test_connect_buffer(void)
 	f.space = 1u << 20;
 	CHECK(graphs_add_node(&gs, "gs", "c", "math/Add2", NULL, NULL) == GRAPH_OK);
 	CHECK(graphs_add_node(&gs, "g1", "y", "math/Add2", NULL, NULL) == GRAPH_OK);
-	CHECK(f.count == 2);
+	CHECK(f.count == 3); /* gs's addnode and its first-change status, g1's addnode */
 	clear(&f);
 	f.pending = 0;
 	protocol_conn_drained(f.pc);
@@ -2208,7 +2224,7 @@ static void test_network_commands(void)
 	command(&op, "network", "getstatus", "{'graph':'g1'}", so);
 	static const char *const status[] = {
 		"{'protocol':'network','command':'status','payload':{'graph':'g1','name':'One',"
-		"'description':'first','uptime':3,'running':true,'started':true,'debug':false}}",
+		"'description':'first','uptime':3,'running':true,'started':true,'debug':false,'unsaved':true}}",
 	};
 	expect_all(subs, 4, status, 1);
 	FakeConn *others[] = {&other};
@@ -2251,10 +2267,16 @@ static void test_network_commands(void)
 	};
 	expect_all(subs, 4, failed, 1);
 	expect_all(others, 1, failed, 1);
-	/* Success: no reply at all, the file written. */
+	/* Success: no reply, but the graph's status to everyone, saved (02 §3.3);
+	 * the file written. */
 	CHECK(pal_storage_remove(path) == PAL_OK);
 	command(&k.a, "network", "persist", "{'graph':'g1'}", k.sa);
-	CHECK(k.a.count == 0 && k.b.count == 0 && op.count == 0);
+	CHECK(k.a.count == 1 && k.b.count == 1 && op.count == 1);
+	CHECK(strstr(msg(&k.a, 0), "\"command\":\"status\"") != NULL &&
+	      strstr(msg(&k.a, 0), "\"unsaved\":false}") != NULL);
+	clear(&k.a);
+	clear(&k.b);
+	clear(&op);
 	CHECK(file_exists("g1"));
 	conn_close(&op);
 	conn_close(&other);
@@ -2486,7 +2508,7 @@ static void test_data_reserve(void)
 	clear(&f);
 	/* So may an event (system-wide, so it reaches the scoped f). */
 	CHECK(graphs_new_graph(&gs, "g2", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
-	CHECK(f.count == 1 && !f.closed && strstr(msg(&f, 0), "new_graph") != NULL);
+	CHECK(f.count == 2 && !f.closed && strstr(msg(&f, 0), "new_graph") != NULL);
 	clear(&f);
 	/* At the drain, the latest value. */
 	f.space = 4000;

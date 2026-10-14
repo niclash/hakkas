@@ -121,6 +121,7 @@ static char *render(const HakkasEvent *ev)
 		cJSON_AddBoolToObject(p, "running", ev->started);
 		cJSON_AddBoolToObject(p, "started", ev->started);
 		cJSON_AddBoolToObject(p, "debug", false);
+		cJSON_AddBoolToObject(p, "unsaved", ev->unsaved);
 		break;
 	case HAKKAS_EVENT_BLOCK_ADDED:
 		command = "addnode";
@@ -335,21 +336,26 @@ static void test_processes(void)
 	OK(hakkas_process_create(h, "p1", "One", NULL, NULL, id, &m));
 	CHECK_STREQ(id, "p1");
 	CHECK_STREQ(m.text, "");
-	NEV(1);
+	/* A new process is unsaved, and its status says so (02 §3.3). */
+	NEV(2);
 	EV(0, "runtime", "new_graph", "{'graph':'p1','name':'One','description':'','icon':''}");
+	EV(1, "network", "status", "{'graph':'p1','name':'One','description':'','uptime':0,"
+	      "'running':false,'started':false,'debug':false,'unsaved':true}");
 	REFUSED(hakkas_process_create(h, "p1", NULL, NULL, NULL, id, &m), "Graph exists: p1");
 	CHECK_STREQ(id, "");
 	REFUSED(hakkas_process_create(h, "", NULL, NULL, NULL, NULL, &m), "Invalid id");
 	OK(hakkas_process_create(h, NULL, NULL, "d", "cog", id, &m));
 	CHECK(strlen(id) == 36);
-	EV(1, "runtime", "new_graph", "{'graph':'*','name':'<<new graph>>','description':'d',"
+	EV(2, "runtime", "new_graph", "{'graph':'*','name':'<<new graph>>','description':'d',"
 	      "'icon':'cog'}");
+	EV(3, "network", "status", NULL);
 	wire_same(&wire);
 
 	/* Listing and status, read without events. */
 	CHECK(hakkas_process_count(h) == 2);
 	HakkasProcessStatus st;
-	CHECK(hakkas_process_at(h, 0, &st) && strcmp(st.id, "p1") == 0 && !st.started);
+	CHECK(hakkas_process_at(h, 0, &st) && strcmp(st.id, "p1") == 0 && !st.started &&
+	      st.unsaved);
 	CHECK(hakkas_process_at(h, 1, &st) && strcmp(st.id, id) == 0 &&
 	      strcmp(st.icon, "cog") == 0);
 	CHECK(!hakkas_process_at(h, 2, &st));
@@ -384,10 +390,13 @@ static void test_processes(void)
 	REFUSED(hakkas_process_rename(h, "zz", "x", &m), "Unknown graph: zz");
 	wire_same(&wire);
 
-	/* Persist: the file, no event; a failed save is an ERROR event. */
+	/* Persist: the file and the status, now saved (02 §3.3); a failed
+	 * save is an ERROR event. */
 	OK(hakkas_process_start(h, "p1", &m));
 	OK(hakkas_process_persist(h, "p1", &m));
 	CHECK(pal_storage_exists(graph_file("p1.json")));
+	OK(hakkas_process_status(h, "p1", &st, &m));
+	CHECK(!st.unsaved);
 	REFUSED(hakkas_process_persist(h, "zz", &m), "Unknown graph: zz");
 	REFUSED(hakkas_process_persist(h, NULL, &m), "Invalid field: graph");
 	char graphs[PAL_PATH_MAX], moved[PAL_PATH_MAX];
@@ -399,8 +408,10 @@ static void test_processes(void)
 	CHECK_STREQ(m.text, "Unable to save graph: Uno (p1)");
 	CHECK(pal_storage_remove(graphs) == PAL_OK);
 	CHECK(rename(moved, graphs) == 0);
-	NEV(2);
-	EV(1, "network", "error", "{'stack':'','message':'Unable to save graph: Uno (p1)',"
+	NEV(3);
+	EV(1, "network", "status", "{'graph':'p1','name':'Uno','description':'','uptime':0,"
+	      "'running':true,'started':true,'debug':false,'unsaved':false}");
+	EV(2, "network", "error", "{'stack':'','message':'Unable to save graph: Uno (p1)',"
 	      "'graph':'p1'}");
 	wire_same(&wire);
 
@@ -430,16 +441,22 @@ static void test_load(void)
 	OK(hakkas_process_load(h, path, &l, &m));
 	CHECK_STREQ(l.id, "l1");
 	CHECK(l.started);
-	NEV(3);
+	/* New, so unsaved; once loaded still unsaved: the file says started and
+	 * the process is not (yet) — the host decides (02 §3.3). */
+	NEV(5);
 	EV(0, "runtime", "new_graph", "{'graph':'l1','name':'L','description':'','icon':''}");
-	EV(1, "graph", "addnode", "{'graph':'l1','component':'math/Add2','id':'a',"
+	EV(1, "network", "status", "{'graph':'l1','name':'L','description':'','uptime':0,"
+	      "'running':false,'started':false,'debug':false,'unsaved':true}");
+	EV(2, "graph", "addnode", "{'graph':'l1','component':'math/Add2','id':'a',"
 	      "'metadata':{'x':50,'y':50}}");
-	EV(2, "graph", "addinitial", "{'graph':'l1','src':{'data':'2'},'tgt':{'node':'a',"
+	EV(3, "graph", "addinitial", "{'graph':'l1','src':{'data':'2'},'tgt':{'node':'a',"
 	      "'port':'in1'}}");
+	EV(4, "network", "status", "{'graph':'l1','name':'L','description':'','uptime':0,"
+	      "'running':false,'started':false,'debug':false,'unsaved':true}");
 	wire_same(&wire);
 	HakkasProcessStatus st;
 	OK(hakkas_process_status(h, "l1", &st, &m));
-	CHECK(!st.started);
+	CHECK(!st.started && st.unsaved);
 	CHECK(hakkas_process_load(h, path, &l, &m) == HAKKAS_ERR_EXISTS);
 	CHECK_STREQ(m.text, "graph exists");
 	CHECK(hakkas_process_load(h, e2e_path(e2e_root, "none.json"), &l, &m) ==
@@ -473,11 +490,19 @@ static void test_load_saved(void)
 	OK(hakkas_process_load_saved(h, on_saved, NULL, &n));
 	CHECK(n == 2);
 	CHECK_STREQ(saved, "s1 1;s2 0;");
-	NEV(3);
+	/* Each: new_graph and its status, the loaded status; s1, saved running,
+	 * is saved again once the host has started it (02 §3.3). */
+	NEV(8);
 	EV(0, "runtime", "new_graph", "{'graph':'s1','name':'<<new graph>>','description':'',"
 	      "'icon':''}");
-	EV(1, "network", "started", NULL);
-	EV(2, "runtime", "new_graph", NULL);
+	EV(2, "network", "status", "{'graph':'s1','name':'<<new graph>>','description':'',"
+	      "'uptime':0,'running':false,'started':false,'debug':false,'unsaved':true}");
+	EV(3, "network", "started", NULL);
+	EV(4, "network", "status", "{'graph':'s1','name':'<<new graph>>','description':'',"
+	      "'uptime':0,'running':true,'started':true,'debug':false,'unsaved':false}");
+	EV(5, "runtime", "new_graph", NULL);
+	EV(7, "network", "status", "{'graph':'s2','name':'<<new graph>>','description':'',"
+	      "'uptime':0,'running':false,'started':false,'debug':false,'unsaved':false}");
 	wire_same(&wire);
 	/* Loaded already: every file fails, the first failure is returned. */
 	saved[0] = '\0';
@@ -496,10 +521,10 @@ static void test_blocks(void)
 	OK(hakkas_process_create(h, "e", "E", NULL, NULL, NULL, &m));
 	OK(hakkas_block_add(h, "e", "a", "math/Add2", "{\"x\":1,\"y\":2,\"k\":\"v\"}", &m));
 	OK(hakkas_block_add(h, "e", "b", "math/Add2", NULL, &m));
-	NEV(3);
-	EV(1, "graph", "addnode", "{'graph':'e','component':'math/Add2','id':'a',"
+	NEV(4); /* new_graph and its status, then the blocks */
+	EV(2, "graph", "addnode", "{'graph':'e','component':'math/Add2','id':'a',"
 	      "'metadata':{'x':1,'y':2,'k':'v'}}");
-	EV(2, "graph", "addnode", "{'graph':'e','component':'math/Add2','id':'b',"
+	EV(3, "graph", "addnode", "{'graph':'e','component':'math/Add2','id':'b',"
 	      "'metadata':{'x':50,'y':50}}");
 	wire_same(&wire);
 	REFUSED(hakkas_block_add(h, "e", NULL, "math/Add2", NULL, &m), "Invalid field: id");
@@ -691,10 +716,10 @@ static void test_groups(void)
 /* A compound removal reports its parts first (02 §1.1), exactly as on the
  * wire; then the same commands from a client over the wire reach the host
  * as the same events. */
-static bool twelve_events(void *arg)
+static bool thirteen_events(void *arg)
 {
 	(void)arg;
-	return nevents >= 12;
+	return nevents >= 13;
 }
 
 static void test_compound_and_wire(void)
@@ -723,10 +748,11 @@ static void test_compound_and_wire(void)
 	e2e_send(&wire, "graph", "removenode", "{'id':'w','graph':'e'}");
 	e2e_send(&wire, "network", "stop", "{'graph':'e'}");
 	e2e_send(&wire, "runtime", "delete_graph", "{'id':'w2','name':'Wire'}");
-	/* addnode, addinitial, addedge, started, a status per process, new_graph,
-	 * rename, the removal's initial, edge and node, stopped, delete_graph. */
-	CHECK(e2e_run_until(twelve_events, NULL));
-	NEV(12);
+	/* addnode, addinitial, addedge, started, a status per process, new_graph
+	 * and its status (new: unsaved, 02 §3.3), rename, the removal's initial,
+	 * edge and node, stopped, delete_graph. */
+	CHECK(e2e_run_until(thirteen_events, NULL));
+	NEV(13);
 	EV(0, "graph", "addnode", "{'graph':'e','component':'math/Add2','id':'w',"
 	      "'metadata':{'x':3,'y':4,'q':1}}");
 	EV(1, "graph", "addinitial", "{'graph':'e','src':{'data':'4.5'},'tgt':{'node':'w',"

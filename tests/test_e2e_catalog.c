@@ -85,6 +85,22 @@ static void event1(const char *protocol, const char *command, const char *payloa
 	event1x(protocol, command, payload, protocol, command, event);
 }
 
+/* runtime:new_graph from a: its event (payload event, NULL: any), then the
+ * new graph's status, unsaved (02 §3.3), reach a, b and v alike. */
+static void new_graph1(const char *payload, const char *event)
+{
+	event1("runtime", "new_graph", payload, event);
+	const char *status = e2e_recv(&a);
+	CHECK(e2e_match(status, "network", "status", NULL) &&
+	      strstr(status, "\"unsaved\":true}") != NULL);
+	E2eClient *others[] = {&b, &v};
+	for (int i = 0; i < 2; i++) {
+		CHECK(e2e_recv(others[i]) != NULL);
+		CHECK(others[i]->frame_len == a.frame_len && a.frame != NULL &&
+		      memcmp(others[i]->frame, a.frame, a.frame_len) == 0);
+	}
+}
+
 /* Nothing more is waiting on a, b or v. */
 static void all_quiet(void)
 {
@@ -231,8 +247,9 @@ static void test_not_permitted(void)
 	open_clients();
 	E2eClient o;
 	CHECK(e2e_connect(&o) && e2e_login(&o, "oscar"));
-	event1("runtime", "new_graph", "{'id':'perm','name':'Perm'}", NULL);
+	new_graph1("{'id':'perm','name':'Perm'}", NULL);
 	CHECK(e2e_expect(&o, "runtime", "new_graph", NULL));
+	CHECK(e2e_expect(&o, "network", "status", NULL));
 	/* The viewer (02 §2.4). */
 	static const char *const viewer[][3] = {
 		{"graph", "addnode", "{'id':'x','graph':'perm','component':'math/Add2'}"},
@@ -291,7 +308,9 @@ static void test_logout(void)
 	b.secret[0] = '\0';
 	e2e_send(&a, "runtime", "new_graph", "{'id':'lo','name':'Lo'}");
 	EXPECT(&a, "runtime", "new_graph", "{'graph':'lo','name':'Lo','description':'','icon':''}");
+	CHECK(e2e_expect(&a, "network", "status", NULL));
 	CHECK(e2e_expect(&v, "runtime", "new_graph", NULL));
+	CHECK(e2e_expect(&v, "network", "status", NULL));
 	QUIET(&b);
 	/* Logging in again starts a new session with a new secret. */
 	CHECK(e2e_login(&b, "bob"));
@@ -382,8 +401,8 @@ static void test_runtime(void)
 	/* After login: runtime:runtime, one component:component per type, the
 	 * count, and a network:status broadcast per graph. */
 	open_clients();
-	event1("runtime", "new_graph", "{'id':'rt1','name':'One','description':'d','icon':'i'}",
-	       "{'graph':'rt1','name':'One','description':'d','icon':'i'}");
+	new_graph1("{'id':'rt1','name':'One','description':'d','icon':'i'}",
+		   "{'graph':'rt1','name':'One','description':'d','icon':'i'}");
 	CHECK(e2e_login(&c, "alice"));
 	e2e_send(&c, "runtime", "getruntime", "{}");
 	snprintf(want, sizeof(want),
@@ -402,7 +421,7 @@ static void test_runtime(void)
 	snprintf(count, sizeof(count), "%zu", types);
 	EXPECT(&c, "component", "componentsready", count);
 	static const char status[] = "{'graph':'rt1','name':'One','description':'d','uptime':0,"
-				     "'running':false,'started':false,'debug':false}";
+				     "'running':false,'started':false,'debug':false,'unsaved':true}";
 	EXPECT(&c, "network", "status", status);
 	expect_all(&b, &v, "network", "status", status);
 	CHECK(c.frame_len == a.frame_len && memcmp(c.frame, a.frame, a.frame_len) == 0);
@@ -416,9 +435,12 @@ static void test_runtime(void)
 	char id[64];
 	snprintf(id, sizeof(id), "%s", e2e_payload_str(m, "graph"));
 	CHECK(strlen(id) == 36 && id[14] == '4' && strspn(id, "0123456789abcdef-") == 36);
-	CHECK(e2e_expect(&b, "runtime", "new_graph", NULL));
-	CHECK(e2e_expect(&v, "runtime", "new_graph", NULL));
-	CHECK(e2e_expect(&c, "runtime", "new_graph", NULL));
+	CHECK(e2e_expect(&a, "network", "status", NULL)); /* new: unsaved (02 §3.3) */
+	E2eClient *others[] = {&b, &v, &c};
+	for (int i = 0; i < 3; i++) {
+		CHECK(e2e_expect(others[i], "runtime", "new_graph", NULL));
+		CHECK(e2e_expect(others[i], "network", "status", NULL));
+	}
 	char payload[256];
 	snprintf(payload, sizeof(payload), "{'id':'%s','name':'<<new graph>>'}", id);
 	e2e_send(&b, "runtime", "delete_graph", payload);
@@ -432,7 +454,12 @@ static void test_runtime(void)
 	 * then runtime:delete_graph; the file is gone. */
 	event1x("network", "start", "{'graph':'rt1'}", "network", "started", NULL);
 	CHECK(e2e_expect(&c, "network", "started", NULL));
+	/* A save broadcasts the status, now saved (02 §3.3). */
 	e2e_send(&a, "network", "persist", "{'graph':'rt1'}");
+	static const char saved[] = "{'graph':'rt1','name':'One','description':'d','uptime':'*',"
+				    "'running':true,'started':true,'debug':false,'unsaved':false}";
+	expect_all(&b, &v, "network", "status", saved);
+	CHECK(e2e_expect(&c, "network", "status", saved));
 	all_quiet();
 	QUIET(&c);
 	const char *file = e2e_path(e2e_path(e2e_basedir, "graphs"), "rt1.json");
@@ -525,7 +552,7 @@ static void test_trace(void)
 static void test_network(void)
 {
 	open_clients();
-	event1("runtime", "new_graph", "{'id':'net','name':'Net'}", NULL);
+	new_graph1("{'id':'net','name':'Net'}", NULL);
 	event1("graph", "addnode", "{'id':'n','graph':'net','component':'math/Add2'}", NULL);
 
 	/* stop of a graph that never ran: the epoch and 0. */
@@ -545,7 +572,7 @@ static void test_network(void)
 	/* getstatus: a broadcast to every authenticated connection. */
 	event1x("network", "getstatus", "{'graph':'net'}", "network", "status",
 	       "{'graph':'net','name':'Net','description':'','uptime':'*','running':true,"
-	       "'started':true,'debug':false}");
+	       "'started':true,'debug':false,'unsaved':true}");
 	/* stop, and stop again: the run's time and uptime. */
 	snprintf(want, sizeof(want),
 		 "{'graph':'net','time':'%s','uptime':'*','started':false,'running':false,"
@@ -553,8 +580,12 @@ static void test_network(void)
 		 time);
 	event1x("network", "stop", "{'graph':'net'}", "network", "stopped", want);
 	event1x("network", "stop", "{'graph':'net'}", "network", "stopped", want);
-	/* persist: no reply, the file written. */
+	/* persist: no reply, the status to everyone, now saved (02 §3.3); the file
+	 * written. */
 	e2e_send(&a, "network", "persist", "{'graph':'net'}");
+	expect_all(&b, &v, "network", "status",
+		   "{'graph':'net','name':'Net','description':'','uptime':0,'running':false,"
+		   "'started':false,'debug':false,'unsaved':false}");
 	all_quiet();
 	const char *graphs = e2e_path(e2e_basedir, "graphs");
 	char file[PAL_PATH_MAX];
@@ -588,20 +619,36 @@ static void test_network(void)
 		 "{'tgt':{'node':'n','port':'in1'},'src':{'data':4.5},'graph':'net'}");
 	static const char addinitial[] =
 		"{'graph':'net','src':{'data':'4.5'},'tgt':{'node':'n','port':'in1'}}";
+	/* The first change since the save: the status follows the event, now
+	 * unsaved (02 §3.3). */
+	static const char unsaved[] = "{'graph':'net','name':'Net','description':'','uptime':0,"
+				      "'running':false,'started':false,'debug':false,"
+				      "'unsaved':true}";
 	EXPECT(&a, "graph", "addinitial", addinitial);
+	EXPECT(&a, "network", "status", unsaved);
 	EXPECT(&b, "graph", "addinitial", addinitial);
-	const char *m = e2e_recv(&v);
-	if (m != NULL && strstr(m, "\"command\":\"data\"") != NULL) {
-		CHECK(e2e_match(m, "network", "data",
-				"{'id':'unknown','graph':'net','src':{'node':'x','port':'out'},"
-				"'tgt':{'node':'n','port':'in1'},'data':'4.5'}"));
-		EXPECT(&v, "graph", "addinitial", addinitial);
-	} else {
-		CHECK(e2e_match(m, "graph", "addinitial", addinitial));
-		EXPECT(&v, "network", "data",
-		       "{'id':'unknown','graph':'net','src':{'node':'x','port':'out'},"
-		       "'tgt':{'node':'n','port':'in1'},'data':'4.5'}");
+	EXPECT(&b, "network", "status", unsaved);
+	/* v also watches the input: the value, the event and the status, the
+	 * value in no fixed order with the other two. */
+	bool data = false, event = false, status = false;
+	for (int i = 0; i < 3; i++) {
+		const char *m = e2e_recv(&v);
+		if (m != NULL && strstr(m, "\"command\":\"data\"") != NULL) {
+			CHECK(!data);
+			data = true;
+			CHECK(e2e_match(m, "network", "data",
+					"{'id':'unknown','graph':'net','src':{'node':'x','port':"
+					"'out'},'tgt':{'node':'n','port':'in1'},'data':'4.5'}"));
+		} else if (!event) {
+			event = true;
+			CHECK(e2e_match(m, "graph", "addinitial", addinitial));
+		} else {
+			CHECK(!status);
+			status = true;
+			CHECK(e2e_match(m, "network", "status", unsaved));
+		}
 	}
+	CHECK(data && event && status);
 	/* An empty set ends the watch. */
 	e2e_send(&v, "network", "edges", "{'graph':'net','edges':[]}");
 	EXPECT(&v, "network", "edges", "{'graph':'net','edges':[]}");
@@ -623,7 +670,7 @@ static void test_network(void)
 static void test_graph(void)
 {
 	open_clients();
-	event1("runtime", "new_graph", "{'id':'g','name':'G'}", NULL);
+	new_graph1("{'id':'g','name':'G'}", NULL);
 	/* b is connected to g: graph-specific events still reach it. */
 	e2e_send(&b, "graph", "connect", "{'id':'g'}");
 	EXPECT(&b, "graph", "clear",
@@ -730,7 +777,7 @@ static void test_graph(void)
 	e2e_send(&v, "graph", "list", "{}");
 	EXPECT(&v, "network", "status",
 	       "{'graph':'g','name':'G2','description':'','uptime':0,'running':false,"
-	       "'started':false,'debug':false}");
+	       "'started':false,'debug':false,'unsaved':true}");
 	EXPECT(&a, "network", "status", NULL);
 	EXPECT(&b, "network", "status", NULL);
 	/* Missing fields (02 §1.2). */
@@ -751,7 +798,7 @@ static const char chain_out[] =
 static void test_groups(void)
 {
 	open_clients();
-	event1("runtime", "new_graph", "{'id':'gg','name':'GG'}", NULL);
+	new_graph1("{'id':'gg','name':'GG'}", NULL);
 	static const char *const nodes[] = {"p", "q", "r"};
 	for (int i = 0; i < 3; i++) {
 		char payload[128];
@@ -829,7 +876,7 @@ typedef struct {
 static void test_refusals(void)
 {
 	open_clients();
-	event1("runtime", "new_graph", "{'id':'r','name':'R'}", NULL);
+	new_graph1("{'id':'r','name':'R'}", NULL);
 	event1("graph", "addnode", "{'id':'n1','graph':'r','component':'math/Add2'}", NULL);
 	event1("graph", "addnode", "{'id':'n2','graph':'r','component':'math/Add2'}", NULL);
 	event1("graph", "addedge",

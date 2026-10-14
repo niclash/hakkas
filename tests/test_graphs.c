@@ -241,13 +241,14 @@ static void test_new_graph(void)
 	GraphsMessage m;
 	CHECK(graphs_new_graph(&gs, "g1", NULL, NULL, NULL, &g, &m) == GRAPH_OK);
 	CHECK_STREQ(m.text, "");
-	CHECK_STREQ(all.log, "g1:+graph(<<new graph>>,,);");
-	CHECK(g != NULL && !g->started && g->block_count == 0);
+	/* A new graph is unsaved, and says so (02 §3.3 "Unsaved state"). */
+	CHECK_STREQ(all.log, "g1:+graph(<<new graph>>,,);g1:status(<<new graph>>,stopped,0);");
+	CHECK(g != NULL && !g->started && g->block_count == 0 && g->unsaved);
 	CHECK(graphs_find(&gs, "g1") == g);
 	CHECK(graphs_find(&gs, "g2") == NULL && graphs_find(&gs, NULL) == NULL);
 	clear();
 	CHECK(graphs_new_graph(&gs, "g2", "Two", "the second", "cog", NULL, NULL) == GRAPH_OK);
-	CHECK_STREQ(all.log, "g2:+graph(Two,the second,cog);");
+	CHECK_STREQ(all.log, "g2:+graph(Two,the second,cog);g2:status(Two,stopped,0);");
 	new_graph("g3");
 	/* Creation order. */
 	CHECK(graphs_count(&gs) == 3);
@@ -567,7 +568,7 @@ static void test_scoping(void)
 	CHECK(graphs_stop(&gs, "g2", NULL) == GRAPH_OK);
 	CHECK(graphs_delete_graph(&gs, "g3", "g3", NULL) == GRAPH_OK);
 
-	const char *wide = "g3:+graph(g3,,);g1:status(One,stopped,0);"
+	const char *wide = "g3:+graph(g3,,);g3:status(g3,stopped,0);g1:status(One,stopped,0);"
 			   "g2:status(g2,started,0);g3:status(g3,stopped,0);"
 			   "g2:error(g2,Unable to save graph: g2 (g2));-:error(-,boom);";
 	char expect[1024];
@@ -746,7 +747,7 @@ static void test_subscribers_during_notification(void)
 	calls = 0;
 	new_graph("g1");
 	CHECK(calls == 1);
-	CHECK_STREQ(all.log, "g1:+graph(g1,,);");
+	CHECK_STREQ(all.log, "g1:+graph(g1,,);g1:status(g1,stopped,0);");
 	CHECK_STREQ(next.log, "");
 	add("g1", "A");
 	CHECK(calls == 1);
@@ -762,8 +763,8 @@ static void test_subscribers_during_notification(void)
 	CHECK_STREQ(late.log, "");
 	add("g1", "C");
 	CHECK_STREQ(late.log, "g1:+node C(50,50,-);");
-	CHECK_STREQ(all.log, "g1:+graph(g1,,);g1:+node A(50,50,-);g1:+node B(50,50,-);"
-			     "g1:+node C(50,50,-);");
+	CHECK_STREQ(all.log, "g1:+graph(g1,,);g1:status(g1,stopped,0);g1:+node A(50,50,-);"
+			     "g1:+node B(50,50,-);g1:+node C(50,50,-);");
 	teardown();
 }
 
@@ -922,6 +923,100 @@ static void test_command_refusals(void)
 	teardown();
 }
 
+/* The unsaved flag (02 §3.3 "Unsaved state", plan task 45): every change of
+ * what the graph file holds sets it, and so does a started state that differs
+ * from the file's; a save (graphs_mark_saved) records the file's state. A
+ * status is reported whenever the flag changes and at every save. */
+static void test_unsaved(void)
+{
+	setup();
+	new_graph("g1");
+	Graph *g = graphs_find(&gs, "g1");
+	clear();
+	graphs_mark_saved(&gs, g, false);
+	CHECK(!g->unsaved);
+	CHECK_STREQ(all.log, "g1:status(g1,stopped,0);");
+
+	/* The first change reports the status after its own event; the next
+	 * ones report nothing more. */
+	clear();
+	add("g1", "A");
+	CHECK(g->unsaved);
+	CHECK_STREQ(all.log, "g1:+node A(50,50,-);g1:status(g1,stopped,0);");
+	clear();
+	add("g1", "B");
+	CHECK_STREQ(all.log, "g1:+node B(50,50,-);");
+
+	/* Each kind of change marks it. */
+#define MARKS(call)                                                                                \
+	do {                                                                                       \
+		graphs_mark_saved(&gs, g, g->started);                                             \
+		clear();                                                                           \
+		CHECK((call) == GRAPH_OK);                                                         \
+		CHECK(g->unsaved);                                                                 \
+		CHECK(strstr(all.log, "g1:status(") != NULL);                                      \
+	} while (0)
+	BlockChange chg = {0};
+	chg.x = 10;
+	chg.y = 20;
+	chg.set_x = chg.set_y = true;
+	MARKS(graphs_change_node(&gs, "g1", "A", &chg, NULL));
+	MARKS(graphs_rename_node(&gs, "g1", "B", "C", NULL));
+	MARKS(graphs_add_edge(&gs, "g1", "A", "out", "C", "in1", NULL, NULL));
+	MARKS(graphs_change_edge(&gs, "g1", "A", "out", "C", "in1", "{\"route\":1}", NULL));
+	MARKS(graphs_remove_edge(&gs, "g1", "A", "out", "C", "in1", NULL));
+	Linkable five = linkable_from_f64(5);
+	MARKS(graphs_add_initial(&gs, "g1", "C", "in2", &five, NULL));
+	MARKS(graphs_remove_initial(&gs, "g1", "C", "in2", NULL));
+	MARKS(graphs_add_port(&gs, "g1", GRAPH_INPORT, "p", "A", "in1", NULL));
+	MARKS(graphs_rename_port(&gs, "g1", GRAPH_INPORT, "p", "q", NULL));
+	MARKS(graphs_remove_port(&gs, "g1", GRAPH_INPORT, "q", NULL));
+	MARKS(graphs_add_port(&gs, "g1", GRAPH_OUTPORT, "o", "A", "out", NULL));
+	MARKS(graphs_rename_graph(&gs, "g1", "One", NULL));
+	MARKS(graphs_start(&gs, "g1", NULL)); /* the file keeps started */
+	MARKS(graphs_stop(&gs, "g1", NULL));
+	MARKS(graphs_remove_node(&gs, "g1", "C", NULL));
+#undef MARKS
+
+	/* The started state compares with the file's: saved stopped, a start
+	 * makes it unsaved and a stop saved again, a status each time. */
+	graphs_mark_saved(&gs, g, false);
+	clear();
+	CHECK(graphs_start(&gs, "g1", NULL) == GRAPH_OK);
+	CHECK(g->unsaved);
+	CHECK(graphs_stop(&gs, "g1", NULL) == GRAPH_OK);
+	CHECK(!g->unsaved);
+	CHECK_STREQ(all.log, "g1:started@0+0;g1:status(One,started,0);g1:stopped@0+0;"
+			     "g1:status(One,stopped,0);");
+
+	/* Loaded from a file that says started, but not started (yet): unsaved
+	 * until the host starts it. */
+	graphs_mark_saved(&gs, g, true);
+	CHECK(g->unsaved);
+	CHECK(graphs_start(&gs, "g1", NULL) == GRAPH_OK);
+	CHECK(!g->unsaved);
+
+	/* A start of a started graph, a stop of a stopped one, a status and a
+	 * refused command change nothing. */
+	clear();
+	CHECK(graphs_start(&gs, "g1", NULL) == GRAPH_OK);
+	CHECK(graphs_status(&gs, "g1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "g1", "A", "math/Add2", NULL, NULL) == GRAPH_ERR_NODE_EXISTS);
+	CHECK(!g->unsaved);
+	CHECK_STREQ(all.log, "g1:started@0+0;g1:status(One,started,0);");
+	CHECK(graphs_stop(&gs, "g1", NULL) == GRAPH_OK);
+	graphs_mark_saved(&gs, g, false);
+	CHECK(graphs_stop(&gs, "g1", NULL) == GRAPH_OK);
+	CHECK(!g->unsaved);
+
+	/* Errors are not changes; another graph's change is not this one's. */
+	graphs_notify_error(&gs, "g1", "boom");
+	new_graph("g2");
+	add("g2", "X");
+	CHECK(!g->unsaved);
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(pal_init() == PAL_OK);
@@ -940,6 +1035,7 @@ int main(void)
 	RUN(test_subscribers_during_notification);
 	RUN(test_refusal_message_render);
 	RUN(test_command_refusals);
+	RUN(test_unsaved);
 	block_types_reset();
 	return test_result();
 }

@@ -249,6 +249,7 @@ static void convert(const GraphEvent *ev, HakkasEvent *out)
 		out->name = g->name;
 		out->description = g->description;
 		out->started = g->started;
+		out->unsaved = g->unsaved;
 		out->uptime_ms = ev->uptime_ms;
 		break;
 	case GRAPH_EVENT_GRAPH_DELETED:
@@ -627,6 +628,7 @@ static void status_of(const Graph *g, HakkasProcessStatus *out)
 	out->description = g->description;
 	out->icon = g->icon;
 	out->started = g->started;
+	out->unsaved = g->unsaved;
 	out->uptime_ms = graphs_uptime_ms(g);
 	out->time_started_ms = g->time_started;
 	out->wall_started_ms = g->wall_started;

@@ -29,6 +29,15 @@
  * job, and so is withholding them from connections that are not
  * authenticated (02 §2.5 item 6).
  *
+ * Unsaved state (02 §3.3, plan task 45): a graph is unsaved when it differs
+ * from its file as last loaded or saved — after any applied change of what
+ * the file holds (an event of its blocks, connections, initials or graph
+ * ports, a rename), or while its started state differs from the file's
+ * started flag (so a stop and a start again leave it saved). A new graph is
+ * unsaved; graphs_mark_saved records a load or a successful save. Whenever
+ * the flag changes, and at every graphs_mark_saved, GRAPH_STATUS is reported
+ * for the graph (after the event that changed it), so clients learn it.
+ *
  * Time (decided, plan task 7): uptime is computed, not counted — the engine
  * time of the Runtime (runtime_set_now, set by the engine loop from
  * pal_uptime_ms before it dispatches commands or drains) minus the run's
@@ -222,6 +231,11 @@ enum graph_status graphs_status(Graphs *gs, const char *id, GraphsMessage *msg);
 /* graph:list, runtime:getruntime: report GRAPH_STATUS for every graph, in
  * creation order. */
 void graphs_status_all(Graphs *gs);
+
+/* g has just been loaded from its file or saved to it (app/graph_files.h);
+ * started is the file's started flag. g is then unsaved only if its started
+ * state differs from that flag; GRAPH_STATUS is reported (02 §3.3). */
+void graphs_mark_saved(Graphs *gs, Graph *g, bool started);
 
 /* Report ERROR, a system-wide error event (02 §1 error format, e.g. the
  * persist failure of 02 §3.3), about graph_id (NULL for none). */

@@ -101,6 +101,7 @@ static void test_same_events(void)
 	connect_login(&b, "bob");
 	e2e_send(&a, "runtime", "new_graph", "{'id':'m','name':'M'}");
 	same_next(&a, &b);
+	same_next(&a, &b); /* its status: new, unsaved (02 §3.3) */
 	scope(&a, "m");
 	scope(&b, "m");
 
@@ -187,10 +188,14 @@ static void test_scoping(void)
 	CHECK(e2e_connect(&u)); /* never logs in */
 	e2e_send(&a, "runtime", "new_graph", "{'id':'s1','name':'S1'}");
 	same_next(&a, &b);
+	same_next(&a, &b); /* its status: new, unsaved (02 §3.3) */
 	CHECK(e2e_expect(&c, "runtime", "new_graph", NULL));
+	CHECK(e2e_expect(&c, "network", "status", NULL));
 	e2e_send(&a, "runtime", "new_graph", "{'id':'s2','name':'S2'}");
 	same_next(&a, &b);
+	same_next(&a, &b); /* its status: new, unsaved (02 §3.3) */
 	CHECK(e2e_expect(&c, "runtime", "new_graph", NULL));
+	CHECK(e2e_expect(&c, "network", "status", NULL));
 	scope(&a, "s1");
 	scope(&b, "s1");
 	scope(&c, "s2");
@@ -214,6 +219,8 @@ static void test_scoping(void)
 	e2e_send(&b, "runtime", "new_graph", "{'id':'s3','name':'S3'}");
 	CHECK(e2e_match(same_next(&a, &b), "runtime", "new_graph", NULL));
 	EXPECT(&c, "runtime", "new_graph", "{'graph':'s3','name':'S3','description':'','icon':''}");
+	CHECK(e2e_match(same_next(&a, &b), "network", "status", NULL)); /* new: unsaved */
+	EXPECT(&c, "network", "status", NULL);
 	e2e_send(&b, "runtime", "delete_graph", "{'id':'s3','name':'S3'}");
 	CHECK(e2e_match(same_next(&a, &b), "runtime", "delete_graph", NULL));
 	EXPECT(&c, "runtime", "delete_graph", "{'graph':'s3','name':'S3'}");
@@ -303,8 +310,10 @@ static void test_snapshot_buffer(void)
 	connect_login(&m, "bob");
 	e2e_send(&w, "runtime", "new_graph", "{'id':'quiet','name':'Q'}");
 	same_next(&w, &m);
+	same_next(&w, &m); /* its status: new, unsaved (02 §3.3) */
 	e2e_send(&w, "runtime", "new_graph", "{'id':'big','name':'Big'}");
 	same_next(&w, &m);
+	same_next(&w, &m); /* its status: new, unsaved (02 §3.3) */
 	scope(&w, "quiet");
 	scope(&m, "quiet");
 
@@ -439,8 +448,10 @@ static void stream_setup(E2eClient *e, E2eClient *w)
 		CHECK(block_types_register(&text_def) == BLOCK_TYPES_OK);
 	e2e_send(e, "runtime", "new_graph", "{'id':'co','name':'Co'}");
 	same_next(e, w);
+	same_next(e, w); /* its status: new, unsaved (02 §3.3) */
 	e2e_send(e, "runtime", "new_graph", "{'id':'co-quiet','name':'Q'}");
 	same_next(e, w);
+	same_next(e, w); /* its status: new, unsaved (02 §3.3) */
 	scope(e, "co-quiet");
 	scope(w, "co-quiet");
 	e2e_send(e, "graph", "addnode", "{'id':'n','graph':'co','component':'test/Text'}");
@@ -521,12 +532,14 @@ static void test_data_stream_replies(void)
 	EXPECT(&e, "graph", "changenode", NULL); /* e is scoped to co-quiet too */
 	e2e_send(&e, "runtime", "new_graph", "{'id':'co-other','name':'O'}");
 	EXPECT(&e, "runtime", "new_graph", NULL);
+	EXPECT(&e, "network", "status", NULL); /* new: unsaved (02 §3.3) */
 	QUIET(&e);
 	/* Now w reads: values, the replies and events, the current value. */
-	int n = 0, status = 0, changed = 0, created = 0, others = 0;
+	int n = 0, status = 0, changed = 0, created = 0, created_status = 0, others = 0;
 	long last = 0;
 	bool increasing = true;
-	while (!(last == VALUES && status && changed && created) && n <= VALUES + 3) {
+	while (!(last == VALUES && status && changed && created && created_status) &&
+	       n <= VALUES + 4) {
 		const char *m = e2e_recv(&w);
 		if (m == NULL)
 			break;
@@ -543,13 +556,16 @@ static void test_data_stream_replies(void)
 			changed++;
 		} else if (is(m, "runtime", "new_graph")) {
 			created++;
+		} else if (is(m, "network", "status") &&
+			   strcmp(e2e_payload_str(m, "graph"), "co-other") == 0) {
+			created_status++;
 		} else {
 			fprintf(stderr, "  unexpected: %s\n", m);
 			others++;
 		}
 	}
 	CHECK(!w.closed && !w.eof);
-	CHECK(status == 1 && changed == 1 && created == 1 && others == 0);
+	CHECK(status == 1 && changed == 1 && created == 1 && created_status == 1 && others == 0);
 	CHECK(increasing);
 	CHECK(last == VALUES);
 	CHECK(n < VALUES); /* the values were coalesced: the buffer was full */
@@ -671,6 +687,7 @@ static void test_pipelined(void)
 	connect_login(&b, "bob");
 	e2e_send(&a, "runtime", "new_graph", "{'id':'pipe','name':'P'}");
 	same_next(&a, &b);
+	same_next(&a, &b); /* its status: new, unsaved (02 §3.3) */
 	scope(&a, "pipe");
 	scope(&b, "pipe");
 	/* 200 commands in one write: replies in order, events in order and
@@ -722,6 +739,7 @@ static void test_disconnect_mid_burst(void)
 	connect_login(&b, "bob");
 	e2e_send(&a, "runtime", "new_graph", "{'id':'burst','name':'B'}");
 	same_next(&a, &b);
+	same_next(&a, &b); /* its status: new, unsaved (02 §3.3) */
 	scope(&a, "burst");
 	scope(&b, "burst");
 

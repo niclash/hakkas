@@ -631,12 +631,15 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
 
 ### 5.0 Engine prerequisites (C, with their tests and the spec)
 
-- [ ] **45. Unsaved state** (02 §3.3 "Unsaved state"): a per-process flag in the model, set by
-  every applied change the graph file holds (graph commands, rename, start/stop), cleared by a
-  successful persist (and set for a new process); `network:status` carries it as its last member;
-  a status broadcast when it turns true and after every successful persist. The C API's status
-  (`HakkasProcessStatus`) gets it too (02 §6). End-to-end tests: each kind of change, a save,
-  a failed save, a new process.
+- [x] **45. Unsaved state** (02 §3.3 "Unsaved state"): a per-process flag kept by the Graphs
+  registry (`graphs/graphs.h`): structural changes since the last load or save, or a started
+  state that differs from the file's flag (compared, so a process loaded saved-running and
+  started by the host is saved); `network:status` carries it as its last member, broadcast
+  whenever it changes and after every save and load; the C API's status event and
+  `HakkasProcessStatus` carry it (02 §6). Tests: every kind of change, start/stop round trips,
+  load, save, a failed save, a new process, and a restart that keeps a running process saved.
+  Also fixed: `test_cli`'s `run process` step used the default port 8080 and failed whenever
+  another engine was running there.
 - [ ] **46. Resuming a session** (02 §2.3.1): the resume table in the authorizer (bounded, LRU,
   checked against the users file at the challenge), the `resume` member of the login reply, the
   `resume` variants of `environment:challenge`/`login`, rotation, expiry with the chain's idle

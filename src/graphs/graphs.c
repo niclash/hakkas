@@ -34,9 +34,42 @@ static bool in_scope(const GraphsSubscriber *s, const GraphEvent *ev)
 	return ev->graph != NULL && ev->graph->id != NULL && strcmp(ev->graph->id, s->scope) == 0;
 }
 
+/* Whether an event changes what the graph file holds (05 §2.1; 02 §3.3
+ * "Unsaved state"). Start and stop are marked where they change the state
+ * (graphs_start, graphs_stop): their events are also sent when nothing
+ * changed. Groups, links and bindings are not in the graph file. */
+static bool changes_file(enum graph_event_type type)
+{
+	switch (type) {
+	case GRAPH_EVENT_BLOCK_ADDED:
+	case GRAPH_EVENT_BLOCK_REMOVED:
+	case GRAPH_EVENT_BLOCK_RENAMED:
+	case GRAPH_EVENT_BLOCK_CHANGED:
+	case GRAPH_EVENT_EDGE_ADDED:
+	case GRAPH_EVENT_EDGE_REMOVED:
+	case GRAPH_EVENT_EDGE_CHANGED:
+	case GRAPH_EVENT_INITIAL_ADDED:
+	case GRAPH_EVENT_INITIAL_REMOVED:
+	case GRAPH_EVENT_INPORT_ADDED:
+	case GRAPH_EVENT_INPORT_REMOVED:
+	case GRAPH_EVENT_INPORT_RENAMED:
+	case GRAPH_EVENT_OUTPORT_ADDED:
+	case GRAPH_EVENT_OUTPORT_REMOVED:
+	case GRAPH_EVENT_OUTPORT_RENAMED:
+	case GRAPH_EVENT_GRAPH_RENAMED:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void mark_changed(Graphs *gs, Graph *g);
+static void update_unsaved(Graphs *gs, Graph *g);
+
 /* Deliver ev to every subscriber in scope, in subscription order. gs->cursor
  * holds the next subscriber, so a callback may unsubscribe any subscriber;
- * one added during the delivery has since == seq and is skipped. */
+ * one added during the delivery has since == seq and is skipped. Then, if ev
+ * made its graph unsaved, that graph's status follows. */
 static void notify(Graphs *gs, const GraphEvent *ev)
 {
 	uint64_t seq = ++gs->seq;
@@ -46,6 +79,8 @@ static void notify(Graphs *gs, const GraphEvent *ev)
 			s->fn(s->ctx, ev);
 	}
 	gs->cursor = NULL;
+	if (ev->graph != NULL && changes_file(ev->type))
+		mark_changed(gs, ev->graph);
 }
 
 /* The runtime's observer: every structural change of every graph. */
@@ -343,6 +378,7 @@ enum graph_status graphs_new_graph(Graphs *gs, const char *id, const char *name,
 
 	gs->graphs[gs->count++] = g;
 	emit(gs, g, (GraphEvent){.type = GRAPH_EVENT_GRAPH_CREATED});
+	mark_changed(gs, g); /* until saved; a load clears it (graphs_mark_saved) */
 	if (out != NULL)
 		*out = g;
 	return finish(GRAPH_OK, &ctx, msg);
@@ -405,7 +441,8 @@ enum graph_status graphs_start(Graphs *gs, const char *id, GraphsMessage *msg)
 	enum graph_status st = lookup(gs, id, &g);
 	if (st != GRAPH_OK)
 		return finish(st, &ctx, msg);
-	if (!g->started) {
+	bool changed = !g->started;
+	if (changed) {
 		g->time_started = gs->rt->now_ms;
 		g->wall_started = runtime_wall_ms(gs->rt);
 		graph_start(g);
@@ -415,6 +452,8 @@ enum graph_status graphs_start(Graphs *gs, const char *id, GraphsMessage *msg)
 			  .time_ms = g->time_started,
 			  .uptime_ms = graphs_uptime_ms(g),
 			  .wall_ms = g->wall_started});
+	if (changed)
+		update_unsaved(gs, g); /* the file keeps started (05 §2.1) */
 	return finish(GRAPH_OK, &ctx, msg);
 }
 
@@ -425,8 +464,11 @@ enum graph_status graphs_stop(Graphs *gs, const char *id, GraphsMessage *msg)
 	enum graph_status st = lookup(gs, id, &g);
 	if (st != GRAPH_OK)
 		return finish(st, &ctx, msg);
+	bool changed = g->started;
 	stop_graph(g);
 	emit_stopped(gs, g);
+	if (changed)
+		update_unsaved(gs, g);
 	return finish(GRAPH_OK, &ctx, msg);
 }
 
@@ -453,6 +495,30 @@ void graphs_status_all(Graphs *gs)
 {
 	for (uint32_t i = 0; i < gs->count; i++)
 		emit_status(gs, gs->graphs[i]);
+}
+
+/* Recompute g's unsaved flag (02 §3.3), reporting its status if it changed. */
+static void update_unsaved(Graphs *gs, Graph *g)
+{
+	bool unsaved = g->changed || g->started != g->saved_started;
+	if (unsaved == g->unsaved)
+		return;
+	g->unsaved = unsaved;
+	emit_status(gs, g);
+}
+
+static void mark_changed(Graphs *gs, Graph *g)
+{
+	g->changed = true;
+	update_unsaved(gs, g);
+}
+
+void graphs_mark_saved(Graphs *gs, Graph *g, bool started)
+{
+	g->changed = false;
+	g->saved_started = started;
+	g->unsaved = g->started != started;
+	emit_status(gs, g);
 }
 
 void graphs_notify_error(Graphs *gs, const char *graph_id, const char *message)

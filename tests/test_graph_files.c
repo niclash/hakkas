@@ -426,9 +426,11 @@ static void test_round_trip(void)
 	events[0] = '\0';
 	CHECK(graph_files_load(&gf, graph_path("g1"), &g, NULL) == GRAPH_FILES_OK);
 	CHECK_STREQ(logs, "");
-	/* Loading reports what the equivalent commands report (05 §2.2). */
-	CHECK_STREQ(events, "+graph;+node A;+node B;+node S;+init;+init;+edge;+init;+init;+init;"
-			    "+init;+inport;+outport;");
+	/* Loading reports what the equivalent commands report (05 §2.2): a new
+	 * graph is unsaved until the load is complete, then saved (02 §3.3). */
+	CHECK_STREQ(events, "+graph;status;+node A;+node B;+node S;+init;+init;+edge;+init;+init;"
+			    "+init;+init;+inport;+outport;status;");
+	CHECK(!g->unsaved);
 	CHECK(g != NULL && !g->started);
 	CHECK_STREQ(g->name, "Test");
 	CHECK_STREQ(g->description, "d");
@@ -527,7 +529,7 @@ static void test_started(void)
 			   "{'src':{'data':3},'tgt':{'block':'A','port':'in2'}}]}";
 	Graph *g = load(file, GRAPH_FILES_OK);
 	CHECK(loaded_started && !g->started);
-	CHECK_STREQ(events, "+graph;+node A;+node B;+init;+edge;+init;");
+	CHECK_STREQ(events, "+graph;status;+node A;+node B;+init;+edge;+init;status;");
 	runtime_drain(&rt, 100);
 	CHECK_STREQ(input_value(g, "B", "in1"), "0");
 	/* The host starts it. */
@@ -578,7 +580,7 @@ static void test_placeholders(void)
 	Graph *g = load(placeholder_file, GRAPH_FILES_OK);
 	CHECK_STREQ(logs, "warn v: block P: unknown component vendor/Gizmo, kept as a "
 			  "placeholder\n");
-	CHECK_STREQ(events, "+graph;+node A;+node P;+node B;+init;");
+	CHECK_STREQ(events, "+graph;status;+node A;+node P;+node B;+init;status;");
 	CHECK(loaded_started && !g->started);
 	CHECK(graphs_start(&gs, "p", NULL) == GRAPH_OK);
 	const Block *p = graph_find_block(g, "P");
@@ -596,10 +598,12 @@ static void test_placeholders(void)
 	/* Written back unchanged. */
 	check_saved(g, jq(placeholder_file));
 
-	/* Retained entries follow a rename, without events. */
+	/* Retained entries follow a rename, without events of their own (the
+	 * status says the graph, saved since its start, is now unsaved). */
 	events[0] = '\0';
+	CHECK(!g->unsaved);
 	CHECK(graphs_rename_node(&gs, "p", "P", "Q", NULL) == GRAPH_OK);
-	CHECK_STREQ(events, "renamenode;");
+	CHECK_STREQ(events, "renamenode;status;");
 	char *text = graph_files_serialize(g, NULL);
 	CHECK(text != NULL && strstr(text, "\"block\":\"P\"") == NULL &&
 	      strstr(text, "\"block\":\"Q\"") != NULL);
@@ -956,9 +960,13 @@ static void test_persist(void)
 	events[0] = '\0';
 	GraphsMessage m;
 	/* graphs/ is created on demand. */
+	CHECK(graphs_find(&gs, "math/x")->unsaved);
 	CHECK(graph_files_persist(&gf, "math/x", &m) == GRAPH_FILES_OK);
 	CHECK_STREQ(m.text, "");
-	CHECK_STREQ(events, ""); /* no reply on success */
+	/* No reply on success, but the graph's status: it is saved (02 §3.3). */
+	CHECK_STREQ(events, "status;");
+	CHECK(!graphs_find(&gs, "math/x")->unsaved);
+	events[0] = '\0';
 	char path[PAL_PATH_MAX];
 	snprintf(path, sizeof(path), "%s", join(gf.datadir, "graphs/math%2Fx.json"));
 	char *text = slurp(path);
@@ -1063,7 +1071,7 @@ static void test_load_all(void)
 	CHECK(n == 3);
 	/* In name order: a%2F1, b, c, (d fails); each reported with its flag,
 	 * none started. */
-	CHECK_STREQ(events, "+graph;+graph;+graph;");
+	CHECK_STREQ(events, "+graph;status;status;+graph;status;status;+graph;status;status;");
 	CHECK_STREQ(loaded_list, "a/1 0;b 1;c-other 0;");
 	CHECK(graphs_count(&gs) == 3);
 	CHECK_STREQ(graphs_at(&gs, 0)->id, "a/1");

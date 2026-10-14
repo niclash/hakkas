@@ -248,6 +248,8 @@ enum hakkas_event_type {
  *               the connection's metadata (NULL for none).
  *  value:       INITIAL_*: the literal added or removed.
  *  started:     PROCESS_STARTED (true), PROCESS_STATUS.
+ *  unsaved:     PROCESS_STATUS: whether the process differs from what was
+ *               last loaded or saved (02 §3.3 "Unsaved state").
  *  time_ms, uptime_ms: engine time in ms (01 §3.4). PROCESS_STARTED: the
  *               run's start, its uptime so far; PROCESS_STOPPED: the start
  *               and duration of the run that ended (0, 0 if it never ran);
@@ -280,6 +282,7 @@ typedef struct {
 	const char *metadata;
 	const HakkasValue *value;
 	bool started;
+	bool unsaved;
 	uint64_t time_ms;
 	uint64_t uptime_ms;
 	int64_t wall_ms;
@@ -382,6 +385,7 @@ typedef struct {
 	const char *description;
 	const char *icon;
 	bool started;
+	bool unsaved;		/* differs from what was last loaded or saved (02 §3.3) */
 	uint64_t uptime_ms;	/* of the current run; 0 when stopped */
 	uint64_t time_started_ms; /* the start of the current or last run (0: never) */
 	int64_t wall_started_ms;  /* the same on the wall clock (UTC ms; 0: never) */

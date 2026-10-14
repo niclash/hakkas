@@ -345,6 +345,14 @@ struct Graph {
 	/* The wall clock (UTC ms, 01 §3.4) at time_started (0 if never
 	 * started): the run's start in wire timestamps (02 §3.3). */
 	int64_t wall_started;
+	/* Whether the graph differs from what was last loaded or saved (02 §3.3
+	 * "Unsaved state"), kept by the Graphs registry (graphs/graphs.h):
+	 * changed || started != saved_started. changed: a change of what the
+	 * file holds since then, other than the started state; saved_started:
+	 * the file's started flag. */
+	bool unsaved;
+	bool changed;
+	bool saved_started;
 };
 
 /* ---- Events reported to the runtime's observer ------------------------ */

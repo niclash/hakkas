@@ -366,8 +366,11 @@ enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, Grap
 	enum graph_files_status st = graph_files_save(gf, g);
 	if (msg != NULL)
 		msg->text[0] = '\0';
-	if (st == GRAPH_FILES_OK)
+	if (st == GRAPH_FILES_OK) {
+		Graph *saved = graphs_find(gf->gs, id);
+		graphs_mark_saved(gf->gs, saved, saved->started); /* 02 §3.3 */
 		return st;
+	}
 	/* 02 §3.3: a system-wide error event. The name is any string, so the
 	 * message is sized for it; without memory it is cut like msg. */
 	static const char fmt[] = "Unable to save graph: %s (%s)";
@@ -731,6 +734,8 @@ enum graph_files_status graph_files_load_text(GraphFiles *gf, const char *text, 
 		graphs_delete_graph(gf->gs, g->id, g->name, NULL);
 		return st;
 	}
+	/* The graph is what its file holds (02 §3.3 "Unsaved state"). */
+	graphs_mark_saved(gf->gs, g, flag);
 	/* Never started here: the flag is information for the host, which
 	 * decides what to start (05 §2.1, 00-README open question 12). */
 	if (started != NULL)
