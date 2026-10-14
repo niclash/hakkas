@@ -134,6 +134,105 @@ h1, h2, h3 {
   border-radius: 8px;
 }
 
+.hk-user {
+  font-size: 13px;
+  color: var(--hk-text-muted);
+}
+
+.hk-badge {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--hk-accent-text);
+  background: var(--hk-accent);
+  border-radius: 9px;
+}
+
+.hk-messages {
+  display: flex;
+  flex-direction: column;
+  height: 220px;
+  flex-shrink: 0;
+  margin: 0 16px 16px;
+  background: var(--hk-surface);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 8px;
+  box-shadow: var(--hk-shadow);
+}
+
+.hk-messages-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-bottom: var(--hk-border-width) solid var(--hk-border);
+}
+
+.hk-messages-level {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.hk-messages-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 4px 10px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.hk-message {
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
+}
+
+.hk-message-level {
+  flex: 0 0 56px;
+  color: var(--hk-text-muted);
+}
+
+.hk-message.warn .hk-message-level,
+.hk-message.error .hk-message-level,
+.hk-message.error .hk-message-text {
+  color: var(--hk-danger);
+}
+
+.hk-message-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hk-message-source {
+  color: var(--hk-text-muted);
+}
+
+.hk-about {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+
+.hk-about dt {
+  color: var(--hk-text-muted);
+}
+
+.hk-about dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .hk-role {
   font-size: 12px;
   color: var(--hk-text-muted);

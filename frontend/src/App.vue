@@ -5,6 +5,10 @@
       <span class="hk-product">Hakkas</span>
       <span class="hk-spacer"></span>
       <span v-if="!reconnect && roleLabel(can)" class="hk-role" data-testid="role">{{ roleLabel(can) }}</span>
+      <span class="hk-user" data-testid="user">{{ vueModel.user.value }} · {{ vueModel.role.value }}</span>
+      <button type="button" class="hk-button" data-testid="messages-toggle" :aria-pressed="showMessages"
+              @click="toggleMessages">Messages<span v-if="unread > 0" class="hk-badge" data-testid="messages-unread">{{ unread }}</span></button>
+      <button type="button" class="hk-button" data-testid="about-open" @click="showAbout = true">About</button>
       <ThemeSelector/>
       <button class="hk-button" data-testid="logout" @click="logout()">Logout</button>
     </header>
@@ -21,6 +25,8 @@
     </div>
     <!-- Rebuilt for every connection: its listeners are the connection's. -->
     <FlowEditor :key="connectionCount" :secret="secret"></FlowEditor>
+    <MessagesPanel v-if="showMessages" @close="toggleMessages"/>
+    <AboutDialog v-if="showAbout" @close="showAbout = false"/>
   </div>
   <Login v-else @login="login" :busy="loggingIn" :resuming="resuming" :message="loginMessage"/>
 </template>
@@ -30,8 +36,10 @@ import FlowEditor from "./components/floweditor/FlowEditor.vue";
 import {computed, ref, watch} from "vue";
 import Login from "@/components/Login.vue";
 import ThemeSelector from "@/components/ThemeSelector.vue";
+import MessagesPanel from "@/components/MessagesPanel.vue";
+import AboutDialog from "@/components/AboutDialog.vue";
 import {Connection} from "@/components/protocols/websocket";
-import {attachModel, can, errorClaims, vueModel} from "@/components/model";
+import {attachModel, can, errorClaims, messageLog, vueModel} from "@/components/model";
 import {addressFor, Opened, parseAddress, titleFor} from "@/address";
 import {roleLabel} from "@/components/roles";
 import {OnLogin, OnLoginFailed} from "@/components/protocols/environment";
@@ -176,6 +184,8 @@ const onLogin = (conn: Connection, payload: OnLogin) => {
   }
   conn.currentSecret = payload.secret;
   vueModel.capabilities.value = payload.capabilities ?? [];
+  vueModel.user.value = payload.user;
+  vueModel.role.value = payload.role;
   secret.value = payload.secret;
   connectionCount.value++;
   loggingIn.value = false;
@@ -189,6 +199,22 @@ const onLogin = (conn: Connection, payload: OnLogin) => {
   else
     openAddress(conn);
 };
+
+// ---- Messages and About (06 §4.12) --------------------------------------------------------
+
+const showMessages = ref(false);
+const showAbout = ref(false);
+// Messages that came while the panel was closed.
+const seen = ref(0);
+const unread = computed(() => showMessages.value ? 0 : messageLog.items.filter(m => m.seq > seen.value).length);
+const toggleMessages = () => {
+  showMessages.value = !showMessages.value;
+  seen.value = messageLog.items[messageLog.items.length - 1]?.seq ?? seen.value;
+};
+watch(() => messageLog.items[messageLog.items.length - 1]?.seq, last => {
+  if (showMessages.value && last !== undefined)
+    seen.value = last;
+});
 
 // ---- The address (06 §2.1) ----------------------------------------------------------------
 

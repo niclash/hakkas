@@ -795,9 +795,11 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   works; after login the URL's process opens.
   Done (06 §2.1, `src/address.ts`) as `/?process=<id>` and `/?type=<name>`: in the query,
   since the web server takes a path's `%2F` and `.` as a file's and graph ids may hold both.
-- [ ] **41. Messages**: the log mirror (`network:output`/`network:error` from `log.mirror`,
+- [x] **41. Messages**: the log mirror (`network:output`/`network:error` from `log.mirror`,
   05 §4) in a collapsible panel; errors with their process named; the user name and role in
   the top bar; the runtime's label and version (`runtime:runtime`) in an "about" view.
+  Done (06 §4.12, `messages.ts`, `MessagesPanel.vue`, `AboutDialog.vue`); the login event now
+  carries the user name.
 - [ ] **42. Undo/redo** — later: the client's own commands, undone by their inverse commands
   (`removenode` for `addnode`, …) sent to the engine like any other, so other users see them
   too; an undo whose state was changed by someone else meanwhile is refused or skipped.

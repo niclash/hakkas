@@ -3,6 +3,7 @@ import {Challenge, clientNonce, computeProof, computeResumeProof} from "@/compon
 import {KeptSession} from "@/session";
 
 export interface OnLogin {
+    user: string;
     secret: string;
     role: string;
     capabilities: string[];
@@ -164,7 +165,7 @@ export class EnvironmentProtocol {
             this.failed("The server could not prove its identity");
             return;
         }
-        const login: OnLogin = {secret: payload.secret, role: payload.role, capabilities: payload.capabilities};
+        const login: OnLogin = {user: pending.user, secret: payload.secret, role: payload.role, capabilities: payload.capabilities};
         if (typeof payload.resume === "string" && pending.resumeKey !== undefined)
             login.resume = {user: pending.user, id: payload.resume, key: pending.resumeKey};
         for (let fn of this.listeners.onLogin) {

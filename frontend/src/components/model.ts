@@ -2,7 +2,8 @@ import {ClassicPreset as Classic, GetSchemes} from "rete";
 import {ComponentEvent} from "@/components/protocols/component";
 import {Port} from "@/components/protocols/protocols";
 import {Ref, UnwrapRef} from "@vue/reactivity";
-import {computed, ref, shallowRef, ShallowRef} from "vue";
+import {computed, reactive, ref, shallowRef, ShallowRef} from "vue";
+import {errorText, MessageLog, parseLogLine} from "@/components/messages";
 import {permissions} from "@/components/roles";
 import {Connection as WsConnection} from "@/components/protocols/websocket";
 import {ClearEvent} from "@/components/protocols/graph";
@@ -172,8 +173,12 @@ export const vueModel: {
     inputsRequest: Ref<number>,
     // The open graph when it is a component graph, a block type's definition (02 §3.4.3).
     currentComponent: Ref<ClearEvent | undefined>,
-    // The session's capabilities, from its login (02 §2.4).
+    // The session's capabilities, from its login (02 §2.4), and who it is.
     capabilities: Ref<string[]>,
+    user: Ref<string>,
+    role: Ref<string>,
+    // The engine's runtime:runtime (its label, version, id), for the About view.
+    runtime: Ref<Record<string, unknown> | undefined>,
     components: Ref<UnwrapRef<ComponentEvent[]>>,
     selectedComponent: string,
     connection: ShallowRef<WsConnection | undefined>,
@@ -190,6 +195,9 @@ export const vueModel: {
     inputsRequest: ref(0),
     currentComponent: ref(undefined),
     capabilities: ref([]),
+    user: ref(""),
+    role: ref(""),
+    runtime: ref(undefined),
     connection: shallowRef(undefined),
     errors: ref([]),
     selectedComponent: "",
@@ -207,6 +215,9 @@ export const vueModel: {
 // Parts of the UI that show some refusals themselves, at the field the command came from:
 // each one tells whether it took the message.
 export const errorClaims: ((message: string, graph?: string) => boolean)[] = [];
+
+// The messages panel's log (06 §4.12): kept across connections.
+export const messageLog = reactive(new MessageLog());
 
 // What the session may do (06 §4.11): the UI offers only that.
 export const can = computed(() => permissions(vueModel.capabilities.value));
@@ -261,8 +272,25 @@ export function attachModel(conn: WsConnection) {
         Object.assign(graph(s.graph), {running: false, started: false, uptime: s.uptime ?? 0, uptimeAt: Date.now()});
     });
     proto.network.addListener("onNetworkError", (e: NetworkErrorEvent) => {
+        // A mirrored error line of the engine's log (05 §4): the messages panel only.
+        const line = parseLogLine(e.message);
+        if (line !== undefined) {
+            messageLog.add({level: line.level, text: line.text, source: line.source});
+            return;
+        }
+        const name = e.graph ? vueModel.graphs.value.get(e.graph)?.name : undefined;
+        const text = errorText(e.message, name, e.graph === vueModel.currentGraphId.value);
+        messageLog.add({level: "error", text, refused: true});
         if (!errorClaims.some(claim => claim(e.message, e.graph)))
-            showError(e.message);
+            showError(text);
+    });
+    proto.network.addListener("onNetworkOutput", (o: { message: string }) => {
+        const line = parseLogLine(o.message ?? "");
+        messageLog.add(line !== undefined ? {level: line.level, text: line.text, source: line.source}
+            : {level: "info", text: String(o.message ?? "")});
+    });
+    proto.runtime.addListener("onRuntime", (r: Record<string, unknown>) => {
+        vueModel.runtime.value = r;
     });
     proto.runtime.addListener("onNewGraphPacket", (p: { graph: string, name: string, description: string }) => {
         Object.assign(graph(p.graph), {name: p.name, description: p.description});

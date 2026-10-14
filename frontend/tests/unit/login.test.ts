@@ -41,7 +41,7 @@ describe("login", () => {
         const signature = verifyProof(record, reply.nonce, t.sent[1].payload.proof);
         t.receive("environment", "login", {secret: "s3cr3t", role: "editor", capabilities: ["protocol:graph"],
                                            server_signature: signature});
-        expect(t.logins).toEqual([{secret: "s3cr3t", role: "editor", capabilities: ["protocol:graph"]}]);
+        expect(t.logins).toEqual([{user: "alice", secret: "s3cr3t", role: "editor", capabilities: ["protocol:graph"]}]);
         expect(t.failures).toEqual([]);
     });
 
