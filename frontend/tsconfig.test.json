@@ -10,6 +10,7 @@
     "src/components/inspector.ts",
     "src/components/renaming.ts",
     "src/components/initials.ts",
+    "src/components/floweditor/value-position.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"
