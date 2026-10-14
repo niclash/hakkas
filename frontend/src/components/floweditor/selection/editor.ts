@@ -32,12 +32,27 @@ function typing(event: KeyboardEvent): boolean {
 
 export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPlugin<Schemes, K>,
                                        commands: SelectionCommands) {
+    // The selected blocks' ids and types for the inspector, once per change.
+    let publishing = false;
+    const publish = () => {
+        if (publishing)
+            return;
+        publishing = true;
+        queueMicrotask(() => {
+            publishing = false;
+            vueModel.selectedBlocks.value = selection.ids().flatMap(id => {
+                const node = editor.getNode(id);
+                return node === undefined ? [] : [{id: node.label, component: node.component}];
+            });
+        });
+    };
     const selection = new BlockSelection((id, selected) => {
         const node = editor.getNode(id);
         if (node !== undefined && node.selected !== selected) {
             node.selected = selected;
             void area.update('node', id);
         }
+        publish();
     });
     const throttle = new MoveThrottle((id, position) => {
         const node = editor.getNode(id);
@@ -119,14 +134,26 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
     });
 
     editor.addPipe(context => {
-        if (context.type === 'noderemoved')
+        if (context.type === 'noderemoved') {
             selection.forget(context.data.id);
-        else if (context.type === 'cleared')
+            publish();
+        } else if (context.type === 'cleared') {
             selection.ids().forEach(id => selection.forget(id));
+            publish();
+        }
         return context;
     });
 
     const selectAll = () => selection.set(editor.getNodes().map(n => n.id));
+
+    // Each block's removal comes back as its event, which unselects it.
+    const removeSelected = () => {
+        for (const id of selection.ids()) {
+            const node = editor.getNode(id);
+            if (node !== undefined)
+                commands.remove(node.label);
+        }
+    };
 
     const keydown = (event: KeyboardEvent) => {
         if (typing(event) || !area.container.isConnected)
@@ -137,16 +164,10 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
             event.preventDefault();
             selectAll();
         } else if (event.key === 'Delete' || event.key === 'Backspace') {
-            const ids = selection.ids();
-            if (ids.length === 0)
+            if (selection.ids().length === 0)
                 return;
             event.preventDefault();
-            // Each block's removal comes back as its event, which unselects it.
-            for (const id of ids) {
-                const node = editor.getNode(id);
-                if (node !== undefined)
-                    commands.remove(node.label);
-            }
+            removeSelected();
         }
     };
     document.addEventListener('keydown', keydown);
@@ -154,6 +175,9 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
     return {
         selection,
         selectAll,
+        removeSelected,
+        // A selected block was renamed.
+        refresh: publish,
         destroy() {
             document.removeEventListener('keydown', keydown);
             area.container.removeEventListener('pointerdown', capturePress, {capture: true});

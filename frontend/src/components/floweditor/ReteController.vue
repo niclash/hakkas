@@ -159,6 +159,7 @@ const callbacks = {
       if (node !== undefined) {
         node.label = payload.to;
         await editor.area.update('node', node.id);
+        editor.blockSelection?.refresh();
       }
     } finally {
       endTransaction();

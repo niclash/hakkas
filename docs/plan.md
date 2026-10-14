@@ -676,10 +676,13 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   `floweditor/selection/` (`blocks.ts`, unit tested; `editor.ts`, the wiring), 06 §4.0. The
   marquee is a Shift/Ctrl-drag on the canvas (a plain drag pans) and adds to the selection;
   Ctrl/Shift-click on a selected block unselects it.
-- [ ] **27. Inspector panel**: a panel beside the editor for the selected block — its id, its
+- [x] **27. Inspector panel**: a panel beside the editor for the selected block — its id, its
   type and the type's description, and every port with its type and description (from
   `component:component`); with several blocks selected, their count and the common actions.
   The base for tasks 28, 29 and 34.
+  Done as `Inspector.vue` beside the editor (06 §4.2), from `inspector.ts` (unit tested) and the
+  selection published as `vueModel.selectedBlocks`. Inputs first, then outputs, with each
+  port's default; the common action for now is Delete.
 - [ ] **28. Renaming blocks**: in the inspector, with F2 and from the context menu;
   `graph:renamenode`, the new name shown when its event arrives; `"Node exists"`/`"Invalid id"`
   refusals shown at the field. Blocks added from the palette keep their `<Type>_<n>` names.

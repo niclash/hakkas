@@ -288,6 +288,87 @@ h1, h2, h3 {
   border-color: var(--hk-accent);
 }
 
+/* ---- The inspector (06 §4.2) ----------------------------------------------------- */
+
+.hk-inspector {
+  width: 260px;
+  flex-shrink: 0;
+  min-height: 0;
+  overflow-y: auto;
+  align-self: stretch;
+}
+
+.hk-inspector-id {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.hk-inspector-type {
+  color: var(--hk-text-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.hk-inspector-description,
+.hk-inspector-note,
+.hk-inspector-list {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.hk-inspector-note {
+  color: var(--hk-danger);
+}
+
+.hk-inspector-ports {
+  margin-top: 12px;
+}
+
+.hk-inspector-heading {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hk-text-muted);
+  margin: 0 0 4px;
+}
+
+.hk-inspector-ports dl {
+  margin: 0;
+}
+
+.hk-inspector-port {
+  padding: 4px 0;
+  border-top: var(--hk-border-width) solid var(--hk-border);
+}
+
+.hk-inspector-port dt {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hk-inspector-port-id {
+  font-weight: 600;
+}
+
+.hk-inspector-port-type {
+  color: var(--hk-text-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.hk-inspector-port dd {
+  margin: 2px 0 0;
+  color: var(--hk-text-muted);
+  font-size: 13px;
+}
+
+.hk-inspector .hk-actions {
+  margin-top: 12px;
+}
+
 /* ---- Dialogs and the login screen ------------------------------------------------- */
 
 .hk-overlay {

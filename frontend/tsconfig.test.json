@@ -7,6 +7,7 @@
     "src/theme.ts",
     "src/session.ts",
     "src/components/floweditor/selection/blocks.ts",
+    "src/components/inspector.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

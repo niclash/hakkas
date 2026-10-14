@@ -4,6 +4,7 @@ import Components from "@/components/floweditor/Components.vue";
 import {Connection as WsConnection, Connection, Packet} from "@/components/protocols/websocket";
 import {onMounted, ref, watch} from "vue";
 import ReteEditor from "@/components/floweditor/ReteController.vue";
+import Inspector from "@/components/Inspector.vue";
 import {vueModel} from "@/components/model";
 import {editor as reteEditor} from "@/components/floweditor/viewmodel/default";
 import {RuntimeEvent} from "@/components/protocols/runtime";
@@ -52,6 +53,7 @@ onMounted(() => {
       <Components ref="comps" @onSelection="(compType:string) => {addComponent(compType)}"/>
     </aside>
     <ReteEditor ref="editor"/>
+    <Inspector/>
   </div>
 </template>
 

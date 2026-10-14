@@ -5,6 +5,7 @@ import {Ref, UnwrapRef} from "@vue/reactivity";
 import {ref, shallowRef, ShallowRef} from "vue";
 import {Connection as WsConnection} from "@/components/protocols/websocket";
 import {ClearEvent} from "@/components/protocols/graph";
+import {SelectedBlock} from "@/components/inspector";
 import {NetworkErrorEvent, StartedEvent, StatusEvent, StoppedEvent} from "@/components/protocols/network";
 
 const socket = new Classic.Socket('socket');
@@ -79,6 +80,8 @@ export const vueModel: {
     currentGraph: ClearEvent,
     currentGraphId: Ref<string>,
     pipesDisabled: boolean,
+    // The selected blocks of the open process (06 §4.0), for the inspector.
+    selectedBlocks: Ref<SelectedBlock[]>,
     components: Ref<UnwrapRef<ComponentEvent[]>>,
     selectedComponent: string,
     connection: ShallowRef<WsConnection | undefined>,
@@ -90,6 +93,7 @@ export const vueModel: {
     currentGraphId: ref(""),
     components: ref([]),
     pipesDisabled: false,
+    selectedBlocks: ref([]),
     connection: shallowRef(undefined),
     errors: ref([]),
     selectedComponent: "",
@@ -118,6 +122,7 @@ export function attachModel(conn: WsConnection) {
     componentTemplates = {};
     vueModel.currentGraph = {id: "", name: "", icon: "", description: "", library: "", main: false};
     vueModel.currentGraphId.value = "";
+    vueModel.selectedBlocks.value = [];
 
     const graph = (id: string): Graph => {
         let g = vueModel.graphs.value.get(id);
