@@ -20,7 +20,6 @@ export interface PortView {
     id: string;
     type: string;
     description: string;
-    default?: string;      // shown as the event carries it
     source?: InputSource;  // inputs only
 }
 
@@ -34,10 +33,7 @@ export type InspectorView =
     | { kind: "many", ids: string[] };
 
 function portView(port: Port): PortView {
-    const view: PortView = {id: port.id, type: port.type ?? "", description: port.description ?? ""};
-    if (port.default !== undefined && port.default !== null)
-        view.default = String(port.default);
-    return view;
+    return {id: port.id, type: port.type ?? "", description: port.description ?? ""};
 }
 
 export function inspect(blocks: SelectedBlock[], types: Record<string, ComponentEvent>): InspectorView {

@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {initialRefusals, parseTyped, sameValue, valueEditor} from "@/components/initials";
+import {initialRefusals, parseTyped, restingValue, sameValue, valueEditor} from "@/components/initials";
 
 // 06 §4.2: fixed values on inputs, edited to fit the port's type (02 §3.4).
 
@@ -10,6 +10,10 @@ describe("fixed values", () => {
         expect(valueEditor("number")).toBe("number");
         expect(valueEditor("int")).toBe("number");
         expect(valueEditor("")).toBe("number");
+    });
+
+    it("an input fed by nothing rests at its type's resting value", () => {
+        expect(["number", "bool", "string", "other"].map(restingValue)).toEqual(["0", "false", "", "0"]);
     });
 
     it("a number field sends a JSON number, clears when empty, and refuses other text", () => {

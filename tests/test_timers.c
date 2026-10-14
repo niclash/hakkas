@@ -491,6 +491,7 @@ static void test_stopped_graph(void)
 	add("T", "test/Tick");
 	add("S", "test/Sched");
 	add("I", "timing/Interval");
+	set_num("I", "milliseconds", 1000);
 	set_num("S", "delay", 7);
 	CHECK(deadline_heap_len(&rt.timers) == 0);
 	CHECK(rt.timer_blocks == 3);
@@ -566,12 +567,23 @@ static InputWatch watch = {.on_value = log_value};
 
 /* Interval "I" wired to a downstream block whose input logs every value it
  * receives. */
-static Block *interval(void)
+/* An Interval with its inputs at rest (idle), its out watched through E. */
+static Block *interval_bare(void)
 {
 	Block *i = add("I", "timing/Interval");
 	Block *e = add("E", "compare/Equal");
 	CHECK(graph_connect(gr, "I", "out", "E", "in1", NULL) == GRAPH_OK);
 	block_watch_input(e, 0, &watch);
+	trace[0] = '\0';
+	return i;
+}
+
+/* An Interval set to 1000 ms at 50 %, as the tests below assume. */
+static Block *interval(void)
+{
+	Block *i = interval_bare();
+	set_num("I", "milliseconds", 1000);
+	set_num("I", "duty-cycle", 50);
 	trace[0] = '\0';
 	return i;
 }
@@ -586,6 +598,17 @@ static void start_at(uint64_t now)
 	runtime_set_now(&rt, now);
 	graph_start(gr);
 	drain();
+}
+
+/* Nothing set: the inputs rest at 0, so the block is idle (03 §3.1). */
+static void test_interval_resting(void)
+{
+	setup();
+	Block *i = interval_bare();
+	start_at(0);
+	CHECK(!out(i));
+	CHECK(deadline_heap_len(&rt.timers) == 0);
+	teardown();
 }
 
 static void test_interval_default(void)
@@ -800,6 +823,7 @@ int main(void)
 	RUN(test_stale_expiries);
 	RUN(test_stopped_graph);
 	RUN(test_dropped_expiry);
+	RUN(test_interval_resting);
 	RUN(test_interval_default);
 	RUN(test_interval_duty_extremes);
 	RUN(test_interval_latching);

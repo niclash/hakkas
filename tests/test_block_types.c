@@ -191,6 +191,30 @@ static void check_port(const PortDescriptor *p, const char *name, const char *ty
 	}
 }
 
+/* Every built-in input rests at its type's resting value when nothing feeds it:
+ * 0, false, "" (01 §2.1 default_value; no other per-port defaults, 03 §1). */
+static void test_resting_defaults(void)
+{
+	block_types_reset();
+	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
+	for (size_t k = 0; k < block_types_count(); k++) {
+		const BlockTypeDef *t = block_types_at(k);
+		for (uint32_t j = 0; j < t->input_count; j++) {
+			const PortDescriptor *p = &t->inputs[j];
+			Linkable rest = linkable_default_value(p->type);
+			char want[64], got[64];
+			linkable_stringify(&rest, want, sizeof(want));
+			linkable_stringify(&p->default_value, got, sizeof(got));
+			if (p->default_value.type != rest.type || strcmp(want, got) != 0)
+				fprintf(stderr, "  %s.%s rests at %s, not %s\n", t->name, p->name, got,
+					want);
+			CHECK(p->default_value.type == rest.type && strcmp(want, got) == 0);
+			linkable_clear(&rest);
+		}
+	}
+	block_types_reset();
+}
+
 static void test_builtins(void)
 {
 	block_types_reset();
@@ -261,22 +285,22 @@ static void test_builtins(void)
 		} pid_ins[] = {
 			{"setpoint", "number", 0},
 			{"measured_value", "number", 0},
-			{"kp", "number", 1},
+			{"kp", "number", 0},
 			{"ki", "number", 0},
 			{"kd", "number", 0},
-			{"max_dgain", "number", 10},
+			{"max_dgain", "number", 0},
 			{"output_min", "number", 0},
-			{"output_max", "number", 100},
+			{"output_max", "number", 0},
 			{"reverse", "bool", 0},
-			{"auto", "bool", 1},
+			{"auto", "bool", 0},
 			{"manual_value", "number", 0},
-			{"sample_ms", "number", 1000},
+			{"sample_ms", "number", 0},
 		};
 		CHECK_STREQ(t->icon, "tune");
 		CHECK_STREQ(t->description, "PID regulator");
 		CHECK(t->compute_on_input);
 		CHECK(t->timer == TIMER_PERIODIC);
-		CHECK(t->period_ms == 1000);
+		CHECK(t->period_ms == 0); /* sample_ms's resting 0: no sampling */
 		CHECK(t->compute != NULL);
 		CHECK(t->state_size > 0);
 		CHECK(isnan(t->change_threshold));
@@ -318,11 +342,11 @@ static void test_builtins(void)
 			CHECK_STREQ(t->inputs[0].name, "milliseconds");
 			CHECK_STREQ(t->inputs[0].type, "number");
 			CHECK(t->inputs[0].default_value.type == LINKABLE_F64 &&
-			      t->inputs[0].default_value.as.f64 == 1000.0);
+			      t->inputs[0].default_value.as.f64 == 0.0); /* idle */
 			CHECK_STREQ(t->inputs[1].name, "duty-cycle");
 			CHECK_STREQ(t->inputs[1].type, "number");
 			CHECK(t->inputs[1].default_value.type == LINKABLE_F64 &&
-			      t->inputs[1].default_value.as.f64 == 50.0);
+			      t->inputs[1].default_value.as.f64 == 0.0);
 			check_port(&t->outputs[0], "out", "bool");
 			CHECK(!t->inputs[0].addressable && !t->inputs[1].addressable);
 		}
@@ -671,6 +695,7 @@ int main(void)
 	RUN(test_unregister_keeps_order);
 	RUN(test_full);
 	RUN(test_builtins);
+	RUN(test_resting_defaults);
 
 	block_types_reset();
 	if (block_types_register_builtins() != BLOCK_TYPES_OK) {

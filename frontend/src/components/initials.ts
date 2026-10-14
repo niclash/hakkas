@@ -16,6 +16,13 @@ export function valueEditor(portType: string): ValueEditor {
     return portType === "bool" || portType === "string" ? portType : "number";
 }
 
+// What an input holds when nothing feeds it: its type's resting value (decided with the user
+// 2026-10-14: no per-port defaults; an absent signal rests at 0, false or "", 03 §1).
+export function restingValue(portType: string): string {
+    const editor = valueEditor(portType);
+    return editor === "bool" ? "false" : editor === "string" ? "" : "0";
+}
+
 // The value to send for what was typed into a number or text field (a bool port has a
 // switch): `clear` to remove the fixed value (an empty number field), or an error to show
 // instead of sending. A number goes as a JSON number: the engine would read text that is not

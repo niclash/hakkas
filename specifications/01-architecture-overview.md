@@ -66,7 +66,7 @@ Number text is always in the C locale (`.` decimal point).
 
 There is no "error" behavior in value computation — as in electronics, every operation has well-defined limits and a well-defined result when they are exceeded (e.g. IEEE-754 `±Infinity`/`NaN` for division by zero). Blocks never reject a value.
 
-Port descriptors carry: `name`, `description`, `type`, `default` (the value the input holds when nothing is wired to it; falls back to `default_value(type)` if the block type doesn't specify one), `addressable` (bool — reserved metadata; nothing in the runtime currently indexes by address), and, for ports belonging to a composite block type (`03-block-types.md` §5), a `target`/`source` reference into the inner block graph.
+Port descriptors carry: `name`, `description`, `type`, `default` (the value the input holds when nothing is wired to it: always `default_value(type)`, the type's **resting value** — decided with the user 2026-10-14: there are no per-port defaults; an absent value is zero, false or empty, as an absent signal in electronics rests at 0 V; `03-block-types.md` §1), `addressable` (bool — reserved metadata; nothing in the runtime currently indexes by address), and, for ports belonging to a composite block type (`03-block-types.md` §5), a `target`/`source` reference into the inner block graph.
 
 ### 2.2 Entities and ownership
 

@@ -23,7 +23,7 @@ test("each input shows its connection, its fixed value or its default", async ({
     await select(page, "block7");
     await expect(input(page, "in1").getByTestId("input-state")).toHaveText("Connected from block3.out");
     await expect(input(page, "in1").getByTestId("value-field")).toHaveCount(0);
-    await expect(input(page, "in3").getByTestId("input-state")).toHaveText(/^Default/);
+    await expect(input(page, "in3").getByTestId("input-state")).toHaveText("Default: 0");
     await expect(input(page, "in3").getByTestId("value-field")).toHaveValue("");
 
     await select(page, "block8");

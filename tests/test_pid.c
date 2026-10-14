@@ -19,7 +19,11 @@ static Block *pid;
 
 /* ---- Helpers ---------------------------------------------------------------- */
 
-static void setup(void)
+static void set(const char *port, double v);
+static void set_bool(const char *port, bool v);
+
+/* A bare regulator: every input at its resting value (0, false; 03 §6.1). */
+static void setup_bare(void)
 {
 	runtime_init(&rt);
 	gr = graph_create(&rt);
@@ -27,6 +31,18 @@ static void setup(void)
 	pid = NULL;
 	CHECK(graph_create_block(gr, "P", block_types_get("process/PID"), NULL, &pid) ==
 	      GRAPH_OK);
+}
+
+/* A configured regulator, as the tests below assume: kp 1, max_dgain 10, output
+ * limits 0-100, automatic, sampling every second. */
+static void setup(void)
+{
+	setup_bare();
+	set("kp", 1);
+	set("max_dgain", 10);
+	set("output_max", 100);
+	set_bool("auto", true);
+	set("sample_ms", 1000);
 }
 
 static void teardown(void)
@@ -371,11 +387,38 @@ static void test_limits(void)
 	set("setpoint", 150);
 	CHECK(near(out(), 100));
 	CHECK(saturated());
-	/* Equal limits: always saturated. */
+	/* Equal limits, as when neither is set, are no limits. */
 	set("output_min", 0);
 	set("output_max", 0);
+	CHECK(near(out(), 150));
+	CHECK(!saturated());
+	set("output_min", 7);
+	set("output_max", 7);
+	CHECK(near(out(), 150));
+	CHECK(!saturated());
+	teardown();
+}
+
+/* ---- Resting values ----------------------------------------------------------- */
+
+/* A regulator with no input set rests: manual, output 0, no sampling (03 §6.1). */
+static void test_resting(void)
+{
+	setup_bare();
+	set("setpoint", 50);
+	start_at(0);
 	CHECK(near(out(), 0));
-	CHECK(saturated());
+	CHECK(!saturated());
+	CHECK(next_due() == UINT64_MAX);
+	/* Automatic with no gain: still 0; with a gain, unlimited. */
+	set_bool("auto", true);
+	CHECK(near(out(), 0));
+	set("kp", 3);
+	CHECK(near(out(), 150));
+	CHECK(!saturated());
+	/* Sampling starts when sample_ms is set. */
+	set_at(10, "sample_ms", linkable_from_f64(500));
+	CHECK(next_due() == 510);
 	teardown();
 }
 
@@ -596,6 +639,7 @@ int main(void)
 	RUN(test_reverse);
 	RUN(test_anti_windup);
 	RUN(test_limits);
+	RUN(test_resting);
 	RUN(test_manual_bumpless);
 	RUN(test_start_manual);
 	RUN(test_stop_restart);

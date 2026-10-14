@@ -24,7 +24,7 @@ describe("inspect", () => {
         expect(inspect([{id: "Add2_1", component: "math/Add2"}], types)).toEqual({
             kind: "one", id: "Add2_1", component: "math/Add2", description: "Adds two numbers", known: true,
             inputs: [
-                {id: "in1", type: "number", description: "First term", default: "0", source: {kind: "default"}},
+                {id: "in1", type: "number", description: "First term", source: {kind: "default"}},
                 {id: "in2", type: "number", description: "", source: {kind: "default"}},
             ],
             outputs: [{id: "out", type: "number", description: "The sum"}],

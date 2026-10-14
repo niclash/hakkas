@@ -105,36 +105,34 @@ enum {
 
 enum { PID_OUTPUT, PID_SATURATED };
 
-/* The default sample period, ms: sample_ms's default and the type's period. */
-#define PID_SAMPLE_MS_DEFAULT 1000
 
 static const PortDescriptor pid_inputs[] = {
 	{.name = "setpoint", .description = "Desired value of the measurement",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "measured_value", .description = "Measured value of the controlled process",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
-	{.name = "kp", .description = "Proportional gain", .type = "number",
-	 .default_value = LINKABLE_F64_INIT(1.0)},
+	{.name = "kp", .description = "Proportional gain (0: no proportional term)",
+	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "ki", .description = "Integral gain, per second (0: no integral term)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "kd", .description = "Derivative gain, in seconds (0: no derivative term)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "max_dgain",
 	 .description = "Highest gain of the derivative term (<= 0: no limit)",
-	 .type = "number", .default_value = LINKABLE_F64_INIT(10.0)},
-	{.name = "output_min", .description = "Lower output limit", .type = "number",
-	 .default_value = LINKABLE_F64_INIT(0.0)},
-	{.name = "output_max", .description = "Upper output limit", .type = "number",
-	 .default_value = LINKABLE_F64_INIT(100.0)},
+	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
+	{.name = "output_min", .description = "Lower output limit (equal limits: none)",
+	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
+	{.name = "output_max", .description = "Upper output limit (equal limits: none)",
+	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "reverse",
 	 .description = "Reverse acting (error = measured_value - setpoint), e.g. cooling",
 	 .type = "bool", .default_value = LINKABLE_BOOL_INIT(false)},
 	{.name = "auto", .description = "Automatic (true) or manual (false) mode",
-	 .type = "bool", .default_value = LINKABLE_BOOL_INIT(true)},
+	 .type = "bool", .default_value = LINKABLE_BOOL_INIT(false)},
 	{.name = "manual_value", .description = "Output in manual mode (clamped to the limits)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "sample_ms", .description = "Sample period in milliseconds (<= 0: no sampling)",
-	 .type = "number", .default_value = LINKABLE_F64_INIT(PID_SAMPLE_MS_DEFAULT)},
+	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 };
 
 static const PortDescriptor pid_outputs[] = {
@@ -170,12 +168,16 @@ static void pid_read(const Linkable *in, PidInputs *p)
 	p->manual = linkable_to_f64(&in[PID_MANUAL_VALUE]);
 	p->reverse = linkable_to_bool(&in[PID_REVERSE]);
 	p->auto_mode = linkable_to_bool(&in[PID_AUTO]);
-	/* A NaN limit is no limit on its side; limits given the wrong way
-	 * round are swapped. */
+	/* A NaN limit is no limit on its side; equal limits (both unset: 0)
+	 * are no limits; limits given the wrong way round are swapped. */
 	double lo = linkable_to_f64(&in[PID_OUTPUT_MIN]);
 	double hi = linkable_to_f64(&in[PID_OUTPUT_MAX]);
 	lo = isnan(lo) ? -INFINITY : lo;
 	hi = isnan(hi) ? INFINITY : hi;
+	if (lo == hi) {
+		lo = -INFINITY;
+		hi = INFINITY;
+	}
 	p->lo = fmin(lo, hi);
 	p->hi = fmax(lo, hi);
 }
@@ -422,7 +424,7 @@ const BlockTypeDef process_block_types[] = {
 	 .output_count = ARRAY_LEN(pid_outputs),
 	 .compute_on_input = true,
 	 .timer = TIMER_PERIODIC,
-	 .period_ms = PID_SAMPLE_MS_DEFAULT,
+	 .period_ms = 0, /* sample_ms's default: no sampling until it is set */
 	 .compute = pid,
 	 .state_size = sizeof(PidState),
 	 .change_threshold = NAN},

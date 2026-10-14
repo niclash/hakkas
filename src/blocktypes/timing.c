@@ -42,14 +42,14 @@ enum { IN_MILLISECONDS, IN_DUTY_CYCLE };
 
 static const PortDescriptor interval_inputs[] = {
 	{.name = "milliseconds",
-	 .description = "Period of one full cycle, in milliseconds.",
+	 .description = "Period of one full cycle, in milliseconds (<= 0: idle, out false).",
 	 .type = "number",
-	 .default_value = LINKABLE_F64_INIT(1000.0)},
+	 .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "duty-cycle",
 	 .description = "Percentage of each period during which out is true, 0-100 "
 			"(clamped to that range).",
 	 .type = "number",
-	 .default_value = LINKABLE_F64_INIT(50.0)},
+	 .default_value = LINKABLE_F64_INIT(0.0)},
 };
 
 static const PortDescriptor interval_outputs[] = {

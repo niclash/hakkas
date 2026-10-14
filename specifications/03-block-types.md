@@ -4,7 +4,9 @@
 
 Every port holds exactly one `Linkable` value: a string, a signed 64-bit integer, a double, a boolean, or "unset." There is no list/array value type. See `01-architecture-overview.md` §2.1 for the full value model and type-conversion rules (`to_f64`/`to_i64`/`to_u64`/`to_bool`/`default_value`), which every block type's computation uses to normalize its inputs.
 
-Port descriptors carry `name`, `description`, `type` (`"bool"`/`"number"`/`"string"`), `default` (the value an input holds when nothing is wired to it — defaults to `default_value(type)` when not stated), and `addressable` (reserved metadata). Composite block types (§5) additionally carry a `target`/`source` reference into their inner block graph.
+Port descriptors carry `name`, `description`, `type` (`"bool"`/`"number"`/`"string"`), `default` (the value an input holds when nothing is wired to it — always `default_value(type)`), and `addressable` (reserved metadata).
+
+**Resting values** (decided with the user 2026-10-14): there are no per-port default values. An input fed by nothing holds its type's resting value — `0` for a number, `false` for a bool, `""` for a string (`default_value`, `01-architecture-overview.md` §2.1) — as an absent signal or voltage in electronics has a physical resting point, 0 V. Every built-in type is designed so that the resting value of each input is meaningful (e.g. "off", "no limit", "no sampling"); a test checks that every built-in input rests at it. The engine therefore sends no `default` in `component:component`, and the frontend shows the resting value (`06-frontend.md` §4.2). `timing/Interval` and `process/PID`, which had other defaults, were changed accordingly (§3.1, §6.1). Composite block types (§5) additionally carry a `target`/`source` reference into their inner block graph.
 
 ## 2. Execution model
 
@@ -101,8 +103,10 @@ A scheduled block (`compute_on_input = true`, `TIMER_SCHEDULED`, per-instance st
 
 | Port | Direction | Type | Default | Description |
 |---|---|---|---|---|
-| `milliseconds` | input | number | `1000` | Period of one full cycle, in milliseconds. |
-| `duty-cycle` | input | number | `50` | Percentage of each period during which `out` is `true`, `0`–`100` (clamped to that range). |
+| `milliseconds` | input | number | `0` | Period of one full cycle, in milliseconds (`<= 0`: idle, `out` false). |
+| `duty-cycle` | input | number | `0` | Percentage of each period during which `out` is `true`, `0`–`100` (clamped to that range). |
+
+Resting values (§1, 2026-10-14; the defaults were 1000 ms and 50 % until then): a new Interval is idle until its period is set, and then false until its duty cycle is set.
 | `out` | output | bool | `false` | The generated pulse train. |
 
 **Algorithm**:
@@ -224,10 +228,10 @@ A **cyclic** block (`TIMER_PERIODIC` + `compute_on_input` — `01-architecture-o
 1. **Parallel gain form**: `out = Kp·e + Ki·∫e dt + D`, where the derivative term `D` acts on the measurement (item 3) with gain `Kd`. `Ki = 0` disables the integral term, `Kd = 0` the derivative term. Gains are in output units per input unit (per second for `Ki`, times seconds for `Kd`).
 2. **Acting direction**: a `reverse` input — `false` (direct): `e = setpoint − measured_value`; `true` (reverse, e.g. cooling): `e = measured_value − setpoint`.
 3. **Derivative on the measurement**, not on the error, so a setpoint step causes no output kick.
-4. **Max D gain** (`max_dgain`, default `10`): the derivative is filtered as `Kd·s / (1 + (Kd/max_dgain)·s)`, so its high-frequency gain is limited to `max_dgain` — a fast change in the measurement is never amplified by more than that, which keeps measurement noise from making the output jump. A `max_dgain <= 0` (or NaN) means no limit (an unfiltered derivative).
-5. **Output limits and anti-windup**: the output is clamped to `[output_min, output_max]`; the integral does not advance while the output is at a limit and the error would drive it further beyond it (conditional integration), so the regulator recovers at once when the error reverses.
-6. **Manual/auto**: an `auto` input (default `true`); in manual the output follows `manual_value` (still clamped). Switching manual → auto is **bumpless**: the integral is preset so that the output continues from the manual value.
-7. **Timing**: the full step runs every `sample_ms` (default `1000`) using the actual elapsed time as `dt`; an input change recomputes only the proportional part immediately (above). On `start` the integral is reset, or preset from `manual_value` when starting in manual.
+4. **Max D gain** (`max_dgain`; at rest `0`, no limit): the derivative is filtered as `Kd·s / (1 + (Kd/max_dgain)·s)`, so its high-frequency gain is limited to `max_dgain` — a fast change in the measurement is never amplified by more than that, which keeps measurement noise from making the output jump. A `max_dgain <= 0` (or NaN) means no limit (an unfiltered derivative).
+5. **Output limits and anti-windup**: the output is clamped to `[output_min, output_max]` — equal limits, as when neither is set (both `0`), are **no limits**; the integral does not advance while the output is at a limit and the error would drive it further beyond it (conditional integration), so the regulator recovers at once when the error reverses.
+6. **Manual/auto**: an `auto` input (at rest `false`: manual, so a regulator nobody has set up outputs its `manual_value`, `0`); in manual the output follows `manual_value` (still clamped). Switching manual → auto is **bumpless**: the integral is preset so that the output continues from the manual value.
+7. **Timing**: the full step runs every `sample_ms` (at rest `0`: no sampling until it is set) using the actual elapsed time as `dt`; an input change recomputes only the proportional part immediately (above). On `start` the integral is reset, or preset from `manual_value` when starting in manual.
 8. **Outputs**: `output` (number), and `saturated` (bool, true while the output is at a limit) for alarms.
 
 Ports: inputs `setpoint`, `measured_value`, `kp`, `ki`, `kd`, `max_dgain`, `output_min`, `output_max`, `reverse` (bool), `auto` (bool), `manual_value`, `sample_ms`; outputs `output`, `saturated` (bool).
@@ -236,26 +240,28 @@ Ports: inputs `setpoint`, `measured_value`, `kp`, `ki`, `kd`, `max_dgain`, `outp
 |---|---|---|---|---|
 | `setpoint` | input | number | `0` | Desired value of the measurement |
 | `measured_value` | input | number | `0` | Measured value of the controlled process |
-| `kp` | input | number | `1` | Proportional gain |
+| `kp` | input | number | `0` | Proportional gain (0: no proportional term) |
 | `ki` | input | number | `0` | Integral gain, per second (0: no integral term) |
 | `kd` | input | number | `0` | Derivative gain, in seconds (0: no derivative term) |
-| `max_dgain` | input | number | `10` | Highest gain of the derivative term (<= 0: no limit) |
-| `output_min` | input | number | `0` | Lower output limit |
-| `output_max` | input | number | `100` | Upper output limit |
+| `max_dgain` | input | number | `0` | Highest gain of the derivative term (<= 0: no limit) |
+| `output_min` | input | number | `0` | Lower output limit (equal limits: none) |
+| `output_max` | input | number | `0` | Upper output limit (equal limits: none) |
 | `reverse` | input | bool | `false` | Reverse acting (error = measured_value - setpoint), e.g. cooling |
-| `auto` | input | bool | `true` | Automatic (true) or manual (false) mode |
+| `auto` | input | bool | `false` | Automatic (true) or manual (false) mode |
 | `manual_value` | input | number | `0` | Output in manual mode (clamped to the limits) |
-| `sample_ms` | input | number | `1000` | Sample period in milliseconds (<= 0: no sampling) |
+| `sample_ms` | input | number | `0` | Sample period in milliseconds (<= 0: no sampling) |
+
+Resting values (§1, decided 2026-10-14; until then `kp` 1, `max_dgain` 10, `output_max` 100, `auto` true, `sample_ms` 1000): a regulator nobody has set up rests in manual with output `0`, unlimited and without sampling; it is configured by setting its inputs.
 | `output` | output | number | `0` | Regulator output, within the output limits |
 | `saturated` | output | bool | `false` | true while the output is at a limit |
 
 Decisions (plan task 23, `src/blocktypes/process.c`):
-- **Type record**: icon `tune`, description `"PID regulator"`, `TIMER_PERIODIC` with `period_ms = 1000`, `compute_on_input`, the engine-wide change threshold; registered after `process/Deadband`. The defaults are those of the table above (an output's default is its value before the first compute).
+- **Type record**: icon `tune`, description `"PID regulator"`, `TIMER_PERIODIC` with `period_ms = 0` (`sample_ms` at rest: no sampling), `compute_on_input`, the engine-wide change threshold; registered after `process/Deadband`. The defaults are those of the table above (an output's default is its value before the first compute).
 - **State**: the integral **term** `I` (in output units, advanced by `Ki·e·dt`), the derivative term `D` of the last sample step, the measurement at that step, and the engine time of that step. Since `I` is stored as a term, changing `ki` never bumps the output; `ki = 0` clears `I` at once, `kd = 0` clears `D` at once.
 - **Derivative discretization**: `D(s) = −σ·Kd·s/(1 + Tf·s)·PV(s)` with `σ = +1` direct, `−1` reverse, and `Tf = |Kd|/max_dgain`, by backward Euler (`s ≈ (1 − z⁻¹)/dt`): `D_k = (Tf·D_{k−1} + Kd·Δy)/(Tf + dt)`, `Δy = −σ·(pv_k − pv_{k−1})`. It is stable for every `Tf >= 0` and `dt > 0`; a measurement step within one sample gives `Kd/(Tf + dt) < max_dgain` times the step, decaying by `Tf/(Tf + dt)` per sample after it. `max_dgain <= 0` or NaN means `Tf = 0`: the unfiltered `Kd·Δy/dt`. A negative `Kd` inverts the term (the filter uses `|Kd|`). The first sample step after `start` (or after an invalid measurement) only records the measurement, with `D = 0`, so the arrival of the first measured value causes no kick.
 - **Sample step** (`reason = TIMER`), `dt` = engine time since the last step (or the start) in seconds, so a late tick whose missed ticks were skipped (01 §3.2) integrates the time that actually passed: advance `D`; then the integral by `inc = Ki·e·dt` with **conditional integration**: with `u0 = P + I + D` before the step, an `inc > 0` is cut to `max(0, output_max − u0)` and an `inc < 0` to `min(0, output_min − u0)` — the integral never drives the output beyond a limit (it lands on the limit, or stays when already beyond it), and an increment back towards the range always applies, so the output leaves the limit at the first sample after the error reverses. Then `output = clamp(P + I + D)`.
 - **Input change** (`reason = INPUT`): `output = clamp(P + I + D)` with the current `P = Kp·e` and the stored `I` and `D`; nothing advances.
-- **Limits**: `saturated` is true while `output <= output_min` or `output >= output_max` (at a limit, including exactly; with equal limits always). A NaN limit is no limit on its side (`∓Infinity`); limits given the wrong way round (`output_min > output_max`) are swapped.
+- **Limits**: `saturated` is true while `output <= output_min` or `output >= output_max` (at a limit, including exactly). A NaN limit is no limit on its side (`∓Infinity`); limits given the wrong way round (`output_min > output_max`) are swapped; **equal limits are no limits** (2026-10-14: both rest at `0`, which would otherwise pin the output to 0), so the output is unclamped and never saturated.
 - **Manual/auto**: in manual every compute sets `output = clamp(manual_value)`; a sample step there still advances `D` (tracking the measurement) but not `I`. Switching to auto (any compute that sees `auto` true after false) presets `I = output − P − D` from the current output, so the output continues without a jump and the next sample integrates from there. With `ki = 0` there is no integral to preset (`I = 0`): the output goes to `P + D` at once. `START` resets the state; in auto the output is `clamp(P)`, in manual `clamp(manual_value)` with `I` preset from it.
 - **Non-finite inputs**: a non-finite `setpoint`, `measured_value`, `kp`, `ki` or `kd` in auto, or a non-finite `manual_value` in manual, **holds** the output (and `saturated`). A sample step with invalid inputs advances neither `I` nor `D` (it restarts the derivative at the next valid sample) but still counts as a step, so the invalid time is not integrated afterwards. A result that is not finite (overflow) holds the output as well.
 - **`sample_ms`**: rounded to whole milliseconds, at least 1 and at most `2^32 − 1`; `<= 0`, NaN or infinite means **no sampling** (no timer; input changes still recompute the output, nothing integrates). Every compute but `STOP` sets the period from it through `BlockCtx.period_ms` (01 §3.2): a change re-arms the timer from now, the next sample one new period later, its `dt` still measured from the last step. Leaving "no sampling" restarts `dt` from that moment, so the idle time is not integrated. A value set while stopped applies at the start.

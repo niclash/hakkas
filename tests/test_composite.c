@@ -637,18 +637,21 @@ static void test_nested(void)
 }
 
 /* timing/Interval inside a composite: start, stop and removal reach its
- * timer; an unwired exposed input holds the inner port's default (1000). */
+ * timer; an unwired exposed input holds the inner port's default (0: idle). */
 static void test_timer(void)
 {
 	setup();
 	CompositeMessage m;
 	CHECK(reg(BLINK, &m) == COMPOSITE_OK);
-	CHECK(block_types_get("t/Blink")->inputs[0].default_value.as.f64 == 1000);
+	CHECK(block_types_get("t/Blink")->inputs[0].default_value.as.f64 == 0);
 	runtime_set_now(&rt, 0);
 	CHECK(graphs_new_graph(&gs, "g2", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
 	CHECK(graphs_add_node(&gs, "g2", "b", "t/Blink", NULL, NULL) == GRAPH_OK);
 	CHECK(graphs_add_node(&gs, "g2", "p", "math/Add2", NULL, NULL) == GRAPH_OK);
 	CHECK(graphs_add_edge(&gs, "g2", "b", "out", "p", "in1", NULL, NULL) == GRAPH_OK);
+	CHECK(in_f64("g2", "b", "ms") == 0);
+	set_initial("g2", "b", "ms", 1000);
+	set_initial("g2", "b", "duty", 50);
 	CHECK(in_f64("g2", "b", "ms") == 1000);
 	CHECK(rt.timer_blocks == 1);
 	uint64_t due;
@@ -666,11 +669,10 @@ static void test_timer(void)
 	drain();
 	CHECK(in_f64("g2", "p", "in1") == 1);
 
-	/* An initial on the exposed input, then removed: back to 1000. */
-	set_initial("g2", "b", "ms", 200);
-	CHECK(in_f64("g2", "b", "ms") == 200);
+	/* The initial on the exposed input removed: back to the inner default. */
 	CHECK(graphs_remove_initial(&gs, "g2", "b", "ms", NULL) == GRAPH_OK);
-	CHECK(in_f64("g2", "b", "ms") == 1000);
+	CHECK(in_f64("g2", "b", "ms") == 0);
+	set_initial("g2", "b", "ms", 1000);
 
 	CHECK(graphs_stop(&gs, "g2", NULL) == GRAPH_OK);
 	CHECK(!runtime_next_deadline(&rt, &due));
@@ -685,6 +687,7 @@ static void test_timer(void)
 
 	/* A graph destroyed with a running instance in it. */
 	CHECK(graphs_add_node(&gs, "g2", "b2", "t/Blink", NULL, NULL) == GRAPH_OK);
+	set_initial("g2", "b2", "ms", 1000);
 	CHECK(rt.timer_blocks == 1 && runtime_next_deadline(&rt, &due));
 	CHECK(graphs_delete_graph(&gs, "g2", GRAPHS_DEFAULT_NAME, NULL) == GRAPH_OK);
 	CHECK(rt.timer_blocks == 0 && !runtime_next_deadline(&rt, &due));

@@ -12,14 +12,14 @@
         </label>
         <input v-else ref="field" class="hk-input" data-testid="value-field" v-model="draft"
                :inputmode="editor === 'number' ? 'decimal' : 'text'" spellcheck="false" autocomplete="off"
-               :placeholder="port.default !== undefined ? port.default : ''" :aria-label="port.id + ' value'"
+               :placeholder="resting" :aria-label="port.id + ' value'"
                :aria-invalid="error !== ''" @focus="editing = true" @blur="leave"
                @keydown.enter.prevent="send" @keydown.escape.stop.prevent="revert"/>
         <button v-if="source.kind === 'fixed'" type="button" class="hk-icon-button" data-testid="value-clear"
                 :aria-label="'Use the default of ' + port.id" title="Use the default" @click="clear">&times;</button>
       </div>
       <p class="hk-inspector-source" data-testid="input-state">
-        {{ source.kind === 'fixed' ? 'Fixed value' : 'Default' + (port.default !== undefined ? ': ' + port.default : '') }}
+        {{ source.kind === 'fixed' ? 'Fixed value' : 'Default: ' + (resting === '' ? 'empty' : resting) }}
       </p>
     </template>
     <p v-if="error" class="hk-inspector-note" role="alert" data-testid="value-error">{{ error }}</p>
@@ -30,7 +30,7 @@
 import {computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch} from "vue";
 import {errorClaims, vueModel} from "@/components/model";
 import {PortView} from "@/components/inspector";
-import {initialRefusals, InputSource, parseTyped, sameValue, valueEditor} from "@/components/initials";
+import {initialRefusals, InputSource, parseTyped, restingValue, sameValue, valueEditor} from "@/components/initials";
 
 // One input of the selected block in the inspector (06 §4.2): what feeds it, and its fixed
 // value's editor. The value changes only with the engine's graph:addinitial/removeinitial.
@@ -39,7 +39,8 @@ const props = defineProps<{ block: string, port: PortView }>();
 const source = computed<InputSource>(() => props.port.source ?? {kind: "default"});
 const editor = computed(() => valueEditor(props.port.type));
 const fixed = computed(() => source.value.kind === "fixed" ? source.value.value : undefined);
-const shownBool = computed(() => (fixed.value ?? props.port.default) === "true");
+const resting = computed(() => restingValue(props.port.type));
+const shownBool = computed(() => (fixed.value ?? resting.value) === "true");
 
 const field = ref<HTMLInputElement | null>(null);
 const draft = ref(fixed.value ?? "");
