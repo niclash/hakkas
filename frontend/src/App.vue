@@ -27,11 +27,12 @@
 
 <script lang="ts" setup>
 import FlowEditor from "./components/floweditor/FlowEditor.vue";
-import {ref} from "vue";
+import {computed, ref, watch} from "vue";
 import Login from "@/components/Login.vue";
 import ThemeSelector from "@/components/ThemeSelector.vue";
 import {Connection} from "@/components/protocols/websocket";
-import {attachModel, can, vueModel} from "@/components/model";
+import {attachModel, can, errorClaims, vueModel} from "@/components/model";
+import {addressFor, Opened, parseAddress, titleFor} from "@/address";
 import {roleLabel} from "@/components/roles";
 import {OnLogin, OnLoginFailed} from "@/components/protocols/environment";
 import {NetworkErrorEvent} from "@/components/protocols/network";
@@ -181,10 +182,73 @@ const onLogin = (conn: Connection, payload: OnLogin) => {
   resuming.value = false;
   vueModel.errors.value = [];
   conn.proto.runtime.request_getruntime();
-  // The process that was open, again (its watches follow, 06 §4.7).
+  // The process that was open, again (its watches follow, 06 §4.7); else the one the address
+  // names (06 §2.1: a bookmark, a reload).
   if (reopen !== "")
     conn.proto.graph.request_connect(reopen);
+  else
+    openAddress(conn);
 };
+
+// ---- The address (06 §2.1) ----------------------------------------------------------------
+
+// What is open now, as the address names it.
+const opened = computed<Opened | undefined>(() => {
+  const id = vueModel.currentGraphId.value;
+  if (id === "")
+    return undefined;
+  return {kind: vueModel.currentComponent.value?.id === id ? "type" : "process", id};
+});
+
+// Opening something adds it to the browser's history (unless the history moved there). Nothing
+// open (after a login, before the address's process opens) leaves the address as it is.
+let fromHistory = false;
+watch(opened, now => {
+  if (now === undefined)
+    return;
+  const address = addressFor(now);
+  if (location.pathname + location.search !== address) {
+    if (fromHistory)
+      history.replaceState(null, "", address);
+    else
+      history.pushState(null, "", address);
+  }
+  fromHistory = false;
+});
+
+watch(() => {
+  const id = vueModel.currentGraphId.value;
+  return vueModel.currentComponent.value?.id === id && id !== ""
+    ? vueModel.currentComponent.value?.name : vueModel.graphs.value.get(id)?.name;
+}, name => document.title = titleFor(name), {immediate: true});
+
+// The address's process or type, asked for; one the engine does not have takes the address
+// back to "/" (its refusal is shown as usual).
+let asked = "";
+const openAddress = (conn: Connection) => {
+  const wanted = parseAddress(location.search);
+  if (wanted === undefined || wanted.id === vueModel.currentGraphId.value) {
+    fromHistory = false;
+    return;
+  }
+  asked = wanted.id;
+  conn.proto.graph.request_connect(wanted.id);
+};
+errorClaims.push((message: string) => {
+  if (asked !== "" && message === "Unknown graph: " + asked) {
+    asked = "";
+    history.replaceState(null, "", "/");
+  }
+  return false;
+});
+
+window.addEventListener("popstate", () => {
+  const conn = vueModel.connection.value;
+  if (conn === undefined || secret.value === "")
+    return;
+  fromHistory = true;
+  openAddress(conn);
+});
 
 const onClosed = (conn: Connection, event: CloseEvent) => {
   if (conn !== vueModel.connection.value)

@@ -6,6 +6,7 @@
     "src/components/model.ts",
     "src/theme.ts",
     "src/session.ts",
+    "src/address.ts",
     "src/components/floweditor/selection/blocks.ts",
     "src/components/inspector.ts",
     "src/components/renaming.ts",

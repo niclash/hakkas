@@ -790,9 +790,11 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   Done (06 §2): the editor stays read-only with stale values while it reconnects (1–30 s
   back-off), resuming the session; it is then rebuilt and reopens the process with its watches.
   The dragging throttle was task 26's. The e2e fixture gained `restart()` (same ports).
-- [ ] **40. Addresses**: the open process in the URL (`/process/<id>`; the web server's SPA
+- [x] **40. Addresses**: the open process in the URL (`/process/<id>`; the web server's SPA
   fallback serves it, 05 §3), so a process can be bookmarked and the browser's back button
   works; after login the URL's process opens.
+  Done (06 §2.1, `src/address.ts`) as `/?process=<id>` and `/?type=<name>`: in the query,
+  since the web server takes a path's `%2F` and `.` as a file's and graph ids may hold both.
 - [ ] **41. Messages**: the log mirror (`network:output`/`network:error` from `log.mirror`,
   05 §4) in a collapsible panel; errors with their process named; the user name and role in
   the top bar; the runtime's label and version (`runtime:runtime`) in an "about" view.
