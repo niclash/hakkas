@@ -21,6 +21,9 @@
  *
  * process/Limit (03 §3.6): output = input capped to [min, max], the limits
  * read as process/PID's (limits_read).
+ *
+ * process/Hysteresis (03 §3.7): a Schmitt trigger, on above threshold +
+ * hysteresis and off below threshold - hysteresis; inverted negates output.
  */
 #include <math.h>
 #include <stdbool.h>
@@ -414,6 +417,51 @@ static int64_t limit(BlockCtx *ctx)
 	return 0;
 }
 
+/* ---- process/Hysteresis (03 §3.7) ------------------------------------------- */
+
+enum { HYST_INPUT, HYST_THRESHOLD, HYST_HYSTERESIS, HYST_INVERTED };
+
+static const PortDescriptor hysteresis_inputs[] = {
+	NUMBER("input", "The value compared"),
+	NUMBER("threshold", "The middle of the switching band"),
+	NUMBER("hysteresis", "Half the width of the band: on above threshold + hysteresis, "
+			     "off below threshold - hysteresis"),
+	BOOL("inverted", "Negates output"),
+};
+
+static const PortDescriptor hysteresis_outputs[] = {
+	BOOL("output", "The state (on = true), negated when inverted"),
+};
+
+typedef struct {
+	bool on; /* the state, before inversion */
+} HysteresisState;
+
+/* hysteresis is used as its absolute value, NaN as 0; a NaN input or
+ * threshold holds the state. START: on only above the band (off inside it). */
+static int64_t hysteresis(BlockCtx *ctx)
+{
+	HysteresisState *d = ctx->state;
+	if (ctx->reason == REASON_STOP)
+		return 0;
+	double in = linkable_to_f64(&ctx->inputs[HYST_INPUT]);
+	double thr = linkable_to_f64(&ctx->inputs[HYST_THRESHOLD]);
+	double h = fabs(linkable_to_f64(&ctx->inputs[HYST_HYSTERESIS]));
+	if (isnan(h))
+		h = 0.0;
+	if (ctx->reason == REASON_START)
+		d->on = false;
+	if (!isnan(in) && !isnan(thr)) {
+		if (in > thr + h)
+			d->on = true;
+		else if (in < thr - h)
+			d->on = false;
+	}
+	bool inverted = linkable_to_bool(&ctx->inputs[HYST_INVERTED]);
+	block_ctx_set_output(ctx, 0, linkable_from_bool(d->on != inverted));
+	return 0;
+}
+
 const BlockTypeDef process_more_block_types[] = {
 	{.name = "process/Curve",
 	 .icon = "show_chart",
@@ -486,6 +534,19 @@ const BlockTypeDef process_more_block_types[] = {
 	 .timer = TIMER_NONE,
 	 .compute = limit,
 	 .state_size = 0,
+	 .change_threshold = NAN},
+	{.name = "process/Hysteresis",
+	 .icon = "swap_vert",
+	 .description = "Schmitt trigger: output on above threshold+hysteresis, "
+			"off below threshold-hysteresis",
+	 .inputs = hysteresis_inputs,
+	 .input_count = ARRAY_LEN(hysteresis_inputs),
+	 .outputs = hysteresis_outputs,
+	 .output_count = ARRAY_LEN(hysteresis_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_NONE,
+	 .compute = hysteresis,
+	 .state_size = sizeof(HysteresisState),
 	 .change_threshold = NAN},
 };
 

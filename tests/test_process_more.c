@@ -626,6 +626,79 @@ static void test_limit(void)
 	teardown();
 }
 
+/* ---- process/Hysteresis (03 §3.7) ------------------------------------------- */
+
+static void test_hysteresis(void)
+{
+	static const char *const ins[] = {"input:number", "threshold:number", "hysteresis:number",
+					  "inverted:bool"};
+	static const char *const outs[] = {"output:bool"};
+	CHECK_PORTS("process/Hysteresis", ins, outs);
+	const BlockTypeDef *t = block_types_get("process/Hysteresis");
+	CHECK(t->compute_on_input && t->timer == TIMER_NONE && t->state_size > 0);
+
+	setup("process/Hysteresis");
+	set("threshold", 20);
+	set("hysteresis", 2);
+	set("input", 21); /* inside the band at the start: off */
+	start_at(0);
+	CHECK(!flag("output"));
+	set("input", 22); /* on only above 22 */
+	CHECK(!flag("output"));
+	set("input", 22.5);
+	CHECK(flag("output"));
+	set("input", 18.5); /* inside the band: stays on */
+	CHECK(flag("output"));
+	set("input", 18);
+	CHECK(flag("output"));
+	set("input", 17.9);
+	CHECK(!flag("output"));
+	set("input", 21);
+	CHECK(!flag("output"));
+
+	/* inverted negates at once, the state stays. */
+	set_bool("inverted", true);
+	CHECK(flag("output"));
+	set("input", 30);
+	CHECK(!flag("output"));
+	set_bool("inverted", false);
+	CHECK(flag("output"));
+
+	/* A negative hysteresis counts as positive; NaN input or threshold holds. */
+	set("hysteresis", -2);
+	set("input", 19);
+	CHECK(flag("output"));
+	set("input", NAN);
+	CHECK(flag("output"));
+	set("input", 10);
+	CHECK(!flag("output"));
+	set("threshold", NAN);
+	set("input", 100);
+	CHECK(!flag("output"));
+	teardown();
+
+	/* At rest: a plain comparator around 0 that keeps its state at 0. */
+	setup("process/Hysteresis");
+	set("input", 1);
+	start_at(0);
+	CHECK(flag("output"));
+	set("input", 0);
+	CHECK(flag("output"));
+	set("input", -0.5);
+	CHECK(!flag("output"));
+	set("input", 0);
+	CHECK(!flag("output"));
+	set("hysteresis", NAN); /* counts as 0 */
+	set("input", 0.1);
+	CHECK(flag("output"));
+	stop_at(10);
+	set("input", -5);
+	CHECK(flag("output")); /* stopped: nothing computes */
+	start_at(20);
+	CHECK(!flag("output"));
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -642,5 +715,6 @@ int main(void)
 	RUN(test_delay_none);
 	RUN(test_trigger);
 	RUN(test_limit);
+	RUN(test_hysteresis);
 	return test_result();
 }

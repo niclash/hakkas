@@ -219,7 +219,7 @@ The limits follow `process/PID`'s (§6.1): **equal limits are no limits** (both 
 
 ### 3.7 `process/Hysteresis` — Schmitt trigger
 
-Decided with the user 2026-10-15 (not implemented yet). A comparator with hysteresis, like a Schmitt trigger in electronics: it switches **on** when `input > threshold + hysteresis` and **off** when `input < threshold − hysteresis`; in between it keeps its state. `inverted` negates the output. Stateful (on/off, before inversion), `compute_on_input`, `TIMER_NONE`. Registered after `process/Limit`.
+Decided with the user 2026-10-15; implemented in plan task 54 (`src/blocktypes/process_more.c`). A comparator with hysteresis, like a Schmitt trigger in electronics: it switches **on** when `input > threshold + hysteresis` and **off** when `input < threshold − hysteresis`; in between it keeps its state. `inverted` negates the output. Stateful (on/off, before inversion), `compute_on_input`, `TIMER_NONE`. Registered after `process/Limit`.
 
 | Port | Direction | Type | Description |
 |---|---|---|---|
