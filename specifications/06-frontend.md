@@ -123,7 +123,7 @@ Implemented 2026-10-14 (plan task 32; decisions D1–D3 of §7). The process lis
 - **Rename**: in place in the list — a double-click on the name or the pen — Enter or leaving the field sends `graph:rename` when the name changed (any string is a valid name); Escape keeps it.
 - **Delete**: asks first, naming the process ("Delete “…”? It is stopped, and its saved file is removed too."), then `runtime:delete_graph`. When the open process is deleted, the editor shows nothing.
 - **New…**: the client picks the new process's id (a random UUID v4 from `crypto.getRandomValues`, which works on a plain-http page, unlike `crypto.randomUUID`) and sends it in `runtime:new_graph`; the process opens when its `runtime:new_graph` arrives.
-- **The open process** also shows its uptime ("Running for 5 min", from `network:status`'s `uptime` and counting on while it runs, or "Stopped") and its description, read-only (D3).
+- **The open process** also shows its uptime ("Running for 5 min", from `network:status`'s `uptime` and counting on while it runs, or "Stopped") and its description, read-only (D3). Its row is highlighted with the accent colors while it runs and with a **red tint** (the theme's danger colors) while it is stopped, so that a stopped process — whose values do not change — is noticed.
 
 ### 4.7 Live values
 

@@ -1,5 +1,5 @@
 <template>
-  <li class="hk-list-item hk-process" data-testid="process" :data-id="id" :class="{active, unsaved: graph.unsaved}"
+  <li class="hk-list-item hk-process" data-testid="process" :data-id="id" :class="{active, unsaved: graph.unsaved, stopped: !graph.running}"
       :title="graph.description" @click="!renaming && emit('open')">
     <span class="hk-state" :class="{running: graph.running}" data-testid="process-state"
           :title="graph.running ? 'Running' : 'Stopped'"></span>

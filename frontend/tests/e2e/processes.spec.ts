@@ -19,6 +19,11 @@ test.use({graphs: [second, EXAMPLE_GRAPH]});
 
 const row = (page: Page, name: string) => processItem(page, name);
 
+const hexToRgb = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`;
+};
+
 test("start and stop a process that is not open; the open one shows its uptime and description", async ({page, engine}) => {
     await loggedIn(page, engine.url);
     const other = await engine.client();
@@ -29,10 +34,16 @@ test("start and stop a process that is not open; the open one shows its uptime a
     await expect(row(page, "Second").getByTestId("process-unsaved")).toBeVisible();
     await openProcess(page, "Second");
     await expect(row(page, "Second").getByTestId("process-uptime")).toHaveText("Running for less than a minute");
+    const accent = await row(page, "Second").evaluate(e => getComputedStyle(e).backgroundColor);
     await expect(row(page, "Second").getByTestId("process-description")).toHaveText("The other one");
     await row(page, "Second").getByTestId("process-run").click();
     await expect(row(page, "Second").getByTestId("process-state")).not.toHaveClass(/running/);
     await expect(row(page, "Second").getByTestId("process-uptime")).toHaveText("Stopped");
+    // The open process, stopped, is tinted red instead of the accent.
+    await expect(row(page, "Second")).toHaveClass(/stopped/);
+    const tint = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--hk-danger-bg").trim());
+    await expect(row(page, "Second")).toHaveCSS("background-color", hexToRgb(tint));
+    expect(hexToRgb(tint)).not.toBe(accent);
     await expect(row(page, "Second").getByTestId("process-unsaved")).toHaveCount(0);
     expect(other).toBeTruthy();
 });

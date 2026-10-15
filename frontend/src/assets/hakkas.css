@@ -355,6 +355,12 @@ h1, h2, h3 {
   font-weight: 600;
 }
 
+/* The open process, stopped: a red tint, so that values not changing are not a surprise. */
+.hk-process.active.stopped {
+  background: var(--hk-danger-bg);
+  border-color: var(--hk-danger);
+}
+
 .hk-empty {
   color: var(--hk-text-muted);
   font-style: italic;
