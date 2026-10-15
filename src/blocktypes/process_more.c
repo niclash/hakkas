@@ -15,6 +15,9 @@
  *
  * process/Delay (03 §3.4): input reaches output once it has been stable for
  * milliseconds; a TIMER_SCHEDULED type woken when the wait ends.
+ *
+ * process/Trigger (03 §3.5): output false on a rising edge of arm, true on a
+ * rising edge of fire, each regardless of the other input.
  */
 #include <math.h>
 #include <stdbool.h>
@@ -328,6 +331,42 @@ static int64_t delay(BlockCtx *ctx)
 	return next;
 }
 
+/* ---- process/Trigger (03 §3.5) ---------------------------------------------- */
+
+enum { TRIGGER_ARM, TRIGGER_FIRE };
+
+static const PortDescriptor trigger_inputs[] = {
+	BOOL("arm", "Its rising edge sets output to false"),
+	BOOL("fire", "Its rising edge sets output to true"),
+};
+
+static const PortDescriptor trigger_outputs[] = {
+	BOOL("output", "false since the last rising arm, true since the last rising fire"),
+};
+
+typedef struct {
+	bool arm, fire; /* their to_bool values at the last compute */
+} TriggerState;
+
+/* START: output false, the inputs recorded without counting as edges. Then
+ * only the rising edges change output; one input changes per compute, so
+ * they never coincide. */
+static int64_t trigger(BlockCtx *ctx)
+{
+	TriggerState *d = ctx->state;
+	if (ctx->reason == REASON_STOP)
+		return 0;
+	bool arm = linkable_to_bool(&ctx->inputs[TRIGGER_ARM]);
+	bool fire = linkable_to_bool(&ctx->inputs[TRIGGER_FIRE]);
+	if (ctx->reason == REASON_START || (arm && !d->arm))
+		block_ctx_set_output(ctx, 0, linkable_from_bool(false));
+	else if (fire && !d->fire)
+		block_ctx_set_output(ctx, 0, linkable_from_bool(true));
+	d->arm = arm;
+	d->fire = fire;
+	return 0;
+}
+
 const BlockTypeDef process_more_block_types[] = {
 	{.name = "process/Curve",
 	 .icon = "show_chart",
@@ -376,6 +415,18 @@ const BlockTypeDef process_more_block_types[] = {
 	 .timer = TIMER_SCHEDULED,
 	 .compute = delay,
 	 .state_size = sizeof(DelayState),
+	 .change_threshold = NAN},
+	{.name = "process/Trigger",
+	 .icon = "bolt",
+	 .description = "output false when arm rises, true when fire rises",
+	 .inputs = trigger_inputs,
+	 .input_count = ARRAY_LEN(trigger_inputs),
+	 .outputs = trigger_outputs,
+	 .output_count = ARRAY_LEN(trigger_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_NONE,
+	 .compute = trigger,
+	 .state_size = sizeof(TriggerState),
 	 .change_threshold = NAN},
 };
 

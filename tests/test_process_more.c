@@ -539,6 +539,57 @@ static void test_delay_none(void)
 	teardown();
 }
 
+/* ---- process/Trigger (03 §3.5) ---------------------------------------------- */
+
+static void test_trigger(void)
+{
+	static const char *const ins[] = {"arm:bool", "fire:bool"};
+	static const char *const outs[] = {"output:bool"};
+	CHECK_PORTS("process/Trigger", ins, outs);
+	const BlockTypeDef *t = block_types_get("process/Trigger");
+	CHECK(t->compute_on_input && t->timer == TIMER_NONE && t->state_size > 0);
+
+	setup("process/Trigger");
+	start_at(0);
+	CHECK(!flag("output"));
+	set_bool("fire", true); /* fire rises, also while not armed */
+	CHECK(flag("output"));
+	set_bool("arm", true); /* arm rises while fire is true: false */
+	CHECK(!flag("output"));
+	set_bool("fire", false);
+	CHECK(!flag("output"));
+	set_bool("fire", true);
+	CHECK(flag("output"));
+	set_bool("fire", false); /* falling edges change nothing */
+	set_bool("arm", false);
+	CHECK(flag("output"));
+	set_bool("arm", true);
+	CHECK(!flag("output"));
+	set("arm", 2); /* still true: no edge */
+	set_bool("fire", true);
+	CHECK(flag("output"));
+	set("fire", 7);
+	CHECK(flag("output"));
+	teardown();
+
+	/* Inputs true at the start are no edges. */
+	setup("process/Trigger");
+	set_bool("fire", true);
+	start_at(0);
+	CHECK(!flag("output"));
+	set_bool("arm", true);
+	set_bool("arm", false);
+	CHECK(!flag("output"));
+	set_bool("fire", false);
+	set_bool("fire", true);
+	CHECK(flag("output"));
+	stop_at(10);
+	CHECK(flag("output")); /* STOP changes nothing */
+	start_at(20);
+	CHECK(!flag("output")); /* fire still true: no edge at the restart */
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -553,5 +604,6 @@ int main(void)
 	RUN(test_alarm_presentation_and_restart);
 	RUN(test_delay);
 	RUN(test_delay_none);
+	RUN(test_trigger);
 	return test_result();
 }

@@ -193,7 +193,7 @@ Decided with the user 2026-10-15; implemented in plan task 51 (`src/blocktypes/p
 
 ### 3.5 `process/Trigger` — arm and fire
 
-Decided with the user 2026-10-15 (not implemented yet). `output` changes state **only on two edges**, each regardless of the other input: a **rising edge of `arm`** (false → true) sets `output` to false, and a **rising edge of `fire`** sets it to true. Nothing else changes it: not the levels of the inputs, not falling edges. So a `fire` that is already true when `arm` rises leaves `output` false until `fire` goes false and then true again. Stateful (the last values of `arm` and `fire`), `compute_on_input`, `TIMER_NONE`. Registered after `process/Delay`.
+Decided with the user 2026-10-15; implemented in plan task 52 (`src/blocktypes/process_more.c`). `output` changes state **only on two edges**, each regardless of the other input: a **rising edge of `arm`** (false → true) sets `output` to false, and a **rising edge of `fire`** sets it to true. Nothing else changes it: not the levels of the inputs, not falling edges. So a `fire` that is already true when `arm` rises leaves `output` false until `fire` goes false and then true again. Stateful (the last values of `arm` and `fire`), `compute_on_input`, `TIMER_NONE`. Registered after `process/Delay`.
 
 | Port | Direction | Type | Description |
 |---|---|---|---|

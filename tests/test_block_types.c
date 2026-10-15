@@ -187,6 +187,7 @@ static const struct {
 	{"process/Alarm", "notifications", "alarm states of a condition"},
 	{"process/Delay", "hourglass_empty",
 	 "output takes input once it has been stable for milliseconds"},
+	{"process/Trigger", "bolt", "output false when arm rises, true when fire rises"},
 };
 
 #define PROCESS_MORE_COUNT (sizeof(process_more) / sizeof(process_more[0]))
