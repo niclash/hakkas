@@ -52,6 +52,7 @@ The frontend obeys `02-wire-protocol.md` §1.1 strictly: **a user action only se
 ## 4. Rendering a process
 
 - A **block** is a Rete node titled with the block id, its ports taken from its type's `component:component`: outputs first, then inputs, each in the type's port order. A block whose type is not registered (a placeholder, `05-app-lifecycle-persistence.md` §2.2) is drawn without ports.
+- **Proportions** (decided with the user 2026-10-15): a block is 180 px wide and `70 + 36 × ports` px high; its title is 22.4 px and its port names 26 px, in a title bar with 2 px of padding above and below, so the larger text needs no larger block.
 - A block's **position** is its metadata's `x`/`y`, from `graph:addnode` and `graph:changenode`. Other metadata is not used yet.
 - A **connection** is a Rete connection between the two ports.
 - An **initial** (a fixed value) is drawn as a **value node** connected to its input (§4.3); the value is shown as the event carries it (a string, `02-wire-protocol.md` §3.4).
