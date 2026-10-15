@@ -1,3 +1,4 @@
 [
-  "./docs/example.json"
+  "example.json",
+  "shunt-group.json"
 ]

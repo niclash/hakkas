@@ -113,7 +113,7 @@ export class ValueNode extends Classic.Node {
     value: string;              // as the event carries it
     blockLabel: string;         // the block's id in the process, for commands
     editRequested = false;      // its menu's "Change value…": open the field at the next update
-    width = 110;
+    width = 165;
     height = 36;
 
     constructor(block: PrimitiveNode, port: string, value: string) {
@@ -139,8 +139,8 @@ export class PortNode extends Classic.Node {
     name: string;               // the public name
     readonly block: string;     // the editor's id of the block
     readonly port: string;
-    width = 130;
-    height = 32;
+    width = 260;
+    height = 36;
 
     constructor(direction: "in" | "out", name: string, block: PrimitiveNode, port: string) {
         super(name);

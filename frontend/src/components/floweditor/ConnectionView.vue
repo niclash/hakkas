@@ -3,7 +3,7 @@
   <svg :class="kind === 'value' ? 'hk-value-connection' : kind === 'port' ? 'hk-port-connection' : 'hk-connection'"
        :data-testid="kind === 'value' ? 'value-connection' : kind === 'port' ? 'port-connection' : 'connection'">
     <path ref="line" :d="path"/>
-    <foreignObject v-if="value !== undefined" :x="middle.x - 70" :y="middle.y - 12" width="140" height="24">
+    <foreignObject v-if="value !== undefined" :x="middle.x - 140" :y="middle.y - 24" width="280" height="48">
       <div class="hk-live" :class="{stale: value.stale}" data-testid="live-value" :data-target="target"
            :title="value.stale ? 'Not current: the connection to the engine was lost' : 'Live value'">
         <span>{{ text }}</span>

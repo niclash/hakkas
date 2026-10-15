@@ -852,7 +852,7 @@ h1, h2, h3 {
 #hk-editor .hk-value-node {
   position: relative;
   box-sizing: border-box;
-  width: 110px;
+  width: 165px;
   height: 36px;
   display: flex;
   align-items: center;
@@ -863,7 +863,7 @@ h1, h2, h3 {
   color: var(--hk-node-text);
   border: var(--hk-node-border-width) dashed var(--hk-node-border);
   border-radius: 18px;
-  font-size: 13px;
+  font-size: 19.5px;
   cursor: text;
   user-select: none;
 }
@@ -963,7 +963,7 @@ h1, h2, h3 {
   color: var(--hk-node-title-text);
   background: var(--hk-node-title-bg);
   font-family: inherit;
-  font-size: 22.4px;
+  font-size: 20px;
   font-weight: 600;
   padding: 2px 10px;
   margin-bottom: 4px;
@@ -1082,8 +1082,8 @@ h1, h2, h3 {
 /* Process ports (06 §4.8): markers at the process's edge and their lines. */
 #hk-editor .hk-port-node {
   box-sizing: border-box;
-  width: 130px;
-  height: 32px;
+  width: 260px;
+  height: 36px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1091,7 +1091,7 @@ h1, h2, h3 {
   color: var(--hk-accent-text);
   background: var(--hk-accent);
   border-radius: 4px;
-  font-size: 13px;
+  font-size: 26px;
   font-weight: 600;
   cursor: default;
   user-select: none;
@@ -1163,12 +1163,12 @@ h1, h2, h3 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 1px 6px;
-  font-size: 12px;
+  padding: 2px 12px;
+  font-size: 24px;
   font-variant-numeric: tabular-nums;
   color: var(--hk-accent-text);
   background: var(--hk-accent);
-  border-radius: 10px;
+  border-radius: 20px;
 }
 
 #hk-editor .hk-live.stale span {
