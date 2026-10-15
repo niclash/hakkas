@@ -841,3 +841,35 @@ behavior tested in `tests/test_process_more.c`.
 - [x] **55. `process/Exponential` and `process/Logarithmic`** (03 §3.8).
 - [x] **56. `process/Integrator`** (03 §3.9): exact for a piecewise constant input, so
   `sample_ms` only sets how often the output moves.
+
+## Phase 7 — Requested 2026-10-15 (not started)
+
+- [ ] **57. Cut, copy and paste of a block selection across browsers** (06 §4.10). Copy and
+  paste already go through the system clipboard (`text/plain` plus
+  `application/x-hakkas-blocks`, `frontend/src/components/floweditor/copypaste.ts`), but only
+  Chromium is tested. To do: **Cut** (Ctrl+X / ⌘X and a menu item: copy, then delete the
+  selection as one undo step, 06 §4.13), and copy/paste verified between different browsers
+  (Chromium, Firefox, Safari/WebKit; e.g. Playwright's `firefox` and `webkit` projects for the
+  clipboard suite), fixing what differs.
+- [ ] **58. Uploading a block type library over HTTP, not the WebSocket**: one or more composite
+  type files (03 §5.1, e.g. `library/schedules/`, today installed by copying them into
+  `<datadir>/types/`, 05 §2.3) sent as an ordinary file upload to the web server, then
+  registered as if loaded at startup, so every client gets `component:component`. The web
+  server is already portable core (`src/engine/web_server.c`, on the engine loop and PAL
+  sockets, 05 §3), so it runs unchanged on Zephyr and stays out of `src/platform/`. To decide
+  first:
+  - **Authentication**: the web server has none (05 §3) and the WebSocket session is not
+    visible to it; e.g. a short-lived upload token issued over the authenticated WebSocket
+    (which is a protocol addition, so the user decides), or the session's resume key. Only
+    roles that may create types (02 §2.4) may upload.
+  - **Request shape**: `POST`/`PUT` of one type file or `multipart/form-data` with several;
+    a size limit per file and per request (MCU RAM); streaming into storage rather than
+    buffering.
+  - **Results**: each file validated exactly like a type file at startup (03 §5.1) with
+    per-file refusals (`Component exists`, malformed), what happens to an existing type
+    (refuse or replace, and `"Component in use"`), and how the reply reaches the uploader.
+  - **Frontend**: where the upload lives (the palette, or the type's family) and how its
+    result is shown (06).
+  - **Zephyr**: whether the web server must share its port or listener with other Zephyr
+    services (today it has its own port, the WebSocket `port + 1`, 02 §0); only that would
+    affect the WebSocket side.
