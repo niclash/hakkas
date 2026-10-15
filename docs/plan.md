@@ -822,3 +822,20 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   hide and organize environment ports.
 - **Connection routes**: Rete's reroute pins kept in the connection's metadata (`changeedge`,
   `route`), so a hand-routed wire survives a reload and is shared with other users.
+
+## Phase 6 — More block types (03 §3.2–§3.9, §7.1)
+
+Decided with the user 2026-10-15 and specified first; each type is one commit, in the order of
+the 03 §3 table, in `src/blocktypes/process_more.c` (registered after `process/PID`), with its
+behavior tested in `tests/test_process_more.c`.
+
+- [x] **48. `process/Curve`** (03 §3.2): seven points, the non-rising ones skipped, linear
+  interpolation, `min`/`max` outside the end points.
+- [ ] **49. `process/AutoMan`** (03 §3.3).
+- [ ] **50. `process/Alarm`** (03 §7.1).
+- [ ] **51. `process/Delay`** (03 §3.4).
+- [ ] **52. `process/Trigger`** (03 §3.5).
+- [ ] **53. `process/Limit`** (03 §3.6).
+- [ ] **54. `process/Hysteresis`** (03 §3.7).
+- [ ] **55. `process/Exponential` and `process/Logarithmic`** (03 §3.8).
+- [ ] **56. `process/Integrator`** (03 §3.9).

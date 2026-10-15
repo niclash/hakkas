@@ -177,6 +177,16 @@ static const struct {
 
 #define CALENDAR_COUNT (sizeof(calendar) / sizeof(calendar[0]))
 
+/* The process/ types after process/PID (their ports and behavior:
+ * tests/test_process_more.c), with their icons and descriptions. */
+static const struct {
+	const char *name, *icon, *description;
+} process_more[] = {
+	{"process/Curve", "show_chart", "output follows a curve of up to 7 points"},
+};
+
+#define PROCESS_MORE_COUNT (sizeof(process_more) / sizeof(process_more[0]))
+
 static void check_port(const PortDescriptor *p, const char *name, const char *type)
 {
 	CHECK_STREQ(p->name, name);
@@ -219,10 +229,10 @@ static void test_builtins(void)
 {
 	block_types_reset();
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
-	CHECK(block_types_count() == EXPECTED_COUNT + 2 + CALENDAR_COUNT);
+	CHECK(block_types_count() == EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + CALENDAR_COUNT);
 	/* Registering them twice is refused. */
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_ERR_EXISTS);
-	CHECK(block_types_count() == EXPECTED_COUNT + 2 + CALENDAR_COUNT);
+	CHECK(block_types_count() == EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + CALENDAR_COUNT);
 
 	for (size_t k = 0; k < EXPECTED_COUNT; k++) {
 		const struct expected_type *e = &table[k];
@@ -325,9 +335,21 @@ static void test_builtins(void)
 		}
 	}
 
+	/* The process/ types after process/PID. */
+	for (size_t k = 0; k < PROCESS_MORE_COUNT; k++) {
+		t = block_types_get(process_more[k].name);
+		CHECK(t != NULL && block_types_at(EXPECTED_COUNT + 1 + k) == t);
+		if (t == NULL)
+			continue;
+		CHECK_STREQ(t->icon, process_more[k].icon);
+		CHECK_STREQ(t->description, process_more[k].description);
+		CHECK(t->compute != NULL && !t->subgraph && t->composite == NULL);
+		CHECK(!t->wall_clock);
+	}
+
 	/* timing/Interval (03 §3.1), after the process/ family. */
 	t = block_types_get("timing/Interval");
-	CHECK(t != NULL && block_types_at(EXPECTED_COUNT + 1) == t);
+	CHECK(t != NULL && block_types_at(EXPECTED_COUNT + 1 + PROCESS_MORE_COUNT) == t);
 	if (t != NULL) {
 		CHECK_STREQ(t->icon, "timer");
 		CHECK_STREQ(t->description, "periodic pulse generator: PWM or edge generator");
@@ -356,7 +378,8 @@ static void test_builtins(void)
 	/* The calendar primitives, after timing/Interval. */
 	for (size_t k = 0; k < CALENDAR_COUNT; k++) {
 		t = block_types_get(calendar[k].name);
-		CHECK(t != NULL && block_types_at(EXPECTED_COUNT + 2 + k) == t);
+		size_t at = EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + k;
+		CHECK(t != NULL && block_types_at(at) == t);
 		if (t == NULL)
 			continue;
 		CHECK_STREQ(t->icon, calendar[k].icon);

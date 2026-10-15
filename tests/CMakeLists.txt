@@ -26,6 +26,8 @@ hakkas_add_test(test_environment LIBS hakkas_pal_posix)
 hakkas_add_test(test_timers)
 # process/PID (plan task 23, 03 §6.1), on a simulated plant in explicit engine time.
 hakkas_add_test(test_pid)
+# The process/ types of 03 §3.2-§3.9 and §7.1 (blocktypes/process_more.c).
+hakkas_add_test(test_process_more)
 # Compares with glibc's localtime_r under TZ (setenv, tzset, tm_gmtoff).
 hakkas_add_test(test_tz)
 target_compile_definitions(test_tz PRIVATE _GNU_SOURCE)

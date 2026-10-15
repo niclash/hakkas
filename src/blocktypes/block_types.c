@@ -106,6 +106,8 @@ enum block_types_err block_types_register_builtins(void)
 	if (err == BLOCK_TYPES_OK)
 		err = register_all(process_block_types, process_block_types_count);
 	if (err == BLOCK_TYPES_OK)
+		err = register_all(process_more_block_types, process_more_block_types_count);
+	if (err == BLOCK_TYPES_OK)
 		err = register_all(timing_block_types, timing_block_types_count);
 	if (err == BLOCK_TYPES_OK)
 		err = register_all(calendar_block_types, calendar_block_types_count);

@@ -140,7 +140,7 @@ Decisions (plan task 8, `src/blocktypes/timing.c`):
 
 ### 3.2 `process/Curve` — piecewise linear curve
 
-Decided with the user 2026-10-15 (not implemented yet). Converts one value into another along a curve of up to seven points `(x1, y1)` … `(x7, y7)`, interpolating linearly between them. The first and last points used are also the output's limits. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. Registered after `process/PID`.
+Decided with the user 2026-10-15; implemented in plan task 48 (`src/blocktypes/process_more.c`). Converts one value into another along a curve of up to seven points `(x1, y1)` … `(x7, y7)`, interpolating linearly between them. The first and last points used are also the output's limits. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. Registered after `process/PID`.
 
 | Port | Direction | Type | Description |
 |---|---|---|---|
