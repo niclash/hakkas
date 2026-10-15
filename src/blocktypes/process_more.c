@@ -9,10 +9,14 @@
  *
  * process/AutoMan (03 §3.3): a manual override, output = override ? manual :
  * input, with no bumpless transfer.
+ *
+ * process/Alarm (03 §7.1): the state of an alarm condition, which a person
+ * acknowledges; see the comment above its compute function.
  */
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "blocktypes/builtins.h"
 
@@ -129,6 +133,133 @@ static int64_t automan(BlockCtx *ctx)
 	return 0;
 }
 
+/* ---- process/Alarm (03 §7.1) ------------------------------------------------ */
+
+enum { ALARM_INPUT, ALARM_ACKNOWLEDGE, ALARM_BLOCK, ALARM_DISABLE, ALARM_CATEGORY, ALARM_CLASS };
+
+/* The states, in the order of the boolean outputs; ALARM_STATE_OUT is the
+ * string output after them. */
+typedef enum {
+	ALARM_NORMAL,
+	ALARM_ACTIVATED,
+	ALARM_DEACTIVATED,
+	ALARM_REACTIVATED,
+	ALARM_ACKNOWLEDGED,
+	ALARM_DISABLED,
+	ALARM_BLOCKED,
+	ALARM_STATES,
+	ALARM_STATE_OUT = ALARM_STATES,
+} AlarmState;
+
+static const char *const alarm_names[ALARM_STATES] = {
+	"Normal", "Activated", "Deactivated", "Reactivated", "Acknowledged", "Disabled", "Blocked",
+};
+
+static const PortDescriptor alarm_inputs[] = {
+	BOOL("input", "The alarm condition: true while the alarmed situation exists"),
+	BOOL("acknowledge",
+	     "A push button: a person has noticed the alarm (acts on its rising edge)"),
+	BOOL("block", "Blocks the alarm: no state changes; state Blocked"),
+	BOOL("disable", "Disables the alarm: no state changes; state Disabled"),
+	{.name = "category", .description = "Free text for the presentation", .type = "string",
+	 .default_value = LINKABLE_EMPTY_STRING_INIT},
+	{.name = "class", .description = "The alarm class: A, B, C or D (anything else: C)",
+	 .type = "string", .default_value = LINKABLE_EMPTY_STRING_INIT},
+};
+
+static const PortDescriptor alarm_outputs[] = {
+	BOOL("normal", "true while the alarm is Normal"),
+	BOOL("activated", "true while the alarm is Activated"),
+	BOOL("deactivated", "true while the alarm is Deactivated: gone, not acknowledged"),
+	BOOL("reactivated", "true while the alarm is Reactivated: back before acknowledged"),
+	BOOL("acknowledged", "true while the alarm is Acknowledged"),
+	BOOL("disabled", "true while the alarm is Disabled"),
+	BOOL("blocked", "true while the alarm is Blocked"),
+	{.name = "state", .description = "The current state's name", .type = "string",
+	 .default_value = LINKABLE_EMPTY_STRING_INIT},
+};
+
+typedef struct {
+	AlarmState state;
+	bool input;	  /* to_bool(input) at the last compute */
+	bool acknowledge; /* to_bool(acknowledge) at the last compute */
+} AlarmStateData;
+
+/* The state after Normal once input has been evaluated. */
+static AlarmState alarm_evaluate(bool input)
+{
+	return input ? ALARM_ACTIVATED : ALARM_NORMAL;
+}
+
+/* One step of the transition table for an input change (on/off) or an
+ * acknowledgement (a rising edge of acknowledge). */
+static AlarmState alarm_transition(AlarmState s, bool on, bool off, bool ack)
+{
+	switch (s) {
+	case ALARM_NORMAL:
+		return on ? ALARM_ACTIVATED : s;
+	case ALARM_ACTIVATED:
+		return off ? ALARM_DEACTIVATED : ack ? ALARM_ACKNOWLEDGED : s;
+	case ALARM_DEACTIVATED:
+		return on ? ALARM_REACTIVATED : ack ? ALARM_NORMAL : s;
+	case ALARM_REACTIVATED:
+		return off ? ALARM_DEACTIVATED : ack ? ALARM_ACKNOWLEDGED : s;
+	case ALARM_ACKNOWLEDGED:
+		return off ? ALARM_NORMAL : s;
+	default:
+		return s;
+	}
+}
+
+/*
+ * process/Alarm (03 §7.1):
+ *  - disable wins over block: while disable is true the state is Disabled,
+ *    else while block is true Blocked; neither input changes nor presses
+ *    change it then.
+ *  - Leaving Disabled/Blocked, and START, go to Normal and then evaluate
+ *    input (Activated if the condition holds); the outputs, pushed once
+ *    after the compute, show only that final state.
+ *  - Otherwise the transition table, for the input that changed: input on or
+ *    off (a change of to_bool(input) since the last compute), or a rising
+ *    edge of acknowledge.
+ *  - The state string is replaced only when the state changes (a string
+ *    allocates). category and class change nothing: they are for alarm
+ *    views, which read class as C unless it is exactly A, B, C or D.
+ */
+static int64_t alarm(BlockCtx *ctx)
+{
+	AlarmStateData *d = ctx->state;
+	if (ctx->reason == REASON_STOP)
+		return 0;
+	bool input = linkable_to_bool(&ctx->inputs[ALARM_INPUT]);
+	bool ack = linkable_to_bool(&ctx->inputs[ALARM_ACKNOWLEDGE]);
+	AlarmState before = d->state;
+	AlarmState s;
+	if (linkable_to_bool(&ctx->inputs[ALARM_DISABLE]))
+		s = ALARM_DISABLED;
+	else if (linkable_to_bool(&ctx->inputs[ALARM_BLOCK]))
+		s = ALARM_BLOCKED;
+	else if (ctx->reason == REASON_START || before == ALARM_DISABLED ||
+		 before == ALARM_BLOCKED)
+		s = alarm_evaluate(input);
+	else
+		s = alarm_transition(before, input && !d->input, !input && d->input,
+				     ack && !d->acknowledge);
+	d->state = s;
+	d->input = input;
+	d->acknowledge = ack;
+
+	for (int i = 0; i < ALARM_STATES; i++)
+		block_ctx_set_output(ctx, (uint32_t)i, linkable_from_bool(i == (int)s));
+	const Linkable *cur = &ctx->outputs[ALARM_STATE_OUT];
+	if (cur->type != LINKABLE_STRING || strcmp(cur->as.s, alarm_names[s]) != 0) {
+		Linkable name = {0};
+		if (linkable_from_string(&name, alarm_names[s], strlen(alarm_names[s])))
+			block_ctx_set_output(ctx, ALARM_STATE_OUT, name);
+	}
+	return 0;
+}
+
 const BlockTypeDef process_more_block_types[] = {
 	{.name = "process/Curve",
 	 .icon = "show_chart",
@@ -153,6 +284,18 @@ const BlockTypeDef process_more_block_types[] = {
 	 .timer = TIMER_NONE,
 	 .compute = automan,
 	 .state_size = 0,
+	 .change_threshold = NAN},
+	{.name = "process/Alarm",
+	 .icon = "notifications",
+	 .description = "alarm states of a condition",
+	 .inputs = alarm_inputs,
+	 .input_count = ARRAY_LEN(alarm_inputs),
+	 .outputs = alarm_outputs,
+	 .output_count = ARRAY_LEN(alarm_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_NONE,
+	 .compute = alarm,
+	 .state_size = sizeof(AlarmStateData),
 	 .change_threshold = NAN},
 };
 

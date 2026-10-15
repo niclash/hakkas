@@ -442,7 +442,7 @@ Decisions (plan task 24; `src/blocktypes/calendar.h`, `calendar.c`, `logic.c`, `
 
 ### 7.1 `process/Alarm` — alarm handling
 
-Decided with the user 2026-10-15 (`00-README.md` open question 15; not implemented yet; more details about alarms are to be documented later). An alarm block follows an **alarm condition** (`input`) and keeps the alarm's **state**, which a person acknowledges. Its presentation inputs (`category`, `class`) are for alarm views in the user interface and do not change its behavior. Stateful (the current state, the last `input` and `acknowledge` values), `compute_on_input`, `TIMER_NONE`. Registered after `process/AutoMan`.
+Decided with the user 2026-10-15 (`00-README.md` open question 15; more details about alarms are to be documented later); implemented in plan task 50 (`src/blocktypes/process_more.c`). An alarm block follows an **alarm condition** (`input`) and keeps the alarm's **state**, which a person acknowledges. Its presentation inputs (`category`, `class`) are for alarm views in the user interface and do not change its behavior. Stateful (the current state, the last `input` and `acknowledge` values), `compute_on_input`, `TIMER_NONE`. Registered after `process/AutoMan`.
 
 **States**: `Normal`, `Activated`, `Deactivated`, `Reactivated`, `Acknowledged`, `Disabled`, `Blocked`. The alarm is in exactly one of them at a time.
 

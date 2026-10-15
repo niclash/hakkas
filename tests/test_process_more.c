@@ -8,6 +8,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <strings.h>
 
 #include "blocktypes/block_types.h"
 #include "graphs/deadlines.h"
@@ -61,7 +62,7 @@ static inline void set_bool(const char *port, bool v)
 	set_at(rt.now_ms, port, linkable_from_bool(v));
 }
 
-static inline void set_str(const char *port, const char *text)
+static void set_str(const char *port, const char *text)
 {
 	Linkable v = {0};
 	CHECK(linkable_from_string(&v, text, strlen(text)));
@@ -301,6 +302,163 @@ static void test_automan(void)
 	teardown();
 }
 
+/* ---- process/Alarm (03 §7.1) ------------------------------------------------ */
+
+static const char *const alarm_states[] = {
+	"normal", "activated", "deactivated", "reactivated", "acknowledged", "disabled", "blocked",
+};
+
+/* The alarm is in state name (e.g. "Activated"): its boolean output alone is
+ * true, and the state string names it. */
+static bool alarm_is(const char *name)
+{
+	bool ok = true;
+	for (size_t i = 0; i < sizeof(alarm_states) / sizeof(alarm_states[0]); i++) {
+		bool want = strcasecmp(alarm_states[i], name) == 0;
+		if (flag(alarm_states[i]) != want)
+			ok = false;
+	}
+	const Linkable *v = output("state");
+	if (v->type != LINKABLE_STRING || strcmp(v->as.s, name) != 0)
+		ok = false;
+	if (!ok)
+		fprintf(stderr, "  not in state %s (state output: %s)\n", name,
+			v->type == LINKABLE_STRING ? v->as.s : "?");
+	return ok;
+}
+
+static void ack(void)
+{
+	set_bool("acknowledge", true);
+	set_bool("acknowledge", false);
+}
+
+static void test_alarm_ports(void)
+{
+	static const char *const ins[] = {"input:bool",	  "acknowledge:bool", "block:bool",
+					  "disable:bool", "category:string",  "class:string"};
+	static const char *const outs[] = {
+		"normal:bool",	     "activated:bool", "deactivated:bool", "reactivated:bool",
+		"acknowledged:bool", "disabled:bool",  "blocked:bool",	   "state:string",
+	};
+	CHECK_PORTS("process/Alarm", ins, outs);
+	const BlockTypeDef *t = block_types_get("process/Alarm");
+	CHECK(t->compute_on_input && t->timer == TIMER_NONE && t->state_size > 0);
+}
+
+/* The transition table, every row. */
+static void test_alarm_transitions(void)
+{
+	setup("process/Alarm");
+	start_at(0);
+	CHECK(alarm_is("Normal")); /* at rest: enabled, not blocked */
+	ack();
+	CHECK(alarm_is("Normal")); /* Ack in Normal: nothing */
+	set_bool("input", true);
+	CHECK(alarm_is("Activated"));
+	set_bool("input", false);
+	CHECK(alarm_is("Deactivated"));
+	set_bool("input", true);
+	CHECK(alarm_is("Reactivated"));
+	set_bool("input", false);
+	CHECK(alarm_is("Deactivated"));
+	set_bool("input", true);
+	ack();
+	CHECK(alarm_is("Acknowledged")); /* from Reactivated */
+	ack();
+	CHECK(alarm_is("Acknowledged"));
+	set_bool("input", false);
+	CHECK(alarm_is("Normal"));
+
+	set_bool("input", true);
+	ack();
+	CHECK(alarm_is("Acknowledged")); /* from Activated */
+	set_bool("input", false);
+	set_bool("input", true);
+	CHECK(alarm_is("Activated"));
+	set_bool("input", false);
+	ack();
+	CHECK(alarm_is("Normal")); /* from Deactivated */
+
+	/* Holding acknowledge does nothing more: only its rising edge counts. */
+	set_bool("acknowledge", true);
+	set_bool("input", true);
+	CHECK(alarm_is("Activated"));
+	set("input", 1); /* the same condition again: no change */
+	CHECK(alarm_is("Activated"));
+	set_bool("acknowledge", false);
+	CHECK(alarm_is("Activated"));
+	ack();
+	CHECK(alarm_is("Acknowledged"));
+	teardown();
+}
+
+static void test_alarm_disable_block(void)
+{
+	setup("process/Alarm");
+	set_bool("input", true);
+	start_at(0);
+	CHECK(alarm_is("Activated")); /* START: Normal, then the condition */
+
+	set_bool("block", true);
+	CHECK(alarm_is("Blocked"));
+	set_bool("input", false);
+	ack();
+	CHECK(alarm_is("Blocked")); /* no state changes */
+	set_bool("disable", true);
+	CHECK(alarm_is("Disabled")); /* disable wins */
+	set_bool("block", false);
+	CHECK(alarm_is("Disabled"));
+	set_bool("block", true);
+	set_bool("disable", false);
+	CHECK(alarm_is("Blocked"));
+	set_bool("block", false);
+	CHECK(alarm_is("Normal")); /* Normal, then input (false) */
+
+	set_bool("input", true);
+	ack();
+	CHECK(alarm_is("Acknowledged"));
+	set_bool("disable", true);
+	CHECK(alarm_is("Disabled"));
+	set_bool("disable", false);
+	CHECK(alarm_is("Activated")); /* a new alarm: Normal, then the condition */
+	teardown();
+
+	/* Started disabled or blocked. */
+	setup("process/Alarm");
+	set_bool("disable", true);
+	set_bool("block", true);
+	set_bool("input", true);
+	start_at(0);
+	CHECK(alarm_is("Disabled"));
+	teardown();
+	setup("process/Alarm");
+	set_bool("block", true);
+	start_at(0);
+	CHECK(alarm_is("Blocked"));
+	teardown();
+}
+
+/* category and class change nothing; nothing survives a stop. */
+static void test_alarm_presentation_and_restart(void)
+{
+	setup("process/Alarm");
+	start_at(0);
+	set_bool("input", true);
+	set_str("category", "Elevators");
+	set_str("class", "A");
+	CHECK(alarm_is("Activated"));
+	set_str("class", "X");
+	CHECK(alarm_is("Activated"));
+	ack();
+	CHECK(alarm_is("Acknowledged"));
+	stop_at(10);
+	CHECK(alarm_is("Acknowledged")); /* STOP changes nothing */
+	start_at(20);
+	CHECK(alarm_is("Activated")); /* the acknowledgement did not survive */
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -309,5 +467,9 @@ int main(void)
 	RUN(test_curve_points_used);
 	RUN(test_curve_edge_cases);
 	RUN(test_automan);
+	RUN(test_alarm_ports);
+	RUN(test_alarm_transitions);
+	RUN(test_alarm_disable_block);
+	RUN(test_alarm_presentation_and_restart);
 	return test_result();
 }

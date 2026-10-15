@@ -184,6 +184,7 @@ static const struct {
 } process_more[] = {
 	{"process/Curve", "show_chart", "output follows a curve of up to 7 points"},
 	{"process/AutoMan", "pan_tool", "output = override ? manual : input"},
+	{"process/Alarm", "notifications", "alarm states of a condition"},
 };
 
 #define PROCESS_MORE_COUNT (sizeof(process_more) / sizeof(process_more[0]))
