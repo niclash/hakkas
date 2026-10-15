@@ -699,6 +699,47 @@ static void test_hysteresis(void)
 	teardown();
 }
 
+/* ---- process/Exponential, process/Logarithmic (03 §3.8) --------------------- */
+
+static void test_exponential(void)
+{
+	static const char *const ins[] = {"input:number", "a:number", "b:number"};
+	static const char *const outs[] = {"output:number"};
+	CHECK_PORTS("process/Exponential", ins, outs);
+	CHECK_PORTS("process/Logarithmic", ins, outs);
+
+	setup("process/Exponential");
+	start_at(0);
+	CHECK(near(num("output"), 0)); /* at rest: 0*exp(0) */
+	set("a", 2);
+	CHECK(near(num("output"), 2));
+	set("b", 0.5);
+	set("input", 4);
+	CHECK(near(num("output"), 2 * exp(2.0)));
+	set("b", -1);
+	CHECK(near(num("output"), 2 * exp(-4.0)));
+	set("input", -1000); /* overflow: +Infinity */
+	CHECK(num("output") == INFINITY);
+	teardown();
+}
+
+static void test_logarithmic(void)
+{
+	setup("process/Logarithmic");
+	start_at(0);
+	CHECK(isnan(num("output"))); /* at rest: 0*ln(0) = 0*-Infinity */
+	set("a", 3);
+	CHECK(num("output") == -INFINITY);
+	set("b", 2);
+	set("input", 5);
+	CHECK(near(num("output"), 3 * log(10.0)));
+	set("input", -5); /* ln of a negative number */
+	CHECK(isnan(num("output")));
+	set("b", -2);
+	CHECK(near(num("output"), 3 * log(10.0)));
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -716,5 +757,7 @@ int main(void)
 	RUN(test_trigger);
 	RUN(test_limit);
 	RUN(test_hysteresis);
+	RUN(test_exponential);
+	RUN(test_logarithmic);
 	return test_result();
 }

@@ -191,6 +191,8 @@ static const struct {
 	{"process/Limit", "compress", "output = input capped to [min, max]"},
 	{"process/Hysteresis", "swap_vert",
 	 "Schmitt trigger: output on above threshold+hysteresis, off below threshold-hysteresis"},
+	{"process/Exponential", "function", "output = a*exp(b*input)"},
+	{"process/Logarithmic", "function", "output = a*ln(b*input)"},
 };
 
 #define PROCESS_MORE_COUNT (sizeof(process_more) / sizeof(process_more[0]))

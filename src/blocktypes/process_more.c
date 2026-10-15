@@ -24,6 +24,9 @@
  *
  * process/Hysteresis (03 §3.7): a Schmitt trigger, on above threshold +
  * hysteresis and off below threshold - hysteresis; inverted negates output.
+ *
+ * process/Exponential and process/Logarithmic (03 §3.8): output =
+ * a*exp(b*input) and a*ln(b*input), IEEE-754 results as C gives them.
  */
 #include <math.h>
 #include <stdbool.h>
@@ -462,6 +465,45 @@ static int64_t hysteresis(BlockCtx *ctx)
 	return 0;
 }
 
+/* ---- process/Exponential, process/Logarithmic (03 §3.8) --------------------- */
+
+enum { FN_INPUT, FN_A, FN_B };
+
+static const PortDescriptor exp_inputs[] = {
+	NUMBER("input", "Input value"),
+	NUMBER("a", "Scale"),
+	NUMBER("b", "Rate"),
+};
+
+static const PortDescriptor exponential_outputs[] = {
+	NUMBER("output", "a*exp(b*input)"),
+};
+
+static const PortDescriptor logarithmic_outputs[] = {
+	NUMBER("output", "a*ln(b*input)"),
+};
+
+static int64_t exp_or_log(BlockCtx *ctx, double (*fn)(double))
+{
+	if (ctx->reason == REASON_STOP)
+		return 0;
+	double in = linkable_to_f64(&ctx->inputs[FN_INPUT]);
+	double a = linkable_to_f64(&ctx->inputs[FN_A]);
+	double b = linkable_to_f64(&ctx->inputs[FN_B]);
+	block_ctx_set_output(ctx, 0, linkable_from_f64(a * fn(b * in)));
+	return 0;
+}
+
+static int64_t exponential(BlockCtx *ctx)
+{
+	return exp_or_log(ctx, exp);
+}
+
+static int64_t logarithmic(BlockCtx *ctx)
+{
+	return exp_or_log(ctx, log);
+}
+
 const BlockTypeDef process_more_block_types[] = {
 	{.name = "process/Curve",
 	 .icon = "show_chart",
@@ -547,6 +589,30 @@ const BlockTypeDef process_more_block_types[] = {
 	 .timer = TIMER_NONE,
 	 .compute = hysteresis,
 	 .state_size = sizeof(HysteresisState),
+	 .change_threshold = NAN},
+	{.name = "process/Exponential",
+	 .icon = "function",
+	 .description = "output = a*exp(b*input)",
+	 .inputs = exp_inputs,
+	 .input_count = ARRAY_LEN(exp_inputs),
+	 .outputs = exponential_outputs,
+	 .output_count = ARRAY_LEN(exponential_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_NONE,
+	 .compute = exponential,
+	 .state_size = 0,
+	 .change_threshold = NAN},
+	{.name = "process/Logarithmic",
+	 .icon = "function",
+	 .description = "output = a*ln(b*input)",
+	 .inputs = exp_inputs,
+	 .input_count = ARRAY_LEN(exp_inputs),
+	 .outputs = logarithmic_outputs,
+	 .output_count = ARRAY_LEN(logarithmic_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_NONE,
+	 .compute = logarithmic,
+	 .state_size = 0,
 	 .change_threshold = NAN},
 };
 
