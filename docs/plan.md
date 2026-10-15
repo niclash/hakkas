@@ -836,7 +836,7 @@ behavior tested in `tests/test_process_more.c`.
   them and `START` through `Normal`; `category` and `class` are for alarm views (none yet).
 - [x] **51. `process/Delay`** (03 §3.4).
 - [x] **52. `process/Trigger`** (03 §3.5).
-- [ ] **53. `process/Limit`** (03 §3.6).
+- [x] **53. `process/Limit`** (03 §3.6).
 - [ ] **54. `process/Hysteresis`** (03 §3.7).
 - [ ] **55. `process/Exponential` and `process/Logarithmic`** (03 §3.8).
 - [ ] **56. `process/Integrator`** (03 §3.9).

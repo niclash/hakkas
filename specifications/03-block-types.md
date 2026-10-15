@@ -206,7 +206,7 @@ Decided with the user 2026-10-15; implemented in plan task 52 (`src/blocktypes/p
 
 ### 3.6 `process/Limit` — limiter
 
-Decided with the user 2026-10-15 (not implemented yet). `output` is `input` capped to `[min, max]`. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. Registered after `process/Trigger`.
+Decided with the user 2026-10-15; implemented in plan task 53 (`src/blocktypes/process_more.c`). `output` is `input` capped to `[min, max]`. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. Registered after `process/Trigger`.
 
 | Port | Direction | Type | Description |
 |---|---|---|---|

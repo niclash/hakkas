@@ -590,6 +590,42 @@ static void test_trigger(void)
 	teardown();
 }
 
+/* ---- process/Limit (03 §3.6) ------------------------------------------------ */
+
+static void test_limit(void)
+{
+	static const char *const ins[] = {"input:number", "min:number", "max:number"};
+	static const char *const outs[] = {"output:number"};
+	CHECK_PORTS("process/Limit", ins, outs);
+	const BlockTypeDef *t = block_types_get("process/Limit");
+	CHECK(t->compute_on_input && t->timer == TIMER_NONE && t->state_size == 0);
+
+	setup("process/Limit");
+	set("input", -1234.5);
+	start_at(0);
+	CHECK(near(num("output"), -1234.5)); /* at rest: equal limits, none */
+	set("min", 10);
+	set("max", 20);
+	CHECK(near(num("output"), 10));
+	set("input", 15);
+	CHECK(near(num("output"), 15));
+	set("input", 25);
+	CHECK(near(num("output"), 20));
+	set("min", 30); /* the wrong way round: swapped, [20, 30] */
+	CHECK(near(num("output"), 25));
+	set("input", 35);
+	CHECK(near(num("output"), 30));
+	set("max", 30); /* equal: no limits */
+	CHECK(near(num("output"), 35));
+	set("max", NAN); /* no upper limit; min 30 */
+	CHECK(near(num("output"), 35));
+	set("input", 5);
+	CHECK(near(num("output"), 30));
+	set("input", NAN);
+	CHECK(isnan(num("output")));
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -605,5 +641,6 @@ int main(void)
 	RUN(test_delay);
 	RUN(test_delay_none);
 	RUN(test_trigger);
+	RUN(test_limit);
 	return test_result();
 }

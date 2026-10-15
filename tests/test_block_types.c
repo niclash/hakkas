@@ -188,6 +188,7 @@ static const struct {
 	{"process/Delay", "hourglass_empty",
 	 "output takes input once it has been stable for milliseconds"},
 	{"process/Trigger", "bolt", "output false when arm rises, true when fire rises"},
+	{"process/Limit", "compress", "output = input capped to [min, max]"},
 };
 
 #define PROCESS_MORE_COUNT (sizeof(process_more) / sizeof(process_more[0]))

@@ -18,6 +18,9 @@
  *
  * process/Trigger (03 §3.5): output false on a rising edge of arm, true on a
  * rising edge of fire, each regardless of the other input.
+ *
+ * process/Limit (03 §3.6): output = input capped to [min, max], the limits
+ * read as process/PID's (limits_read).
  */
 #include <math.h>
 #include <stdbool.h>
@@ -32,6 +35,23 @@
 		      .default_value = LINKABLE_F64_INIT(0.0)}
 #define BOOL(n, d) {.name = (n), .description = (d), .type = "bool", \
 		    .default_value = LINKABLE_BOOL_INIT(false)}
+
+/* The limits [*lo, *hi] from the inputs min and max, as process/PID reads
+ * its output limits (03 §6.1): a NaN limit is no limit on its side, equal
+ * limits (both at rest: 0) are no limits, and limits given the wrong way
+ * round are swapped. */
+static void limits_read(const Linkable *min, const Linkable *max, double *lo, double *hi)
+{
+	double a = linkable_to_f64(min), b = linkable_to_f64(max);
+	a = isnan(a) ? -INFINITY : a;
+	b = isnan(b) ? INFINITY : b;
+	if (a == b) {
+		a = -INFINITY;
+		b = INFINITY;
+	}
+	*lo = fmin(a, b);
+	*hi = fmax(a, b);
+}
 
 /* ---- process/Curve (03 §3.2) ------------------------------------------------ */
 
@@ -367,6 +387,33 @@ static int64_t trigger(BlockCtx *ctx)
 	return 0;
 }
 
+/* ---- process/Limit (03 §3.6) ------------------------------------------------ */
+
+enum { LIMIT_INPUT, LIMIT_MIN, LIMIT_MAX };
+
+static const PortDescriptor limit_inputs[] = {
+	NUMBER("input", "The value to limit"),
+	NUMBER("min", "Lower limit (equal limits: none)"),
+	NUMBER("max", "Upper limit (equal limits: none)"),
+};
+
+static const PortDescriptor limit_outputs[] = {
+	NUMBER("output", "input, capped to [min, max]"),
+};
+
+/* A NaN input gives a NaN output (fmin/fmax would drop it). */
+static int64_t limit(BlockCtx *ctx)
+{
+	if (ctx->reason == REASON_STOP)
+		return 0;
+	double lo, hi;
+	limits_read(&ctx->inputs[LIMIT_MIN], &ctx->inputs[LIMIT_MAX], &lo, &hi);
+	double in = linkable_to_f64(&ctx->inputs[LIMIT_INPUT]);
+	double out = isnan(in) ? in : fmin(fmax(in, lo), hi);
+	block_ctx_set_output(ctx, 0, linkable_from_f64(out));
+	return 0;
+}
+
 const BlockTypeDef process_more_block_types[] = {
 	{.name = "process/Curve",
 	 .icon = "show_chart",
@@ -427,6 +474,18 @@ const BlockTypeDef process_more_block_types[] = {
 	 .timer = TIMER_NONE,
 	 .compute = trigger,
 	 .state_size = sizeof(TriggerState),
+	 .change_threshold = NAN},
+	{.name = "process/Limit",
+	 .icon = "compress",
+	 .description = "output = input capped to [min, max]",
+	 .inputs = limit_inputs,
+	 .input_count = ARRAY_LEN(limit_inputs),
+	 .outputs = limit_outputs,
+	 .output_count = ARRAY_LEN(limit_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_NONE,
+	 .compute = limit,
+	 .state_size = 0,
 	 .change_threshold = NAN},
 };
 
