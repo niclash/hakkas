@@ -831,7 +831,7 @@ behavior tested in `tests/test_process_more.c`.
 
 - [x] **48. `process/Curve`** (03 §3.2): seven points, the non-rising ones skipped, linear
   interpolation, `min`/`max` outside the end points.
-- [ ] **49. `process/AutoMan`** (03 §3.3).
+- [x] **49. `process/AutoMan`** (03 §3.3).
 - [ ] **50. `process/Alarm`** (03 §7.1).
 - [ ] **51. `process/Delay`** (03 §3.4).
 - [ ] **52. `process/Trigger`** (03 §3.5).

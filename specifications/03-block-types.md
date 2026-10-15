@@ -165,7 +165,7 @@ Every input rests at `0` (§1); the outputs start at `0` and `false`.
 
 ### 3.3 `process/AutoMan` — manual override
 
-Decided with the user 2026-10-15 (not implemented yet). Lets a person override a value by hand: while `override` is false the output follows `input`, while it is true it follows `manual`. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. No bumpless transfer: switching moves `output` at once to the other value. Registered after `process/Curve`.
+Decided with the user 2026-10-15; implemented in plan task 49 (`src/blocktypes/process_more.c`). Lets a person override a value by hand: while `override` is false the output follows `input`, while it is true it follows `manual`. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. No bumpless transfer: switching moves `output` at once to the other value. Registered after `process/Curve`.
 
 | Port | Direction | Type | Description |
 |---|---|---|---|

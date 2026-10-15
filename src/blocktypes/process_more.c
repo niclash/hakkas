@@ -6,6 +6,9 @@
  *
  * process/Curve (03 §3.2): a piecewise linear curve of up to seven points;
  * the first and last points used are also the output's limits.
+ *
+ * process/AutoMan (03 §3.3): a manual override, output = override ? manual :
+ * input, with no bumpless transfer.
  */
 #include <math.h>
 #include <stdbool.h>
@@ -102,6 +105,30 @@ static int64_t curve(BlockCtx *ctx)
 	return 0;
 }
 
+/* ---- process/AutoMan (03 §3.3) ---------------------------------------------- */
+
+enum { AUTOMAN_INPUT, AUTOMAN_OVERRIDE, AUTOMAN_MANUAL };
+
+static const PortDescriptor automan_inputs[] = {
+	NUMBER("input", "The automatic value"),
+	BOOL("override", "Manual override: output follows manual instead of input"),
+	NUMBER("manual", "The manual value"),
+};
+
+static const PortDescriptor automan_outputs[] = {
+	NUMBER("output", "manual while overridden, else input"),
+};
+
+static int64_t automan(BlockCtx *ctx)
+{
+	if (ctx->reason == REASON_STOP)
+		return 0;
+	bool manual = linkable_to_bool(&ctx->inputs[AUTOMAN_OVERRIDE]);
+	double v = linkable_to_f64(&ctx->inputs[manual ? AUTOMAN_MANUAL : AUTOMAN_INPUT]);
+	block_ctx_set_output(ctx, 0, linkable_from_f64(v));
+	return 0;
+}
+
 const BlockTypeDef process_more_block_types[] = {
 	{.name = "process/Curve",
 	 .icon = "show_chart",
@@ -113,6 +140,18 @@ const BlockTypeDef process_more_block_types[] = {
 	 .compute_on_input = true,
 	 .timer = TIMER_NONE,
 	 .compute = curve,
+	 .state_size = 0,
+	 .change_threshold = NAN},
+	{.name = "process/AutoMan",
+	 .icon = "pan_tool",
+	 .description = "output = override ? manual : input",
+	 .inputs = automan_inputs,
+	 .input_count = ARRAY_LEN(automan_inputs),
+	 .outputs = automan_outputs,
+	 .output_count = ARRAY_LEN(automan_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_NONE,
+	 .compute = automan,
 	 .state_size = 0,
 	 .change_threshold = NAN},
 };

@@ -268,6 +268,39 @@ static void test_curve_edge_cases(void)
 	teardown();
 }
 
+/* ---- process/AutoMan (03 §3.3) ---------------------------------------------- */
+
+static void test_automan(void)
+{
+	static const char *const ins[] = {"input:number", "override:bool", "manual:number"};
+	static const char *const outs[] = {"output:number"};
+	CHECK_PORTS("process/AutoMan", ins, outs);
+	const BlockTypeDef *t = block_types_get("process/AutoMan");
+	CHECK(t->compute_on_input && t->timer == TIMER_NONE && t->state_size == 0);
+
+	setup("process/AutoMan");
+	set("input", 12);
+	set("manual", 40);
+	start_at(0);
+	CHECK(near(num("output"), 12)); /* at rest: not overridden */
+	set("input", 13);
+	CHECK(near(num("output"), 13));
+	set_bool("override", true);
+	CHECK(near(num("output"), 40)); /* at once, no bumpless transfer */
+	set("input", 14);
+	CHECK(near(num("output"), 40));
+	set("manual", 41);
+	CHECK(near(num("output"), 41));
+	set_bool("override", false);
+	CHECK(near(num("output"), 14));
+	stop_at(10);
+	set("input", 15); /* a stopped graph computes nothing */
+	CHECK(near(num("output"), 14));
+	start_at(20);
+	CHECK(near(num("output"), 15));
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -275,5 +308,6 @@ int main(void)
 	RUN(test_curve_example);
 	RUN(test_curve_points_used);
 	RUN(test_curve_edge_cases);
+	RUN(test_automan);
 	return test_result();
 }
