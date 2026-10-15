@@ -240,7 +240,7 @@ Decided with the user 2026-10-15; implemented in plan task 55 (`src/blocktypes/p
 
 ### 3.9 `process/Integrator` — integral over time
 
-Decided with the user 2026-10-15 (not implemented yet). Integrates `input` over time: `output` grows by `input × seconds / divisor`, held within `[min, max]` so that it does not wind up. A **cyclic** block like `process/PID` (`TIMER_PERIODIC` + `compute_on_input`; state: the accumulated value, the last `input`, the engine time of the last step). Registered after `process/Logarithmic`.
+Decided with the user 2026-10-15; implemented in plan task 56 (`src/blocktypes/process_more.c`). Integrates `input` over time: `output` grows by `input × seconds / divisor`, held within `[min, max]` so that it does not wind up. A **cyclic** block like `process/PID` (`TIMER_PERIODIC` + `compute_on_input`; state: the accumulated value, the last `input`, the engine time of the last step). Registered after `process/Logarithmic`.
 
 | Port | Direction | Type | Description |
 |---|---|---|---|

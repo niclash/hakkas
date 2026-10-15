@@ -740,6 +740,105 @@ static void test_logarithmic(void)
 	teardown();
 }
 
+/* ---- process/Integrator (03 §3.9) ------------------------------------------- */
+
+static void test_integrator(void)
+{
+	static const char *const ins[] = {"input:number",   "min:number", "max:number",
+					  "divisor:number", "reset:bool", "sample_ms:number"};
+	static const char *const outs[] = {"output:number"};
+	CHECK_PORTS("process/Integrator", ins, outs);
+	const BlockTypeDef *t = block_types_get("process/Integrator");
+	CHECK(t->compute_on_input && t->timer == TIMER_PERIODIC && t->period_ms == 0);
+	CHECK(t->state_size > 0);
+
+	setup("process/Integrator");
+	set("sample_ms", 1000);
+	set("input", 2);
+	start_at(0);
+	CHECK(near(num("output"), 0));
+	CHECK(next_due() == 1000);
+	CHECK(fire(1000) == 1);
+	CHECK(near(num("output"), 2)); /* 2 x 1 s */
+	set_at(1500, "input", linkable_from_f64(4));
+	CHECK(near(num("output"), 3)); /* the previous input for the half second */
+	CHECK(fire(2000) == 1);
+	CHECK(near(num("output"), 5));
+	/* A late tick integrates the time that passed. */
+	CHECK(fire(4500) == 1);
+	CHECK(near(num("output"), 15));
+
+	/* divisor: hours; time already integrated keeps its scale. */
+	set_at(5000, "divisor", linkable_from_f64(3600));
+	CHECK(near(num("output"), 17)); /* the half second before, in seconds */
+	set("input", 3600);
+	CHECK(fire(6000) == 1);
+	CHECK(near(num("output"), 18)); /* 3600 per hour for a second */
+	set_at(6000, "divisor", linkable_from_f64(-1)); /* <= 0: seconds */
+	set("input", -2);
+	CHECK(fire(7000) == 1);
+	CHECK(near(num("output"), 16));
+	teardown();
+}
+
+static void test_integrator_limits_reset(void)
+{
+	setup("process/Integrator");
+	set("min", -5);
+	set("max", 10);
+	set("input", 4);
+	start_at(0); /* without sample_ms: only on input changes */
+	CHECK(next_due() == UINT64_MAX);
+	set_at(2000, "input", linkable_from_f64(4.0001));
+	CHECK(near(num("output"), 8));
+	set_at(5000, "input", linkable_from_f64(-1));
+	CHECK(near(num("output"), 10)); /* held at max, not wound up */
+	set_at(6000, "input", linkable_from_f64(-1.5));
+	CHECK(near(num("output"), 9)); /* back from the limit at once */
+	set_at(7000, "max", linkable_from_f64(3)); /* a new limit clamps at once */
+	CHECK(near(num("output"), 3));
+
+	/* reset: 0, and its time is not integrated. */
+	set_at(8000, "reset", linkable_from_bool(true));
+	CHECK(near(num("output"), 0));
+	set_at(20000, "reset", linkable_from_bool(false));
+	CHECK(near(num("output"), 0));
+	set_at(22000, "input", linkable_from_f64(0));
+	CHECK(near(num("output"), -3));
+	/* reset clamps 0 into the limits. */
+	set_at(23000, "min", linkable_from_f64(1));
+	CHECK(near(num("output"), 1));
+	set_at(24000, "reset", linkable_from_bool(true));
+	CHECK(near(num("output"), 1));
+	teardown();
+}
+
+static void test_integrator_restart_nan(void)
+{
+	setup("process/Integrator");
+	set("input", 1);
+	set("sample_ms", 100);
+	start_at(0);
+	CHECK(fire(100) == 1 && near(num("output"), 0.1));
+	set_at(150, "input", linkable_from_f64(NAN));
+	CHECK(near(num("output"), 0.15));
+	CHECK(fire(200) == 1 && near(num("output"), 0.15)); /* NaN integrates nothing */
+	set_at(250, "input", linkable_from_f64(1));
+	CHECK(fire(300) == 1 && near(num("output"), 0.2));
+	/* sample_ms changes re-arm the timer; 0 stops it. */
+	set_at(300, "sample_ms", linkable_from_f64(1000));
+	CHECK(next_due() == 1300);
+	set_at(400, "sample_ms", linkable_from_f64(0));
+	CHECK(next_due() == UINT64_MAX);
+	CHECK(near(num("output"), 0.3));
+	stop_at(1000);
+	start_at(5000); /* nothing survives a stop */
+	CHECK(near(num("output"), 0));
+	set_at(6000, "input", linkable_from_f64(1));
+	CHECK(near(num("output"), 1)); /* the time since the start */
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -759,5 +858,8 @@ int main(void)
 	RUN(test_hysteresis);
 	RUN(test_exponential);
 	RUN(test_logarithmic);
+	RUN(test_integrator);
+	RUN(test_integrator_limits_reset);
+	RUN(test_integrator_restart_nan);
 	return test_result();
 }

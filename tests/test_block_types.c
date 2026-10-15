@@ -193,6 +193,8 @@ static const struct {
 	 "Schmitt trigger: output on above threshold+hysteresis, off below threshold-hysteresis"},
 	{"process/Exponential", "function", "output = a*exp(b*input)"},
 	{"process/Logarithmic", "function", "output = a*ln(b*input)"},
+	{"process/Integrator", "functions",
+	 "output = integral of input dt / divisor, within [min, max]"},
 };
 
 #define PROCESS_MORE_COUNT (sizeof(process_more) / sizeof(process_more[0]))

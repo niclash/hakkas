@@ -839,4 +839,5 @@ behavior tested in `tests/test_process_more.c`.
 - [x] **53. `process/Limit`** (03 §3.6).
 - [x] **54. `process/Hysteresis`** (03 §3.7).
 - [x] **55. `process/Exponential` and `process/Logarithmic`** (03 §3.8).
-- [ ] **56. `process/Integrator`** (03 §3.9).
+- [x] **56. `process/Integrator`** (03 §3.9): exact for a piecewise constant input, so
+  `sample_ms` only sets how often the output moves.

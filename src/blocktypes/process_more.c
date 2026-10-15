@@ -27,6 +27,10 @@
  *
  * process/Exponential and process/Logarithmic (03 §3.8): output =
  * a*exp(b*input) and a*ln(b*input), IEEE-754 results as C gives them.
+ *
+ * process/Integrator (03 §3.9): the integral of input over time, a cyclic
+ * type like process/PID (TIMER_PERIODIC + compute_on_input, the period from
+ * sample_ms); see the comment above its compute function.
  */
 #include <math.h>
 #include <stdbool.h>
@@ -504,6 +508,82 @@ static int64_t logarithmic(BlockCtx *ctx)
 	return exp_or_log(ctx, log);
 }
 
+/* ---- process/Integrator (03 §3.9) ------------------------------------------- */
+
+enum { INTEG_INPUT, INTEG_MIN, INTEG_MAX, INTEG_DIVISOR, INTEG_RESET, INTEG_SAMPLE_MS };
+
+static const PortDescriptor integrator_inputs[] = {
+	NUMBER("input", "The value integrated"),
+	NUMBER("min", "Lower limit of output (equal limits: none)"),
+	NUMBER("max", "Upper limit of output (equal limits: none)"),
+	NUMBER("divisor", "Time scale: 1 seconds, 3600 hours, 86400 days (<= 0: 1)"),
+	BOOL("reset", "While true, output is 0 (within the limits) and nothing integrates"),
+	NUMBER("sample_ms",
+	       "How often output is updated, in milliseconds (<= 0: only on input changes)"),
+};
+
+static const PortDescriptor integrator_outputs[] = {
+	NUMBER("output", "The integral, within [min, max]"),
+};
+
+typedef struct {
+	double value;	  /* the accumulated integral, within the limits */
+	double input;	  /* input since the last step */
+	double divisor;	  /* divisor since the last step (>= its minimum, finite) */
+	bool reset;	  /* reset since the last step */
+	uint64_t last_ms; /* engine time of the last step (or the start) */
+} IntegratorState;
+
+/* The period for sample_ms, as process/PID's: whole ms, 1 to UINT32_MAX; 0
+ * (no timer) for a value <= 0, NaN or infinite. */
+static uint32_t integrator_period(double ms)
+{
+	if (!isfinite(ms) || ms <= 0)
+		return 0;
+	return (uint32_t)fmin(fmax(round(ms), 1.0), (double)UINT32_MAX);
+}
+
+/*
+ * process/Integrator (03 §3.9). Every compute but STOP is a step: the time
+ * since the last step is integrated with the values that held during it —
+ * input (taken as constant between changes, so the result does not depend
+ * on sample_ms), divisor (<= 0, NaN or infinite: 1) and reset (true: nothing
+ * integrated) — and the current ones are recorded for the next step. A
+ * non-finite input integrates nothing. The value is then clamped to the
+ * current limits (anti-windup: the stored value itself), or set to clamp(0)
+ * while reset is true. START begins at clamp(0). The period follows
+ * sample_ms through BlockCtx.period_ms, as for process/PID.
+ */
+static int64_t integrator(BlockCtx *ctx)
+{
+	IntegratorState *d = ctx->state;
+	if (ctx->reason == REASON_STOP)
+		return 0;
+	ctx->period_ms = integrator_period(linkable_to_f64(&ctx->inputs[INTEG_SAMPLE_MS]));
+	double lo, hi;
+	limits_read(&ctx->inputs[INTEG_MIN], &ctx->inputs[INTEG_MAX], &lo, &hi);
+	double divisor = linkable_to_f64(&ctx->inputs[INTEG_DIVISOR]);
+	if (!isfinite(divisor) || divisor <= 0)
+		divisor = 1.0;
+	bool reset = linkable_to_bool(&ctx->inputs[INTEG_RESET]);
+
+	if (ctx->reason == REASON_START) {
+		d->value = 0.0;
+	} else if (!d->reset && isfinite(d->input) && ctx->now_ms > d->last_ms) {
+		double seconds = (double)(ctx->now_ms - d->last_ms) / 1000.0;
+		double v = d->value + d->input * seconds / d->divisor;
+		if (!isnan(v))
+			d->value = v;
+	}
+	d->value = fmin(fmax(reset ? 0.0 : d->value, lo), hi);
+	d->input = linkable_to_f64(&ctx->inputs[INTEG_INPUT]);
+	d->divisor = divisor;
+	d->reset = reset;
+	d->last_ms = ctx->now_ms;
+	block_ctx_set_output(ctx, 0, linkable_from_f64(d->value));
+	return 0;
+}
+
 const BlockTypeDef process_more_block_types[] = {
 	{.name = "process/Curve",
 	 .icon = "show_chart",
@@ -613,6 +693,19 @@ const BlockTypeDef process_more_block_types[] = {
 	 .timer = TIMER_NONE,
 	 .compute = logarithmic,
 	 .state_size = 0,
+	 .change_threshold = NAN},
+	{.name = "process/Integrator",
+	 .icon = "functions",
+	 .description = "output = integral of input dt / divisor, within [min, max]",
+	 .inputs = integrator_inputs,
+	 .input_count = ARRAY_LEN(integrator_inputs),
+	 .outputs = integrator_outputs,
+	 .output_count = ARRAY_LEN(integrator_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_PERIODIC,
+	 .period_ms = 0, /* sample_ms at rest: only on input changes */
+	 .compute = integrator,
+	 .state_size = sizeof(IntegratorState),
 	 .change_threshold = NAN},
 };
 
