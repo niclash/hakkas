@@ -352,7 +352,7 @@ Decisions (plan task 24; `src/blocktypes/calendar.h`, `calendar.c`, `logic.c`, `
 
 ### 7.1 `process/Alarm` — alarm handling
 
-Decided with the user 2026-10-15, in part (not implemented yet; the state transitions are open, `00-README.md` open question 15, and more details about alarms are to be documented later). An alarm block follows an **alarm condition** (`input`) and keeps the alarm's **state**, which a person acknowledges. Its presentation inputs (`category`, `class`) are for alarm views in the user interface and do not change its behavior. Stateful (the current state, the last `acknowledge` value), `compute_on_input`, `TIMER_NONE`. Registered after `process/AutoMan`.
+Decided with the user 2026-10-15 (`00-README.md` open question 15; not implemented yet; more details about alarms are to be documented later). An alarm block follows an **alarm condition** (`input`) and keeps the alarm's **state**, which a person acknowledges. Its presentation inputs (`category`, `class`) are for alarm views in the user interface and do not change its behavior. Stateful (the current state, the last `input` and `acknowledge` values), `compute_on_input`, `TIMER_NONE`. Registered after `process/AutoMan`.
 
 **States**: `Normal`, `Activated`, `Deactivated`, `Reactivated`, `Acknowledged`, `Disabled`, `Blocked`. The alarm is in exactly one of them at a time.
 
@@ -361,18 +361,33 @@ Decided with the user 2026-10-15, in part (not implemented yet; the state transi
 | `input` | input | bool | The alarm condition: true while the alarmed situation exists |
 | `acknowledge` | input | bool | A push button: a person has noticed the alarm (acts on its rising edge) |
 | `block` | input | bool | Blocks the alarm: no state changes; state `Blocked` |
-| `enable` | input | bool | Enables the alarm; false: no state changes, state `Disabled` |
+| `disable` | input | bool | Disables the alarm: no state changes; state `Disabled` |
 | `category` | input | string | Free text for the presentation (e.g. "Elevators", "Heating") |
-| `class` | input | string | The alarm class, `"A"`, `"B"`, `"C"` or `"D"` (below) |
+| `class` | input | string | The alarm class, `"A"`, `"B"`, `"C"` or `"D"` (below; `"C"` when not set) |
 | `normal`, `activated`, `deactivated`, `reactivated`, `acknowledged`, `disabled`, `blocked` | output | bool | true while the alarm is in that state (exactly one is true) |
 | `state` | output | string | The current state's name, e.g. `"Activated"` |
 
-- **`block` and `enable`** both stop the alarm's state changes; they differ only in how alarm views present them (a blocked alarm is, for example, one put aside during maintenance; a disabled one is switched off).
-- **`enable` rests at `false`** (§1; decided with the user 2026-10-15): a new alarm is `Disabled` until `enable` is wired or set to true, as a PID regulator nobody has set up rests in manual (§6.1).
+- **`block` and `disable`** both stop the alarm's state changes. A **disabled** alarm is a lasting condition (the alarm is switched off); a **blocked** alarm is put aside for a while, to stop it **fluttering** — a condition going on and off all the time, raising many alarm events. Alarm views present them differently. Every input rests at its type's resting value (§1): a new alarm is neither disabled nor blocked (the input was `enable`, resting at false, until the user chose `disable` on 2026-10-15).
 - **Classes** say how soon the alarm must be attended to:
   - `A` — attention required 24/7. E.g. "Person stuck in elevator", "Fire alarm".
   - `B` — attend to during working hours. E.g. "Heating system failure", "Nutrient tank empty".
   - `C` — attend to soon. E.g. "Heat pump inoperable".
   - `D` — a minor event that may be of interest. E.g. "Regulator not moving".
 
-**Open** (`00-README.md` open question 15): the transitions between the states — what moves an alarm from one state to another on a change of `input`, a press of `acknowledge`, and `block`/`enable` set or cleared; the state at the process's start; which of `Disabled` and `Blocked` applies when both are asked for; what a `class` other than `A`–`D` means; and the further alarm details to be documented later.
+**Transitions** (decided with the user 2026-10-15). "Input on/off" is a change of `to_bool(input)`; "Ack" is a **rising edge** of `acknowledge` (false → true; holding it true does nothing more):
+
+| State | Input on | Input off | Ack |
+|---|---|---|---|
+| `Normal` | → `Activated` | — | — |
+| `Activated` | — | → `Deactivated` | → `Acknowledged` |
+| `Deactivated` | → `Reactivated` | — | → `Normal` |
+| `Reactivated` | — | → `Deactivated` | → `Acknowledged` |
+| `Acknowledged` | — | → `Normal` | — |
+
+`Deactivated`: the condition is gone but nobody has acknowledged the alarm. `Reactivated`: the condition came back before anyone acknowledged it.
+
+- **Disabled and blocked**: while `disable` is true the state is `Disabled`; otherwise, while `block` is true, it is `Blocked` — **`Disabled` wins over `Blocked`**. In either, changes of `input` and presses of `acknowledge` change nothing.
+- **Enabled or unblocked again** (neither `disable` nor `block` true any more): the alarm goes to **`Normal` first, then `input` is evaluated**: if the condition holds, it goes on to `Activated` (a new alarm, to be acknowledged). The outputs are pushed once, after the compute, so they show only the final state (`Activated`, not the passing `Normal`); the passing `Normal` matters once alarm events are recorded, which is among the details to be documented later.
+- **Start** (`reason = START`): the same — `Normal`, then `input` evaluated (or `Disabled`/`Blocked`). Nothing of the state survives a stop. `STOP` changes nothing.
+
+**Class** (decided with the user 2026-10-15): only `"A"`, `"B"`, `"C"` and `"D"` are classes, matched exactly (upper case, no spaces). The block reads **any other value as `"C"`** — the unset input's `""` (§1; there are no per-port defaults, so `"C"` is not a port default) as well as `"b"`, `"X"` or a number — since a value arriving over a connection cannot be refused. The frontend will offer only the four classes as the input's fixed value (to be specified in `06-frontend.md` when alarms get their views).
