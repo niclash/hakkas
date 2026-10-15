@@ -73,6 +73,10 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `process/Delay` | hourglass_empty | `output` takes `input` once it has been stable for `milliseconds` | scheduled, stateful; see §3.4 |
 | `process/Trigger` | bolt | `output` false when `arm` rises, true when `fire` rises | stateful; see §3.5 |
 | `process/Limit` | compress | `output = input` capped to `[min, max]` | stateless; see §3.6 |
+| `process/Hysteresis` | swap_vert | Schmitt trigger: `output` on above `threshold+hysteresis`, off below `threshold-hysteresis` | stateful; see §3.7 |
+| `process/Exponential` | function | `output = a*exp(b*input)` | `to_f64(a)*exp(to_f64(b)*to_f64(input))`; see §3.8 |
+| `process/Logarithmic` | function | `output = a*ln(b*input)` | `to_f64(a)*log(to_f64(b)*to_f64(input))`; see §3.8 |
+| `process/Integrator` | functions | `output` = ∫ `input` dt / `divisor`, within `[min, max]` | cyclic, stateful; see §3.9 |
 | `timing/Interval` | timer | periodic pulse generator: PWM or edge generator | see §3.1 |
 | `timing/MinuteRange` | schedule | true within a time-of-day range | calendar primitive, §6.2 |
 | `timing/DayOfWeek` | date_range | true on the selected weekdays | calendar primitive, §6.2 |
@@ -212,6 +216,48 @@ Decided with the user 2026-10-15 (not implemented yet). `output` is `input` capp
 | `output` | output | number | `input`, capped to `[min, max]` |
 
 The limits follow `process/PID`'s (§6.1): **equal limits are no limits** (both rest at `0`, §1, which would otherwise pin `output` to 0), limits given the wrong way round are swapped, and a NaN limit is no limit on its side. A NaN `input` gives a NaN `output`.
+
+### 3.7 `process/Hysteresis` — Schmitt trigger
+
+Decided with the user 2026-10-15 (not implemented yet). A comparator with hysteresis, like a Schmitt trigger in electronics: it switches **on** when `input > threshold + hysteresis` and **off** when `input < threshold − hysteresis`; in between it keeps its state. `inverted` negates the output. Stateful (on/off, before inversion), `compute_on_input`, `TIMER_NONE`. Registered after `process/Limit`.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `input` | input | number | The value compared |
+| `threshold` | input | number | The middle of the switching band |
+| `hysteresis` | input | number | Half the band's width: on above `threshold + hysteresis`, off below `threshold − hysteresis` |
+| `inverted` | input | bool | Negates `output` |
+| `output` | output | bool | The state (on = true), negated when `inverted` |
+
+- `hysteresis` is used as its absolute value; NaN counts as `0`. With `0` (its resting value) it is a plain comparator that keeps its state when `input` equals `threshold` exactly.
+- A NaN `input` or `threshold` holds the state.
+- `output = state XOR to_bool(inverted)`: a change of `inverted` flips `output` at once and leaves the state alone.
+- **Start**: the state is on if `input > threshold + hysteresis`, otherwise off (also inside the band). `STOP` changes nothing.
+
+### 3.8 `process/Exponential` and `process/Logarithmic`
+
+Decided with the user 2026-10-15 (not implemented yet). The equivalents of `process/Linear`'s `out = k*in+m`: `process/Exponential` computes `output = a·exp(b·input)`, `process/Logarithmic` `output = a·ln(b·input)` (the natural logarithm). Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`. Registered after `process/Hysteresis`, in that order. Ports `input`, `a`, `b` (numbers) → `output` (number), as the other new `process/` types name them (`process/Linear` keeps `in`/`out`). Results follow IEEE-754 (C `exp`, `log`): `ln` of `0` is `−Infinity`, of a negative number NaN, and `0 · ±Infinity` is NaN — so a Logarithmic block at rest (`a = b = 0`) outputs NaN, and an Exponential one `0`. Port descriptions: `input` → `"Input value"`, `a` → `"Scale"`, `b` → `"Rate"`, `output` → `"a*exp(b*input)"` / `"a*ln(b*input)"`.
+
+### 3.9 `process/Integrator` — integral over time
+
+Decided with the user 2026-10-15 (not implemented yet). Integrates `input` over time: `output` grows by `input × seconds / divisor`, held within `[min, max]` so that it does not wind up. A **cyclic** block like `process/PID` (`TIMER_PERIODIC` + `compute_on_input`; state: the accumulated value, the last `input`, the engine time of the last step). Registered after `process/Logarithmic`.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `input` | input | number | The value integrated |
+| `min` | input | number | Lower limit of `output` (equal limits: none) |
+| `max` | input | number | Upper limit of `output` (equal limits: none) |
+| `divisor` | input | number | Time scale: `1` seconds, `3600` hours, `86400` days (`<= 0`: 1) |
+| `reset` | input | bool | While true, `output` is 0 (within the limits) and nothing integrates |
+| `sample_ms` | input | number | How often `output` is updated, in milliseconds (`<= 0`: only on input changes) |
+| `output` | output | number | The integral, within `[min, max]` |
+
+- **Each step** (a sample tick, or any input change) adds the **previous** `input` × the seconds since the last step / `divisor`, clamps to the limits, and records the current `input` and time. `input` is taken as constant between changes, so the result is exact whatever `sample_ms` is: `sample_ms` only sets how often `output` moves while `input` stays the same. With `sample_ms <= 0` (its resting value), NaN or infinite, there is no timer and `output` catches up at the next input change. `sample_ms` is rounded to whole milliseconds, at least 1 and at most `2^32 − 1`, and a change re-arms the timer, as for `process/PID` (§6.1).
+- **Limits** as `process/PID`'s (§6.1): equal limits are no limits (both rest at `0`), wrong-way-round limits are swapped, a NaN limit is no limit on its side. The accumulated value itself is clamped (anti-windup): integrating back from a limit moves `output` at once. A change of a limit clamps at once.
+- **`divisor`**: `<= 0`, NaN or infinite counts as `1` (seconds; its resting value `0` gives seconds). A change applies from that step on; time already integrated keeps its scale.
+- **`reset`**: while true, `output = clamp(0)` and the time passing is not integrated; when it goes false, integration starts from there.
+- A non-finite `input` integrates nothing for the time it holds (`output` is held).
+- **Start**: `output = clamp(0)` and the time starts at the start; nothing survives a stop. `STOP` changes nothing.
 
 ## 4. The environment's inputs and outputs — no IO block types
 
