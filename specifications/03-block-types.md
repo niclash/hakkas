@@ -178,7 +178,7 @@ Decided with the user 2026-10-15; implemented in plan task 49 (`src/blocktypes/p
 
 ### 3.4 `process/Delay` — on/off delay
 
-Decided with the user 2026-10-15 (not implemented yet). Passes a boolean `input` to `output` only once it has been **stable** for `milliseconds`: every change of `input` starts the wait over, and `output` changes only when the wait ends. It delays both edges (on and off) and filters out pulses shorter than `milliseconds`. A scheduled block (`compute_on_input`, `TIMER_SCHEDULED`; state: the engine time of the last change of `input`). Registered after `process/Alarm`.
+Decided with the user 2026-10-15; implemented in plan task 51 (`src/blocktypes/process_more.c`). Passes a boolean `input` to `output` only once it has been **stable** for `milliseconds`: every change of `input` starts the wait over, and `output` changes only when the wait ends. It delays both edges (on and off) and filters out pulses shorter than `milliseconds`. A scheduled block (`compute_on_input`, `TIMER_SCHEDULED`; state: the engine time of the last change of `input`). Registered after `process/Alarm`.
 
 | Port | Direction | Type | Description |
 |---|---|---|---|

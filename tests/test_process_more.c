@@ -84,14 +84,14 @@ static void stop_at(uint64_t now)
 }
 
 /* One engine loop iteration at time now. Returns the expiries fired. */
-static inline size_t fire(uint64_t now)
+static size_t fire(uint64_t now)
 {
 	size_t n = runtime_fire_timers(&rt, now);
 	drain();
 	return n;
 }
 
-static inline uint64_t next_due(void)
+static uint64_t next_due(void)
 {
 	uint64_t due;
 	return runtime_next_deadline(&rt, &due) ? due : UINT64_MAX;
@@ -459,6 +459,86 @@ static void test_alarm_presentation_and_restart(void)
 	teardown();
 }
 
+/* ---- process/Delay (03 §3.4) ------------------------------------------------ */
+
+static void set_bool_at(uint64_t now, const char *port, bool v)
+{
+	set_at(now, port, linkable_from_bool(v));
+}
+
+static void test_delay(void)
+{
+	static const char *const ins[] = {"input:bool", "milliseconds:number"};
+	static const char *const outs[] = {"output:bool"};
+	CHECK_PORTS("process/Delay", ins, outs);
+	const BlockTypeDef *t = block_types_get("process/Delay");
+	CHECK(t->compute_on_input && t->timer == TIMER_SCHEDULED && t->state_size > 0);
+
+	/* START: output = input at once. */
+	setup("process/Delay");
+	set("milliseconds", 1000);
+	set_bool("input", true);
+	start_at(0);
+	CHECK(flag("output"));
+	CHECK(next_due() == UINT64_MAX);
+
+	/* Both edges are delayed; every change starts the wait over. */
+	set_bool_at(100, "input", false);
+	CHECK(flag("output") && next_due() == 1100);
+	set_bool_at(600, "input", true); /* back to output's value: nothing pending */
+	CHECK(flag("output") && next_due() == UINT64_MAX);
+	set_bool_at(700, "input", false);
+	CHECK(next_due() == 1700);
+	CHECK(fire(1699) == 0 && flag("output"));
+	CHECK(fire(1700) == 1 && !flag("output"));
+	CHECK(next_due() == UINT64_MAX);
+
+	/* A pulse shorter than the delay never gets through. */
+	set_bool_at(2000, "input", true);
+	set_bool_at(2500, "input", false);
+	CHECK(!flag("output") && next_due() == UINT64_MAX);
+	/* The same value again is no change. */
+	set_bool_at(3000, "input", true);
+	set_at(3400, "input", linkable_from_f64(5));
+	CHECK(next_due() == 4000);
+	/* A late timer applies the change then. */
+	CHECK(fire(4250) == 1 && flag("output"));
+
+	/* milliseconds changed during a wait counts from the change of input. */
+	set_bool_at(5000, "input", false);
+	set_at(5100, "milliseconds", linkable_from_f64(300));
+	CHECK(next_due() == 5300);
+	set_at(5200, "milliseconds", linkable_from_f64(150)); /* already lasted that long */
+	CHECK(!flag("output") && next_due() == UINT64_MAX);
+	teardown();
+}
+
+/* milliseconds <= 0, NaN or infinite: no delay (its resting value 0). */
+static void test_delay_none(void)
+{
+	setup("process/Delay");
+	start_at(0);
+	CHECK(!flag("output"));
+	set_bool_at(10, "input", true);
+	CHECK(flag("output") && next_due() == UINT64_MAX);
+	set_at(20, "milliseconds", linkable_from_f64(-5));
+	set_bool_at(30, "input", false);
+	CHECK(!flag("output"));
+	set_at(40, "milliseconds", linkable_from_f64(NAN));
+	set_bool_at(50, "input", true);
+	CHECK(flag("output"));
+	/* Rounded to whole milliseconds. */
+	set_at(60, "milliseconds", linkable_from_f64(99.6));
+	set_bool_at(70, "input", false);
+	CHECK(next_due() == 170);
+	/* A stop cancels the wait; the start takes input at once. */
+	stop_at(80);
+	CHECK(next_due() == UINT64_MAX);
+	start_at(90);
+	CHECK(!flag("output") && next_due() == UINT64_MAX);
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -471,5 +551,7 @@ int main(void)
 	RUN(test_alarm_transitions);
 	RUN(test_alarm_disable_block);
 	RUN(test_alarm_presentation_and_restart);
+	RUN(test_delay);
+	RUN(test_delay_none);
 	return test_result();
 }

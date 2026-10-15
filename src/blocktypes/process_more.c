@@ -12,6 +12,9 @@
  *
  * process/Alarm (03 §7.1): the state of an alarm condition, which a person
  * acknowledges; see the comment above its compute function.
+ *
+ * process/Delay (03 §3.4): input reaches output once it has been stable for
+ * milliseconds; a TIMER_SCHEDULED type woken when the wait ends.
  */
 #include <math.h>
 #include <stdbool.h>
@@ -260,6 +263,71 @@ static int64_t alarm(BlockCtx *ctx)
 	return 0;
 }
 
+/* ---- process/Delay (03 §3.4) ------------------------------------------------ */
+
+/* The longest delay, in ms: 2^53, exact as a double (as timing/Interval). */
+#define DELAY_MAX_MS 9007199254740992.0
+
+enum { DELAY_INPUT, DELAY_MILLISECONDS };
+
+static const PortDescriptor delay_inputs[] = {
+	BOOL("input", "The signal to delay"),
+	NUMBER("milliseconds",
+	       "How long input must be stable before output takes it (<= 0: no delay)"),
+};
+
+static const PortDescriptor delay_outputs[] = {
+	BOOL("output", "input, once it has been stable for milliseconds"),
+};
+
+typedef struct {
+	bool input;	    /* to_bool(input) at the last compute */
+	uint64_t changed_ms; /* engine time of the last change of input */
+} DelayState;
+
+/* milliseconds rounded to whole ms, at most DELAY_MAX_MS; 0 (no delay) for
+ * a value <= 0, NaN or infinite. */
+static uint64_t delay_ms(double ms)
+{
+	if (!isfinite(ms) || ms <= 0)
+		return 0;
+	return (uint64_t)fmin(round(ms), DELAY_MAX_MS);
+}
+
+/*
+ * process/Delay (03 §3.4): START sets output = input with nothing pending.
+ * Afterwards a change of to_bool(input) records its time; while input
+ * differs from output a change is pending, and output takes input once
+ * milliseconds have passed since that time (at once if they already have,
+ * also after a change of milliseconds). Every compute returns the delay to
+ * the end of the pending wait, or -1 (no timer) when nothing is pending.
+ */
+static int64_t delay(BlockCtx *ctx)
+{
+	DelayState *d = ctx->state;
+	if (ctx->reason == REASON_STOP)
+		return -1;
+	bool in = linkable_to_bool(&ctx->inputs[DELAY_INPUT]);
+	bool out = linkable_to_bool(&ctx->outputs[0]);
+	if (ctx->reason == REASON_START) {
+		out = in;
+	} else if (in != d->input) {
+		d->changed_ms = ctx->now_ms;
+	}
+	d->input = in;
+	int64_t next = -1;
+	if (in != out) {
+		double ms = linkable_to_f64(&ctx->inputs[DELAY_MILLISECONDS]);
+		uint64_t due = d->changed_ms + delay_ms(ms);
+		if (ctx->now_ms >= due)
+			out = in;
+		else
+			next = (int64_t)(due - ctx->now_ms);
+	}
+	block_ctx_set_output(ctx, 0, linkable_from_bool(out));
+	return next;
+}
+
 const BlockTypeDef process_more_block_types[] = {
 	{.name = "process/Curve",
 	 .icon = "show_chart",
@@ -296,6 +364,18 @@ const BlockTypeDef process_more_block_types[] = {
 	 .timer = TIMER_NONE,
 	 .compute = alarm,
 	 .state_size = sizeof(AlarmStateData),
+	 .change_threshold = NAN},
+	{.name = "process/Delay",
+	 .icon = "hourglass_empty",
+	 .description = "output takes input once it has been stable for milliseconds",
+	 .inputs = delay_inputs,
+	 .input_count = ARRAY_LEN(delay_inputs),
+	 .outputs = delay_outputs,
+	 .output_count = ARRAY_LEN(delay_outputs),
+	 .compute_on_input = true,
+	 .timer = TIMER_SCHEDULED,
+	 .compute = delay,
+	 .state_size = sizeof(DelayState),
 	 .change_threshold = NAN},
 };
 

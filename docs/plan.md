@@ -834,7 +834,7 @@ behavior tested in `tests/test_process_more.c`.
 - [x] **49. `process/AutoMan`** (03 §3.3).
 - [x] **50. `process/Alarm`** (03 §7.1): the transition table, `disable` over `block`, leaving
   them and `START` through `Normal`; `category` and `class` are for alarm views (none yet).
-- [ ] **51. `process/Delay`** (03 §3.4).
+- [x] **51. `process/Delay`** (03 §3.4).
 - [ ] **52. `process/Trigger`** (03 §3.5).
 - [ ] **53. `process/Limit`** (03 §3.6).
 - [ ] **54. `process/Hysteresis`** (03 §3.7).
