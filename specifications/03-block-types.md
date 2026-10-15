@@ -67,6 +67,9 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `process/Linear` | function | `out = k*in+m` | `(to_f64(in)*to_f64(k))+to_f64(m)`; ports named `in`, `k`, `m` → `out` |
 | `process/Deadband` | filter | `out` follows `in` only when it moves by at least `threshold` | see below |
 | `process/PID` | tune | PID regulator | cyclic, stateful; see §6.1 |
+| `process/Curve` | show_chart | `output` follows a curve of up to 7 points | stateless; see §3.2 |
+| `process/AutoMan` | pan_tool | `output = override ? manual : input` | stateless; see §3.3 |
+| `process/Alarm` | notifications | alarm states of a condition | stateful; see §7 |
 | `timing/Interval` | timer | periodic pulse generator: PWM or edge generator | see §3.1 |
 | `timing/MinuteRange` | schedule | true within a time-of-day range | calendar primitive, §6.2 |
 | `timing/DayOfWeek` | date_range | true on the selected weekdays | calendar primitive, §6.2 |
@@ -127,6 +130,44 @@ Decisions (plan task 8, `src/blocktypes/timing.c`):
 - **Input changes while running** don't touch the cycle; the compute only applies a transition that is already due and re-arms the timer for the next one (every compute re-arms a scheduled timer, §2). While idle, any input change re-latches, and a valid period starts a fresh cycle at once.
 - **100 % ↔ 0 %**: no special case — the change is latched at the next cycle start like any other, so a 100 % cycle runs to its end and the next cycle is all `false` (or the reverse).
 - **Stop and restart**: `stop()` leaves `out` as it was (not propagated); nothing of the interrupted cycle survives, and `start()` begins a fresh cycle at the restart time.
+
+### 3.2 `process/Curve` — piecewise linear curve
+
+Decided with the user 2026-10-15 (not implemented yet). Converts one value into another along a curve of up to seven points `(x1, y1)` … `(x7, y7)`, interpolating linearly between them. The first and last points used are also the output's limits. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. Registered after `process/PID`.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `input` | input | number | The value to convert |
+| `x1` … `x7` | input | number | X coordinate of point 1 … 7 |
+| `y1` … `y7` | input | number | Y coordinate of point 1 … 7 |
+| `output` | output | number | The value on the curve at `input` |
+| `min` | output | bool | true while `input` is below the first point (`output` is held at its Y) |
+| `max` | output | bool | true while `input` is above the last point (`output` is held at its Y) |
+
+Every input rests at `0` (§1); the outputs start at `0` and `false`.
+
+**The points used**: the points are taken in order, 1 to 7. Point 1 is used if its X is finite; each later point is used only if its X is finite and **greater than the X of the last point used**; any other point is ignored. So unused points resting at `(0, 0)` after a curve with positive X drop out by themselves; on a curve whose X values are all below `0`, unused points are set to copies of the last one. Example: X `0 10 20 30 0 0 0`, Y `5 15 15 40 0 0 0` uses `(0,5) (10,15) (20,15) (30,40)`.
+
+**The output**, with `in = to_f64(input)` and the used points `P1 … Pn` (renumbered):
+- `in < X(P1)`: `output = Y(P1)`, `min` true.
+- `in > X(Pn)`: `output = Y(Pn)`, `max` true.
+- otherwise `in` lies on a segment `Pi … Pi+1` (`X(Pi) <= in <= X(Pi+1)`, the first such segment): `output = Y(Pi) + (in − X(Pi))·(Y(Pi+1) − Y(Pi))/(X(Pi+1) − X(Pi))`; on a point exactly, its Y. `min` and `max` are false.
+- With one point used, `output` is its Y whatever `in` is; `min`/`max` as above.
+- A NaN `input` gives a NaN `output`, `min` and `max` false. With no point used (every X non-finite), `output` is `0`, `min` and `max` false. A non-finite Y goes into the result as IEEE-754 arithmetic gives it.
+- Port descriptions: as the table above.
+
+### 3.3 `process/AutoMan` — manual override
+
+Decided with the user 2026-10-15 (not implemented yet). Lets a person override a value by hand: while `override` is false the output follows `input`, while it is true it follows `manual`. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. No bumpless transfer: switching moves `output` at once to the other value. Registered after `process/Curve`.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `input` | input | number | The automatic value |
+| `override` | input | bool | Manual override: `output` follows `manual` instead of `input` |
+| `manual` | input | number | The manual value |
+| `output` | output | number | `manual` while overridden, else `input` |
+
+`output = to_bool(override) ? to_f64(manual) : to_f64(input)`. Every input rests at its type's resting value (§1): not overridden, so a new block passes `input` through. `override` is a bool: it is a switch.
 
 ## 4. The environment's inputs and outputs — no IO block types
 
@@ -306,3 +347,32 @@ Decisions (plan task 24; `src/blocktypes/calendar.h`, `calendar.c`, `logic.c`, `
   - `schedule/MonthSchedule` — inputs `range`, `days`: `timing/MinuteRange` AND `timing/DayOfMonth`;
   - `schedule/YearSchedule` — inputs `range`, `months`: `timing/MinuteRange` AND `timing/MonthOfYear`.
   The inner blocks are `Time` (the range), `Days`/`Months` and `Both` (`logic/And`). Each input maps one primitive's setting, so its default is the primitive's (`""`: false until set).
+
+## 7. Alarms
+
+### 7.1 `process/Alarm` — alarm handling
+
+Decided with the user 2026-10-15, in part (not implemented yet; the state transitions are open, `00-README.md` open question 15, and more details about alarms are to be documented later). An alarm block follows an **alarm condition** (`input`) and keeps the alarm's **state**, which a person acknowledges. Its presentation inputs (`category`, `class`) are for alarm views in the user interface and do not change its behavior. Stateful (the current state, the last `acknowledge` value), `compute_on_input`, `TIMER_NONE`. Registered after `process/AutoMan`.
+
+**States**: `Normal`, `Activated`, `Deactivated`, `Reactivated`, `Acknowledged`, `Disabled`, `Blocked`. The alarm is in exactly one of them at a time.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `input` | input | bool | The alarm condition: true while the alarmed situation exists |
+| `acknowledge` | input | bool | A push button: a person has noticed the alarm (acts on its rising edge) |
+| `block` | input | bool | Blocks the alarm: no state changes; state `Blocked` |
+| `enable` | input | bool | Enables the alarm; false: no state changes, state `Disabled` |
+| `category` | input | string | Free text for the presentation (e.g. "Elevators", "Heating") |
+| `class` | input | string | The alarm class, `"A"`, `"B"`, `"C"` or `"D"` (below) |
+| `normal`, `activated`, `deactivated`, `reactivated`, `acknowledged`, `disabled`, `blocked` | output | bool | true while the alarm is in that state (exactly one is true) |
+| `state` | output | string | The current state's name, e.g. `"Activated"` |
+
+- **`block` and `enable`** both stop the alarm's state changes; they differ only in how alarm views present them (a blocked alarm is, for example, one put aside during maintenance; a disabled one is switched off).
+- **`enable` rests at `false`** (§1; decided with the user 2026-10-15): a new alarm is `Disabled` until `enable` is wired or set to true, as a PID regulator nobody has set up rests in manual (§6.1).
+- **Classes** say how soon the alarm must be attended to:
+  - `A` — attention required 24/7. E.g. "Person stuck in elevator", "Fire alarm".
+  - `B` — attend to during working hours. E.g. "Heating system failure", "Nutrient tank empty".
+  - `C` — attend to soon. E.g. "Heat pump inoperable".
+  - `D` — a minor event that may be of interest. E.g. "Regulator not moving".
+
+**Open** (`00-README.md` open question 15): the transitions between the states — what moves an alarm from one state to another on a change of `input`, a press of `acknowledge`, and `block`/`enable` set or cleared; the state at the process's start; which of `Disabled` and `Blocked` applies when both are asked for; what a `class` other than `A`–`D` means; and the further alarm details to be documented later.
