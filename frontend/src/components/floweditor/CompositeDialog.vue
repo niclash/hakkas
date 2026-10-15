@@ -8,7 +8,8 @@
       <div class="hk-field">
         <label class="hk-label" for="hk-composite-type">Type name</label>
         <input id="hk-composite-type" ref="typeField" class="hk-input" data-testid="composite-type" v-model="type"
-               spellcheck="false" autocomplete="off" :aria-invalid="typeProblem !== ''" :disabled="busy"/>
+               spellcheck="false" autocomplete="off" :aria-invalid="typeProblem !== ''" :disabled="busy"
+               @input="touched = true" @blur="touched = true"/>
         <p v-if="typeProblem && touched" class="hk-inspector-note" data-testid="composite-type-problem">{{ typeProblem }}</p>
       </div>
       <div class="hk-field">
@@ -47,7 +48,8 @@
       <p v-if="error" class="hk-dialog-error" role="alert" data-testid="composite-error">{{ error }}</p>
       <div class="hk-actions">
         <button type="button" class="hk-button" data-testid="dialog-cancel" :disabled="busy" @click="emit('close')">Cancel</button>
-        <button type="submit" class="hk-button primary" data-testid="dialog-ok" :disabled="busy">
+        <button type="submit" class="hk-button primary" data-testid="dialog-ok"
+                :disabled="busy || typeProblem !== ''">
           {{ busy ? "Creating…" : "Create" }}
         </button>
       </div>

@@ -51,6 +51,10 @@ describe("names", () => {
         expect(checkTypeName("user/Pump", ["math/Add2"])).toBe("");
         expect(checkTypeName("math/Add2", ["math/Add2"])).toBe("A block type with this name exists");
         expect(checkTypeName(" ", [])).not.toBe("");
+        expect(checkTypeName("my-lib_2/Pump-1_a", [])).toBe("");
+        for (const bad of ["Pump", "user/", "/Pump", "user/Pu mp", "user/Pump.x", "a/b/c", "user/Pümp", " user/Pump"])
+            expect(checkTypeName(bad, []), bad).toMatch(/family\/Name/);
+        expect(checkTypeName("user/" + "x".repeat(60), [])).toBe("A name of 1 to 64 characters");
         const rows = defaultPorts([add2("a")], [], []).map(r => ({...r, exposed: true}));
         rows[1].name = "in1";
         rows[2].name = "bad.name";

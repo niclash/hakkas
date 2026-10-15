@@ -111,9 +111,14 @@ export function defaultPorts(blocks: SelBlock[], links: Link[], processPorts: Pr
     return rows;
 }
 
+// A type name is "<family>/<name>", each part letters, digits, "-" and "_" (06 §4.9).
+const TYPE_NAME = /^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/;
+
 // What is wrong with the type's name or a row's public name, or "" (the engine checks too).
 export function checkTypeName(name: string, existing: string[]): string {
-    if (name.trim() === "" || new TextEncoder().encode(name).length > MAX_NAME)
+    if (!TYPE_NAME.test(name))
+        return "“family/Name”: letters, digits, “-” and “_” on each side of one “/”";
+    if (name.length > MAX_NAME)
         return "A name of 1 to 64 characters";
     if (existing.includes(name))
         return "A block type with this name exists";

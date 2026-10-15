@@ -68,12 +68,25 @@ test("names are checked before anything is sent", async ({page, engine}) => {
     await selectAdders(page);
     await title(page, "block1").click({button: "right"});
     await item(page, "create-composite").click();
+    // Create stays disabled until the type name is valid: "family/Name".
+    const ok = page.getByTestId("dialog-ok");
+    await expect(ok).toBeDisabled();
+    for (const bad of ["user/", "Sum3", "user/Su m3", "user/Sum.3", "a/b/c"]) {
+        await page.getByTestId("composite-type").fill(bad);
+        await expect(page.getByTestId("composite-type-problem")).toHaveText(/family\/Name/);
+        await expect(ok).toBeDisabled();
+    }
     await page.getByTestId("composite-type").fill("math/Add2");
+    await expect(page.getByTestId("composite-type-problem")).toHaveText("A block type with this name exists");
+    await expect(ok).toBeDisabled();
+    await page.getByTestId("composite-type").fill("my-lib/Sum_3");
+    await expect(page.getByTestId("composite-type-problem")).toHaveCount(0);
+    await expect(ok).toBeEnabled();
     await portRow(page, "block1.in1").getByTestId("composite-expose").check();
     await portRow(page, "block1.in1").getByTestId("composite-name").fill("out.x");
-    await page.getByTestId("dialog-ok").click();
-    await expect(page.getByTestId("composite-type-problem")).toHaveText("A block type with this name exists");
+    await ok.click();
     await expect(portRow(page, "block1.in1").getByTestId("composite-name-problem")).toHaveText(/no “.”/);
+    await expect(page.getByTestId("composite-dialog")).toHaveCount(1);
     await page.getByTestId("dialog-cancel").click();
     await expect(page.getByTestId("composite-dialog")).toHaveCount(0);
 });
