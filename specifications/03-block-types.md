@@ -70,6 +70,9 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `process/Curve` | show_chart | `output` follows a curve of up to 7 points | stateless; see §3.2 |
 | `process/AutoMan` | pan_tool | `output = override ? manual : input` | stateless; see §3.3 |
 | `process/Alarm` | notifications | alarm states of a condition | stateful; see §7 |
+| `process/Delay` | hourglass_empty | `output` takes `input` once it has been stable for `milliseconds` | scheduled, stateful; see §3.4 |
+| `process/Trigger` | bolt | `output` false when `arm` rises, true when `fire` rises | stateful; see §3.5 |
+| `process/Limit` | compress | `output = input` capped to `[min, max]` | stateless; see §3.6 |
 | `timing/Interval` | timer | periodic pulse generator: PWM or edge generator | see §3.1 |
 | `timing/MinuteRange` | schedule | true within a time-of-day range | calendar primitive, §6.2 |
 | `timing/DayOfWeek` | date_range | true on the selected weekdays | calendar primitive, §6.2 |
@@ -168,6 +171,47 @@ Decided with the user 2026-10-15 (not implemented yet). Lets a person override a
 | `output` | output | number | `manual` while overridden, else `input` |
 
 `output = to_bool(override) ? to_f64(manual) : to_f64(input)`. Every input rests at its type's resting value (§1): not overridden, so a new block passes `input` through. `override` is a bool: it is a switch.
+
+### 3.4 `process/Delay` — on/off delay
+
+Decided with the user 2026-10-15 (not implemented yet). Passes a boolean `input` to `output` only once it has been **stable** for `milliseconds`: every change of `input` starts the wait over, and `output` changes only when the wait ends. It delays both edges (on and off) and filters out pulses shorter than `milliseconds`. A scheduled block (`compute_on_input`, `TIMER_SCHEDULED`; state: the engine time of the last change of `input`). Registered after `process/Alarm`.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `input` | input | bool | The signal to delay |
+| `milliseconds` | input | number | How long `input` must be stable before `output` takes it (`<= 0`: no delay) |
+| `output` | output | bool | `input`, once it has been stable for `milliseconds` |
+
+- **A change of `input`** (`to_bool`) records the time and arms the timer for `milliseconds`; when it expires with `input` unchanged since, `output = input`. If `input` returns to `output`'s value before then, nothing is pending (the timer is cancelled), which is what the restarted wait would give.
+- **`milliseconds`** is rounded to whole milliseconds, at most `2^53`; `<= 0`, NaN or infinite means **no delay**: `output` follows `input` at once (its resting value `0`, §1). A change of `milliseconds` while a change of `input` is pending applies to that wait, counted from the change of `input`: if it has already lasted that long, `output` takes `input` at once.
+- **Start**: `output = input` at once, with nothing pending (decided with the user); only changes after the start are delayed. `STOP` changes nothing; nothing pending survives a stop.
+- **Late timers**: a timer that fires late applies the change then; it is never applied early.
+
+### 3.5 `process/Trigger` — arm and fire
+
+Decided with the user 2026-10-15 (not implemented yet). `output` changes state **only on two edges**, each regardless of the other input: a **rising edge of `arm`** (false → true) sets `output` to false, and a **rising edge of `fire`** sets it to true. Nothing else changes it: not the levels of the inputs, not falling edges. So a `fire` that is already true when `arm` rises leaves `output` false until `fire` goes false and then true again. Stateful (the last values of `arm` and `fire`), `compute_on_input`, `TIMER_NONE`. Registered after `process/Delay`.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `arm` | input | bool | Its rising edge sets `output` to false |
+| `fire` | input | bool | Its rising edge sets `output` to true |
+| `output` | output | bool | false since the last rising `arm`, true since the last rising `fire`, whichever came last |
+
+- Inputs are read with `to_bool`. One input changes per compute (§2), so the two edges never coincide.
+- **Start**: `output` is false, and the inputs' values at the start are recorded without counting as edges (an input already true at the start must go false and true again). `STOP` changes nothing; the recorded values do not survive a stop.
+
+### 3.6 `process/Limit` — limiter
+
+Decided with the user 2026-10-15 (not implemented yet). `output` is `input` capped to `[min, max]`. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute ignores `reason` except `STOP`, which changes nothing. Registered after `process/Trigger`.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `input` | input | number | The value to limit |
+| `min` | input | number | Lower limit (equal limits: none) |
+| `max` | input | number | Upper limit (equal limits: none) |
+| `output` | output | number | `input`, capped to `[min, max]` |
+
+The limits follow `process/PID`'s (§6.1): **equal limits are no limits** (both rest at `0`, §1, which would otherwise pin `output` to 0), limits given the wrong way round are swapped, and a NaN limit is no limit on its side. A NaN `input` gives a NaN `output`.
 
 ## 4. The environment's inputs and outputs — no IO block types
 
