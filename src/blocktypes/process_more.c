@@ -175,7 +175,7 @@ static const PortDescriptor alarm_outputs[] = {
 	BOOL("acknowledged", "true while the alarm is Acknowledged"),
 	BOOL("disabled", "true while the alarm is Disabled"),
 	BOOL("blocked", "true while the alarm is Blocked"),
-	{.name = "state", .description = "The current state's name", .type = "string",
+	{.name = "state", .description = "The name of the current state", .type = "string",
 	 .default_value = LINKABLE_EMPTY_STRING_INIT},
 };
 
