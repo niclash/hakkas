@@ -1,0 +1,38 @@
+{
+  "id": "261779e7-0311-4425-b22a-daae1560ef74",
+  "name": "Shunt Group",
+  "description": "Shunt valve regulating the supply temperature to its setpoint; the pump runs above 21 and stops below 20 degrees",
+  "icon": "",
+  "started": false,
+  "blocks": {
+    "setpoint_limit": { "component": "process/Limit", "metadata": { "x": 40, "y": 40 } },
+    "pump_switch": { "component": "process/Hysteresis", "metadata": { "x": 300, "y": 40 } },
+    "valve_pid": { "component": "process/PID", "metadata": { "x": 560, "y": 40 } }
+  },
+  "connections": [
+    { "src": { "data": 35 }, "tgt": { "block": "setpoint_limit", "port": "input" } },
+    { "src": { "data": 5 }, "tgt": { "block": "setpoint_limit", "port": "min" } },
+    { "src": { "data": 80 }, "tgt": { "block": "setpoint_limit", "port": "max" } },
+
+    { "src": { "block": "setpoint_limit", "port": "output" }, "tgt": { "block": "pump_switch", "port": "input" } },
+    { "src": { "data": 20.5 }, "tgt": { "block": "pump_switch", "port": "threshold" } },
+    { "src": { "data": 0.5 }, "tgt": { "block": "pump_switch", "port": "hysteresis" } },
+
+    { "src": { "block": "setpoint_limit", "port": "output" }, "tgt": { "block": "valve_pid", "port": "setpoint" } },
+    { "src": { "data": 4 }, "tgt": { "block": "valve_pid", "port": "kp" } },
+    { "src": { "data": 0.05 }, "tgt": { "block": "valve_pid", "port": "ki" } },
+    { "src": { "data": 0 }, "tgt": { "block": "valve_pid", "port": "min" } },
+    { "src": { "data": 100 }, "tgt": { "block": "valve_pid", "port": "max" } },
+    { "src": { "block": "pump_switch", "port": "output" }, "tgt": { "block": "valve_pid", "port": "auto" } },
+    { "src": { "data": 0 }, "tgt": { "block": "valve_pid", "port": "manual" } },
+    { "src": { "data": 1000 }, "tgt": { "block": "valve_pid", "port": "sample_ms" } }
+  ],
+  "inports": [
+    { "name": "setpoint", "block": "setpoint_limit", "port": "input" },
+    { "name": "temperature", "block": "valve_pid", "port": "input" }
+  ],
+  "outports": [
+    { "name": "valve", "block": "valve_pid", "port": "output" },
+    { "name": "pump", "block": "pump_switch", "port": "output" }
+  ]
+}

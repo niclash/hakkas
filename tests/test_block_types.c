@@ -306,16 +306,16 @@ static void test_builtins(void)
 			double def; /* a bool's default: 0 false, 1 true */
 		} pid_ins[] = {
 			{"setpoint", "number", 0},
-			{"measured_value", "number", 0},
+			{"input", "number", 0},
 			{"kp", "number", 0},
 			{"ki", "number", 0},
 			{"kd", "number", 0},
 			{"max_dgain", "number", 0},
-			{"output_min", "number", 0},
-			{"output_max", "number", 0},
+			{"min", "number", 0},
+			{"max", "number", 0},
 			{"reverse", "bool", 0},
 			{"auto", "bool", 0},
-			{"manual_value", "number", 0},
+			{"manual", "number", 0},
 			{"sample_ms", "number", 0},
 		};
 		CHECK_STREQ(t->icon, "tune");

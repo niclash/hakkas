@@ -109,7 +109,7 @@ enum { PID_OUTPUT, PID_SATURATED };
 static const PortDescriptor pid_inputs[] = {
 	{.name = "setpoint", .description = "Desired value of the measurement",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
-	{.name = "measured_value", .description = "Measured value of the controlled process",
+	{.name = "input", .description = "Measured value of the controlled process",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "kp", .description = "Proportional gain (0: no proportional term)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
@@ -120,16 +120,16 @@ static const PortDescriptor pid_inputs[] = {
 	{.name = "max_dgain",
 	 .description = "Highest gain of the derivative term (<= 0: no limit)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
-	{.name = "output_min", .description = "Lower output limit (equal limits: none)",
+	{.name = "min", .description = "Lower output limit (equal limits: none)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
-	{.name = "output_max", .description = "Upper output limit (equal limits: none)",
+	{.name = "max", .description = "Upper output limit (equal limits: none)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "reverse",
-	 .description = "Reverse acting (error = measured_value - setpoint), e.g. cooling",
+	 .description = "Reverse acting (error = input - setpoint), e.g. cooling",
 	 .type = "bool", .default_value = LINKABLE_BOOL_INIT(false)},
 	{.name = "auto", .description = "Automatic (true) or manual (false) mode",
 	 .type = "bool", .default_value = LINKABLE_BOOL_INIT(false)},
-	{.name = "manual_value", .description = "Output in manual mode (clamped to the limits)",
+	{.name = "manual", .description = "Output in manual mode (clamped to the limits)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
 	{.name = "sample_ms", .description = "Sample period in milliseconds (<= 0: no sampling)",
 	 .type = "number", .default_value = LINKABLE_F64_INIT(0.0)},
@@ -216,8 +216,7 @@ static double pid_clamp(const PidInputs *p, double u)
 	return fmin(fmax(u, p->lo), p->hi);
 }
 
-/* Manual mode: output = clamp(manual_value); a non-finite manual_value holds
- * the output. */
+/* Manual mode: output = clamp(manual); a non-finite manual holds the output. */
 static void pid_manual(BlockCtx *ctx, const PidInputs *p)
 {
 	if (isfinite(p->manual))
@@ -315,7 +314,7 @@ static void pid_step(BlockCtx *ctx, const PidInputs *p, double dt)
 /*
  * process/PID (03 §6.1): out = Kp·e + Ki·∫e dt + D, parallel form.
  *  - START resets the state, then: auto → output from P alone; manual →
- *    output = clamp(manual_value), the integral preset from it.
+ *    output = clamp(manual), the integral preset from it.
  *  - TIMER (every sample_ms) is the full step, with dt the engine time since
  *    the last step or the start, so a late tick (skipped ticks, 01 §3.2)
  *    integrates the time that actually passed. In manual mode the

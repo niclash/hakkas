@@ -19,7 +19,8 @@ library/schedules/    the schedule standard library: composite type files (sched
                       WeekSchedule, MonthSchedule, YearSchedule; 03 §6.2), not built in
 examples/             the sister project's files, kept unmodified; its graph files load as
                       they are (05 §2.1), e.g. `hakkas describe topology examples/example.json`
-                      prints one in hakkas' canonical form
+                      prints one in hakkas' canonical form; also hakkas' own example
+                      processes: shunt-group.json (a shunt valve PID with its pump)
 third_party/          vendored libraries, pinned and unmodified (01 §6): cjson/ (cJSON),
                       mbedtls/ (a subset of mbedTLS 3.6; its configuration in mbedtls-config/)
 ```

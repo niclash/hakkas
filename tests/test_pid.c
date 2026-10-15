@@ -40,7 +40,7 @@ static void setup(void)
 	setup_bare();
 	set("kp", 1);
 	set("max_dgain", 10);
-	set("output_max", 100);
+	set("max", 100);
 	set_bool("auto", true);
 	set("sample_ms", 1000);
 }
@@ -126,7 +126,7 @@ static void test_proportional(void)
 {
 	setup();
 	set("setpoint", 50);
-	set("measured_value", 20);
+	set("input", 20);
 	start_at(0);
 	CHECK(near(out(), 30)); /* kp 1 */
 	CHECK(!saturated());
@@ -147,7 +147,7 @@ static void test_proportional(void)
 	CHECK(near(out(), 10));
 
 	/* At the lower limit. */
-	set("measured_value", 40);
+	set("input", 40);
 	CHECK(near(out(), 0));
 	CHECK(saturated());
 	teardown();
@@ -196,14 +196,14 @@ static double closed_loop(double kp, double ki)
 	set("ki", ki);
 	set("sample_ms", 100);
 	set("setpoint", sp);
-	set("measured_value", y);
+	set("input", y);
 	start_at(0);
 	for (uint64_t k = 1; k <= 600; k++) {
 		CHECK(fire(k * 100) == 1);
 		double u = out();
 		CHECK(u >= 0 && u <= 100);
 		y += (u - y) * (1 - exp(-dt / tau));
-		set("measured_value", y);
+		set("input", y);
 	}
 	teardown();
 	return y;
@@ -230,8 +230,8 @@ static void derivative_case(double max_dgain, double d0, double d1)
 	set("kd", 2);
 	set("max_dgain", max_dgain);
 	set("sample_ms", 10);
-	set("output_min", -1000);
-	set("output_max", 1000);
+	set("min", -1000);
+	set("max", 1000);
 	start_at(0);
 	CHECK(fire(10) == 1); /* the first tick records the measurement */
 	CHECK(near(out(), 0));
@@ -241,7 +241,7 @@ static void derivative_case(double max_dgain, double d0, double d1)
 	CHECK(fire(20) == 1);
 	CHECK(near(out(), 0)); /* no derivative kick */
 
-	set_at(25, "measured_value", linkable_from_f64(1));
+	set_at(25, "input", linkable_from_f64(1));
 	CHECK(near(out(), 0)); /* the input change does not advance D */
 	CHECK(fire(30) == 1);
 	CHECK(near(out(), d0));
@@ -279,9 +279,9 @@ static void test_reverse(void)
 	setup();
 	set_bool("reverse", true);
 	set("setpoint", 20);
-	set("measured_value", 25);
+	set("input", 25);
 	start_at(0);
-	CHECK(near(out(), 5)); /* e = measured_value − setpoint */
+	CHECK(near(out(), 5)); /* e = input − setpoint */
 	set_bool("reverse", false);
 	CHECK(near(out(), 0));
 	CHECK(saturated());
@@ -293,10 +293,10 @@ static void test_reverse(void)
 	set("kp", 0);
 	set("kd", 1);
 	set("max_dgain", 0);
-	set("output_min", -100);
+	set("min", -100);
 	start_at(0);
 	CHECK(fire(1000) == 1);
-	set("measured_value", 2);
+	set("input", 2);
 	CHECK(fire(2000) == 1);
 	CHECK(near(out(), 2));
 	teardown();
@@ -326,7 +326,7 @@ static void test_anti_windup(void)
 
 	/* The error reverses: the output leaves the limit at the next tick
 	 * (an unclamped integral would hold it there for another 90 s). */
-	set_at(100500, "measured_value", linkable_from_f64(20));
+	set_at(100500, "input", linkable_from_f64(20));
 	CHECK(near(out(), 100));
 	CHECK(fire(101000) == 1);
 	CHECK(near(out(), 90));
@@ -337,13 +337,13 @@ static void test_anti_windup(void)
 	setup();
 	set("kp", 0);
 	set("ki", 1);
-	set("measured_value", 10);
+	set("input", 10);
 	start_at(0);
 	for (uint64_t k = 1; k <= 50; k++)
 		CHECK(fire(k * 1000) == 1);
 	CHECK(near(out(), 0));
 	CHECK(saturated());
-	set("measured_value", -10);
+	set("input", -10);
 	CHECK(fire(51000) == 1);
 	CHECK(near(out(), 10));
 	teardown();
@@ -368,17 +368,17 @@ static void test_limits(void)
 	start_at(0);
 	CHECK(near(out(), 100));
 	/* A NaN limit is no limit on its side. */
-	set("output_max", NAN);
+	set("max", NAN);
 	CHECK(near(out(), 500));
 	CHECK(!saturated());
 	set("setpoint", -500);
 	CHECK(near(out(), 0));
-	set("output_min", NAN);
+	set("min", NAN);
 	CHECK(near(out(), -500));
 	CHECK(!saturated());
 	/* Limits the wrong way round are swapped. */
-	set("output_min", 100);
-	set("output_max", 0);
+	set("min", 100);
+	set("max", 0);
 	CHECK(near(out(), 0));
 	CHECK(saturated());
 	set("setpoint", 50);
@@ -388,12 +388,12 @@ static void test_limits(void)
 	CHECK(near(out(), 100));
 	CHECK(saturated());
 	/* Equal limits, as when neither is set, are no limits. */
-	set("output_min", 0);
-	set("output_max", 0);
+	set("min", 0);
+	set("max", 0);
 	CHECK(near(out(), 150));
 	CHECK(!saturated());
-	set("output_min", 7);
-	set("output_max", 7);
+	set("min", 7);
+	set("max", 7);
 	CHECK(near(out(), 150));
 	CHECK(!saturated());
 	teardown();
@@ -429,28 +429,28 @@ static void test_manual_bumpless(void)
 	setup();
 	set("ki", 1);
 	set("setpoint", 50);
-	set("measured_value", 40);
+	set("input", 40);
 	start_at(0);
 	CHECK(near(out(), 10));
 	CHECK(fire(1000) == 1);
 	CHECK(near(out(), 20)); /* P 10 + I 10 */
 
-	/* Manual: the output follows manual_value, clamped. */
-	set_at(1500, "manual_value", linkable_from_f64(70));
+	/* Manual: the output follows manual, clamped. */
+	set_at(1500, "manual", linkable_from_f64(70));
 	set_bool("auto", false);
 	CHECK(near(out(), 70));
 	CHECK(!saturated());
-	set("manual_value", 150);
+	set("manual", 150);
 	CHECK(near(out(), 100));
 	CHECK(saturated());
-	set("manual_value", 70);
+	set("manual", 70);
 	CHECK(near(out(), 70));
 	CHECK(fire(2000) == 1);
 	CHECK(fire(3000) == 1);
 	CHECK(near(out(), 70));
 	set("setpoint", 55);
 	CHECK(near(out(), 70));
-	set("manual_value", NAN); /* held */
+	set("manual", NAN); /* held */
 	CHECK(near(out(), 70));
 
 	/* Back to auto without a jump: I is preset to 70 − P. */
@@ -467,9 +467,9 @@ static void test_start_manual(void)
 	setup();
 	set("ki", 1);
 	set("setpoint", 50);
-	set("measured_value", 40);
+	set("input", 40);
 	set_bool("auto", false);
-	set("manual_value", 30);
+	set("manual", 30);
 	start_at(0);
 	CHECK(near(out(), 30));
 	CHECK(fire(1000) == 1);
@@ -483,9 +483,9 @@ static void test_start_manual(void)
 	/* Without an integral term there is nothing to preset: P alone. */
 	setup();
 	set("setpoint", 50);
-	set("measured_value", 40);
+	set("input", 40);
 	set_bool("auto", false);
-	set("manual_value", 30);
+	set("manual", 30);
 	start_at(0);
 	CHECK(near(out(), 30));
 	set_bool("auto", true);
@@ -593,14 +593,14 @@ static void test_nan_inputs(void)
 	set("ki", 1);
 	set("kd", 1);
 	set("setpoint", 50);
-	set("measured_value", 20);
+	set("input", 20);
 	start_at(0);
 	CHECK(near(out(), 30));
 	CHECK(fire(1000) == 1);
 	CHECK(near(out(), 60)); /* P 30 + I 30, D 0 (first tick) */
 
 	/* A NaN measurement holds the output and the integral. */
-	set_at(1500, "measured_value", linkable_from_f64(NAN));
+	set_at(1500, "input", linkable_from_f64(NAN));
 	CHECK(near(out(), 60));
 	CHECK(fire(2000) == 1);
 	CHECK(near(out(), 60));
@@ -608,7 +608,7 @@ static void test_nan_inputs(void)
 
 	/* Back: the same integral; the time while invalid is not integrated,
 	 * and the derivative restarts without a kick. */
-	set_at(2500, "measured_value", linkable_from_f64(25));
+	set_at(2500, "input", linkable_from_f64(25));
 	CHECK(near(out(), 55));
 	CHECK(fire(3000) == 1);
 	CHECK(near(out(), 25 + 30 + 25)); /* I += 25 · 1 s, D 0 */
