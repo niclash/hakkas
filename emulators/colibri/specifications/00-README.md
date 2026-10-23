@@ -8,7 +8,9 @@ The Colibri emulator lets a user test a hakkas program (processes and their bind
 
 It is a **separate project** in `emulators/colibri/`, with its own build and tests; hakkas does not depend on it, and it depends on hakkas only through the environment link protocol (`specifications/04-drivers.md` §0.1).
 
-**In scope**: the carrier board's I/O slots; the I/O modules, as plugins (§7); the slot scan cycle and its timing (§4); environments made from scratch, copied from a device, and compared (§5.1); a browser UI (§8) that is generic, so other emulators can use it too.
+**In scope**: the carrier board's I/O slots; the I/O modules, as plugins (§7); the slot scan cycle and its timing (§4); environments made from scratch, copied from a device, and compared (§5.1); a control channel (§8), on which a browser UI and external programs set inputs and follow outputs; the UI is generic, so other emulators can use it too.
+
+**Not part of the emulator**: application testing — plant models, scenarios — which external programs do through the control channel (§8.1).
 
 **Out of scope for now**: emulating the MCU module and the Comm module (Ethernet, RS-485, WiFi, LoRaWAN); hakkas itself runs as its POSIX build on the desktop instead of the MCU. The carrier board's power supply and its I2C/SPI infrastructure are not emulated (§2).
 
@@ -56,8 +58,8 @@ The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM
 ## 3. Place in the system
 
 ```
- browser ── generic emulator UI (§8)
-    │  WebSocket, the emulator UI protocol (§8.2)
+ browser UI (§8.2)          external programs: scripts, demos, automation
+    │  WebSocket             │  Unix socket — both the control protocol (§8.3)
  colibri-emulator ── module plugins (§7), the scan cycle (§4), environments (§5)
     │  Unix socket, newline-delimited JSON (04-drivers.md §0.1)
  hakkas (POSIX build) ── processes + bindings files
@@ -66,7 +68,7 @@ The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM
 ```
 
 - **Towards hakkas** the emulator is the server of the environment link: it listens on a Unix socket (hakkas' `environment.socket`), sends its `describe` (§6) first on every connection, then all current sensor values, then changes; it takes hakkas' `write` messages for the actuators; it may send `clock` (§9). It follows every rule of `04-drivers.md` §0.1, including re-sending all current sensor values after a reconnect.
-- **Towards the user** it serves the generic UI and talks to it over a WebSocket (§8).
+- **Towards the user and external programs** it serves the generic UI and offers the control channel (§8).
 - The two programs are started separately; the emulator does not start or stop hakkas.
 
 ## 4. The slot scan cycle
@@ -164,25 +166,43 @@ Most modules need no code: by default, a sensor channel takes the value the user
 
 A module that does more supplies a behaviour, a JavaScript module whose `serve` function is called each time its slot is served (§4) with its field-side values, its actuator values since the last call, its internal state and the time since the last call; it returns its sensor values, field-side indications and new internal state. Examples: DII/DIU counting edges and measuring pulse width; DIO1's channel modes and fault flags; Pt1000's open/short faults; PID1 regulating its output from its Pt1000 input and its parameters.
 
+(*Proposal*) A field-side input is a constant value by default; where the plugin allows, it may also be a **signal** the behaviour evaluates at each turn — e.g. a pulse train `{"hz": 42.5, "duty": 0.5}` on a DII terminal, from which the behaviour counts the edges and measures the pulse width since its last turn, as the module's own MCU would. A client cannot time individual pulses shorter than the scan cycle over a socket; a signal lets it represent such a sensor anyway.
+
 (*Proposal*) A behaviour runs inside the emulator's process with no access to anything but its arguments by convention; isolating third-party plugins (a worker thread or `vm` context) is left until there are third-party plugins.
 
-## 8. The generic emulator UI
+## 8. The UI and the control channel
 
 ### 8.1 Principle
 
-The UI knows nothing about Colibri. It renders what an emulator describes — **panels** made of SVG assets, with bindings and controls — and forwards the user's operations. It follows hakkas' principle (`../../../specifications/00-README.md`): **the emulator owns the state, the UI only mirrors it**. A control sends a request; the emulator applies it and broadcasts the resulting state to every connected UI, the sender included, which updates its view only from that.
+The emulator's state — field-side values, channel values, actuator values, settings, the counters of §4.1 — is available on a **control channel**, with one protocol (§8.3) for every client: the browser UI and **external programs** (a Python script, a demo, an automation). All clients are equal: each may set inputs and follows the whole state.
 
-The UI is its own package (*proposal*: `emulators/ui/`, with the Colibri emulator serving its built files), so that other emulators reuse it.
+It follows hakkas' principle (`../../../specifications/00-README.md`): **the emulator owns the state, clients only mirror it**. A client sends a request; the emulator applies it and broadcasts the resulting state to every connected client, the sender included, which updates its view only from that. When two clients set the same input, the last one wins and every client sees it.
 
-### 8.2 The emulator UI protocol (*proposal*)
+The control channel is **separate from hakkas' environment link** (*decided*, 2026-10-23): hakkas exchanges channel values on the MCU's side of the modules, while clients work on the **field side** — a voltage on a terminal, a contact closed — and what they set reaches hakkas only through the module's behaviour and the scan cycle (§4), as on the device. (The link protocol could not tell the two kinds of client apart anyway: the emulator sends `describe` first on every connection, `04-drivers.md` §0.1.)
 
-JSON over a WebSocket from the emulator:
-- emulator → UI: `scene` (the panels: their SVG asset URLs, placement, bindings and controls; sent on connect and whenever the configuration changes), `state` (changed values, by key), `settings` (the emulator's runtime settings and their allowed values, e.g. carrier, slot count, cycle time, the module types available per slot), `stats` (the counters of §4.1).
-- UI → emulator: `set` (a control's new value, by key), `configure` (a setting change, e.g. a module put into slot 4).
+**Application testing is not part of the emulator** (*decided*, 2026-10-23): plant models, scenarios and the like — testing a Colibri application against a simulated real world, e.g. a two-stage furnace regulator whose setpoint comes from a sensor's pulse train — are written outside it, in Python or whatever is at hand, as clients of the control channel. The emulator's job is to make that easy: a simple, documented protocol, on a transport a script reaches without a library.
 
-The assets are served by the emulator over HTTP, beside the UI's own files.
+### 8.2 The UI layout (*proposal*)
 
-### 8.3 Bindings and controls (*proposal*)
+The UI knows nothing about Colibri; it renders what the emulator describes:
+- **The carrier board**: a photo or drawing of the board (an asset of the carrier's description, §5), with the place of each slot marked (an element with the id `slot-<n>`).
+- **The modules**: each module's faceplate (§7.2) drawn in its slot's place on the carrier, with its LEDs and terminal values bound to the state and, where the plugin has them, controls on it.
+- **The signal panel**, beside the drawing: one row per field-side input (a slider, toggle, number entry) and per output (an indicator), with the channel's name (`slot1-ain[1]`), unit and value. The UI builds it from the channel list alone, so every module is usable, also one without a faceplate.
+- **The settings** (§5) and the counters (§4.1).
+
+The UI is its own package (*proposal*: `emulators/ui/`, with the Colibri emulator serving its built files and the assets over HTTP), so that other emulators reuse it.
+
+### 8.3 The control protocol (*proposal*)
+
+JSON messages, the same on every transport:
+- emulator → client: `scene` (the carrier and module assets, the slots' places, bindings and controls, the channel list; sent on connect and after every configuration change), `state` (changed values, by key; all of them on connect), `settings` (the runtime settings and their allowed values: carrier, slot count, cycle time, the module types available per slot), `stats` (the counters of §4.1).
+- client → emulator: `set` (an input's new field-side value, by key), `configure` (a setting change, e.g. a module put into slot 4).
+
+**Transports**: a **WebSocket** (the browser UI; also usable from scripts) and a **Unix socket** with newline-delimited JSON, like hakkas' environment link (`04-drivers.md` §0.1) — reachable from a shell (`socat`) or a few lines of Python. Only the framing differs.
+
+Keys name a slot, a value and a channel: `slot1.field.ain.1` (the voltage on AIV terminal 1), `slot1.ain.1` (the channel value hakkas gets), `slot3.relay.1` (the relay's state as hakkas wrote it).
+
+### 8.4 Bindings and controls on a faceplate (*proposal*)
 
 A binding ties an SVG element to a state key, e.g.:
 - `{"element": "led1", "attr": "fill", "key": "relay.1", "map": {"true": "#e33", "false": "#422"}}`
@@ -191,16 +211,14 @@ A binding ties an SVG element to a state key, e.g.:
 
 A control makes an element operable:
 - `{"element": "term1", "control": "slider", "key": "field.ain.1", "min": 0, "max": 10, "step": 0.01}`
-- `{"element": "sw1", "control": "toggle", "key": "field.di.1"}`, `"button"` (momentary, for pulses), `"number"` (typed entry).
+- `{"element": "sw1", "control": "toggle", "key": "field.di.1"}`, `"button"` (momentary), `"number"` (typed entry).
 
-The emulator prefixes each module's keys with its slot (`slot1.relay.1`), so a plugin's manifest is written once, independent of the slot.
+A manifest's keys omit the slot; the emulator prefixes it (`slot1.relay.1`), so a manifest is written once, independent of the slot.
 
 ## 9. Later
 
-- **Simulated time** through the link's `clock` message: setting the wall clock (e.g. to test a schedule on Monday at 06:59) and running it faster.
-- **Scenarios and automated tests**: scripted field-side changes over time and checks of actuator values, run headless, so Colibri programs can be tested in CI.
+- **Simulated time** through the link's `clock` message: setting the wall clock (e.g. to test a schedule on Monday at 06:59). Running faster than real time would also need hakkas to run on simulated time (its timers, PID and Interval use its monotonic clock) — a change to hakkas.
 - **Fault injection**: a broken wire, a dead sensor, an out-of-range value — once it is decided what the firmware reports for them (`04-drivers.md` §0 rule 2: every channel reports a value even when its sensor is dead).
-- **Plant models**: closing the loop (a heater warming the temperature it is regulated by), possibly as plugins of another kind.
 - The MCU and Comm modules.
 
 ## 10. Open questions
