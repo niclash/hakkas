@@ -94,38 +94,49 @@ The point of emulating the cycle is the timing (*decided*, 2026-10-23): a progra
 
 The emulator counts, per channel, the writes received, the writes queued, the queue's current and highest length, the writes **dropped** on overflow and the sensor changes sent, and shows them in the UI (§8), so the user can see where a program outruns the cycle.
 
-## 5. Configuration
+## 5. Environments
 
+An **environment** is one emulated Colibri system:
 - **Carrier board**: which carrier (Colibri 8, Colibri-16pi, …) — the number of I/O slots and what the built-in slot provides follow from it.
 - **Number of I/O slots**: 1…n, for a carrier made from scratch.
 - **I/O module cycle time**: default 10 ms.
 - **Write queue size** per module (§4.1): default 10.
 - **Modules**: which module type (plugin) sits in which slot; a slot may be empty.
+- **The input channels' sources and noise** (§7.2), so a setup comes back as it was left.
 
-These are kept in a **configuration file** (*proposal*: given on the command line) and can be changed at runtime from the UI, which writes the file back. Example:
+Each environment is a file, `<name>.json`, its file name being the environment's name (§6). Example:
 
 ```json
-{"carrier": "colibri/Colibri8", "slots": 7, "cycleMs": 10,
+{"carrier": "colibri/Colibri8", "slots": 7, "cycleMs": 10, "queueSize": 10,
  "modules": [{"slot": 1, "type": "colibri/AIV", "serial": "EMU-0001"},
-             {"slot": 3, "type": "colibri/SSR"}]}
+             {"slot": 3, "type": "colibri/SSR"}],
+ "inputs": {"slot1.ai.1": {"source": 5.0, "noise": 0.02}}}
 ```
 
-Changing the cycle time takes effect at once. **Changing the carrier, the slot count or the modules is a power cycle** of the emulated device (*decided*, 2026-10-23): it changes the environment description, which hakkas accepts only at its startup (`04-drivers.md` §0.1), so the emulator closes the link and the UI tells the user to restart hakkas.
+### 5.1 The environment library
 
-The input channels' sources and noise (§7.2) are kept with the configuration, so a setup comes back as it was left.
+(*Decided*, 2026-10-23.) The user makes **many environments**; they are listed and selectable in the UI, and kept in a **central library** so they are reused between projects:
+- The library is a directory (*proposal*: `$XDG_DATA_HOME/colibri-emulator/`, i.e. `~/.local/share/colibri-emulator/`, overridden with `--library <dir>`), holding `environments/` (the environment files) and `bindings/` (bindings files the user keeps beside them, §5.2; the emulator itself does not read them).
+- The UI lists the library's environments and lets the user **create** one from scratch, **duplicate**, **rename** and **delete** one, and **select** the one the emulator runs. One environment runs at a time; the emulator starts with the one that ran last, or the one named on the command line.
+- Every change made in the UI is written back to the environment's file at once.
 
-### 5.1 Environments from scratch, from a device, and compared
+Changing the cycle time or the queue size takes effect at once. **Selecting another environment, or changing the carrier, the slot count or the modules, is a power cycle** of the emulated device (*decided*, 2026-10-23): it changes the environment description, which hakkas accepts only at its startup (`04-drivers.md` §0.1), so the emulator closes the link and the UI tells the user to restart hakkas.
 
-Required (*decided*, 2026-10-23); the details are to be discussed (question 7):
-- **From scratch**: the user builds an environment without a physical twin — carrier, slots, modules — in the UI.
+### 5.2 Bindings are made in hakkas' UI
+
+(*Decided*, 2026-10-23.) Bindings belong to a device, not to the emulator: hakkas' frontend gets the environment's ports from the device it is connected to — a Colibri device, or hakkas on the desktop running against the emulator — and offers a page for binding the processes' ports to them. On that page the user **selects a bindings file from the local file system**, typically in the library's `bindings/`; the user names the files and so controls which bindings go with which environment and device. That is hakkas' side (`specifications/04-drivers.md` §4, `06-frontend.md`), and needs additions to its wire protocol, each put to the user first.
+
+### 5.3 Copying from a device, comparing
+
+Required (*decided*, 2026-10-23), details to be discussed later:
 - **Copied from a device**: the user takes the environment (carrier, modules per slot, their metadata) from a connected Colibri device, so the desktop tests run against exactly what the device has.
-- **Compared**: two environments (e.g. the emulator's and a device's, or two configuration files) are compared, showing the slots and channels that differ — e.g. before loading a tested program into a device.
+- **Compared**: two environments (e.g. the emulator's and a device's, or two environment files) are compared, showing the slots and channels that differ — e.g. before loading a tested program into a device.
 
 ## 6. The environment description
 
 The emulator describes itself to hakkas per `04-drivers.md` §1:
 
-- `name`: decided with §5.1 (question 7).
+- `name`: the environment's name (§5) (question 7).
 - **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ai` (AIV in slot 1), `slot3-dq` (SSR in slot 3). A group of identical channels is one addressable port with `count`; a module with several groups has several ports (DII in slot 2: `slot2-freq`, `slot2-duty` and `slot2-count`). The channel group ids and their types, units and ranges come from the module's plugin (§7.1).
 - **Modules**: one entry per filled slot, with `slot`, `type`, `vendor`, `revision`, `serial`, `documentation` from the plugin and the configuration, and the ids of its ports.
 
@@ -183,7 +194,7 @@ At each turn of its slot (§4), every input channel produces a value, which goes
 
 So a noisy Pt1000 channel sends a new value every 80 ms on Colibri 8. Hakkas' change threshold (`01-architecture-overview.md` §3.3, engine-wide) filters it like real sensor noise; a `process/Deadband` filters a channel differently.
 
-The source and noise of every channel are part of the emulator's state (§8) and are kept with the configuration (§5).
+The source and noise of every channel are part of the emulator's state (§8) and are kept in the environment's file (§5).
 
 ### 7.3 Outputs
 
@@ -211,7 +222,7 @@ The UI knows nothing about Colibri; it renders what the emulator describes:
 - **The carrier board**: a photo or drawing of the board (an asset of the carrier's description, §5), with the place of each slot marked (an element with the id `slot-<n>`).
 - **The modules**: each module's faceplate (§7.2) drawn in its slot's place on the carrier, with its LEDs and terminal values bound to the state and, where the plugin has them, controls on it.
 - **The signal panel**, beside the drawing: one row per input channel (its control or function, §7.2, and its noise) and per output channel (its indicator, §7.1), with the channel's name (`slot1-ai[1]`), unit and value. The UI builds it from the channel list alone, so every module is usable, also one without a faceplate.
-- **The settings** (§5) and the counters (§4.1).
+- **The environment library** (§5.1): the environments, which one runs, its settings; and the counters (§4.1).
 
 The UI is its own package (*proposal*: `emulators/ui/`, with the Colibri emulator serving its built files and the assets over HTTP), so that other emulators reuse it.
 
@@ -252,4 +263,4 @@ A manifest's keys omit the slot; the emulator prefixes it (`slot1.dq.1`), so a m
 4. *Decided* (2026-10-23): DIO1's direction is set by the user program through an output channel (`dir`, true = output); its fault reporting is not defined yet, presumably everything the MAX14906 reports (§2.1).
 5. *Decided* (2026-10-23): PID1 is a full PID regulator whose parameters, named as hakkas' `process/PID`'s, are output channels, with a Pt1000 input; the emulator does not regulate (§2.1).
 6. *Decided* (2026-10-23): the write queue (§4.1) — one per module, emptied at each turn, 10 values for now, a full queue drops the new value; on the input side a driver forwards a value to its channel only in its slot's turn. The firmware's behaviour is to be reviewed later (the user).
-7. **Environments from a device and their comparison** (§5.1): to be discussed — what is copied (carrier, module types, revisions, serials, calibration?), how the emulator reaches the device (the device's environment is not on hakkas' wire yet, `04-drivers.md` §1; adding it is a protocol change to put to the user), what "compare" reports, and the environment's `name` (`04-drivers.md` §4 refuses a bindings file written for another name).
+7. **The environment name check**: hakkas refuses a bindings file whose `environment` differs from the running environment's `name` (`specifications/04-drivers.md` §4). With the user choosing the bindings file (§5.2), should that check go — the file's `environment` kept as information, and a binding to a port the environment lacks still skipped with a warning (`04` §4 item 6) — or should the emulator's environments report the device's name?
