@@ -8,7 +8,7 @@ The Colibri emulator lets a user test a hakkas program (processes and their bind
 
 It is a **separate project** in `emulators/colibri/`, with its own build and tests; hakkas does not depend on it, and it depends on hakkas only through the environment link protocol (`specifications/04-drivers.md` §0.1).
 
-**In scope**: the carrier board's I/O slots; the I/O modules, as plugins (§7); the slot scan cycle and its timing (§4); environments made from scratch, copied from a device, and compared (§5.1); a control channel (§8), on which a browser UI and external programs set inputs and follow outputs; the UI is generic, so other emulators can use it too.
+**In scope**: the carrier board's I/O slots; the I/O modules, as plugins (§7); the slot scan cycle and its timing (§4); a library of environments, made from scratch, copied from a device, and compared (§5); a control channel (§8), on which a browser UI and external programs set inputs and follow outputs; the UI is generic, so other emulators can use it too.
 
 **Not part of the emulator**: application testing — plant models, scenarios — which external programs do through the control channel (§8.1).
 
