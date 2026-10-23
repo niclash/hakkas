@@ -14,7 +14,7 @@ It is a **separate project** in `emulators/colibri/`, with its own build and tes
 
 **Out of scope for now**: emulating the MCU module and the Comm module (Ethernet, RS-485, WiFi, LoRaWAN); hakkas itself runs as its POSIX build on the desktop instead of the MCU. The carrier board's power supply and its I2C/SPI infrastructure are not emulated (§2).
 
-**Implementation** (*decided*, 2026-10-23): TypeScript on Node.js; module plugins' behaviour as JavaScript modules loaded at runtime (§7.3).
+**Implementation** (*decided*, 2026-10-23): TypeScript on Node.js; module plugins are data files, not code (§7).
 
 ## 2. The emulated system
 
@@ -79,14 +79,14 @@ The firmware serves its I/O slots **one at a time, in turn**, and so does the em
 
 Serving a slot (*proposal*):
 1. hand the module the actuator values hakkas has written for its channels since the slot was last served (§4.1);
-2. run the module's behaviour (§7.3), which computes its sensor values from its field side, its actuator values and the elapsed time;
+2. compute every input channel's value from its source and noise (§7.2);
 3. send every sensor value that changed to hakkas, and every changed state to the UI.
 
 So a change on the field side reaches hakkas, and a write from hakkas reaches the field side, only when its slot is served — the latency a program sees on the device.
 
 ### 4.1 Values arriving faster than the cycle
 
-The point of emulating the cycle is the timing (*decided*, 2026-10-23): a program that writes an actuator more often than its slot is served, or that depends on seeing every edge of a fast input, must show the same behaviour on the desktop as on the device. That requires the emulator to treat the values between two turns of a slot **as the firmware does** — question 6. Until decided, the emulator coalesces (only the latest write per channel reaches the module; a field-side pulse shorter than a cycle is seen by the state channel only if it lasts until the slot's turn, though a counter still counts it).
+The point of emulating the cycle is the timing (*decided*, 2026-10-23): a program that writes an actuator more often than its slot is served, or that depends on seeing every edge of a fast input, must show the same behaviour on the desktop as on the device. That requires the emulator to treat the values between two turns of a slot **as the firmware does** — question 6. Until decided, the emulator coalesces (only the latest write per channel reaches the module). An input's source is sampled at its slot's turn, so a `square` faster than the cycle shows only the samples a turn hits; a `counter` (§7.2) counts at its rate regardless.
 
 The emulator counts, per channel, the writes received, the writes **coalesced or dropped** (never reaching the module) and the sensor changes sent, and shows them in the UI (§8), so the user can see where a program outruns the cycle.
 
@@ -107,7 +107,7 @@ These are kept in a **configuration file** (*proposal*: given on the command lin
 
 Changing the cycle time takes effect at once. **Changing the carrier, the slot count or the modules is a power cycle** of the emulated device (*decided*, 2026-10-23): it changes the environment description, which hakkas accepts only at its startup (`04-drivers.md` §0.1), so the emulator closes the link and the UI tells the user to restart hakkas.
 
-The field-side values the user has set (*proposal*) are kept with the configuration, so a test setup comes back as it was left.
+The input channels' sources and noise (§7.2) are kept with the configuration, so a setup comes back as it was left.
 
 ### 5.1 Environments from scratch, from a device, and compared
 
@@ -128,53 +128,70 @@ The emulator gives the same ports, port ids and module list that the firmware gi
 
 ## 7. Module plugins
 
-Every I/O module type is a **plugin**, also the built-in ones, so that others can make modules for Colibri and supply their emulation with them. A plugin is a directory (a package) with:
+Every I/O module type is a **plugin**, also the built-in ones, so that others can make modules for Colibri and supply their emulation with them. **A plugin is data, not code** (*decided*, 2026-10-23): the emulation of a module is nearly nothing — channels with their ranges, a value source per input, noise, indicators and controls — so it is described in a file rather than programmed:
 
 ```
-colibri-aiv/
+colibri-pt1000/
   module.json      the manifest (§7.1)
-  faceplate.svg    the module's picture (§7.2)
-  behaviour.js     optional: behaviour beyond the default (§7.3)
+  faceplate.svg    optional: the module's picture (§7.4)
 ```
 
-Plugins are found in the emulator's built-in plugin directory and in directories named on the command line (*proposal*). A plugin's type name is `<vendor>/<Name>` (e.g. `colibri/AIV`), as hakkas' block types are `family/Name`. When slot 0 gets channels to emulate, they come from a plugin too.
+Plugins are found in the emulator's built-in plugin directory and in directories named on the command line (*proposal*). A plugin's type name is `<vendor>/<Name>` (e.g. `colibri/Pt1000`), as hakkas' block types are `family/Name`. When slot 0 gets channels to emulate, they come from a plugin too.
 
 ### 7.1 The manifest
 
 ```json
-{"type": "colibri/AIV", "vendor": "CurrentMakers", "revision": "1",
- "description": "2 × 0–10 V analog inputs",
- "documentation": "https://currentmakers.com/products/colibri/colibri-aiv/",
+{"type": "colibri/Pt1000", "vendor": "CurrentMakers", "revision": "1",
+ "description": "2 × Pt1000 temperature inputs",
+ "documentation": "https://currentmakers.com/products/colibri/colibri-pt1000/",
  "channels": [
-   {"id": "ain", "direction": "sensor", "type": "number", "count": 2,
-    "unit": "V", "min": 0, "max": 10, "resolution": 0.001, "description": "0–10 V input"}
+   {"id": "temp", "direction": "input", "type": "number", "count": 2,
+    "unit": "°C", "min": -50, "max": 150, "resolution": 0.01,
+    "default": 21, "noise": 0.2, "control": "slider", "description": "Pt1000 temperature"},
+   {"id": "fault", "direction": "input", "type": "bool", "count": 2,
+    "control": "toggle", "description": "Sensor open or shorted"}
  ],
  "faceplate": "faceplate.svg",
- "ui": { … the bindings of §8.3 … }}
+ "ui": { … the faceplate bindings of §8.4 … }}
 ```
 
-- `channels` become the description's ports (§6); `direction` is `sensor` (an environment output port) or `actuator` (an environment input port); `count` > 1 makes the port addressable.
-- A module may keep **internal state** that is neither (a DII's counter, PID1's integral) — the behaviour's own business.
+A channel:
+- `id`, `type` (`number` or `bool`), `description`, `unit`, `min`/`max` — become the environment description's port (§6); `count` > 1 makes the port addressable.
+- `direction`: `input` (a module input: a sensor to hakkas, an environment output port) or `output` (a module output: an actuator, an environment input port). A module may have both (DIO1, PID1).
+- **Inputs**: `resolution` (values are rounded to it), `default` (the value at power-up), `noise` (§7.2) and `control` — the UI's default control: `slider`, `number`, `toggle` or `button` (momentary).
+- **Outputs**: `indicator` — how the UI shows the value hakkas writes: `lamp` (bool), `number`, `bar` or `meter` (number, between `min` and `max`). Without one: `lamp` for a bool, `number` for a number.
 
-### 7.2 Graphics assets
+### 7.2 Inputs: value source and noise
 
-A plugin's faceplate is an **SVG** whose elements carry ids; the manifest's `ui` section binds those elements to channel values and field-side values (an LED's colour to a relay channel, a label's text to a voltage) and declares the controls the user operates (a slider on an analog input's terminal, a toggle on a digital input). The emulator does not draw: it hands the assets and bindings to the generic UI (§8).
+At each turn of its slot (§4), every input channel produces a value, which goes to hakkas if it changed:
 
-### 7.3 Behaviour
+> value = round(clamp(source(t) + noise, min, max), resolution)
 
-Most modules need no code: by default, a sensor channel takes the value the user set on its field side (clamped to `min`/`max`, rounded to `resolution`), and an actuator channel's value is shown on its field side.
+- **The source** is what the user or an external program set (§8): a **constant** (a slider, a number, a toggle, a button) or a **function** of the emulator's time:
+  - `sine` — offset, amplitude, period;
+  - `square` — low, high, period, duty (a bool channel toggles);
+  - `ramp` — from, to, period, repeating (a sawtooth) or not;
+  - `counter` — an increasing integer at a rate per second, e.g. a DII's count from a pulse-train sensor at 42.5 Hz;
+  - `sequence` — a list of `[seconds, value]` steps, repeating or holding its last value.
+- **Noise** (numbers only): a uniformly distributed random value in ±`noise` (e.g. ±0.2 °C on a Pt1000), added anew at every turn. Its default comes from the manifest; it is set per channel at runtime, 0 turns it off.
 
-A module that does more supplies a behaviour, a JavaScript module whose `serve` function is called each time its slot is served (§4) with its field-side values, its actuator values since the last call, its internal state and the time since the last call; it returns its sensor values, field-side indications and new internal state. Examples: DII/DIU counting edges and measuring pulse width; DIO1's channel modes and fault flags; Pt1000's open/short faults; PID1 regulating its output from its Pt1000 input and its parameters.
+So a noisy Pt1000 channel sends a new value every 80 ms on Colibri 8. Hakkas' change threshold (`01-architecture-overview.md` §3.3, engine-wide) filters it like real sensor noise; a `process/Deadband` filters a channel differently.
 
-(*Proposal*) A field-side input is a constant value by default; where the plugin allows, it may also be a **signal** the behaviour evaluates at each turn — e.g. a pulse train `{"hz": 42.5, "duty": 0.5}` on a DII terminal, from which the behaviour counts the edges and measures the pulse width since its last turn, as the module's own MCU would. A client cannot time individual pulses shorter than the scan cycle over a socket; a signal lets it represent such a sensor anyway.
+The source and noise of every channel are part of the emulator's state (§8) and are kept with the configuration (§5).
 
-(*Proposal*) A behaviour runs inside the emulator's process with no access to anything but its arguments by convention; isolating third-party plugins (a worker thread or `vm` context) is left until there are third-party plugins.
+### 7.3 Outputs
+
+An output channel shows the value that arrives on it from hakkas, at its slot's turn (§4.1), on its indicator. Nothing else happens to it.
+
+### 7.4 Graphics assets
+
+A plugin's faceplate is an optional **SVG** whose elements carry ids; the manifest's `ui` section binds those elements to channel values (an LED's colour to a relay channel, a label's text to a voltage) and may make elements operable (a slider on an analog input's terminal). The emulator does not draw: it hands the assets and bindings to the generic UI (§8). Every channel is usable without a faceplate, from the signal panel (§8.2).
 
 ## 8. The UI and the control channel
 
 ### 8.1 Principle
 
-The emulator's state — field-side values, channel values, actuator values, settings, the counters of §4.1 — is available on a **control channel**, with one protocol (§8.3) for every client: the browser UI and **external programs** (a Python script, a demo, an automation). All clients are equal: each may set inputs and follows the whole state.
+The emulator's state — the input channels' sources and noise, the channel values, the output values, the settings, the counters of §4.1 — is available on a **control channel**, with one protocol (§8.3) for every client: the browser UI and **external programs** (a Python script, a demo, an automation). All clients are equal: each may set inputs and follows the whole state.
 
 It follows hakkas' principle (`../../../specifications/00-README.md`): **the emulator owns the state, clients only mirror it**. A client sends a request; the emulator applies it and broadcasts the resulting state to every connected client, the sender included, which updates its view only from that. When two clients set the same input, the last one wins and every client sees it.
 
@@ -187,7 +204,7 @@ The control channel is **separate from hakkas' environment link** (*decided*, 20
 The UI knows nothing about Colibri; it renders what the emulator describes:
 - **The carrier board**: a photo or drawing of the board (an asset of the carrier's description, §5), with the place of each slot marked (an element with the id `slot-<n>`).
 - **The modules**: each module's faceplate (§7.2) drawn in its slot's place on the carrier, with its LEDs and terminal values bound to the state and, where the plugin has them, controls on it.
-- **The signal panel**, beside the drawing: one row per field-side input (a slider, toggle, number entry) and per output (an indicator), with the channel's name (`slot1-ain[1]`), unit and value. The UI builds it from the channel list alone, so every module is usable, also one without a faceplate.
+- **The signal panel**, beside the drawing: one row per input channel (its control or function, §7.2, and its noise) and per output channel (its indicator, §7.1), with the channel's name (`slot1-ain[1]`), unit and value. The UI builds it from the channel list alone, so every module is usable, also one without a faceplate.
 - **The settings** (§5) and the counters (§4.1).
 
 The UI is its own package (*proposal*: `emulators/ui/`, with the Colibri emulator serving its built files and the assets over HTTP), so that other emulators reuse it.
@@ -196,11 +213,11 @@ The UI is its own package (*proposal*: `emulators/ui/`, with the Colibri emulato
 
 JSON messages, the same on every transport:
 - emulator → client: `scene` (the carrier and module assets, the slots' places, bindings and controls, the channel list; sent on connect and after every configuration change), `state` (changed values, by key; all of them on connect), `settings` (the runtime settings and their allowed values: carrier, slot count, cycle time, the module types available per slot), `stats` (the counters of §4.1).
-- client → emulator: `set` (an input's new field-side value, by key), `configure` (a setting change, e.g. a module put into slot 4).
+- client → emulator: `set` (an input's source — a constant or a function — or its noise, by key), `configure` (a setting change, e.g. a module put into slot 4).
 
 **Transports**: a **WebSocket** (the browser UI; also usable from scripts) and a **Unix socket** with newline-delimited JSON, like hakkas' environment link (`04-drivers.md` §0.1) — reachable from a shell (`socat`) or a few lines of Python. Only the framing differs.
 
-Keys name a slot, a value and a channel: `slot1.field.ain.1` (the voltage on AIV terminal 1), `slot1.ain.1` (the channel value hakkas gets), `slot3.relay.1` (the relay's state as hakkas wrote it).
+Keys name a slot, a channel and, for an input, its parts: `slot1.ain.1` (the channel's value: for an input what hakkas gets, for an output what hakkas wrote), `slot1.ain.1.source` (e.g. `5.0`, or `{"sine": {"offset": 5, "amplitude": 2, "period": 60}}`), `slot1.ain.1.noise` (e.g. `0.02`).
 
 ### 8.4 Bindings and controls on a faceplate (*proposal*)
 
@@ -210,8 +227,8 @@ A binding ties an SVG element to a state key, e.g.:
 - `{"element": "fault2", "visible": "fault.2"}`
 
 A control makes an element operable:
-- `{"element": "term1", "control": "slider", "key": "field.ain.1", "min": 0, "max": 10, "step": 0.01}`
-- `{"element": "sw1", "control": "toggle", "key": "field.di.1"}`, `"button"` (momentary), `"number"` (typed entry).
+- `{"element": "term1", "control": "slider", "key": "ain.1.source", "min": 0, "max": 10, "step": 0.01}`
+- `{"element": "sw1", "control": "toggle", "key": "di.1.source"}`, `"button"` (momentary), `"number"` (typed entry).
 
 A manifest's keys omit the slot; the emulator prefixes it (`slot1.relay.1`), so a manifest is written once, independent of the slot.
 
