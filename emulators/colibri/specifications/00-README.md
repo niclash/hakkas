@@ -33,24 +33,24 @@ On the device, the firmware identifies each I/O module at boot from its EEPROM a
 
 ### 2.1 The module catalogue
 
-Collected 2026-10-23 from the CurrentMakers catalogue (https://currentmakers.com/products/catalog/?category=colibri), its product pages and the STM32World wiki pages they link. The pages give hardware, not the channels a driver offers; the **channels** column is this specification's proposal, to be confirmed (question 2).
+Collected 2026-10-23 from the CurrentMakers catalogue (https://currentmakers.com/products/catalog/?category=colibri), its product pages and the STM32World wiki pages they link. The pages give hardware, not the channels a driver offers. **Channel names** (*decided*, 2026-10-23): `ai` analog input, `aq` analog output, `di` digital input, `dq` digital output — whatever the hardware (a relay, a FET, a triac is a `dq`); channels that are none of these keep their own names (`freq`, `duty`, `count`, `fault`, PID1's parameters). Applying `ai` to temperatures and pressures is question 2.
 
 | Type | Hardware (from the pages) | Channels offered to hakkas (*proposal*) |
 |---|---|---|
-| AIV | 2 × 0–10 V in, ADS1115 16-bit ADC, I2C | `ain` 2 × number, V, 0–10 |
-| AIC | 2 × 0–20 mA in, ADS1115 16-bit ADC, I2C | `ain` 2 × number, mA, 0–20 |
-| AQV | 2 × 0–10 V out, MCP4725 12-bit DAC, I2C | `aout` 2 × number, V, 0–10 (actuator) |
-| Pt1000 | 2 × Pt1000 (also Ni1000 DIN, Ni1000 Tk5000), MAX31865 per input (SPI), open/short detection | `temp` 2 × number, °C; `fault` 2 × bool (sensor) |
-| DP1 | 1 × 0–500 Pa differential pressure (SM7391, I2C) | `pressure` 1 × number, Pa, 0–500 |
+| AIV | 2 × 0–10 V in, ADS1115 16-bit ADC, I2C | `ai` 2 × number, V, 0–10 |
+| AIC | 2 × 0–20 mA in, ADS1115 16-bit ADC, I2C | `ai` 2 × number, mA, 0–20 |
+| AQV | 2 × 0–10 V out, MCP4725 12-bit DAC, I2C | `aq` 2 × number, V, 0–10 (actuator) |
+| Pt1000 | 2 × Pt1000 (also Ni1000 DIN, Ni1000 Tk5000), MAX31865 per input (SPI), open/short detection | `ai` 2 × number, °C; `fault` 2 × bool (sensor) |
+| DP1 | 1 × 0–500 Pa differential pressure (SM7391, I2C) | `ai` 1 × number, Pa, 0–500 |
 | DP2 / DP3 | 0–10 kPa / 0–100 kPa (wiki only: planned) | as DP1, in Pa |
 | DII | 2 isolated digital in, on-board STM32C071; per channel frequency, duty cycle and a 32-bit unsigned counter that rolls over (*decided*, 2026-10-23) | `freq` 2 × number, Hz; `duty` 2 × number, %, 0–100; `count` 2 × number, 0–4294967295 |
 | DIU | 4 digital in, not isolated, on-board STM32C071 (*decided*, 2026-10-23; the product page's 2 is wrong); delivers as DII | `freq`, `duty`, `count` 4 × each, as DII |
-| DIO1 | IEC 61131-2, MAX14906 (4 channels per its datasheet), each channel input or output, current limit set in software (100 mA advised) | `di` 4 × bool (sensor); `do` 4 × bool (actuator); `fault` 4 × bool (sensor) (question 4) |
-| FET | 4 × N-channel MOSFET sink, 1 A, 60 V, PCA9536, I2C | `do` 4 × bool (actuator) |
-| SSR | 2 × solid-state relay, 80 mA, 60 V DC, PCA9536 | `relay` 2 × bool (actuator) |
-| TRIAC1 | 4 × triac, 500 mA AC, zero-cross detection, PCA9536 | `triac` 4 × bool (actuator) |
-| Fallback | 1 × SPDT relay (wiki only) | `relay` 1 × bool (actuator) |
-| PID1 | 1 × Pt1000 in (MAX31865), 1 × 0–10 V out (MCP4725 12-bit), STM32F030 running a full PID regulator; every PID parameter is reachable through an output channel; the emulator does not regulate — the output is a settable input like any other (*decided*, 2026-10-23) | inputs `temp` °C, `output` V 0–10, `saturated` bool; outputs — the parameters, named as hakkas' `process/PID` (`specifications/03-block-types.md` §6.1): `setpoint`, `kp`, `ki`, `kd`, `max_dgain`, `min`, `max`, `reverse`, `auto`, `manual`, `sample_ms` (question 5) |
+| DIO1 | IEC 61131-2, MAX14906 (4 channels per its datasheet), each channel input or output, current limit set in software (100 mA advised) | `di` 4 × bool (sensor); `dq` 4 × bool (actuator); fault flags: whatever the MAX14906 reports, per channel and per module (not defined yet; question 4) |
+| FET | 4 × N-channel MOSFET sink, 1 A, 60 V, PCA9536, I2C | `dq` 4 × bool (actuator) |
+| SSR | 2 × solid-state relay, 80 mA, 60 V DC, PCA9536 | `dq` 2 × bool (actuator) |
+| TRIAC1 | 4 × triac, 500 mA AC, zero-cross detection, PCA9536 | `dq` 4 × bool (actuator) |
+| Fallback | 1 × SPDT relay (wiki only) | `dq` 1 × bool (actuator) |
+| PID1 | 1 × Pt1000 in (MAX31865), 1 × 0–10 V out (MCP4725 12-bit), STM32F030 running a full PID regulator; every PID parameter is reachable through an output channel; the emulator does not regulate — the output is a settable input like any other (*decided*, 2026-10-23) | inputs `ai` °C (the Pt1000), `output` V 0–10, `saturated` bool; outputs — the parameters, named as hakkas' `process/PID` (`specifications/03-block-types.md` §6.1): `setpoint`, `kp`, `ki`, `kd`, `max_dgain`, `min`, `max`, `reverse`, `auto`, `manual`, `sample_ms` (*decided*, 2026-10-23) |
 | RS485I / RS485U | RS-485 — not defined yet; outside the scope of the emulator and of hakkas (*decided*, 2026-10-23) | none: the emulator places the module's picture in its slot, with no controls or indicators; not described to hakkas |
 
 The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM32F405RG, MCU5 STM32F103RE, MCU6 STM32H735RG, MCU7 RP2350) and the carriers Colibri 3a and Colibri 8; neither kind is emulated.
@@ -78,7 +78,7 @@ The firmware serves its I/O slots **one at a time, in turn**, and so does the em
 **Every slot takes its turn** (*decided*, 2026-10-23), filled or not: on the device a dummy driver is loaded for an empty slot, so the runtime's critical path does not depend on which slots are filled. The emulator gives an empty slot a dummy module with no channels.
 
 Serving a slot (*proposal*):
-1. hand the module the actuator values hakkas has written for its channels since the slot was last served (§4.1);
+1. hand the module the actuator values queued for its channels since the slot was last served (§4.1);
 2. compute every input channel's value from its source and noise (§7.2);
 3. send every sensor value that changed to hakkas, and every changed state to the UI.
 
@@ -86,9 +86,9 @@ So a change on the field side reaches hakkas, and a write from hakkas reaches th
 
 ### 4.1 Values arriving faster than the cycle
 
-The point of emulating the cycle is the timing (*decided*, 2026-10-23): a program that writes an actuator more often than its slot is served, or that depends on seeing every edge of a fast input, must show the same behaviour on the desktop as on the device. That requires the emulator to treat the values between two turns of a slot **as the firmware does** — question 6. Until decided, the emulator coalesces (only the latest write per channel reaches the module). An input's source is sampled at its slot's turn, so a `square` faster than the cycle shows only the samples a turn hits; a `counter` (§7.2) counts at its rate regardless.
+The point of emulating the cycle is the timing (*decided*, 2026-10-23): a program that writes an actuator more often than its slot is served, or that depends on seeing every edge of a fast input, must show the same behaviour on the desktop as on the device. That requires the emulator to treat the values between two turns of a slot **as the firmware does**: the firmware **queues** the values hakkas writes (*decided*, 2026-10-23), and so does the emulator — every write reaches the module, in order, none is coalesced. How many queued values a turn applies, the queue's bound and what overflow drops are question 6. An input's source is sampled at its slot's turn, so a `square` faster than the cycle shows only the samples a turn hits; a `counter` (§7.2) counts at its rate regardless.
 
-The emulator counts, per channel, the writes received, the writes **coalesced or dropped** (never reaching the module) and the sensor changes sent, and shows them in the UI (§8), so the user can see where a program outruns the cycle.
+The emulator counts, per channel, the writes received, the writes queued, the queue's current and highest length, the writes **dropped** on overflow and the sensor changes sent, and shows them in the UI (§8), so the user can see where a program outruns the cycle.
 
 ## 5. Configuration
 
@@ -121,7 +121,7 @@ Required (*decided*, 2026-10-23); the details are to be discussed (question 7):
 The emulator describes itself to hakkas per `04-drivers.md` §1:
 
 - `name`: decided with §5.1 (question 7).
-- **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ain` (AIV in slot 1), `slot3-relay` (SSR in slot 3). A group of identical channels is one addressable port with `count`; a module with several groups has several ports (DII in slot 2: `slot2-freq`, `slot2-duty` and `slot2-count`). The channel group ids and their types, units and ranges come from the module's plugin (§7.1).
+- **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ai` (AIV in slot 1), `slot3-dq` (SSR in slot 3). A group of identical channels is one addressable port with `count`; a module with several groups has several ports (DII in slot 2: `slot2-freq`, `slot2-duty` and `slot2-count`). The channel group ids and their types, units and ranges come from the module's plugin (§7.1).
 - **Modules**: one entry per filled slot, with `slot`, `type`, `vendor`, `revision`, `serial`, `documentation` from the plugin and the configuration, and the ids of its ports.
 
 The emulator gives the same ports, port ids and module list that the firmware gives for the same modules in the same slots, so that one bindings file works on both. This requires the firmware's naming to be fixed in `04-drivers.md` §1 (it is not yet), and both to follow it.
@@ -145,7 +145,7 @@ Plugins are found in the emulator's built-in plugin directory and in directories
  "description": "2 × Pt1000 temperature inputs",
  "documentation": "https://currentmakers.com/products/colibri/colibri-pt1000/",
  "channels": [
-   {"id": "temp", "direction": "input", "type": "number", "count": 2,
+   {"id": "ai", "direction": "input", "type": "number", "count": 2,
     "unit": "°C", "min": -50, "max": 150, "resolution": 0.01,
     "default": 21, "noise": 0.2, "control": "slider", "description": "Pt1000 temperature"},
    {"id": "fault", "direction": "input", "type": "bool", "count": 2,
@@ -205,7 +205,7 @@ The control channel is **separate from hakkas' environment link** (*decided*, 20
 The UI knows nothing about Colibri; it renders what the emulator describes:
 - **The carrier board**: a photo or drawing of the board (an asset of the carrier's description, §5), with the place of each slot marked (an element with the id `slot-<n>`).
 - **The modules**: each module's faceplate (§7.2) drawn in its slot's place on the carrier, with its LEDs and terminal values bound to the state and, where the plugin has them, controls on it.
-- **The signal panel**, beside the drawing: one row per input channel (its control or function, §7.2, and its noise) and per output channel (its indicator, §7.1), with the channel's name (`slot1-ain[1]`), unit and value. The UI builds it from the channel list alone, so every module is usable, also one without a faceplate.
+- **The signal panel**, beside the drawing: one row per input channel (its control or function, §7.2, and its noise) and per output channel (its indicator, §7.1), with the channel's name (`slot1-ai[1]`), unit and value. The UI builds it from the channel list alone, so every module is usable, also one without a faceplate.
 - **The settings** (§5) and the counters (§4.1).
 
 The UI is its own package (*proposal*: `emulators/ui/`, with the Colibri emulator serving its built files and the assets over HTTP), so that other emulators reuse it.
@@ -218,20 +218,20 @@ JSON messages, the same on every transport:
 
 **Transports**: a **WebSocket** (the browser UI; also usable from scripts) and a **Unix socket** with newline-delimited JSON, like hakkas' environment link (`04-drivers.md` §0.1) — reachable from a shell (`socat`) or a few lines of Python. Only the framing differs.
 
-Keys name a slot, a channel and, for an input, its parts: `slot1.ain.1` (the channel's value: for an input what hakkas gets, for an output what hakkas wrote), `slot1.ain.1.source` (e.g. `5.0`, or `{"sine": {"offset": 5, "amplitude": 2, "period": 60}}`), `slot1.ain.1.noise` (e.g. `0.02`).
+Keys name a slot, a channel and, for an input, its parts: `slot1.ai.1` (the channel's value: for an input what hakkas gets, for an output what hakkas wrote), `slot1.ai.1.source` (e.g. `5.0`, or `{"sine": {"offset": 5, "amplitude": 2, "period": 60}}`), `slot1.ai.1.noise` (e.g. `0.02`).
 
 ### 8.4 Bindings and controls on a faceplate (*proposal*)
 
 A binding ties an SVG element to a state key, e.g.:
-- `{"element": "led1", "attr": "fill", "key": "relay.1", "map": {"true": "#e33", "false": "#422"}}`
-- `{"element": "volt1", "text": "ain.1", "format": "%.2f V"}`
+- `{"element": "led1", "attr": "fill", "key": "dq.1", "map": {"true": "#e33", "false": "#422"}}`
+- `{"element": "volt1", "text": "ai.1", "format": "%.2f V"}`
 - `{"element": "fault2", "visible": "fault.2"}`
 
 A control makes an element operable:
-- `{"element": "term1", "control": "slider", "key": "ain.1.source", "min": 0, "max": 10, "step": 0.01}`
+- `{"element": "term1", "control": "slider", "key": "ai.1.source", "min": 0, "max": 10, "step": 0.01}`
 - `{"element": "sw1", "control": "toggle", "key": "di.1.source"}`, `"button"` (momentary), `"number"` (typed entry).
 
-A manifest's keys omit the slot; the emulator prefixes it (`slot1.relay.1`), so a manifest is written once, independent of the slot.
+A manifest's keys omit the slot; the emulator prefixes it (`slot1.dq.1`), so a manifest is written once, independent of the slot.
 
 ## 9. Later
 
@@ -242,9 +242,9 @@ A manifest's keys omit the slot; the emulator prefixes it (`slot1.relay.1`), so 
 ## 10. Open questions
 
 1. *Decided* (2026-10-23): the built-in I/O slot is slot 0, with nothing to emulate for now (§2).
-2. **The channels each module offers** (§2.1): the proposed channel groups, ids, units, ranges and resolutions are guesses from the hardware; they must match what the firmware's drivers offer, since bindings name them.
+2. **The channels each module offers** (§2.1; names `ai`/`aq`/`di`/`dq` decided 2026-10-23): are temperatures (Pt1000, PID1) and pressures (DP1–DP3) `ai` too, with the unit telling what they measure? The units, ranges and resolutions are still guesses from the hardware; they must match what the firmware's drivers offer.
 3. *Decided* (2026-10-23): DII/DIU deliver per channel frequency, duty cycle (0–100 %) and a 32-bit unsigned counter that rolls over; the DIU has 4 inputs, the DII 2 (§2.1).
-4. **DIO1**: how is a channel's mode (input/output, and the MAX14906's modes) chosen — fixed in the module's configuration, or by hakkas at runtime? Which faults become sensor channels (per channel, per module)?
-5. **PID1** (*decided*, 2026-10-23: a full PID regulator, every parameter reachable through an output channel, a Pt1000 input; the emulator does not regulate): are its parameters those of hakkas' `process/PID`, as proposed in §2.1?
-6. **Values between two turns of a slot** (§4.1): when hakkas writes a channel several times between turns, does the firmware pass on only the latest, or queue them (with what bound, and what is dropped on overflow)? And on the input side, does a driver report only the state at its turn, or also edges in between?
+4. **DIO1**: how is a channel's mode (input/output, and the MAX14906's modes) chosen — fixed in the module's configuration, or by hakkas at runtime? Its fault reporting is not defined yet; presumably everything the MAX14906 reports becomes a sensor channel.
+5. *Decided* (2026-10-23): PID1 is a full PID regulator whose parameters, named as hakkas' `process/PID`'s, are output channels, with a Pt1000 input; the emulator does not regulate (§2.1).
+6. **The write queue** (§4.1; *decided*, 2026-10-23: the firmware queues the values written): is it one queue per channel, per module or for all slots? Does a turn apply every queued value of the slot, or one per channel? How long is it, and what does overflow drop — the oldest or the newest value? And on the input side, does a driver report only the state at its turn, or also edges in between?
 7. **Environments from a device and their comparison** (§5.1): to be discussed — what is copied (carrier, module types, revisions, serials, calibration?), how the emulator reaches the device (the device's environment is not on hakkas' wire yet, `04-drivers.md` §1; adding it is a protocol change to put to the user), what "compare" reports, and the environment's `name` (`04-drivers.md` §4 refuses a bindings file written for another name).
