@@ -1,6 +1,6 @@
 import {expect, test} from "./fixtures";
 import {EXAMPLE_GRAPH} from "./paths";
-import {blockIds, blockPosition, blocks, connections, inputLabels, loggedIn, openProcess} from "./ui";
+import {block, blockIds, blockPosition, blocks, connections, inputLabels, loggedIn, openProcess} from "./ui";
 
 // 06 §3–§4: a process drawn from the graph:connect snapshot.
 
@@ -59,4 +59,34 @@ test.describe("with two processes", () => {
         expect(await inputLabels(page, "ghost")).toEqual([]);
         expect(await inputLabels(page, "lin")).toContain("in = 1.5");
     });
+});
+
+test("a block is wide enough for its port labels on one line", async ({page, engine}) => {
+    const other = await engine.client();
+    other.send("graph", "clear", {id: "user/Long", name: "Long", main: false, description: "", icon: ""});
+    await other.next(m => m.command === "clear");
+    await other.command("graph", "addnode", {graph: "user/Long", id: "p", component: "math/Add2", metadata: {x: 0, y: 0}});
+    await other.command("graph", "addinport", {graph: "user/Long", node: "p", port: "in1", public: "a_rather_long_input"});
+    await other.command("graph", "addoutport", {graph: "user/Long", node: "p", port: "out", public: "an_even_longer_output_name"});
+    other.send("network", "persist", {graph: "user/Long"});
+    await loggedIn(page, engine.url);
+    await openProcess(page, "Simple Example");
+    await page.locator("[data-testid=block-type][data-type='user/Long']").click();
+    const node = block(page, "Long_1");
+    await expect(node.locator(".input-title, .output-title"))
+        .toHaveText(["an_even_longer_output_name", "a_rather_long_input"]);
+    // Each label and its socket share one line, inside the block.
+    const rows = await node.evaluate(n => {
+        const box = n.getBoundingClientRect();
+        return Array.from(n.querySelectorAll(".input, .output")).map(row => {
+            const title = row.querySelector(".input-title, .output-title")!.getBoundingClientRect();
+            return {height: row.getBoundingClientRect().height, inside: title.left >= box.left && title.right <= box.right};
+        });
+    });
+    const short = await block(page, "block8").locator(".input").first()
+        .evaluate(e => e.getBoundingClientRect().height);
+    for (const row of rows) {
+        expect(row.inside).toBe(true);
+        expect(row.height).toBeCloseTo(short, 1);
+    }
 });

@@ -60,12 +60,36 @@ export class Graph {
     unsaved: boolean;   // differs from its graph file (02 §3.3, "Unsaved state")
 }
 
+// The width of a text in the editor's font (06 §4), 0 where there is no document (the unit
+// tests).
+let measure: CanvasRenderingContext2D | null | undefined;
+function textWidth(text: string, size: number): number {
+    if (typeof document === "undefined")
+        return 0;
+    if (measure === undefined)
+        measure = document.createElement("canvas").getContext("2d");
+    if (measure === null)
+        return 0;
+    measure.font = `${size}px ${getComputedStyle(document.body).fontFamily}`;
+    return measure.measureText(text).width;
+}
+
+// A block's width: wide enough for its longest port label on one line (hakkas.css draws them
+// at 26px), with room for the label's margins and the node's border.
+export const BLOCK_MIN_WIDTH = 180;
+const PORT_LABEL_SIZE = 26;
+const PORT_LABEL_PADDING = 36;
+function blockWidth(ports: Port[]): number {
+    const label = Math.max(0, ...ports.map(p => textWidth(p.id, PORT_LABEL_SIZE)));
+    return Math.max(BLOCK_MIN_WIDTH, Math.ceil(label + PORT_LABEL_PADDING));
+}
+
 export class PrimitiveNode extends Classic.Node {
     readonly component: string;
     readonly inports: Port[];
     readonly outports: Port[];
     description: string;
-    width = 180;
+    width = BLOCK_MIN_WIDTH;
     height = 195;
 
     constructor(name: string, description: string, component: string, inports: Port[], outports: Port[]) {
@@ -77,6 +101,7 @@ export class PrimitiveNode extends Classic.Node {
         let inHeight = inports.length * 36;
         let outHeight = outports.length * 36;
         this.height = 70 + inHeight + outHeight;
+        this.width = blockWidth([...inports, ...outports]);
         for (let outport of outports) {
             this.addOutput(outport.id, new Classic.Output(socketFor(outport.type ?? ""), outport.id));
         }
