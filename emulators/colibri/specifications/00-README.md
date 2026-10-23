@@ -43,14 +43,14 @@ Collected 2026-10-23 from the CurrentMakers catalogue (https://currentmakers.com
 | Pt1000 | 2 × Pt1000 (also Ni1000 DIN, Ni1000 Tk5000), MAX31865 per input (SPI), open/short detection | `temp` 2 × number, °C; `fault` 2 × bool (sensor) |
 | DP1 | 1 × 0–500 Pa differential pressure (SM7391, I2C) | `pressure` 1 × number, Pa, 0–500 |
 | DP2 / DP3 | 0–10 kPa / 0–100 kPa (wiki only: planned) | as DP1, in Pa |
-| DII | 2 isolated digital in, on-board STM32C071; per channel frequency, duty cycle and a 32-bit unsigned counter that rolls over (*decided*, 2026-10-23) | `freq` 2 × number, Hz; `duty` 2 × number (unit: question 3); `count` 2 × number, 0–4294967295 |
-| DIU | digital in, not isolated, on-board STM32C071 — 2 channels on the product page, 4 on the wiki overview; delivers as DII | as DII (channel count: question 3) |
+| DII | 2 isolated digital in, on-board STM32C071; per channel frequency, duty cycle and a 32-bit unsigned counter that rolls over (*decided*, 2026-10-23) | `freq` 2 × number, Hz; `duty` 2 × number, %, 0–100; `count` 2 × number, 0–4294967295 |
+| DIU | 4 digital in, not isolated, on-board STM32C071 (*decided*, 2026-10-23; the product page's 2 is wrong); delivers as DII | `freq`, `duty`, `count` 4 × each, as DII |
 | DIO1 | IEC 61131-2, MAX14906 (4 channels per its datasheet), each channel input or output, current limit set in software (100 mA advised) | `di` 4 × bool (sensor); `do` 4 × bool (actuator); `fault` 4 × bool (sensor) (question 4) |
 | FET | 4 × N-channel MOSFET sink, 1 A, 60 V, PCA9536, I2C | `do` 4 × bool (actuator) |
 | SSR | 2 × solid-state relay, 80 mA, 60 V DC, PCA9536 | `relay` 2 × bool (actuator) |
 | TRIAC1 | 4 × triac, 500 mA AC, zero-cross detection, PCA9536 | `triac` 4 × bool (actuator) |
 | Fallback | 1 × SPDT relay (wiki only) | `relay` 1 × bool (actuator) |
-| PID1 | 1 × Pt1000 in (MAX31865), 1 × 0–10 V out (MCP4725 12-bit), STM32F030 running a full PID regulator; every PID parameter is reachable through an output channel (*decided*, 2026-10-23) | inputs `temp` °C, `output` V 0–10, `saturated` bool; outputs — the parameters, named as hakkas' `process/PID` (`specifications/03-block-types.md` §6.1): `setpoint`, `kp`, `ki`, `kd`, `max_dgain`, `min`, `max`, `reverse`, `auto`, `manual`, `sample_ms` (question 5) |
+| PID1 | 1 × Pt1000 in (MAX31865), 1 × 0–10 V out (MCP4725 12-bit), STM32F030 running a full PID regulator; every PID parameter is reachable through an output channel; the emulator does not regulate — the output is a settable input like any other (*decided*, 2026-10-23) | inputs `temp` °C, `output` V 0–10, `saturated` bool; outputs — the parameters, named as hakkas' `process/PID` (`specifications/03-block-types.md` §6.1): `setpoint`, `kp`, `ki`, `kd`, `max_dgain`, `min`, `max`, `reverse`, `auto`, `manual`, `sample_ms` (question 5) |
 | RS485I / RS485U | RS-485 — not defined yet; outside the scope of the emulator and of hakkas (*decided*, 2026-10-23) | none: the emulator places the module's picture in its slot, with no controls or indicators; not described to hakkas |
 
 The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM32F405RG, MCU5 STM32F103RE, MCU6 STM32H735RG, MCU7 RP2350) and the carriers Colibri 3a and Colibri 8; neither kind is emulated.
@@ -243,8 +243,8 @@ A manifest's keys omit the slot; the emulator prefixes it (`slot1.relay.1`), so 
 
 1. *Decided* (2026-10-23): the built-in I/O slot is slot 0, with nothing to emulate for now (§2).
 2. **The channels each module offers** (§2.1): the proposed channel groups, ids, units, ranges and resolutions are guesses from the hardware; they must match what the firmware's drivers offer, since bindings name them.
-3. **DII/DIU** (*decided*, 2026-10-23: frequency, duty cycle and a 32-bit unsigned counter that rolls over): is the duty cycle a percentage (0–100) or a fraction (0–1)? Does the DIU have 2 or 4 channels?
+3. *Decided* (2026-10-23): DII/DIU deliver per channel frequency, duty cycle (0–100 %) and a 32-bit unsigned counter that rolls over; the DIU has 4 inputs, the DII 2 (§2.1).
 4. **DIO1**: how is a channel's mode (input/output, and the MAX14906's modes) chosen — fixed in the module's configuration, or by hakkas at runtime? Which faults become sensor channels (per channel, per module)?
-5. **PID1** (*decided*, 2026-10-23: a full PID regulator, every parameter reachable through an output channel, a Pt1000 input): does the emulator **regulate** — compute the 0–10 V output from the temperature and the parameters, with the algorithm of hakkas' `process/PID`, as a built-in `pid` source of the `output` channel (still data, no plugin code) — or is the output a settable input like any other? Are the parameters those of `process/PID`, as proposed in §2.1?
+5. **PID1** (*decided*, 2026-10-23: a full PID regulator, every parameter reachable through an output channel, a Pt1000 input; the emulator does not regulate): are its parameters those of hakkas' `process/PID`, as proposed in §2.1?
 6. **Values between two turns of a slot** (§4.1): when hakkas writes a channel several times between turns, does the firmware pass on only the latest, or queue them (with what bound, and what is dropped on overflow)? And on the input side, does a driver report only the state at its turn, or also edges in between?
 7. **Environments from a device and their comparison** (§5.1): to be discussed — what is copied (carrier, module types, revisions, serials, calibration?), how the emulator reaches the device (the device's environment is not on hakkas' wire yet, `04-drivers.md` §1; adding it is a protocol change to put to the user), what "compare" reports, and the environment's `name` (`04-drivers.md` §4 refuses a bindings file written for another name).
