@@ -23,7 +23,7 @@ A Colibri system is, conceptually:
 - one **Comm module slot** (not emulated);
 - one **MCU module slot** (not emulated: hakkas runs on the desktop).
 
-The built-in I/O slot exists so that the firmware's (Zephyr's) architecture treats the carrier board's own I/O like any module's (*decided*, 2026-10-23). Colibri 8 thus has **8 I/O slots** in the scan cycle (§4). What the built-in slot provides on each carrier board is question 1.
+The built-in I/O slot exists so that the firmware's (Zephyr's) architecture treats the carrier board's own I/O like any module's (*decided*, 2026-10-23). Colibri 8 thus has **8 I/O slots** in the scan cycle (§4). The built-in slot is **slot 0**; nothing in it is emulated for now (*decided*, 2026-10-23): it takes its turn in the scan cycle with no channels, like an empty slot.
 
 On the device, the firmware identifies each I/O module at boot from its EEPROM and runs the module's driver cyclically (§4); it then offers the modules' channels to hakkas as the environment (`04-drivers.md` §1). The emulator takes the firmware's place towards hakkas: it is the **environment program** of `04-drivers.md` §0.1.
 
@@ -71,7 +71,7 @@ The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM
 
 ## 4. The slot scan cycle
 
-The firmware serves its I/O slots **one at a time, in turn**, and so does the emulator: every **cycle time** (default **10 ms**) it serves the next slot — the built-in slot, then slot 1, 2, …, n, then the built-in slot again. A module's channels are therefore refreshed once every (n + 1) × cycle time: **80 ms** on Colibri 8 with the default.
+The firmware serves its I/O slots **one at a time, in turn**, and so does the emulator: every **cycle time** (default **10 ms**) it serves the next slot — slot 0 (the built-in slot), then slot 1, 2, …, n, then slot 0 again. A module's channels are therefore refreshed once every (n + 1) × cycle time: **80 ms** on Colibri 8 with the default.
 
 **Every slot takes its turn** (*decided*, 2026-10-23), filled or not: on the device a dummy driver is loaded for an empty slot, so the runtime's critical path does not depend on which slots are filled. The emulator gives an empty slot a dummy module with no channels.
 
@@ -119,7 +119,7 @@ Required (*decided*, 2026-10-23); the details are to be discussed (question 7):
 The emulator describes itself to hakkas per `04-drivers.md` §1:
 
 - `name`: decided with §5.1 (question 7).
-- **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ain` (AIV in slot 1), `slot3-relay` (SSR in slot 3); the built-in slot's name is question 1. A group of identical channels is one addressable port with `count`; a module with several groups has several ports (DII in slot 2: `slot2-di` bool, `slot2-count` and `slot2-pulse` numbers). The channel group ids and their types, units and ranges come from the module's plugin (§7.1).
+- **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ain` (AIV in slot 1), `slot3-relay` (SSR in slot 3). A group of identical channels is one addressable port with `count`; a module with several groups has several ports (DII in slot 2: `slot2-di` bool, `slot2-count` and `slot2-pulse` numbers). The channel group ids and their types, units and ranges come from the module's plugin (§7.1).
 - **Modules**: one entry per filled slot, with `slot`, `type`, `vendor`, `revision`, `serial`, `documentation` from the plugin and the configuration, and the ids of its ports.
 
 The emulator gives the same ports, port ids and module list that the firmware gives for the same modules in the same slots, so that one bindings file works on both. This requires the firmware's naming to be fixed in `04-drivers.md` §1 (it is not yet), and both to follow it.
@@ -135,7 +135,7 @@ colibri-aiv/
   behaviour.js     optional: behaviour beyond the default (§7.3)
 ```
 
-Plugins are found in the emulator's built-in plugin directory and in directories named on the command line (*proposal*). A plugin's type name is `<vendor>/<Name>` (e.g. `colibri/AIV`), as hakkas' block types are `family/Name`. What a carrier's built-in slot provides is a plugin too.
+Plugins are found in the emulator's built-in plugin directory and in directories named on the command line (*proposal*). A plugin's type name is `<vendor>/<Name>` (e.g. `colibri/AIV`), as hakkas' block types are `family/Name`. When slot 0 gets channels to emulate, they come from a plugin too.
 
 ### 7.1 The manifest
 
@@ -205,7 +205,7 @@ The emulator prefixes each module's keys with its slot (`slot1.relay.1`), so a p
 
 ## 10. Open questions
 
-1. **The built-in I/O slot**: what does it provide on Colibri 8 (and the other carriers) — e.g. the carrier's isolated RS-485, its power supply's state, LEDs or buttons? Is it slot 0 in the port names (`slot0-…`)?
+1. *Decided* (2026-10-23): the built-in I/O slot is slot 0, with nothing to emulate for now (§2).
 2. **The channels each module offers** (§2.1): the proposed channel groups, ids, units, ranges and resolutions are guesses from the hardware; they must match what the firmware's drivers offer, since bindings name them.
 3. **DII/DIU**: what are count and pulse width exactly — counting which edge, reset (by an actuator channel?) and overflow, pulse width of the high or low phase and its unit, debounce? Does the DIU have 2 or 4 channels?
 4. **DIO1**: how is a channel's mode (input/output, and the MAX14906's modes) chosen — fixed in the module's configuration, or by hakkas at runtime? Which faults become sensor channels (per channel, per module)?
