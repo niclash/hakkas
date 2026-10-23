@@ -1,4 +1,4 @@
-import {Locator, Page} from "@playwright/test";
+import type {Locator, Page} from "@playwright/test";
 import {expect, test} from "./fixtures";
 import {EXAMPLE_GRAPH} from "./paths";
 import {block, blocks, inputLabels, loggedIn, openProcess, selectedIds, valueNode} from "./ui";

@@ -3,14 +3,14 @@
 // serving the frontend's build (frontend/dist), and a browser page that fails the test on
 // any page error.
 
-import {test as base, expect, Page} from "@playwright/test";
-import {ChildProcess, spawn} from "node:child_process";
+import {test as base, expect, type Page} from "@playwright/test";
+import {type ChildProcess, spawn} from "node:child_process";
 import {randomBytes} from "node:crypto";
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {createServer} from "node:net";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {makeUser, UserRecord} from "../support/scram-server";
+import {makeUser, type UserRecord} from "../support/scram-server";
 import {ProtocolClient} from "./protocol-client";
 import {DIST_DIR, EXAMPLE_GRAPH, HAKKAS_BIN} from "./paths";
 

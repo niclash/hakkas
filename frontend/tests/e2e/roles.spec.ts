@@ -1,4 +1,4 @@
-import {Page} from "@playwright/test";
+import type {Page} from "@playwright/test";
 import {expect, OPERATOR, test, VIEWER} from "./fixtures";
 import {block, blockPosition, blocks, connections, loggedIn, openProcess, processItem} from "./ui";
 

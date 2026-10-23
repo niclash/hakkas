@@ -1,4 +1,4 @@
-import {Page} from "@playwright/test";
+import type {Page} from "@playwright/test";
 import {chmodSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {expect, test} from "./fixtures";

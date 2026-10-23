@@ -1,4 +1,4 @@
-import {EDITOR, expect, Page, test, VIEWER} from "./fixtures";
+import {EDITOR, expect, type Page, test, VIEWER} from "./fixtures";
 import {loggedIn, login, processItem} from "./ui";
 
 // 06 §2: connection and login.

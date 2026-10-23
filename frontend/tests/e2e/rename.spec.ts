@@ -1,4 +1,4 @@
-import {Page} from "@playwright/test";
+import type {Page} from "@playwright/test";
 import {expect, test} from "./fixtures";
 import {ProtocolClient} from "./protocol-client";
 import {block, blockIds, blocks, loggedIn, openProcess} from "./ui";

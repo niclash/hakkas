@@ -1,7 +1,7 @@
 // Page helpers: what a user does in the frontend, and what they see.
 
-import {expect, Locator, Page} from "@playwright/test";
-import {EDITOR, TestUser} from "./fixtures";
+import {expect, type Locator, type Page} from "@playwright/test";
+import {EDITOR, type TestUser} from "./fixtures";
 
 export async function login(page: Page, url: string, user: TestUser = EDITOR) {
     await page.goto(url);

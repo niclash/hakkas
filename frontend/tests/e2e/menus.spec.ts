@@ -1,4 +1,4 @@
-import {Page} from "@playwright/test";
+import type {Page} from "@playwright/test";
 import {expect, test} from "./fixtures";
 import {block, blockPosition, blocks, connections, inputLabels, loggedIn, openProcess, selectedIds, valueNode} from "./ui";
 
