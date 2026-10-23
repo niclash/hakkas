@@ -33,7 +33,7 @@ On the device, the firmware identifies each I/O module at boot from its EEPROM a
 
 ### 2.1 The module catalogue
 
-Collected 2026-10-23 from the CurrentMakers catalogue (https://currentmakers.com/products/catalog/?category=colibri), its product pages and the STM32World wiki pages they link. The pages give hardware, not the channels a driver offers. **Channel names** (*decided*, 2026-10-23): `ai` analog input, `aq` analog output, `di` digital input, `dq` digital output — whatever the hardware (a relay, a FET, a triac is a `dq`); channels that are none of these keep their own names (`freq`, `duty`, `count`, `fault`, PID1's parameters). Applying `ai` to temperatures and pressures is question 2.
+Collected 2026-10-23 from the CurrentMakers catalogue (https://currentmakers.com/products/catalog/?category=colibri), its product pages and the STM32World wiki pages they link. The pages give hardware, not the channels a driver offers. **Channel names** (*decided*, 2026-10-23): `ai` analog input, `aq` analog output, `di` digital input, `dq` digital output — whatever the hardware (a relay, a FET, a triac is a `dq`); channels that are none of these keep their own names (`freq`, `duty`, `count`, `fault`, PID1's parameters). Temperatures and pressures are `ai` too, the unit telling what they measure.
 
 | Type | Hardware (from the pages) | Channels offered to hakkas (*proposal*) |
 |---|---|---|
@@ -45,7 +45,7 @@ Collected 2026-10-23 from the CurrentMakers catalogue (https://currentmakers.com
 | DP2 / DP3 | 0–10 kPa / 0–100 kPa (wiki only: planned) | as DP1, in Pa |
 | DII | 2 isolated digital in, on-board STM32C071; per channel frequency, duty cycle and a 32-bit unsigned counter that rolls over (*decided*, 2026-10-23) | `freq` 2 × number, Hz; `duty` 2 × number, %, 0–100; `count` 2 × number, 0–4294967295 |
 | DIU | 4 digital in, not isolated, on-board STM32C071 (*decided*, 2026-10-23; the product page's 2 is wrong); delivers as DII | `freq`, `duty`, `count` 4 × each, as DII |
-| DIO1 | IEC 61131-2, MAX14906 (4 channels per its datasheet), each channel input or output, current limit set in software (100 mA advised) | `di` 4 × bool (sensor); `dq` 4 × bool (actuator); fault flags: whatever the MAX14906 reports, per channel and per module (not defined yet; question 4) |
+| DIO1 | IEC 61131-2, MAX14906 (4 channels per its datasheet), each channel input or output, current limit set in software (100 mA advised) | `dir` 4 × bool (actuator: true makes the channel an output, set by the user program — *decided*, 2026-10-23); `di` 4 × bool (sensor); `dq` 4 × bool (actuator); fault flags: whatever the MAX14906 reports, per channel and per module (not defined yet). The emulator does not model the direction's effect: `dir` and `dq` are shown, `di` is set, independently |
 | FET | 4 × N-channel MOSFET sink, 1 A, 60 V, PCA9536, I2C | `dq` 4 × bool (actuator) |
 | SSR | 2 × solid-state relay, 80 mA, 60 V DC, PCA9536 | `dq` 2 × bool (actuator) |
 | TRIAC1 | 4 × triac, 500 mA AC, zero-cross detection, PCA9536 | `dq` 4 × bool (actuator) |
@@ -86,7 +86,11 @@ So a change on the field side reaches hakkas, and a write from hakkas reaches th
 
 ### 4.1 Values arriving faster than the cycle
 
-The point of emulating the cycle is the timing (*decided*, 2026-10-23): a program that writes an actuator more often than its slot is served, or that depends on seeing every edge of a fast input, must show the same behaviour on the desktop as on the device. That requires the emulator to treat the values between two turns of a slot **as the firmware does**: the firmware **queues** the values hakkas writes (*decided*, 2026-10-23), and so does the emulator — every write reaches the module, in order, none is coalesced. How many queued values a turn applies, the queue's bound and what overflow drops are question 6. An input's source is sampled at its slot's turn, so a `square` faster than the cycle shows only the samples a turn hits; a `counter` (§7.2) counts at its rate regardless.
+The point of emulating the cycle is the timing (*decided*, 2026-10-23): a program that writes an actuator more often than its slot is served, or that depends on seeing every edge of a fast input, must show the same behaviour on the desktop as on the device. That requires the emulator to treat the values between two turns of a slot **as the firmware does**: the firmware **queues** the values hakkas writes (*decided*, 2026-10-23), and so does the emulator — every write reaches the module, in order, none is coalesced. (*Decided*, 2026-10-23:)
+- **One queue per I/O module**, for the writes to all its output channels.
+- **A turn applies every queued value**, in order, and leaves the queue empty.
+- **The queue holds 10 values** (its size on the device is not determined yet; it is a setting, §5).
+- **A full queue drops the new value.** So when a program writes a module's outputs more than 10 times within one scan cycle, the last writes are lost and the outputs keep older values — until hakkas writes them again, which it does only when the value changes. An input's source is sampled at its slot's turn, so a `square` faster than the cycle shows only the samples a turn hits; a `counter` (§7.2) counts at its rate regardless.
 
 The emulator counts, per channel, the writes received, the writes queued, the queue's current and highest length, the writes **dropped** on overflow and the sensor changes sent, and shows them in the UI (§8), so the user can see where a program outruns the cycle.
 
@@ -95,6 +99,7 @@ The emulator counts, per channel, the writes received, the writes queued, the qu
 - **Carrier board**: which carrier (Colibri 8, Colibri-16pi, …) — the number of I/O slots and what the built-in slot provides follow from it.
 - **Number of I/O slots**: 1…n, for a carrier made from scratch.
 - **I/O module cycle time**: default 10 ms.
+- **Write queue size** per module (§4.1): default 10.
 - **Modules**: which module type (plugin) sits in which slot; a slot may be empty.
 
 These are kept in a **configuration file** (*proposal*: given on the command line) and can be changed at runtime from the UI, which writes the file back. Example:
@@ -242,9 +247,9 @@ A manifest's keys omit the slot; the emulator prefixes it (`slot1.dq.1`), so a m
 ## 10. Open questions
 
 1. *Decided* (2026-10-23): the built-in I/O slot is slot 0, with nothing to emulate for now (§2).
-2. **The channels each module offers** (§2.1; names `ai`/`aq`/`di`/`dq` decided 2026-10-23): are temperatures (Pt1000, PID1) and pressures (DP1–DP3) `ai` too, with the unit telling what they measure? The units, ranges and resolutions are still guesses from the hardware; they must match what the firmware's drivers offer.
+2. **The channels each module offers** (§2.1; names decided 2026-10-23): the units, ranges and resolutions are still guesses from the hardware; they must match what the firmware's drivers offer.
 3. *Decided* (2026-10-23): DII/DIU deliver per channel frequency, duty cycle (0–100 %) and a 32-bit unsigned counter that rolls over; the DIU has 4 inputs, the DII 2 (§2.1).
-4. **DIO1**: how is a channel's mode (input/output, and the MAX14906's modes) chosen — fixed in the module's configuration, or by hakkas at runtime? Its fault reporting is not defined yet; presumably everything the MAX14906 reports becomes a sensor channel.
+4. *Decided* (2026-10-23): DIO1's direction is set by the user program through an output channel (`dir`, true = output); its fault reporting is not defined yet, presumably everything the MAX14906 reports (§2.1).
 5. *Decided* (2026-10-23): PID1 is a full PID regulator whose parameters, named as hakkas' `process/PID`'s, are output channels, with a Pt1000 input; the emulator does not regulate (§2.1).
-6. **The write queue** (§4.1; *decided*, 2026-10-23: the firmware queues the values written): is it one queue per channel, per module or for all slots? Does a turn apply every queued value of the slot, or one per channel? How long is it, and what does overflow drop — the oldest or the newest value? And on the input side, does a driver report only the state at its turn, or also edges in between?
+6. **The write queue** (§4.1, decided 2026-10-23: one per module, emptied at each turn, 10 values for now, a full queue drops the new value): on the input side, does a driver report only the state at its turn, or also edges in between?
 7. **Environments from a device and their comparison** (§5.1): to be discussed — what is copied (carrier, module types, revisions, serials, calibration?), how the emulator reaches the device (the device's environment is not on hakkas' wire yet, `04-drivers.md` §1; adding it is a protocol change to put to the user), what "compare" reports, and the environment's `name` (`04-drivers.md` §4 refuses a bindings file written for another name).
