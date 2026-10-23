@@ -43,15 +43,15 @@ Collected 2026-10-23 from the CurrentMakers catalogue (https://currentmakers.com
 | Pt1000 | 2 × Pt1000 (also Ni1000 DIN, Ni1000 Tk5000), MAX31865 per input (SPI), open/short detection | `temp` 2 × number, °C; `fault` 2 × bool (sensor) |
 | DP1 | 1 × 0–500 Pa differential pressure (SM7391, I2C) | `pressure` 1 × number, Pa, 0–500 |
 | DP2 / DP3 | 0–10 kPa / 0–100 kPa (wiki only: planned) | as DP1, in Pa |
-| DII | 2 isolated digital in, on-board STM32C071 | `di` 2 × bool; `count` 2 × number; `pulse` 2 × number (question 3) |
-| DIU | digital in, not isolated, on-board STM32C071 — 2 channels on the product page, 4 on the wiki overview | as DII (question 3) |
+| DII | 2 isolated digital in, on-board STM32C071; per channel frequency, duty cycle and a 32-bit unsigned counter that rolls over (*decided*, 2026-10-23) | `freq` 2 × number, Hz; `duty` 2 × number (unit: question 3); `count` 2 × number, 0–4294967295 |
+| DIU | digital in, not isolated, on-board STM32C071 — 2 channels on the product page, 4 on the wiki overview; delivers as DII | as DII (channel count: question 3) |
 | DIO1 | IEC 61131-2, MAX14906 (4 channels per its datasheet), each channel input or output, current limit set in software (100 mA advised) | `di` 4 × bool (sensor); `do` 4 × bool (actuator); `fault` 4 × bool (sensor) (question 4) |
 | FET | 4 × N-channel MOSFET sink, 1 A, 60 V, PCA9536, I2C | `do` 4 × bool (actuator) |
 | SSR | 2 × solid-state relay, 80 mA, 60 V DC, PCA9536 | `relay` 2 × bool (actuator) |
 | TRIAC1 | 4 × triac, 500 mA AC, zero-cross detection, PCA9536 | `triac` 4 × bool (actuator) |
 | Fallback | 1 × SPDT relay (wiki only) | `relay` 1 × bool (actuator) |
-| PID1 | 1 × Pt1000 in (MAX31865), 1 × 0–10 V out (MCP4725 12-bit), STM32F030 running a PID regulator | sensors `temp`, `output`; actuators `setpoint`, `kp`, `ki`, `kd`, `min`, `max`, `manual`, `manualValue` (`04-drivers.md` §1; question 5) |
-| RS485I / RS485U | RS-485 | not described to hakkas (`04-drivers.md` §1) |
+| PID1 | 1 × Pt1000 in (MAX31865), 1 × 0–10 V out (MCP4725 12-bit), STM32F030 running a full PID regulator; every PID parameter is reachable through an output channel (*decided*, 2026-10-23) | inputs `temp` °C, `output` V 0–10, `saturated` bool; outputs — the parameters, named as hakkas' `process/PID` (`specifications/03-block-types.md` §6.1): `setpoint`, `kp`, `ki`, `kd`, `max_dgain`, `min`, `max`, `reverse`, `auto`, `manual`, `sample_ms` (question 5) |
+| RS485I / RS485U | RS-485 — not defined yet; outside the scope of the emulator and of hakkas (*decided*, 2026-10-23) | none: the emulator places the module's picture in its slot, with no controls or indicators; not described to hakkas |
 
 The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM32F405RG, MCU5 STM32F103RE, MCU6 STM32H735RG, MCU7 RP2350) and the carriers Colibri 3a and Colibri 8; neither kind is emulated.
 
@@ -121,7 +121,7 @@ Required (*decided*, 2026-10-23); the details are to be discussed (question 7):
 The emulator describes itself to hakkas per `04-drivers.md` §1:
 
 - `name`: decided with §5.1 (question 7).
-- **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ain` (AIV in slot 1), `slot3-relay` (SSR in slot 3). A group of identical channels is one addressable port with `count`; a module with several groups has several ports (DII in slot 2: `slot2-di` bool, `slot2-count` and `slot2-pulse` numbers). The channel group ids and their types, units and ranges come from the module's plugin (§7.1).
+- **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ain` (AIV in slot 1), `slot3-relay` (SSR in slot 3). A group of identical channels is one addressable port with `count`; a module with several groups has several ports (DII in slot 2: `slot2-freq`, `slot2-duty` and `slot2-count`). The channel group ids and their types, units and ranges come from the module's plugin (§7.1).
 - **Modules**: one entry per filled slot, with `slot`, `type`, `vendor`, `revision`, `serial`, `documentation` from the plugin and the configuration, and the ids of its ports.
 
 The emulator gives the same ports, port ids and module list that the firmware gives for the same modules in the same slots, so that one bindings file works on both. This requires the firmware's naming to be fixed in `04-drivers.md` §1 (it is not yet), and both to follow it.
@@ -157,6 +157,7 @@ Plugins are found in the emulator's built-in plugin directory and in directories
 
 A channel:
 - `id`, `type` (`number` or `bool`), `description`, `unit`, `min`/`max` — become the environment description's port (§6); `count` > 1 makes the port addressable.
+- A module with **no channels** (RS485I, RS485U) is only placed with its picture: no controls, no indicators, nothing described to hakkas.
 - `direction`: `input` (a module input: a sensor to hakkas, an environment output port) or `output` (a module output: an actuator, an environment input port). A module may have both (DIO1, PID1).
 - **Inputs**: `resolution` (values are rounded to it), `default` (the value at power-up), `noise` (§7.2) and `control` — the UI's default control: `slider`, `number`, `toggle` or `button` (momentary).
 - **Outputs**: `indicator` — how the UI shows the value hakkas writes: `lamp` (bool), `number`, `bar` or `meter` (number, between `min` and `max`). Without one: `lamp` for a bool, `number` for a number.
@@ -171,7 +172,7 @@ At each turn of its slot (§4), every input channel produces a value, which goes
   - `sine` — offset, amplitude, period;
   - `square` — low, high, period, duty (a bool channel toggles);
   - `ramp` — from, to, period, repeating (a sawtooth) or not;
-  - `counter` — an increasing integer at a rate per second, e.g. a DII's count from a pulse-train sensor at 42.5 Hz;
+  - `counter` — an increasing integer at a rate per second that **rolls over** past the channel's `max` to its `min` (a DII's count: 0…4294967295, its 32-bit unsigned counter). The rate is a number or another input channel of the module (*proposal*), so a DII's count follows its frequency: `{"counter": {"rate": "freq.1"}}`;
   - `sequence` — a list of `[seconds, value]` steps, repeating or holding its last value.
 - **Noise** (numbers only): a uniformly distributed random value in ±`noise` (e.g. ±0.2 °C on a Pt1000), added anew at every turn. Its default comes from the manifest; it is set per channel at runtime, 0 turns it off.
 
@@ -242,8 +243,8 @@ A manifest's keys omit the slot; the emulator prefixes it (`slot1.relay.1`), so 
 
 1. *Decided* (2026-10-23): the built-in I/O slot is slot 0, with nothing to emulate for now (§2).
 2. **The channels each module offers** (§2.1): the proposed channel groups, ids, units, ranges and resolutions are guesses from the hardware; they must match what the firmware's drivers offer, since bindings name them.
-3. **DII/DIU**: what are count and pulse width exactly — counting which edge, reset (by an actuator channel?) and overflow, pulse width of the high or low phase and its unit, debounce? Does the DIU have 2 or 4 channels?
+3. **DII/DIU** (*decided*, 2026-10-23: frequency, duty cycle and a 32-bit unsigned counter that rolls over): is the duty cycle a percentage (0–100) or a fraction (0–1)? Does the DIU have 2 or 4 channels?
 4. **DIO1**: how is a channel's mode (input/output, and the MAX14906's modes) chosen — fixed in the module's configuration, or by hakkas at runtime? Which faults become sensor channels (per channel, per module)?
-5. **PID1**: its parameters and reports, and what it does on its own when the main MCU stops serving it.
+5. **PID1** (*decided*, 2026-10-23: a full PID regulator, every parameter reachable through an output channel, a Pt1000 input): does the emulator **regulate** — compute the 0–10 V output from the temperature and the parameters, with the algorithm of hakkas' `process/PID`, as a built-in `pid` source of the `output` channel (still data, no plugin code) — or is the output a settable input like any other? Are the parameters those of `process/PID`, as proposed in §2.1?
 6. **Values between two turns of a slot** (§4.1): when hakkas writes a channel several times between turns, does the firmware pass on only the latest, or queue them (with what bound, and what is dropped on overflow)? And on the input side, does a driver report only the state at its turn, or also edges in between?
 7. **Environments from a device and their comparison** (§5.1): to be discussed — what is copied (carrier, module types, revisions, serials, calibration?), how the emulator reaches the device (the device's environment is not on hakkas' wire yet, `04-drivers.md` §1; adding it is a protocol change to put to the user), what "compare" reports, and the environment's `name` (`04-drivers.md` §4 refuses a bindings file written for another name).
