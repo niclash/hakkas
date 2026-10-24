@@ -76,7 +76,7 @@ User-facing naming from the plant's point of view (e.g. calling a sensor an "inp
 - its **communication slot(s)**: per slot the communication module's type and its **parameters, which differ per type** — **view only** (decided 2026-10-24: the description shows what the device runs; configuring them this way may be revisited):
   - **Ethernet** and **WiFi**: DHCP or a static address — `mode` (`dhcp`/`static`), `address`, `prefix`, `gateway`, `dns` (a list), and the `mac`; with DHCP the addresses are those currently leased. WiFi also its `ssid`. Addresses are IPv4 or IPv6 strings.
   - **RS-485**: `bitrate` and `parity` (`none`/`even`/`odd`).
-  - **LoRaWAN**: OTAA deployments only; `appEui` and `devEui` (16 hex digits each). The App Key: emulator spec question 11.
+  - **LoRaWAN**: OTAA deployments only; `appEui` and `devEui` (16 hex digits each), and `appKeySet` (bool) — the App Key is a secret, so only whether one is set is shown, never the key (decided 2026-10-24).
   No secret (a WiFi passphrase) is ever part of the description (`02-wire-protocol.md` §2).
 ```json
 {"name": "colibri", "carrier": {"type": "colibri/Colibri8", "vendor": "CurrentMakers", "revision": "B", "serial": "…",
