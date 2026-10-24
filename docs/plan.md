@@ -873,3 +873,24 @@ behavior tested in `tests/test_process_more.c`.
   - **Zephyr**: whether the web server must share its port or listener with other Zephyr
     services (today it has its own port, the WebSocket `port + 1`, 02 §0); only that would
     affect the WebSocket side.
+
+## Phase 8 — The environment on the wire, and the Colibri emulator (requested 2026-10-23/24, not started)
+
+Designed with the user 2026-10-23/24: `emulators/colibri/specifications/00-README.md` (a separate
+project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
+
+- [ ] **59. Login commands to the `auth` group** (02 §3.1): `environment:challenge`/`login`/
+  `logout` become `auth:…` in the engine, the frontend (incl. the console redaction, 06 §2) and
+  the tests; `environment` then answers the generic error until §3.7's messages exist.
+- [ ] **60. Bindings warn and skip** (04 §4): a bindings file's `environment` mismatch is a
+  warning; each inapplicable entry is skipped with a warning and the rest applied; a malformed
+  file is not applied, with a warning; startup is never refused by bindings.
+- [ ] **61. The carrier board in the environment description** (04 §1): `HakkasEnvDescription`,
+  the link's `describe`, validation and the identical-description check gain the carrier
+  (slots, built-in modules, power, communication slots with per-type parameters). Waits for
+  emulator spec §10 questions 9–10.
+- [ ] **62. The `environment` wire group** (02 §3.7): the description, bindings, deployment —
+  each message put to the user first.
+- [ ] **63. Frontend: binding page, deployment with a mapping dialog** (06 §7).
+- [ ] **64. Upload/download of processes, backup and restore** (06 §7): to design.
+- [ ] **65. The Colibri emulator** (`emulators/colibri/`): its own plan once its spec is settled.

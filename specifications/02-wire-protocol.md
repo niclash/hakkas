@@ -30,7 +30,7 @@ Implementation decisions (plan task 14; the server `src/engine/ws_server.h` on t
 
 ### Client → Server
 ```json
-{ "protocol": "environment|runtime|network|graph|component|trace",
+{ "protocol": "auth|environment|runtime|network|graph|component|trace",
   "command": "<string>",
   "payload": { ... },
   "secret": "<string>" }
@@ -46,13 +46,13 @@ All four fields are required. `payload` is always a JSON object (`{}` for comman
 ```
 Server-originated messages never include a `secret` field at all (not even `null`) — the key is simply absent. Two messages deviate from the `{protocol,command,payload:object}` shape and must be special-cased by any strict client:
 - `component:componentsready` — payload is a bare JSON integer, not an object: `{"protocol":"component","command":"componentsready","payload":7}`.
-- `environment:logout` reply has no `"payload"` key at all: `{"protocol":"environment","command":"logout"}`.
+- `auth:logout` reply has no `"payload"` key at all: `{"protocol":"auth","command":"logout"}`.
 
 ### Error format (every failure, across all sub-protocols)
 ```json
 {"protocol":"network","command":"error","payload":{"stack":"","message":"<text>"[,"graph":"<id>"]}}
 ```
-`"stack"` is always `""`. `"graph"` is present only when a graph id was known at the error site. Every sub-protocol's failures — environment, runtime, graph, component, trace — are reported as `network:error`; there is no `graph:error`/`component:error`/`runtime:error`.
+`"stack"` is always `""`. `"graph"` is present only when a graph id was known at the error site. Every sub-protocol's failures — auth, environment, runtime, graph, component, trace — are reported as `network:error`; there is no `graph:error`/`component:error`/`runtime:error`.
 
 ### 1.1 Command → event model: the engine is the single source of truth
 
@@ -76,8 +76,8 @@ Consequences the implementation must honor:
 The dispatcher is `src/protocol/dispatcher.h` (one session per WebSocket connection, plugged into the server of §0 as its `WsHandler`), the messages `src/protocol/messages.h`. These fill gaps of §1–§3 without changing any message shape the frontend uses:
 - **Order of checks** for each client message: the authorizer's idle activity (§2.5 item 3; every message, a badly formatted one included); the envelope; secret gating (§2.5 item 5); a command not in §3 → the generic error; the capability (§2.4); the command.
 - **Envelope**: the text must be one JSON object with nothing but whitespace after it (JSON nested deeper than the parser's limit, `third_party/cjson/README.md`, is not valid). `protocol` must be one of the six names exactly (case-sensitive), `command` a string, `payload` an object, `secret` a string; any other member (e.g. an upstream `requestId`) is ignored. **The raw text in `"Badly formatted request: <raw text>"`** is the message's first 256 bytes (cut at a UTF-8 character boundary, and at a U+0000), followed by `...` when it was cut; it is JSON-escaped like any string. This bounds the reply (a 16 KiB message of control characters would escape to 96 KiB, more than the outgoing buffer). It goes to the sender only and is never logged.
-- **Generic error** (an unknown command in any sub-protocol, `environment` included): `"Unknown command: <protocol>:<command>"`, the command cut to 64 bytes (character boundary, `...` appended). It comes after secret gating, so before login an unknown gated command answers `"Not authenticated"`.
-- **Payload fields**: a required field that is missing, or any field of the wrong type, is refused with `"Invalid field: <name>"` (every command; plan task 18: the fields are checked in the order this document lists them, all before any refusal of §3.4.1, and a structured member — `src`, `tgt`, `metadata`, `edges` — is named as a whole). An optional field that is `null` is the same as absent. Exception: `environment:challenge`/`login` answer `"Login failed"` (§2.3). Payload members a command does not use are ignored.
+- **Generic error** (an unknown command in any sub-protocol, `auth` included): `"Unknown command: <protocol>:<command>"`, the command cut to 64 bytes (character boundary, `...` appended). It comes after secret gating, so before login an unknown gated command answers `"Not authenticated"`.
+- **Payload fields**: a required field that is missing, or any field of the wrong type, is refused with `"Invalid field: <name>"` (every command; plan task 18: the fields are checked in the order this document lists them, all before any refusal of §3.4.1, and a structured member — `src`, `tgt`, `metadata`, `edges` — is named as a whole). An optional field that is `null` is the same as absent. Exception: `auth:challenge`/`login` answer `"Login failed"` (§2.3). Payload members a command does not use are ignored.
 - **`"graph"` in an error** is present when the command named a valid graph id (1–64 bytes), e.g. `"Graph exists: g1"` and `"Unknown graph: zz"` carry it, `"Invalid id"` does not; never for `"Not authenticated"`, `"Not permitted: …"`, the generic error, or a badly formatted request.
 - **Server messages** are compact JSON (no whitespace), one per WebSocket text message, with payload keys in the order this document lists them; numbers carrying engine values are printed exactly (`src/graphs/graph_json.h`).
 - **Out of memory** while building a reply closes the connection (WebSocket close code 1011): a reply would otherwise be missing silently. The client reconnects. An authorizer refusing a new connection (`open` fails) closes it the same way.
@@ -123,27 +123,27 @@ Implementation decisions (plan task 16, `src/protocol/users.h`):
 - **User names** are 1–32 bytes of valid UTF-8 **without control characters** (U+0000–U+001F, U+007F), compared byte for byte (case-sensitive). The control-character rule is a tightening of "UTF-8, 1–32 bytes": names are logged (§2.5 item 8), so one must never break a log line.
 - **Missing, empty, malformed**: a missing file, an empty one (no bytes, or only whitespace) and `[]` all mean no users. Anything else wrong — not JSON, not an array, a record breaking a rule above, **two records with the same name**, more than `HAKKAS_USERS_MAX` records, more than `512 × HAKKAS_USERS_MAX + 64` bytes — makes the **whole file** malformed: no record of it is used (a partly used file would silently drop users). The error is logged (which record and member, never a value). **The engine still starts, with no users** (every login refused; a warning for a missing or empty file, an error for a malformed or unreadable one): refusing to start would protect nothing more — both refuse every login — but would stop the graphs controlling the plant until someone repairs a file that only gates logins. The user commands never overwrite a malformed file: they fail and leave it as it is.
 - **Bounded**: at most `HAKKAS_USERS_MAX` users (default 32, a per-build override), held in a fixed table (about 120 bytes each).
-- **When it is read** (decided, plan task 18; plan task 16 read it at startup only): at startup (`05-app-lifecycle-persistence.md` §1.4 step 3), and again **whenever a challenge is made** (`environment:challenge`; a challenge delayed by the back-off, §2.5 item 7, when it is made). A user added, removed or given a new password with the user commands while the engine runs therefore takes effect at the next login, without a restart; sessions already open are not affected (they last until they expire or log out). A login is checked against the users of the latest read (a password changed between a challenge and its login fails that login). At such a re-read a missing, empty or malformed file means **no users**, exactly as at startup — the file is written only atomically by the user commands, so a malformed one comes from a hand edit, and failing closed never keeps a user the edit meant to remove; the parse error is logged as at startup, plus a warning that every login is refused. A file that **cannot be read** (a storage error, or no memory for the read) keeps the users of the previous read, with a warning: a transient read error does not lock everyone out. The authorizer takes the reader as a parameter (`AuthConfig.load_users`, `users_loader` with the file's path; a fake in tests), so it stays testable. Reading is cheap: a file of at most `512 × HAKKAS_USERS_MAX + 64` bytes, parsed into a temporary store on the heap.
+- **When it is read** (decided, plan task 18; plan task 16 read it at startup only): at startup (`05-app-lifecycle-persistence.md` §1.4 step 3), and again **whenever a challenge is made** (`auth:challenge`; a challenge delayed by the back-off, §2.5 item 7, when it is made). A user added, removed or given a new password with the user commands while the engine runs therefore takes effect at the next login, without a restart; sessions already open are not affected (they last until they expire or log out). A login is checked against the users of the latest read (a password changed between a challenge and its login fails that login). At such a re-read a missing, empty or malformed file means **no users**, exactly as at startup — the file is written only atomically by the user commands, so a malformed one comes from a hand edit, and failing closed never keeps a user the edit meant to remove; the parse error is logged as at startup, plus a warning that every login is refused. A file that **cannot be read** (a storage error, or no memory for the read) keeps the users of the previous read, with a warning: a transient read error does not lock everyone out. The authorizer takes the reader as a parameter (`AuthConfig.load_users`, `users_loader` with the file's path; a fake in tests), so it stays testable. Reading is cheap: a file of at most `512 × HAKKAS_USERS_MAX + 64` bytes, parsed into a temporary store on the heap.
 - **Deriving**: `user add`/`passwd` draw a fresh 16-byte salt from the PAL's random source, use the default iteration count (`100000`), store only `stored_key` and `server_key`, and zeroize the password and every intermediate value.
 
 ### 2.3 Login handshake
 
 The connection keeps an auth state: `UNAUTHENTICATED → CHALLENGED → AUTHENTICATED`.
 
-**Step 1 — `environment:challenge`** (client → server, `secret: ""`):
+**Step 1 — `auth:challenge`** (client → server, `secret: ""`):
 ```json
-{"protocol":"environment","command":"challenge","payload":{"user":"alice","cnonce":"<base64, 16+ random bytes>"},"secret":""}
+{"protocol":"auth","command":"challenge","payload":{"user":"alice","cnonce":"<base64, 16+ random bytes>"},"secret":""}
 ```
 Reply (server → client):
 ```json
-{"protocol":"environment","command":"challenge","payload":{"salt":"<base64>","iterations":100000,"nonce":"<cnonce + base64 of 16 server-random bytes>"}}
+{"protocol":"auth","command":"challenge","payload":{"salt":"<base64>","iterations":100000,"nonce":"<cnonce + base64 of 16 server-random bytes>"}}
 ```
 - The full `nonce` is the client nonce followed by the server's random part. It is valid for one login attempt on this connection only, and expires after 30 s.
 - **Unknown users get a normal-looking reply**: the server returns `salt = HMAC(server_secret, user)[0..16]` and the default iteration count, where `server_secret` is a random value generated once and stored with the configuration (`auth.server_secret`, `05-app-lifecycle-persistence.md` §1.1: 32 random bytes in base64; the HMAC key is the stored string's bytes, not decoded). The reply for an unknown user is indistinguishable from a real one, so user names can't be probed.
 
-**Step 2 — `environment:login`** (client → server, `secret: ""`):
+**Step 2 — `auth:login`** (client → server, `secret: ""`):
 ```json
-{"protocol":"environment","command":"login","payload":{"user":"alice","nonce":"<full nonce>","proof":"<base64>"},"secret":""}
+{"protocol":"auth","command":"login","payload":{"user":"alice","nonce":"<full nonce>","proof":"<base64>"},"secret":""}
 ```
 The client computes:
 ```
@@ -158,7 +158,7 @@ The server recomputes `ClientSignature` from its `stored_key`, recovers `ClientK
 
 Success reply:
 ```json
-{"protocol":"environment","command":"login","payload":{"secret":"<token>","role":"editor","capabilities":["..."],"server_signature":"<base64 HMAC(server_key, AuthMessage)>"}}
+{"protocol":"auth","command":"login","payload":{"secret":"<token>","role":"editor","capabilities":["..."],"server_signature":"<base64 HMAC(server_key, AuthMessage)>"}}
 ```
 The client should check `server_signature`, which proves the device knows the user's `server_key` and isn't an impostor.
 
@@ -175,9 +175,9 @@ Implementation decisions (plan task 16, `src/protocol/auth.h`):
 
 A protocol addition (`00-README.md` "Protocol compatibility policy") so that reloading the page does not ask for the password again (`06-frontend.md` §2). It keeps the threat model of §2.1: nothing sent on the wire lets an eavesdropper resume a session.
 
-- **Issued at login**: a successful `environment:login` reply gains `"resume":"<id>"` (16 random bytes, base64url). Both sides derive `ResumeKey = HMAC(StoredKey, "Resume Key," + nonce)` with the login's full nonce: the client computed `StoredKey` during the login, the server has it stored; it is never sent, so neither is the key. The browser keeps `{user, id, ResumeKey}` (`06-frontend.md` §2); the server keeps the entry `{id, user, ResumeKey, the login's time}`.
-- **Resuming**, on a new connection: `environment:challenge {"user","cnonce","resume":"<id>"}` is answered `{"nonce":"<cnonce + server part>"}` (no salt, no iterations: no key stretching), for an unknown id too, so ids cannot be probed. Then `environment:login {"user","nonce","resume":"<id>","proof"}` with `proof = HMAC(ResumeKey, AuthMessage)`, `AuthMessage = user + "," + nonce + "," + id`. On success the reply is the login reply of §2.3 — a new `secret` bound to this connection (§2.5 item 2 is unchanged), `role`, `capabilities`, `server_signature = HMAC(ResumeKey, "Server," + AuthMessage)` — with a **new** `resume` id: an id is used once.
-- **Validity**: an entry lasts as long as the session it came from could have — the idle timeout counted from the last activity of any session in its chain, the maximum lifetime from the password login (§2.5 item 3). `environment:logout` ends it (the client also forgets it); so does a password change or the user's removal (the entry is checked against the user's current `stored_key` when the users file is read for the challenge, §2.2). Entries live in memory: an engine restart ends them all, as it ends every session.
+- **Issued at login**: a successful `auth:login` reply gains `"resume":"<id>"` (16 random bytes, base64url). Both sides derive `ResumeKey = HMAC(StoredKey, "Resume Key," + nonce)` with the login's full nonce: the client computed `StoredKey` during the login, the server has it stored; it is never sent, so neither is the key. The browser keeps `{user, id, ResumeKey}` (`06-frontend.md` §2); the server keeps the entry `{id, user, ResumeKey, the login's time}`.
+- **Resuming**, on a new connection: `auth:challenge {"user","cnonce","resume":"<id>"}` is answered `{"nonce":"<cnonce + server part>"}` (no salt, no iterations: no key stretching), for an unknown id too, so ids cannot be probed. Then `auth:login {"user","nonce","resume":"<id>","proof"}` with `proof = HMAC(ResumeKey, AuthMessage)`, `AuthMessage = user + "," + nonce + "," + id`. On success the reply is the login reply of §2.3 — a new `secret` bound to this connection (§2.5 item 2 is unchanged), `role`, `capabilities`, `server_signature = HMAC(ResumeKey, "Server," + AuthMessage)` — with a **new** `resume` id: an id is used once.
+- **Validity**: an entry lasts as long as the session it came from could have — the idle timeout counted from the last activity of any session in its chain, the maximum lifetime from the password login (§2.5 item 3). `auth:logout` ends it (the client also forgets it); so does a password change or the user's removal (the entry is checked against the user's current `stored_key` when the users file is read for the challenge, §2.2). Entries live in memory: an engine restart ends them all, as it ends every session.
 - **Failures** are `"Login failed"` and count as failed logins for the rate limits (§2.5 item 7). The table is bounded (default 16 entries, a per-build override; the least recently used is evicted).
 - The existing session of another tab is not affected: sessions stay per connection; only the resume id moves on.
 
@@ -205,16 +205,16 @@ Command → required capability: `graph:connect`/`graph:list`, `component:*`, `t
 Implementation decisions (plan task 16, `auth_command_rule`/`auth_permits` in `src/protocol/auth.h`, which the dispatcher of plan task 17 calls):
 - The **read-only graph commands** are exactly `graph:connect` and `graph:list`. **Graph-mutating** are every other graph command of §3.4 and §3.4.2: `rename`, `addnode`, `removenode`, `renamenode`, `changenode`, `addedge`, `removeedge`, `changeedge`, `addinitial`, `removeinitial`, `addinport`, `removeinport`, `renameinport`, `addoutport`, `removeoutport`, `renameoutport`, `addgroup`, `removegroup`, `renamegroup`, `changegroup`.
 - `component:*` is `list` and `getsource`; `trace:*` is `start`, `stop`, `clear`, `dump` (§3.5, §3.6).
-- A command not in §3 (e.g. `graph:merge`) needs no capability: it is secret-gated like any other (except within `environment`, which is never gated), then answered with the generic error.
+- A command not in §3 (e.g. `graph:merge`) needs no capability: it is secret-gated like any other (except within `auth`, which is never gated), then answered with the generic error.
 - `allCapabilities` order (§3.2.1) is also the order in which a session's capabilities are listed (`login` reply, `runtime:runtime`).
 
 ### 2.5 Sessions and secrets
 
 1. **Secret format**: 128 bits from the PAL's cryptographic random source, base64url-encoded (22 chars).
 2. **Binding**: a secret is valid only on the connection it was issued to. A secret presented on any other connection is invalid. Closing the connection destroys the session.
-3. **Lifetime**: sessions expire after `auth.idle_timeout_s` without a client message (default 1800 s) and after `auth.max_lifetime_s` in total (default 43200 s). On expiry the server sends `{"protocol":"environment","command":"logout"}`, stops event delivery, and the connection returns to `UNAUTHENTICATED` (the socket stays open so the client can log in again).
-4. **Logout**: `environment:logout` invalidates the connection's session and returns it to `UNAUTHENTICATED`.
-5. **Secret gating**: every message except `environment:challenge`, `environment:login`, and `runtime:getruntime` must carry the connection's current secret. An invalid, expired, or missing secret → `network:error` `"Not authenticated"`. The submitted value is never echoed back.
+3. **Lifetime**: sessions expire after `auth.idle_timeout_s` without a client message (default 1800 s) and after `auth.max_lifetime_s` in total (default 43200 s). On expiry the server sends `{"protocol":"auth","command":"logout"}`, stops event delivery, and the connection returns to `UNAUTHENTICATED` (the socket stays open so the client can log in again).
+4. **Logout**: `auth:logout` invalidates the connection's session and returns it to `UNAUTHENTICATED`.
+5. **Secret gating**: every message except `auth:challenge`, `auth:login`, and `runtime:getruntime` must carry the connection's current secret. An invalid, expired, or missing secret → `network:error` `"Not authenticated"`. The submitted value is never echoed back.
 6. **Event delivery requires authentication**: graph-change broadcasts, `network:data`, and log mirroring are only delivered to `AUTHENTICATED` connections. There is no passive, pre-login event stream.
 7. **Rate limiting**: a connection is closed after 3 failed logins. Per source address, consecutive failures trigger exponential back-off: after the 5th failure, further challenges from that address are delayed 1 s, doubling up to 60 s, and the counter resets after a success or 15 min of quiet. The table is bounded (default 16 addresses, least-recently-used eviction) so memory use is fixed on the MCU.
 8. **Logging**: never log secrets, proofs, nonces, salts, passwords, resume ids or resume keys (§2.3.1). Log the fact of a login success or failure with the user name and source address only.
@@ -223,10 +223,10 @@ Implementation decisions (plan task 16, `auth_command_rule`/`auth_permits` in `s
 
 Implementation decisions (plan task 16, `src/protocol/auth.h`):
 - **Interface** (item 10): `Authorizer` is a table of operations (`AuthOps`) and its object. Besides the six above it has `open` (a connection opened, with its peer address and the protocol layer's callbacks), `close` (the connection closed: its session ends, item 2), `activity` (a client message arrived, item 3) and `state`. `verify_proof` accepts the proof (the connection is then `VERIFIED`, an intermediate state) and `issue_secret` turns that into the session. `capabilities_for` is non-zero exactly when the connection is `AUTHENTICATED` with a live session, which is also the test for event delivery (item 6). The real implementation takes the clock and the random source as parameters (no PAL call), so tests run it with controlled time.
-- **Expiry** (item 3): the idle timeout counts every client message (`activity`, called by the protocol layer for each message — not the pongs to the WebSocket server's pings, §0). A session is dead from the instant its idle or lifetime deadline passes: from then `validate_secret` is false and `capabilities_for` 0. Its own tick hook (`auth_tick`, `01-architecture-overview.md` §3.2.1) returns the connection to `UNAUTHENTICATED` and calls the protocol layer's `on_expired`, which sends `environment:logout` and stops event delivery; the expiry log line names the cause (idle timeout or maximum lifetime). The same hook drops expired challenges. A logout or a close ends a session without `on_expired`.
-- **What counts as a failed login** (item 7): every `environment:login` that does not succeed — no challenge, an expired or used nonce, a user or nonce differing from the challenge's, a malformed or wrong proof, an unknown user. A refused `environment:challenge` does not count.
+- **Expiry** (item 3): the idle timeout counts every client message (`activity`, called by the protocol layer for each message — not the pongs to the WebSocket server's pings, §0). A session is dead from the instant its idle or lifetime deadline passes: from then `validate_secret` is false and `capabilities_for` 0. Its own tick hook (`auth_tick`, `01-architecture-overview.md` §3.2.1) returns the connection to `UNAUTHENTICATED` and calls the protocol layer's `on_expired`, which sends `auth:logout` and stops event delivery; the expiry log line names the cause (idle timeout or maximum lifetime). The same hook drops expired challenges. A logout or a close ends a session without `on_expired`.
+- **What counts as a failed login** (item 7): every `auth:login` that does not succeed — no challenge, an expired or used nonce, a user or nonce differing from the challenge's, a malformed or wrong proof, an unknown user. A refused `auth:challenge` does not count.
 - **Closing after 3 failures**: the third failed login on a connection is answered `"Login failed"`, then the connection is closed with WebSocket close code 1008 (policy violation). Failures on a connection are not reset by a success.
-- **Back-off**: per source address (`ws_peer(conn)->addr`), with `f` consecutive failures and `f ≥ 5`, a challenge is answered no earlier than `min(60 s, 1 s × 2^(f−5))` after the address's **last failure** (so 1, 2, 4, 8, 16, 32, 60, 60 … s after the 5th, 6th, 7th … failure). Counting from the last failure rather than from the request spares a person who took longer than the back-off to retype a password; an automated client gains nothing. **The challenge is deferred, not refused**: the authorizer answers `AUTH_DELAYED`, keeps the request (one per connection) and its tick hook makes the challenge when it is due and hands it to the protocol layer (`on_challenge`), which sends it as the normal `environment:challenge` reply — on the wire the reply just arrives late, and the loop never blocks. A new challenge meanwhile replaces the pending one (same due time); a login meanwhile has no challenge and fails. A success from the address, or 15 min without a failure from it, resets its count. The table holds `HAKKAS_AUTH_RATE_ADDRS` addresses (default 16, a per-build override); an address enters it on its first failure, evicting the least recently used entry when full.
+- **Back-off**: per source address (`ws_peer(conn)->addr`), with `f` consecutive failures and `f ≥ 5`, a challenge is answered no earlier than `min(60 s, 1 s × 2^(f−5))` after the address's **last failure** (so 1, 2, 4, 8, 16, 32, 60, 60 … s after the 5th, 6th, 7th … failure). Counting from the last failure rather than from the request spares a person who took longer than the back-off to retype a password; an automated client gains nothing. **The challenge is deferred, not refused**: the authorizer answers `AUTH_DELAYED`, keeps the request (one per connection) and its tick hook makes the challenge when it is due and hands it to the protocol layer (`on_challenge`), which sends it as the normal `auth:challenge` reply — on the wire the reply just arrives late, and the loop never blocks. A new challenge meanwhile replaces the pending one (same due time); a login meanwhile has no challenge and fails. A success from the address, or 15 min without a failure from it, resets its count. The table holds `HAKKAS_AUTH_RATE_ADDRS` addresses (default 16, a per-build override); an address enters it on its first failure, evicting the least recently used entry when full.
 - **Dispatcher** (plan task 17): the reply to `AUTH_FAILED_CLOSE` is `"Login failed"`, then the close with code 1008 and the reason `too many failed logins`. A login that succeeds starts event delivery (§4.1); a logout or an expiry stops it, and an expiry sends the logout message of item 3 from the authorizer's tick. Event delivery and `runtime:runtime`'s capabilities both use `capabilities_for`, so nothing is delivered between a session's deadline and its tick. The issued secret appears only in the `login` reply.
 - **Logging** (item 8): `info` for a login (`login: user '<name>' from <address> as <role>`), a logout, a session's end (expiry with its cause, or the connection's close), a back-off and a connection closed after 3 failures; `warn` for a failed login (`login failed: user '<name>' from <address>`). A user name that is not valid (§2.2: e.g. with a control character) is logged as `(invalid name)`. Never a secret, proof, nonce, salt, password, key or `server_secret`.
 
@@ -234,7 +234,9 @@ Implementation decisions (plan task 16, `src/protocol/auth.h`):
 
 Every command below requires an authenticated connection and the capability listed in §2.4, unless noted otherwise.
 
-### 3.1 `environment` — `challenge`, `login`, `logout` (§2). Not secret-gated. Anything else → generic error.
+### 3.1 `auth` — `challenge`, `login`, `logout` (§2). Not secret-gated. Anything else → generic error.
+
+**Renamed** (decided with the user 2026-10-24; *not implemented yet* — engine and frontend still use `environment`): these three commands were the `environment` group until then. They moved to `auth` so that `environment` can hold the messages about the hardware environment (§3.7), which, unlike these, are secret-gated and need capabilities.
 
 ### 3.2 `runtime`
 
@@ -429,6 +431,11 @@ Build out further only if a real tracing/debugging feature is wanted later.
 
 Decided (plan task 17): `graph` must be a string (else `"Invalid field: graph"`, §1.2) and is echoed as given, whether or not such a graph exists; `buffersize` is ignored.
 
+
+### 3.7 `environment` — the hardware environment (decided 2026-10-24; messages to be specified)
+
+Everything about the environment (`04-drivers.md` §1) on the wire goes in this group: its description (ports, modules, the carrier board), the bindings of process ports to it, and what deploying a process with a bindings file needs (`06-frontend.md` §7). Every message is secret-gated and needs a capability (§2.4), like the other groups. **None is specified yet**: each one is put to the user first, one at a time (`00-README.md`, "Protocol compatibility policy").
+
 ## 4. Subscription model
 
 ### 4.1 Connection lifecycle and graph-event scoping
@@ -473,7 +480,7 @@ Implementation decisions (plan task 18; `src/protocol/dispatcher.c`, the input w
 This protocol is a dialect of the standard FBP network protocol (`fbp-protocol.html` — the one NoFlo/Flowhub and similar tools implement), not a literal implementation of it. The notable departures:
 
 1. **Top-level `secret` field** on every client→server message, rather than the standard's `requestId`/`responseTo` request-correlation fields. There is no request/response correlation in this protocol at all: replies are matched to requests by protocol+command and client-side context, not by an id round-trip, and clients should not expect or require one.
-2. A stateful **`environment:challenge`/`login`/`logout`** handshake (§2.3) mints the per-connection secret, rather than treating `secret` as a static pre-shared credential sent on every message.
+2. A stateful **`auth:challenge`/`login`/`logout`** handshake (§2.3) mints the per-connection secret, rather than treating `secret` as a static pre-shared credential sent on every message.
 3. **`graph:list`** doesn't return a bulk list in one message — it triggers a `network:status` broadcast per graph.
 4. **`graph:connect`** is not a standard command; it combines "scope event delivery to this graph" with "send its full current structure," as one atomic reply (§4.1.1).
 5. **Capabilities are per role** (§2.4), using the standard capability names. They are enforced per command, but in four coarse levels rather than per-user custom sets.

@@ -25,7 +25,7 @@ A Colibri system is, conceptually:
 - one **Comm module slot** (not emulated);
 - one **MCU module slot** (not emulated: hakkas runs on the desktop).
 
-The built-in I/O slot exists so that the firmware's (Zephyr's) architecture treats the carrier board's own I/O like any module's (*decided*, 2026-10-23). Colibri 8 thus has **8 I/O slots** in the scan cycle (§4). The built-in slot is **slot 0**; nothing in it is emulated for now (*decided*, 2026-10-23): it takes its turn in the scan cycle with no channels, like an empty slot.
+The built-in I/O slot exists so that the firmware's (Zephyr's) architecture treats the carrier board's own I/O like any module's (*decided*, 2026-10-23). Colibri 8 thus has **8 I/O slots** in the scan cycle (§4). The built-in slot is **slot 0**; nothing in it is emulated for now (*decided*, 2026-10-23): it takes its turn in the scan cycle with no channels, like an empty slot. A built-in slot holds an **I/O module that cannot be changed** (*decided*, 2026-10-24): it comes with the carrier's definition (§5.4) and is listed among the modules, marked built-in.
 
 On the device, the firmware identifies each I/O module at boot from its EEPROM and runs the module's driver cyclically (§4); it then offers the modules' channels to hakkas as the environment (`04-drivers.md` §1). The emulator takes the firmware's place towards hakkas: it is the **environment program** of `04-drivers.md` §0.1.
 
@@ -97,8 +97,8 @@ The emulator counts, per channel, the writes received, the writes queued, the qu
 ## 5. Environments
 
 An **environment** is one emulated Colibri system:
-- **Carrier board**: which carrier (Colibri 8, Colibri-16pi, …) — the number of I/O slots and what the built-in slot provides follow from it.
-- **Number of I/O slots**: 1…n, for a carrier made from scratch.
+- **Carrier board**: which carrier definition (§5.4: Colibri 8, Colibri-16pi, …) — the number of I/O slots, the built-in modules, the power specification and the communication slots follow from it.
+- **Communication modules**: per communication slot, the module's type and its parameters (§5.4); not emulated, only described to hakkas.
 - **I/O module cycle time**: default 10 ms.
 - **Write queue size** per module (§4.1): default 10.
 - **Modules**: which module type (plugin) sits in which slot; a slot may be empty.
@@ -107,7 +107,8 @@ An **environment** is one emulated Colibri system:
 Each environment is a file, `<name>.json`, its file name being the environment's name (§6). Example:
 
 ```json
-{"carrier": "colibri/Colibri8", "slots": 7, "cycleMs": 10, "queueSize": 10,
+{"carrier": "colibri/Colibri8", "cycleMs": 10, "queueSize": 10,
+ "comm": [{"slot": 1, "type": "colibri/Ethernet", "ip": {"dhcp": true}}],
  "modules": [{"slot": 1, "type": "colibri/AIV", "serial": "EMU-0001"},
              {"slot": 3, "type": "colibri/SSR"}],
  "inputs": {"slot1.ai.1": {"source": 5.0, "noise": 0.02}}}
@@ -128,9 +129,30 @@ Changing the cycle time or the queue size takes effect at once. **Selecting anot
 
 ### 5.3 Copying an environment from a device
 
-(*Decided*, 2026-10-24.) The emulator UI can **connect to a real Colibri device**, download its environment description (`specifications/04-drivers.md` §1: ports and modules per slot) over hakkas' wire protocol (the `environment` group, after logging in to the device), and **save it as an emulator environment under a name the user gives**. The emulator configures that environment like the device: per slot, the plugin of the device's module type, with its serial and other metadata; a module type without a plugin leaves its slot empty, with a warning. The user can then select it (§5.1) and develop against the device's twin.
+(*Decided*, 2026-10-24.) The emulator UI can **connect to a real Colibri device**, download its environment description (`specifications/04-drivers.md` §1: the carrier board, the modules per slot, the ports) over hakkas' wire protocol (the `environment` group, after logging in to the device), and **save it as an emulator environment under a name the user gives**. The emulator configures that environment like the device: the carrier definition of the device's carrier type (§5.4), with its communication modules and their parameters; per slot, the plugin of the device's module type, with its serial and other metadata. A module type without a plugin leaves its slot empty, with a warning; a carrier type without a definition gives a plain carrier with the device's slot count, power specification and communication slots, with a warning (*proposal*). The user can then select it (§5.1) and develop against the device's twin.
 
 **Comparing** happens where it matters: when a process is deployed to a device, hakkas' frontend matches the chosen bindings file against the device's environment and lets the user map what does not match (`specifications/06-frontend.md` §7). Names are never enforced; mismatches are warnings (`04-drivers.md` §4).
+
+### 5.4 Carrier definitions
+
+(*Decided*, 2026-10-24: the carrier board is described like the modules, `04-drivers.md` §1.) A carrier board type is defined by data, like a module plugin (§7), in a directory with `carrier.json` and the board's picture (an SVG or a photo; its slot places marked as in §8.2):
+
+```json
+{"type": "colibri/Colibri8", "vendor": "CurrentMakers", "revision": "B",
+ "documentation": "https://currentmakers.com/products/colibri/colibri_8/",
+ "slots": 7,
+ "builtin": [{"slot": 0, "type": "colibri/Colibri8-IO"}],
+ "power": {"voltage": {"min": 12, "max": 30}, "ac": false, "dc": true, "current": 2.0},
+ "comm": [{"slot": 1, "types": ["colibri/Ethernet", "colibri/WiFi", "colibri/RS485", "colibri/LoRaWAN"]}],
+ "picture": "board.svg"}
+```
+
+- **Number of I/O slots**, the changeable ones.
+- **Built-in slots**: each with the module type it always holds (a module plugin, §7), which the user cannot change or remove.
+- **Power specification**: supply voltage range, AC and/or DC, supply current — described, not emulated.
+- **Communication slots**: the module types each accepts. The environment chooses one per slot with its **parameters, which differ per type**: the IP configuration for Ethernet and WiFi, the bitrate for RS-485 (the full sets: question 10). Communication modules are not emulated (§1); they are described to hakkas and copied from a device. No secret (a WiFi passphrase) is kept in an environment or described.
+
+The values in the example are placeholders; the real ones come with each carrier's definition.
 
 ## 6. The environment description
 
@@ -138,7 +160,8 @@ The emulator describes itself to hakkas per `04-drivers.md` §1:
 
 - `name`: the environment's name (§5) (question 7).
 - **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ai` (AIV in slot 1), `slot3-dq` (SSR in slot 3). A group of identical channels is one addressable port with `count`; a module with several groups has several ports (DII in slot 2: `slot2-freq`, `slot2-duty` and `slot2-count`). The channel group ids and their types, units and ranges come from the module's plugin (§7.1).
-- **Modules**: one entry per filled slot, with `slot`, `type`, `vendor`, `revision`, `serial`, `documentation` from the plugin and the configuration, and the ids of its ports.
+- **Modules**: one entry per filled slot, with `slot`, `type`, `vendor`, `revision`, `serial`, `documentation` from the plugin and the configuration, and the ids of its ports; built-in modules marked `builtin`.
+- **Carrier**: the carrier board of `04-drivers.md` §1 — type and metadata, number of I/O slots, power specification, communication slots with their modules' parameters — from the carrier definition and the environment (§5.4).
 
 The emulator gives the same ports, port ids and module list that the firmware gives for the same modules in the same slots, so that one bindings file works on both. This requires the firmware's naming to be fixed in `04-drivers.md` §1 (it is not yet), and both to follow it.
 
@@ -264,4 +287,6 @@ A manifest's keys omit the slot; the emulator prefixes it (`slot1.dq.1`), so a m
 5. *Decided* (2026-10-23): PID1 is a full PID regulator whose parameters, named as hakkas' `process/PID`'s, are output channels, with a Pt1000 input; the emulator does not regulate (§2.1).
 6. *Decided* (2026-10-23): the write queue (§4.1) — one per module, emptied at each turn, 10 values for now, a full queue drops the new value; on the input side a driver forwards a value to its channel only in its slot's turn. The firmware's behaviour is to be reviewed later (the user).
 7. *Decided* (2026-10-24): no enforcement by names, warnings instead — hakkas logs a mismatching bindings file's `environment` and applies it (`04-drivers.md` §4); the user picks the bindings file at deployment, with a mapping dialog for mismatches (§5.2, §5.3).
-8. **The carrier of a copied environment** (§5.3): the device's description lists its modules per slot but not its carrier board; does it gain a carrier entry (e.g. among its modules, as slot 0's), or does the user pick the carrier when copying?
+8. *Decided* (2026-10-24): the environment description gains the carrier board — number of slots, built-in slots (unchangeable I/O modules), power specification, communication slots with per-type parameters (§5.4, `04-drivers.md` §1).
+9. **Several built-in slots**: a carrier with more than one — how are they numbered (0 is taken by the first)?
+10. **Communication parameters**: the full parameter set per type (Ethernet and WiFi: DHCP or static address, netmask, gateway, DNS, hostname?; RS-485: bitrate, parity, stop bits?; LoRaWAN: ?). And are they only **described** (what the device runs) or also **set** this way? On a device, hakkas' own network settings are in `hakkas.json` (`specifications/04-drivers.md` §6: DHCP with a static address as override); two places for the IP configuration would need one to win.
