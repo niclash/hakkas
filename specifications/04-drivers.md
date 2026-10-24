@@ -71,14 +71,20 @@ User-facing naming from the plant's point of view (e.g. calling a sensor an "inp
 **The carrier board** (decided with the user 2026-10-24; *not implemented yet* — `HakkasEnvDescription` and the link's `describe` have no carrier; the shape below is a proposal): a modular environment's description also describes its **carrier board**:
 - its type, vendor, revision, serial number and documentation, like a module's;
 - the **number of I/O slots**;
-- its **built-in slot(s)**: each holds an **I/O module that cannot be changed**, listed among the modules like any other (marked `builtin`), with its ports;
+- its **built-in slot(s)**: a list, each entry with its slot number; each holds an **I/O module that cannot be changed**, listed among the modules like any other (marked `builtin`), with its ports. (Whether a carrier will ever have more than one — a fixed I/O module to lower the price — is not known; the list allows it.)
 - its **power specification**: the supply voltage range, AC and/or DC, the supply current;
-- its **communication slot(s)**: per slot the communication module's type (Ethernet, WiFi, RS-485, LoRaWAN) and its **parameters, which differ per type** — e.g. the IP configuration for Ethernet and WiFi, the bitrate for RS-485. No secret (a WiFi passphrase) is ever part of the description (`02-wire-protocol.md` §2).
+- its **communication slot(s)**: per slot the communication module's type and its **parameters, which differ per type** — **view only** (decided 2026-10-24: the description shows what the device runs; configuring them this way may be revisited):
+  - **Ethernet** and **WiFi**: DHCP or a static address — `mode` (`dhcp`/`static`), `address`, `prefix`, `gateway`, `dns` (a list), and the `mac`; with DHCP the addresses are those currently leased. WiFi also its `ssid`. Addresses are IPv4 or IPv6 strings.
+  - **RS-485**: `bitrate` and `parity` (`none`/`even`/`odd`).
+  - **LoRaWAN**: OTAA deployments only; `appEui` and `devEui` (16 hex digits each). The App Key: emulator spec question 11.
+  No secret (a WiFi passphrase) is ever part of the description (`02-wire-protocol.md` §2).
 ```json
 {"name": "colibri", "carrier": {"type": "colibri/Colibri8", "vendor": "CurrentMakers", "revision": "B", "serial": "…",
    "slots": 7,
    "power": {"voltage": {"min": 12, "max": 30}, "ac": false, "dc": true, "current": 2.0},
-   "comm": [{"slot": 1, "type": "colibri/Ethernet", "ip": {"dhcp": true}}]},
+   "comm": [{"slot": 1, "type": "colibri/Ethernet",
+             "ip": {"mode": "dhcp", "address": "192.168.1.40", "prefix": 24, "gateway": "192.168.1.1",
+                    "dns": ["192.168.1.1"], "mac": "02:00:00:00:00:01"}}]},
  "modules": [{"slot": 0, "type": "…", "builtin": true, "ports": […]}, …], …}
 ```
 Like all metadata it is for the user interface only, and it is what the Colibri emulator copies from a device (`emulators/colibri/specifications/00-README.md` §5.3).

@@ -108,7 +108,7 @@ Each environment is a file, `<name>.json`, its file name being the environment's
 
 ```json
 {"carrier": "colibri/Colibri8", "cycleMs": 10, "queueSize": 10,
- "comm": [{"slot": 1, "type": "colibri/Ethernet", "ip": {"dhcp": true}}],
+ "comm": [{"slot": 1, "type": "colibri/Ethernet", "ip": {"mode": "dhcp"}}],
  "modules": [{"slot": 1, "type": "colibri/AIV", "serial": "EMU-0001"},
              {"slot": 3, "type": "colibri/SSR"}],
  "inputs": {"slot1.ai.1": {"source": 5.0, "noise": 0.02}}}
@@ -148,9 +148,9 @@ Changing the cycle time or the queue size takes effect at once. **Selecting anot
 ```
 
 - **Number of I/O slots**, the changeable ones.
-- **Built-in slots**: each with the module type it always holds (a module plugin, §7), which the user cannot change or remove.
+- **Built-in slots**: a list, each entry with its slot number and the module type it always holds (a module plugin, §7), which the user cannot change or remove (*decided*, 2026-10-24). Whether a carrier will ever have more than one is not known; the list allows it.
 - **Power specification**: supply voltage range, AC and/or DC, supply current — described, not emulated.
-- **Communication slots**: the module types each accepts. The environment chooses one per slot with its **parameters, which differ per type**: the IP configuration for Ethernet and WiFi, the bitrate for RS-485 (the full sets: question 10). Communication modules are not emulated (§1); they are described to hakkas and copied from a device. No secret (a WiFi passphrase) is kept in an environment or described.
+- **Communication slots**: the module types each accepts. The environment chooses one per slot with its **parameters, which differ per type** and are **view only** (*decided*, 2026-10-24): Ethernet and WiFi DHCP or a static address (with WiFi's SSID), RS-485 bitrate and parity, LoRaWAN (OTAA only) App EUI and Dev EUI — the sets of `04-drivers.md` §1. Communication modules are not emulated (§1); they are described to hakkas and copied from a device, and the emulator's UI lets the user enter them for an environment made from scratch. No secret (a WiFi passphrase) is kept in an environment or described.
 
 The values in the example are placeholders; the real ones come with each carrier's definition.
 
@@ -288,5 +288,6 @@ A manifest's keys omit the slot; the emulator prefixes it (`slot1.dq.1`), so a m
 6. *Decided* (2026-10-23): the write queue (§4.1) — one per module, emptied at each turn, 10 values for now, a full queue drops the new value; on the input side a driver forwards a value to its channel only in its slot's turn. The firmware's behaviour is to be reviewed later (the user).
 7. *Decided* (2026-10-24): no enforcement by names, warnings instead — hakkas logs a mismatching bindings file's `environment` and applies it (`04-drivers.md` §4); the user picks the bindings file at deployment, with a mapping dialog for mismatches (§5.2, §5.3).
 8. *Decided* (2026-10-24): the environment description gains the carrier board — number of slots, built-in slots (unchangeable I/O modules), power specification, communication slots with per-type parameters (§5.4, `04-drivers.md` §1).
-9. **Several built-in slots**: a carrier with more than one — how are they numbered (0 is taken by the first)?
-10. **Communication parameters**: the full parameter set per type (Ethernet and WiFi: DHCP or static address, netmask, gateway, DNS, hostname?; RS-485: bitrate, parity, stop bits?; LoRaWAN: ?). And are they only **described** (what the device runs) or also **set** this way? On a device, hakkas' own network settings are in `hakkas.json` (`specifications/04-drivers.md` §6: DHCP with a static address as override); two places for the IP configuration would need one to win.
+9. *Decided* (2026-10-24): the carrier lists its built-in slots, each entry with a slot number (§5.4).
+10. *Decided* (2026-10-24): communication parameters are view only, for now: Ethernet/WiFi DHCP or static, RS-485 bitrate and parity, LoRaWAN OTAA App EUI and Dev EUI (§5.4, `04-drivers.md` §1).
+11. **The LoRaWAN App Key** is the device's root key for joining the network — a secret, which hakkas never logs or sends in the clear (`specifications/02-wire-protocol.md` §2), and which an environment file copied from a device would store on the desktop. *Recommended*: the description shows only whether an App Key is set (and perhaps a short fingerprint, e.g. the first 4 hex digits of its SHA-256), never the key; showing the key itself is for a later configuration feature, if it comes.
