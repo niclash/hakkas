@@ -8,7 +8,7 @@ The Colibri emulator lets a user test a hakkas program (processes and their bind
 
 It is a **separate project** in `emulators/colibri/`, with its own build and tests; hakkas does not depend on it, and it depends on hakkas only through the environment link protocol (`specifications/04-drivers.md` §0.1).
 
-**In scope**: the carrier board's I/O slots; the I/O modules, as plugins (§7); the slot scan cycle and its timing (§4); a library of environments, made from scratch, copied from a device, and compared (§5); a control channel (§8), on which a browser UI and external programs set inputs and follow outputs; the UI is generic, so other emulators can use it too.
+**In scope**: the carrier board's I/O slots; the I/O modules, as plugins (§7); the slot scan cycle and its timing (§4); a library of environments, made from scratch, copied from a device (§5); a control channel (§8), on which a browser UI and external programs set inputs and follow outputs; the UI is generic, so other emulators can use it too.
 
 **Not part of the emulator**: application testing — plant models, scenarios — which external programs do through the control channel (§8.1).
 
@@ -124,13 +124,13 @@ Changing the cycle time or the queue size takes effect at once. **Selecting anot
 
 ### 5.2 Bindings are made in hakkas' UI
 
-(*Decided*, 2026-10-23.) Bindings belong to a device, not to the emulator: hakkas' frontend gets the environment's ports from the device it is connected to — a Colibri device, or hakkas on the desktop running against the emulator — and offers a page for binding the processes' ports to them. On that page the user **selects a bindings file from the local file system**, typically in the library's `bindings/`; the user names the files and so controls which bindings go with which environment and device. That is hakkas' side (`specifications/04-drivers.md` §4, `06-frontend.md`), and needs additions to its wire protocol, each put to the user first.
+(*Decided*, 2026-10-23.) Bindings belong to a device, not to the emulator: hakkas' frontend gets the environment's ports from the device it is connected to — a Colibri device, or hakkas on the desktop running against the emulator — and offers a page for binding the processes' ports to them. On that page the user **selects a bindings file from the local file system**, typically in the library's `bindings/`; the user names the files and so controls which bindings go with which environment and device. When a process is deployed to a device, the user selects its bindings file then, and a mapping dialog resolves the entries that do not match (§5.3). That is hakkas' side (`specifications/04-drivers.md` §4, `06-frontend.md`), and needs additions to its wire protocol, each put to the user first.
 
-### 5.3 Copying from a device, comparing
+### 5.3 Copying an environment from a device
 
-Required (*decided*, 2026-10-23), details to be discussed later:
-- **Copied from a device**: the user takes the environment (carrier, modules per slot, their metadata) from a connected Colibri device, so the desktop tests run against exactly what the device has.
-- **Compared**: two environments (e.g. the emulator's and a device's, or two environment files) are compared, showing the slots and channels that differ — e.g. before loading a tested program into a device.
+(*Decided*, 2026-10-24.) The emulator UI can **connect to a real Colibri device**, download its environment description (`specifications/04-drivers.md` §1: ports and modules per slot) over hakkas' wire protocol (the `environment` group, after logging in to the device), and **save it as an emulator environment under a name the user gives**. The emulator configures that environment like the device: per slot, the plugin of the device's module type, with its serial and other metadata; a module type without a plugin leaves its slot empty, with a warning. The user can then select it (§5.1) and develop against the device's twin.
+
+**Comparing** happens where it matters: when a process is deployed to a device, hakkas' frontend matches the chosen bindings file against the device's environment and lets the user map what does not match (`specifications/06-frontend.md` §7). Names are never enforced; mismatches are warnings (`04-drivers.md` §4).
 
 ## 6. The environment description
 
@@ -263,4 +263,5 @@ A manifest's keys omit the slot; the emulator prefixes it (`slot1.dq.1`), so a m
 4. *Decided* (2026-10-23): DIO1's direction is set by the user program through an output channel (`dir`, true = output); its fault reporting is not defined yet, presumably everything the MAX14906 reports (§2.1).
 5. *Decided* (2026-10-23): PID1 is a full PID regulator whose parameters, named as hakkas' `process/PID`'s, are output channels, with a Pt1000 input; the emulator does not regulate (§2.1).
 6. *Decided* (2026-10-23): the write queue (§4.1) — one per module, emptied at each turn, 10 values for now, a full queue drops the new value; on the input side a driver forwards a value to its channel only in its slot's turn. The firmware's behaviour is to be reviewed later (the user).
-7. **The environment name check**: hakkas refuses a bindings file whose `environment` differs from the running environment's `name` (`specifications/04-drivers.md` §4). With the user choosing the bindings file (§5.2), should that check go — the file's `environment` kept as information, and a binding to a port the environment lacks still skipped with a warning (`04` §4 item 6) — or should the emulator's environments report the device's name?
+7. *Decided* (2026-10-24): no enforcement by names, warnings instead — hakkas logs a mismatching bindings file's `environment` and applies it (`04-drivers.md` §4); the user picks the bindings file at deployment, with a mapping dialog for mismatches (§5.2, §5.3).
+8. **The carrier of a copied environment** (§5.3): the device's description lists its modules per slot but not its carrier board; does it gain a carrier entry (e.g. among its modules, as slot 0's), or does the user pick the carrier when copying?
