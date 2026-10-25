@@ -70,6 +70,12 @@ export function isMeasured(c: Channel): c is MeasuredInput {
     return 'measure' in c;
 }
 
+// Whether a channel takes noise (spec §7.2): number inputs, but not a measured count, which
+// counts pulses.
+export function hasNoise(c: Channel): boolean {
+    return c.direction === 'input' && c.type === 'number' && !(isMeasured(c) && c.measure.quantity === 'count');
+}
+
 export interface Signal {
     id: string;
     type: 'pulse';
@@ -274,6 +280,8 @@ function readChannel(c: Checker, v: Json, path: string, signals: Signal[]): Chan
             c.error(join(path, 'count'), `differs from signal ${sig.id}'s count, ${sig.count}`);
         if (quantity !== undefined && QUANTITY_TYPES[quantity] !== type)
             c.error(join(mp, 'quantity'), `${quantity} is a ${QUANTITY_TYPES[quantity]}`);
+        if (quantity === 'count' && noise !== 0)
+            c.error(join(path, 'noise'), 'not for a count');
         return c.errors.length === errors
             ? {...base as ChannelBase, direction, ...extra, measure: {signal: signal!, quantity: quantity!}, noise}
             : undefined;
@@ -352,7 +360,7 @@ function relativeKeyExists(key: string, m: ModuleType): boolean {
     if (attribute === 'source')
         return channel === undefined || (channel.direction === 'input' && !isMeasured(channel));
     if (attribute === 'noise')
-        return channel !== undefined && channel.direction === 'input' && channel.type === 'number';
+        return channel !== undefined && hasNoise(channel);
     return true;
 }
 

@@ -227,9 +227,11 @@ A refused request changes nothing.
 
 Sets one key, or several at once (`values`, applied all or none). Only `source` and `noise`
 keys can be set: a channel's value is the emulator's, and an output's is the runtime's.
-Refusals: `Unknown key: <key>`, `Not settable: <key>`, `Invalid source: <key>`, `Source not
-accepted: <key>` (a kind the row's `sources` does not list), `Invalid noise: <key>` (not a number
-≥ 0). The change takes effect at once, and its effect reaches the runtime at the part's next
+Refusals: `Unknown key: <key>` (also a `noise` key of a row that takes no noise),
+`Not settable: <key>` (a channel's value, or an output's `source` or `noise`),
+`Invalid source: <key>: <problem>` (e.g. `Invalid source: slot1.ai.1.source: sine.period:
+expected a number > 0`), `Source not accepted: <key>` (a kind the row's `sources` does not list),
+`Invalid noise: <key>` (not a number ≥ 0). The change takes effect at once, and its effect reaches the runtime at the part's next
 scan turn. It makes the environment unsaved.
 
 ### 4.2 `configure` — settings
@@ -283,9 +285,9 @@ An input's or signal's **source** is a constant or a function of time:
 | `sine` | `{"sine": {"offset", "amplitude", "period"}}` | number |
 | `square` | `{"square": {"low", "high", "period", "duty"}}`, `duty` 0–100 % | number, bool (`low`/`high` default to `false`/`true`) |
 | `ramp` | `{"ramp": {"from", "to", "period", "repeat"}}`, a sawtooth when `repeat` is true, else it holds `to` | number |
-| `counter` | `{"counter": {"rate"}}`, an integer counting up at `rate` per second, rolling over past the row's `max` to its `min` | number |
+| `counter` | `{"counter": {"rate"}}`, an integer counting up from the row's `min` (0 without one) at `rate` per second, rolling over past its `max` to its `min` | number |
 | `sequence` | `{"sequence": {"steps": [[<seconds>, <value>], …], "repeat"}}`, each step's value held for its seconds; after the last, it starts over or holds the last value | number, bool |
-| `pulse` | `{"pulse": {"frequency", "duty"}}`, a pulse train in Hz, `duty` 0–100 %; each is a number or a number source above (e.g. a `ramp` of the frequency) | pulse |
+| `pulse` | `{"pulse": {"frequency", "duty"}}`, a pulse train in Hz, `duty` 0–100 %; each is a number or a number source above (e.g. a `ramp` of the frequency); a function's frequency below 0 counts as 0, its duty cycle is kept within 0–100 | pulse |
 
 Periods and steps are in seconds. A function's time `t` starts at 0 when the source is set, or
 when the emulator starts with a source from the environment's file. The emulator evaluates it at
@@ -297,7 +299,9 @@ anew at each turn; 0 turns it off. A row's value is
 
 > value = round(clamp(source(t) + noise, min, max), resolution)
 
-except a `counter`, which rolls over instead of clamping.
+kept within `min` and `max` afterwards too (a bound that is not a multiple of the resolution),
+except a `counter`, which rolls over instead of clamping and has no noise. Which rows take noise
+is the emulator's (Colibri: number inputs, but not a pulse count).
 
 ## 6. Pictures: bindings and controls
 

@@ -110,7 +110,7 @@ export function readSource(c: Checker, v: Json | undefined, path: string, type: 
 }
 
 // The kind of source `v` is, from its form alone, or undefined when it has no source's form.
-function sourceKind(v: Json | undefined): SourceKind | undefined {
+export function sourceKind(v: Json | undefined): SourceKind | undefined {
     if (typeof v === 'number' || typeof v === 'boolean')
         return 'constant';
     if (!isObject(v))
@@ -156,4 +156,24 @@ function steps(c: Checker, o: {[k: string]: Json}, path: string, type: RowType):
         out.push([seconds, value as number | boolean]);
     });
     return out;
+}
+
+// A source's JSON form, as readSource reads it (the state and environment files hold this).
+export function sourceToJson(s: Source): Json {
+    switch (s.kind) {
+    case 'constant':
+        return s.value;
+    case 'sine':
+        return {sine: {offset: s.offset, amplitude: s.amplitude, period: s.period}};
+    case 'square':
+        return {square: {low: s.low, high: s.high, period: s.period, duty: s.duty}};
+    case 'ramp':
+        return {ramp: {from: s.from, to: s.to, period: s.period, repeat: s.repeat}};
+    case 'counter':
+        return {counter: {rate: s.rate}};
+    case 'sequence':
+        return {sequence: {steps: s.steps, repeat: s.repeat}};
+    case 'pulse':
+        return {pulse: {frequency: sourceToJson(s.frequency), duty: sourceToJson(s.duty)}};
+    }
 }

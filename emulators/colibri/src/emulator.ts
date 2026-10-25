@@ -5,6 +5,8 @@ import {carrierOf, checkEnvironment, type Environment} from './environment.js';
 import {Library} from './library.js';
 import type {Logger} from './log.js';
 import {BUILTIN_DATA, VERSION} from './package.js';
+import {randomSeed, seededRandom} from './random.js';
+import {System} from './system.js';
 
 // Runs the emulator until `stop` is aborted (SIGINT/SIGTERM, or a test). A failure that keeps
 // it from starting is thrown.
@@ -17,7 +19,15 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
     const library = new Library(options.library);
     await library.init();
     const name = await library.startup(options.environment);
-    await openEnvironment(library, name, catalog, log);
+    const env = await openEnvironment(library, name, catalog, log);
+    const seed = options.seed ?? randomSeed();
+    log.fine(`noise seed ${seed}`);
+    const random = seededRandom(seed);
+    if (env !== undefined) {
+        const {warnings} = System.build(name, env, catalog, () => performance.now(), random);
+        for (const w of warnings)
+            log.warn(`environment ${name}: ${w}`);
+    }
     // Nothing listens yet (the sockets come with plan tasks E7 and E10), so a timer keeps the
     // process alive until the stop request.
     const alive = setInterval(() => {}, 1 << 30);

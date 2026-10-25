@@ -146,10 +146,23 @@ Follow-ups, decided the same day:
   environment on the command line refuses startup; a library without a usable last one starts
   with the first by name; an environment that cannot be run leaves the emulator running without
   one.
-- [ ] **E4. The model** (§7.2, §7.3): an emulated system built from an environment and its
+- [x] **E4. The model** (§7.2, §7.3): an emulated system built from an environment and its
   plugins, with slots, channels, state keys (§8.3), sources (constant, `sine`, `square`, `ramp`,
   `counter`, `sequence`, and decision 2's pulse train with its derived channels), noise, clamping and rounding. The clock
   and the random generator are injected, so it is tested without real time.
+  *Done*: `src/system.ts` (`System.build`: the slots, every channel and signal with its key, port
+  and label, the communication modules its carrier takes; `sample(slot)` computes a slot's
+  inputs and returns the changed ones; `set` for sources and noise with the protocol's
+  refusals; `applyOutput`; `state()`; `toEnvironment()` writing only what differs from the
+  defaults), `src/evaluate.ts` (the functions, fitting to range and resolution, rolling over),
+  `src/random.ts` (a seeded generator for `--seed`); the emulator builds the system at startup.
+  Tests with a fake clock and random generator: every function, rounding without binary
+  fractions, the pulse train's four measurements, its count at a high rate and across a change
+  of source, an integrated frequency ramp, the 32-bit roll-over, the refusals, the environment's
+  inputs applied and persisted. Decided on the way (protocol §4.1, §5; spec §7.2, §8.3): an
+  invalid source's refusal carries the problem; a counter starts at the row's minimum and has
+  no noise; a pulse count takes no noise; a fitted value stays within range after rounding; a
+  pulse train's phase continues across a new source.
 - [ ] **E5. The scan cycle and the write queues** (§4, §4.1): serves one slot per cycle time,
   deadline-based so it does not drift; one queue per module (size from the environment),
   applied in order at the module's turn, a full queue drops the new value; inputs sampled only
