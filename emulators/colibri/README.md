@@ -16,7 +16,11 @@ The specification is `specifications/00-README.md`; the order of the work, and w
 
 ## Building and testing
 
-Needs Node.js 24.
+Needs Node.js 24. To build the emulator with its UI and start it, from `emulators/`:
+
+```sh
+./build-debug.sh && ./run-debug.sh
+```
 
 ```sh
 npm install
