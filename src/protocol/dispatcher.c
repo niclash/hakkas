@@ -61,6 +61,7 @@ struct ProtoConn {
 struct Protocol {
 	Graphs *graphs;
 	GraphFiles *files;
+	Environment *env;
 	Authorizer auth;
 	char engine_id[CONFIG_ID_MAX + 1];
 	char label[CONFIG_LABEL_MAX + 1];
@@ -620,6 +621,83 @@ static bool need_str(ProtoConn *c, const cJSON *payload, const char *key, const 
 		return false;
 	}
 	return true;
+}
+
+/* ---- environment (02 §3.7, plan task 62) ------------------------------------------- */
+
+/* The running environment's description, NULL without one. */
+static const HakkasEnvDescription *env_desc(const ProtoConn *c)
+{
+	return c->p->env != NULL ? environment_description(c->p->env) : NULL;
+}
+
+static void cmd_env_describe(ProtoConn *c, const Envelope *env)
+{
+	(void)env;
+	const HakkasEnvDescription *d = env_desc(c);
+	if (d == NULL)
+		reply_error(c, "No environment", NULL);
+	else
+		reply(c, proto_msg_env_description(d));
+}
+
+static void cmd_getbindings(ProtoConn *c, const Envelope *env)
+{
+	(void)env;
+	reply(c, proto_msg_bindings(c->p->graphs->rt));
+}
+
+/* bind / unbind {"graph","block","port","env","index"?}: checked in the
+ * order of the C API's hakkas_binding_add (02 §6): the fields, the process,
+ * then the environment's refusals (04 §4). The event is the reply. */
+static void bind_command(ProtoConn *c, const Envelope *env, bool bind)
+{
+	const cJSON *pl = env->payload;
+	const char *graph = str_field(pl, "graph"), *block, *port, *env_port;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "block", graph, &block) ||
+	    !need_str(c, pl, "port", graph, &port) || !need_str(c, pl, "env", graph, &env_port))
+		return;
+	const cJSON *index = cJSON_GetObjectItemCaseSensitive(pl, "index");
+	uint32_t channel = 0;
+	if (index != NULL && !cJSON_IsNull(index)) {
+		double v = cJSON_IsNumber(index) ? index->valuedouble : 0;
+		if (v < 1 || v > HAKKAS_ENV_COUNT_MAX || v != (double)(uint32_t)v) {
+			invalid_field(c, "index", graph);
+			return;
+		}
+		channel = (uint32_t)v;
+	}
+	if (!graph_id_valid(graph)) {
+		refuse_graph(c, GRAPH_ERR_INVALID_ID, graph);
+		return;
+	}
+	Graph *g = graphs_find(c->p->graphs, graph);
+	if (g == NULL || g->component) {
+		refuse_graph(c, g == NULL ? GRAPH_ERR_UNKNOWN_GRAPH : GRAPH_ERR_NOT_A_PROCESS,
+			     graph);
+		return;
+	}
+	if (c->p->env == NULL) {
+		reply_error(c, "No environment", graph);
+		return;
+	}
+	EnvBindingRequest req = {block, port, env_port, channel};
+	char text[ENVIRONMENT_MESSAGE_MAX];
+	enum environment_status st =
+		bind ? environment_bind(c->p->env, g, &req, text, sizeof(text))
+		     : environment_unbind(c->p->env, g, &req, text, sizeof(text));
+	if (st != ENVIRONMENT_OK)
+		reply_error(c, text, graph);
+}
+
+static void cmd_bind(ProtoConn *c, const Envelope *env)
+{
+	bind_command(c, env, true);
+}
+
+static void cmd_unbind(ProtoConn *c, const Envelope *env)
+{
+	bind_command(c, env, false);
 }
 
 /* An edge endpoint {"node":String,"port":String}. */
@@ -1445,6 +1523,10 @@ static const ProtoCommand commands[] = {
 	{"graph", "removegroup", cmd_removegroup},
 	{"graph", "renamegroup", cmd_renamegroup},
 	{"graph", "changegroup", cmd_changegroup},
+	{"environment", "describe", cmd_env_describe},
+	{"environment", "getbindings", cmd_getbindings},
+	{"environment", "bind", cmd_bind},
+	{"environment", "unbind", cmd_unbind},
 	{"component", "list", cmd_component_list},
 	{"component", "getsource", cmd_getsource},
 	{"trace", "start", cmd_trace},
@@ -1639,6 +1721,7 @@ bool protocol_create(const ProtocolConfig *cfg, Protocol **out)
 	}
 	p->graphs = cfg->graphs;
 	p->files = cfg->files;
+	p->env = cfg->environment;
 	p->auth = cfg->auth;
 	snprintf(p->engine_id, sizeof(p->engine_id), "%s", cfg->cfg->engine_id);
 	snprintf(p->label, sizeof(p->label), "%s", cfg->cfg->label);

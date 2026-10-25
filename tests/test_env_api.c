@@ -402,6 +402,152 @@ static void test_bindings(void)
 	e2e_stop();
 }
 
+/* ---- The environment on the wire (02 §3.7, plan task 62) --------------------------- */
+
+/* Every message waiting for c, dropped. */
+static void drain(E2eClient *c)
+{
+	char **msgs;
+	int n = e2e_collect(c, &msgs);
+	CHECK(n >= 0);
+	e2e_free_msgs(msgs, n);
+}
+
+static void test_wire(void)
+{
+	fake_reset();
+	static const HakkasEnvModule mods[] = {{.has_slot = true, .slot = 0, .builtin = true}};
+	static const uint32_t builtin[] = {0};
+	static const HakkasEnvCarrier carrier = {.type = "c/C8", .slots = 7, .builtin = builtin,
+						 .builtin_count = 1};
+	fake.desc.modules = mods;
+	fake.desc.module_count = 1;
+	fake.desc.carrier = &carrier;
+	CHECK(start_with_env());
+	CHECK(hakkas_process_create(h, "p", "P", NULL, NULL, NULL, NULL) == HAKKAS_OK);
+	CHECK(hakkas_block_add(h, "p", "a", "math/Add2", NULL, NULL) == HAKKAS_OK);
+	E2eClient ed, other, viewer;
+	CHECK(e2e_connect(&ed) && e2e_login(&ed, "alice"));
+	CHECK(e2e_connect(&other) && e2e_login(&other, "oscar"));
+	CHECK(e2e_connect(&viewer) && e2e_login(&viewer, "vera"));
+
+	/* describe: the description's JSON form, to the sender only. */
+	e2e_send(&viewer, "environment", "describe", "{}");
+	EXPECT(&viewer, "environment", "description",
+	       "{'name':'fake','outPorts':[{'id':'ain','type':'number','addressable':true,"
+	       "'count':4},{'id':'temp','type':'number'}],'inPorts':[{'id':'relay',"
+	       "'type':'bool','addressable':true,'count':2}],'modules':[{'slot':0,"
+	       "'builtin':true,'ports':[]}],'carrier':{'type':'c/C8','slots':7,"
+	       "'builtin':[{'slot':0}],'comm':[]}}");
+	QUIET(&ed);
+
+	/* bind: an event to every client viewing the process, the sender too;
+	 * the process becomes unsaved. */
+	e2e_send(&other, "graph", "connect", "{'id':'p'}");
+	drain(&other);
+	e2e_send(&ed, "environment", "bind",
+		 "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	EXPECT(&ed, "environment", "bind",
+	       "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	EXPECT(&other, "environment", "bind",
+	       "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	drain(&ed); /* its network:status: unsaved */
+	drain(&other);
+	e2e_send(&ed, "environment", "bind", "{'graph':'p','block':'a','port':'out','env':'relay',"
+					     "'index':1}");
+	EXPECT(&ed, "environment", "bind",
+	       "{'graph':'p','block':'a','port':'out','env':'relay','index':1}");
+	drain(&ed);
+	drain(&other);
+	drain(&viewer);
+	HakkasProcessStatus st;
+	CHECK(hakkas_process_status(h, "p", &st, NULL) == HAKKAS_OK && st.unsaved);
+
+	/* getbindings: every process's, to the sender only. */
+	e2e_send(&viewer, "environment", "getbindings", "{}");
+	EXPECT(&viewer, "environment", "bindings",
+	       "{'bindings':[{'graph':'p','block':'a','port':'in1','env':'ain','index':2},"
+	       "{'graph':'p','block':'a','port':'out','env':'relay','index':1}]}");
+	QUIET(&other);
+
+	/* Refusals, to the sender only, with "graph" when it is a valid id. */
+	static const struct {
+		const char *payload, *message, *graph;
+	} bad[] = {
+		{"{}", "Invalid field: graph", NULL},
+		{"{'graph':'p','port':'in2','env':'ain'}", "Invalid field: block", "p"},
+		{"{'graph':'p','block':'a','env':'ain'}", "Invalid field: port", "p"},
+		{"{'graph':'p','block':'a','port':'in2'}", "Invalid field: env", "p"},
+		{"{'graph':'p','block':'a','port':'in2','env':'ain','index':0}",
+		 "Invalid field: index", "p"},
+		{"{'graph':'p','block':'a','port':'in2','env':'ain','index':1.5}",
+		 "Invalid field: index", "p"},
+		{"{'graph':'p','block':'a','port':'in2','env':'ain','index':'1'}",
+		 "Invalid field: index", "p"},
+		{"{'graph':'','block':'a','port':'in2','env':'ain','index':1}", "Invalid id", NULL},
+		{"{'graph':'q','block':'a','port':'in2','env':'ain','index':1}", "Unknown graph: q",
+		 "q"},
+		{"{'graph':'p','block':'a','port':'in2','env':'nope'}",
+		 "Unknown environment port: nope", "p"},
+		{"{'graph':'p','block':'a','port':'in2','env':'ain'}", "Index required: ain", "p"},
+		{"{'graph':'p','block':'a','port':'in2','env':'ain','index':9}",
+		 "Index out of range: ain[9]", "p"},
+		{"{'graph':'p','block':'zz','port':'in2','env':'ain','index':1}",
+		 "Unknown node: zz", "p"},
+		{"{'graph':'p','block':'a','port':'in1','env':'temp'}",
+		 "Input already connected: a.in1", "p"},
+		{"{'graph':'p','block':'a','port':'out','env':'relay','index':1}",
+		 "Actuator already driven: relay[1]", "p"},
+	};
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+		e2e_send(&ed, "environment", "bind", bad[i].payload);
+		if (!e2e_expect_error(&ed, bad[i].message, bad[i].graph)) {
+			fprintf(stderr, "case %zu: %s\n", i, bad[i].payload);
+			CHECK(false);
+		}
+	}
+	e2e_send(&ed, "environment", "unbind",
+		 "{'graph':'p','block':'a','port':'in2','env':'temp'}");
+	EXPECT_ERROR(&ed, "No such binding", "p");
+	QUIET(&other);
+
+	/* Capabilities: a viewer and an operator may read, not bind. */
+	e2e_send(&viewer, "environment", "bind",
+		 "{'graph':'p','block':'a','port':'in2','env':'temp'}");
+	EXPECT_ERROR(&viewer, "Not permitted: environment:bind", NULL);
+	e2e_send(&other, "environment", "unbind",
+		 "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	EXPECT_ERROR(&other, "Not permitted: environment:unbind", NULL);
+	e2e_send(&ed, "environment", "frob", "{}");
+	EXPECT_ERROR(&ed, "Unknown command: environment:frob", NULL);
+
+	/* unbind: an event like bind's. */
+	e2e_send(&ed, "environment", "unbind",
+		 "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	EXPECT(&ed, "environment", "unbind",
+	       "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	EXPECT(&other, "environment", "unbind",
+	       "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	e2e_close(&ed);
+	e2e_close(&other);
+	e2e_close(&viewer);
+	CHECK(hakkas_process_delete(h, "p", "P", NULL) == HAKKAS_OK);
+	e2e_stop();
+
+	/* Without an environment: describe and bind say so. */
+	CHECK(e2e_start());
+	CHECK(hakkas_process_create(e2e_hakkas, "p", "P", NULL, NULL, NULL, NULL) == HAKKAS_OK);
+	CHECK(e2e_connect(&ed) && e2e_login(&ed, "alice"));
+	e2e_send(&ed, "environment", "describe", "{}");
+	EXPECT_ERROR(&ed, "No environment", NULL);
+	e2e_send(&ed, "environment", "bind", "{'graph':'p','block':'a','port':'in1','env':'ain'}");
+	EXPECT_ERROR(&ed, "No environment", "p");
+	e2e_send(&ed, "environment", "getbindings", "{}");
+	EXPECT(&ed, "environment", "bindings", "{'bindings':[]}");
+	e2e_close(&ed);
+	e2e_stop();
+}
+
 int main(void)
 {
 	e2e_setup("env-api");
@@ -409,6 +555,7 @@ int main(void)
 	RUN(test_sensor_thread);
 	RUN(test_wall_clock);
 	RUN(test_bindings);
+	RUN(test_wire);
 	e2e_teardown();
 	return test_result();
 }

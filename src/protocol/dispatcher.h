@@ -129,6 +129,7 @@
 #include <stdint.h>
 
 #include "app/graph_files.h"
+#include "drivers/environment.h"
 #include "engine/ws_server.h"
 #include "graphs/graphs.h"
 #include "protocol/auth.h"
@@ -170,6 +171,8 @@ typedef struct {
 	 * label, log.mirror. */
 	const Config *cfg;
 	Authorizer auth;
+	/* borrowed, may be NULL (no environment): environment:* (02 §3.7) */
+	Environment *environment;
 } ProtocolConfig;
 
 typedef struct Protocol Protocol;

@@ -335,6 +335,11 @@ static void test_description_validate(void)
 	HakkasEnvDescription d = description();
 	char why[ENV_DESCRIPTION_MESSAGE_MAX] = "";
 	CHECK(env_description_validate(&d, why, sizeof(why)));
+	cJSON *as_json = env_description_to_json(&d);
+	HakkasEnvDescription *back = env_description_from_json(as_json, why, sizeof(why));
+	CHECK(back != NULL && env_description_equal(&d, back));
+	env_description_free(back);
+	cJSON_Delete(as_json);
 	bool actuator;
 	uint32_t i;
 	CHECK(env_description_find(&d, "temp", &actuator, &i) && !actuator && i == 2);
@@ -642,11 +647,19 @@ static void test_carrier_json(void)
 
 		/* A new DHCP lease is the same environment; another module type in
 		 * a communication slot, or another power supply, is not. */
+		/* Its JSON form reads back as the same description. */
+		cJSON *back = env_description_to_json(d);
+		HakkasEnvDescription *e = env_description_from_json(back, why, sizeof(why));
+		CHECK(e != NULL && env_description_equal(d, e));
+		CHECK(e != NULL && e->carrier->comm[3].lorawan->app_key_set);
+		CHECK(e != NULL && e->carrier->comm[0].ip->dns_count == 2);
+		env_description_free(e);
+		cJSON_Delete(back);
 		cJSON *carrier = cJSON_GetObjectItem(json, "carrier");
 		cJSON *comm0 = cJSON_GetArrayItem(cJSON_GetObjectItem(carrier, "comm"), 0);
 		cJSON_ReplaceItemInObject(cJSON_GetObjectItem(comm0, "ip"), "address",
 					  cJSON_CreateString("192.168.1.41"));
-		HakkasEnvDescription *e = env_description_from_json(json, why, sizeof(why));
+		e = env_description_from_json(json, why, sizeof(why));
 		CHECK(e != NULL && env_description_equal(d, e));
 		env_description_free(e);
 		cJSON_ReplaceItemInObject(comm0, "type", cJSON_CreateString("colibri/WiFi"));

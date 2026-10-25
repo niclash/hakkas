@@ -170,8 +170,9 @@ typedef struct {
 /*
  * The rule for protocol:command (02 §2.4):
  *  - auth:challenge, login, logout: not gated, no capability (any
- *    other auth command: not gated, unknown; every environment command,
- *    02 §3.7: gated, unknown);
+ *    other auth command: not gated, unknown);
+ *  - environment:describe, getbindings: graph:readonly or protocol:graph;
+ *    environment:bind, unbind: protocol:graph (02 §3.7, plan task 62);
  *  - runtime:getruntime: not gated, no capability; runtime:new_graph,
  *    delete_graph: protocol:runtime;
  *  - graph:connect, graph:list (the read-only graph commands), every

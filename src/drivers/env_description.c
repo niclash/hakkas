@@ -852,3 +852,222 @@ HakkasEnvDescription *env_description_from_json(const cJSON *json, char *msg, si
 	}
 	return d;
 }
+
+/* ---- To JSON ---------------------------------------------------------------------------- */
+
+/* Add item under key to obj; false (item freed) if item is NULL or memory
+ * runs out. */
+static bool put(cJSON *obj, const char *key, cJSON *item)
+{
+	if (item == NULL)
+		return false;
+	if (!cJSON_AddItemToObject(obj, key, item)) {
+		cJSON_Delete(item);
+		return false;
+	}
+	return true;
+}
+
+/* An optional string: nothing for NULL. */
+static bool put_str(cJSON *obj, const char *key, const char *s)
+{
+	return s == NULL || put(obj, key, cJSON_CreateString(s));
+}
+
+static bool push(cJSON *arr, cJSON *item)
+{
+	if (item == NULL)
+		return false;
+	if (!cJSON_AddItemToArray(arr, item)) {
+		cJSON_Delete(item);
+		return false;
+	}
+	return true;
+}
+
+static cJSON *port_json(const HakkasEnvPort *p)
+{
+	cJSON *j = cJSON_CreateObject();
+	bool ok = j != NULL && put_str(j, "id", p->id) &&
+		  put_str(j, "type", p->type == HAKKAS_ENV_BOOL ? "bool" : "number") &&
+		  put_str(j, "description", p->description) && put_str(j, "unit", p->unit) &&
+		  (!p->has_min || put(j, "min", cJSON_CreateNumber(p->min))) &&
+		  (!p->has_max || put(j, "max", cJSON_CreateNumber(p->max))) &&
+		  (!p->addressable || (put(j, "addressable", cJSON_CreateTrue()) &&
+				       put(j, "count", cJSON_CreateNumber(p->count))));
+	if (!ok) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}
+
+static cJSON *ports_json(const HakkasEnvPort *ports, size_t n)
+{
+	cJSON *a = cJSON_CreateArray();
+	for (size_t i = 0; a != NULL && i < n; i++) {
+		if (!push(a, port_json(&ports[i]))) {
+			cJSON_Delete(a);
+			return NULL;
+		}
+	}
+	return a;
+}
+
+static cJSON *strings_json(const char *const *s, size_t n)
+{
+	cJSON *a = cJSON_CreateArray();
+	for (size_t i = 0; a != NULL && i < n; i++) {
+		if (!push(a, cJSON_CreateString(s[i]))) {
+			cJSON_Delete(a);
+			return NULL;
+		}
+	}
+	return a;
+}
+
+static cJSON *module_json(const HakkasEnvModule *m)
+{
+	cJSON *j = cJSON_CreateObject();
+	bool ok = j != NULL && (!m->has_slot || put(j, "slot", cJSON_CreateNumber(m->slot))) &&
+		  (!m->builtin || put(j, "builtin", cJSON_CreateTrue())) &&
+		  put_str(j, "type", m->type) && put_str(j, "vendor", m->vendor) &&
+		  put_str(j, "revision", m->revision) && put_str(j, "serial", m->serial) &&
+		  put_str(j, "documentation", m->documentation) &&
+		  put(j, "ports", strings_json(m->ports, m->port_count));
+	if (!ok) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}
+
+static cJSON *power_json(const HakkasEnvPower *w)
+{
+	cJSON *j = cJSON_CreateObject();
+	cJSON *v = cJSON_CreateObject();
+	bool ok = j != NULL && v != NULL &&
+		  (!w->has_voltage_min || put(v, "min", cJSON_CreateNumber(w->voltage_min))) &&
+		  (!w->has_voltage_max || put(v, "max", cJSON_CreateNumber(w->voltage_max)));
+	if (ok) {
+		ok = put(j, "voltage", v);
+		v = NULL;
+	}
+	ok = ok && put(j, "ac", cJSON_CreateBool(w->ac)) && put(j, "dc", cJSON_CreateBool(w->dc)) &&
+	     (!w->has_current || put(j, "current", cJSON_CreateNumber(w->current)));
+	cJSON_Delete(v);
+	if (!ok) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}
+
+static cJSON *ip_json(const HakkasEnvIp *ip)
+{
+	cJSON *j = cJSON_CreateObject();
+	bool ok = j != NULL && put_str(j, "mode", ip->mode) && put_str(j, "address", ip->address) &&
+		  (!ip->has_prefix || put(j, "prefix", cJSON_CreateNumber(ip->prefix))) &&
+		  put_str(j, "gateway", ip->gateway) &&
+		  (ip->dns_count == 0 || put(j, "dns", strings_json(ip->dns, ip->dns_count))) &&
+		  put_str(j, "mac", ip->mac);
+	if (!ok) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}
+
+/* An object with one string member (wifi: ssid). */
+static cJSON *one_str(const char *key, const char *s)
+{
+	cJSON *j = cJSON_CreateObject();
+	if (j != NULL && !put_str(j, key, s)) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}
+
+static cJSON *comm_json(const HakkasEnvComm *c)
+{
+	cJSON *j = cJSON_CreateObject();
+	bool ok = j != NULL && put(j, "slot", cJSON_CreateNumber(c->slot)) &&
+		  put_str(j, "type", c->type) && (c->ip == NULL || put(j, "ip", ip_json(c->ip))) &&
+		  (c->ssid == NULL || put(j, "wifi", one_str("ssid", c->ssid)));
+	if (ok && c->rs485 != NULL) {
+		cJSON *r = cJSON_CreateObject();
+		ok = put(j, "rs485", r) &&
+		     (!c->rs485->has_bitrate ||
+		      put(r, "bitrate", cJSON_CreateNumber(c->rs485->bitrate))) &&
+		     put_str(r, "parity", c->rs485->parity);
+	}
+	if (ok && c->lorawan != NULL) {
+		cJSON *l = cJSON_CreateObject();
+		ok = put(j, "lorawan", l) && put_str(l, "appEui", c->lorawan->app_eui) &&
+		     put_str(l, "devEui", c->lorawan->dev_eui) &&
+		     (!c->lorawan->has_app_key_set ||
+		      put(l, "appKeySet", cJSON_CreateBool(c->lorawan->app_key_set)));
+	}
+	if (!ok) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}
+
+static cJSON *carrier_json(const HakkasEnvCarrier *c)
+{
+	cJSON *j = cJSON_CreateObject();
+	cJSON *builtin = cJSON_CreateArray(), *comm = cJSON_CreateArray();
+	bool ok = j != NULL && builtin != NULL && comm != NULL;
+	for (size_t i = 0; ok && i < c->builtin_count; i++) {
+		cJSON *b = cJSON_CreateObject();
+		ok = push(builtin, b) && put(b, "slot", cJSON_CreateNumber(c->builtin[i]));
+	}
+	for (size_t i = 0; ok && i < c->comm_count; i++)
+		ok = push(comm, comm_json(&c->comm[i]));
+	ok = ok && put_str(j, "type", c->type) && put_str(j, "vendor", c->vendor) &&
+	     put_str(j, "revision", c->revision) && put_str(j, "serial", c->serial) &&
+	     put_str(j, "documentation", c->documentation) &&
+	     put(j, "slots", cJSON_CreateNumber(c->slots));
+	if (ok) {
+		ok = put(j, "builtin", builtin);
+		builtin = NULL;
+	}
+	ok = ok && (c->power == NULL || put(j, "power", power_json(c->power)));
+	if (ok) {
+		ok = put(j, "comm", comm);
+		comm = NULL;
+	}
+	cJSON_Delete(builtin);
+	cJSON_Delete(comm);
+	if (!ok) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}
+
+cJSON *env_description_to_json(const HakkasEnvDescription *d)
+{
+	cJSON *j = cJSON_CreateObject();
+	cJSON *modules = cJSON_CreateArray();
+	bool ok = j != NULL && modules != NULL && put_str(j, "name", d->name) &&
+		  put_str(j, "description", d->description) && put_str(j, "icon", d->icon) &&
+		  put(j, "outPorts", ports_json(d->out_ports, d->out_port_count)) &&
+		  put(j, "inPorts", ports_json(d->in_ports, d->in_port_count));
+	for (size_t i = 0; ok && i < d->module_count; i++)
+		ok = push(modules, module_json(&d->modules[i]));
+	if (ok) {
+		ok = put(j, "modules", modules);
+		modules = NULL;
+	}
+	ok = ok && (d->carrier == NULL || put(j, "carrier", carrier_json(d->carrier)));
+	cJSON_Delete(modules);
+	if (!ok) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}

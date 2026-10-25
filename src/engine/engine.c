@@ -107,7 +107,7 @@ static void remove_tmp_all(const Engine *e)
 /* Step 8: the protocol layer and both listeners. False refuses startup. */
 static bool open_servers(Engine *e)
 {
-	ProtocolConfig pc = {&e->gs, &e->gf, &e->cfg, auth_authorizer(e->auth)};
+	ProtocolConfig pc = {&e->gs, &e->gf, &e->cfg, auth_authorizer(e->auth), &e->env};
 	if (!protocol_create(&pc, &e->proto))
 		return false;
 	enum pal_err err;

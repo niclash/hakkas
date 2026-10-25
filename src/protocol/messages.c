@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "drivers/env_description.h"
 #include "engine/version.h"
 #include "graphs/graph_json.h"
 #include "protocol/users.h"
@@ -513,6 +514,47 @@ static char *group_removed(const GraphEvent *ev)
 	return finish("graph", "removegroup", p, ok);
 }
 
+/* ---- environment (02 §3.7, plan task 62) --------------------------------------------- */
+
+char *proto_msg_env_description(const HakkasEnvDescription *d)
+{
+	return proto_msg_build("environment", "description", env_description_to_json(d));
+}
+
+/* {"graph","block","port","env","index"?} of b: index only for an
+ * addressable port's channel. */
+static cJSON *binding_json(const EnvBinding *b)
+{
+	const PortDescriptor *port = b->actuator ? block_output_port(b->block, b->port)
+						 : block_input_port(b->block, b->port);
+	cJSON *p = object();
+	bool ok = p != NULL && add_str(p, "graph", b->graph->id) &&
+		  add_str(p, "block", b->block->name) && add_str(p, "port", port->name) &&
+		  add_str(p, "env", b->env) &&
+		  (b->env_index == 0 || add_num(p, "index", b->env_index));
+	if (!ok) {
+		cJSON_Delete(p);
+		return NULL;
+	}
+	return p;
+}
+
+char *proto_msg_bindings(const Runtime *rt)
+{
+	cJSON *p = object();
+	cJSON *list = cJSON_CreateArray();
+	bool ok = p != NULL && add(p, "bindings", list);
+	if (p == NULL)
+		cJSON_Delete(list);
+	for (uint32_t i = 0; ok && i < runtime_binding_count(rt); i++) {
+		cJSON *b = binding_json(runtime_binding_at(rt, i));
+		ok = b != NULL && cJSON_AddItemToArray(list, b);
+		if (!ok)
+			cJSON_Delete(b);
+	}
+	return finish("environment", "bindings", p, ok);
+}
+
 char *proto_msg_event(const GraphEvent *ev)
 {
 	switch (ev->type) {
@@ -575,8 +617,9 @@ char *proto_msg_event(const GraphEvent *ev)
 	case GRAPH_EVENT_LINK_REMOVED:
 		return NULL; /* no wire form yet (decided, plan task 21f; 02 §6) */
 	case GRAPH_EVENT_BINDING_ADDED:
+		return proto_msg_build("environment", "bind", binding_json(ev->binding));
 	case GRAPH_EVENT_BINDING_REMOVED:
-		return NULL; /* no wire form: the environment's UI is deferred (04 §1) */
+		return proto_msg_build("environment", "unbind", binding_json(ev->binding));
 	}
 	return NULL;
 }

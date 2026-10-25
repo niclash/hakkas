@@ -330,7 +330,7 @@ static void setup_with(Authorizer az, bool mirror)
 	snprintf(cfg.engine_id, sizeof(cfg.engine_id), "engine-1");
 	snprintf(cfg.label, sizeof(cfg.label), "Test Hakkas");
 	cfg.log.mirror = mirror;
-	ProtocolConfig pc = {&gs, &gf, &cfg, az};
+	ProtocolConfig pc = {&gs, &gf, &cfg, az, NULL};
 	CHECK(protocol_create(&pc, &proto));
 	memset(&fake, 0, sizeof(fake));
 	fake.challenge_result = AUTH_OK;

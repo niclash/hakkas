@@ -59,8 +59,13 @@ static const CommandDef auth_commands[] = {
 	{NULL, false, 0},
 };
 
-/* The hardware environment's messages (02 §3.7) are not specified yet. */
+/* The hardware environment (02 §3.7, plan task 62): reading it, and
+ * binding, which changes a process (protocol:graph). */
 static const CommandDef environment_commands[] = {
+	{"describe", true, READ_CAPS},
+	{"getbindings", true, READ_CAPS},
+	{"bind", true, AUTH_CAP_PROTOCOL_GRAPH},
+	{"unbind", true, AUTH_CAP_PROTOCOL_GRAPH},
 	{NULL, false, 0},
 };
 

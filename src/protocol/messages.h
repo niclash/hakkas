@@ -34,7 +34,10 @@
  * GROUP_RENAMED -> graph:renamegroup {"graph","from","to"}, GROUP_CHANGED ->
  * graph:changegroup {"graph","name","metadata"}, and COMPONENT ->
  * component:component. The links between processes (LINK_ADDED/REMOVED,
- * plan task 21f) have no wire form yet: NULL, nothing is sent (02 §6).
+ * plan task 21f) have no wire form yet: NULL, nothing is sent (02 §6). Plan
+ * task 62 maps the bindings (02 §3.7): BINDING_ADDED -> environment:bind,
+ * BINDING_REMOVED -> environment:unbind, each {"graph","block","port","env",
+ * "index"?} ("index" only for an addressable port's channel).
  *
  * Every function returns a heap string to free with free(), or NULL when
  * memory runs out (or, for proto_msg_event, when the event has no wire
@@ -49,6 +52,7 @@
 #include "cJSON.h"
 #include "graphs/block_type.h"
 #include "graphs/graph.h"
+#include "hakkas_env.h"
 #include "protocol/auth.h"
 
 /* "1970-01-01T00:00:00Z" and its NUL. */
@@ -134,6 +138,16 @@ char *proto_msg_addport(const Graph *g, enum graph_port_dir dir, const GraphPort
  * (02 §3.3, §4.2). */
 char *proto_msg_data(const char *graph, const char *src_node, const char *src_port,
 		     const char *tgt_node, const char *tgt_port, const Linkable *v);
+
+/* ---- environment (02 §3.7, plan task 62) --------------------------------------------- */
+
+/* environment:description, the description's JSON form (04 §1,
+ * drivers/env_description.h). */
+char *proto_msg_env_description(const HakkasEnvDescription *d);
+
+/* environment:bindings {"bindings":[{"graph","block","port","env","index"?}]}:
+ * every binding of rt, in creation order. */
+char *proto_msg_bindings(const Runtime *rt);
 
 /* The wire message of ev (see "Event mapping" above), or NULL. */
 char *proto_msg_event(const GraphEvent *ev);

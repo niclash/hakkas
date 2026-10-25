@@ -84,6 +84,11 @@ bool env_description_equal(const HakkasEnvDescription *a, const HakkasEnvDescrip
  * json is not a valid description or memory runs out. */
 HakkasEnvDescription *env_description_from_json(const cJSON *json, char *msg, size_t cap);
 
+/* d in its JSON form (above; the payload of environment:description, 02
+ * §3.7): absent strings and false flags left out, so env_description_from_json
+ * of it gives a description equal to d. NULL if memory runs out. */
+cJSON *env_description_to_json(const HakkasEnvDescription *d);
+
 /* Free a description made by env_description_from_json. NULL is ignored. */
 void env_description_free(HakkasEnvDescription *d);
 
