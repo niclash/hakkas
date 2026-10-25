@@ -1,0 +1,148 @@
+{
+  "type": "colibri_pid1",
+  "name": "Colibri PID1",
+  "vendor": "CurrentMakers",
+  "description": "PID regulator: Pt1000 input, 0-10 V output",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": [
+    {
+      "id": "ai",
+      "direction": "input",
+      "type": "number",
+      "count": 1,
+      "unit": "°C",
+      "min": -50,
+      "max": 150,
+      "resolution": 0.01,
+      "default": 21,
+      "noise": 0.05,
+      "control": "slider",
+      "description": "Pt1000 temperature, the regulator's input"
+    },
+    {
+      "id": "output",
+      "direction": "input",
+      "type": "number",
+      "count": 1,
+      "unit": "V",
+      "min": 0,
+      "max": 10,
+      "resolution": 0.001,
+      "default": 0,
+      "noise": 0,
+      "control": "slider",
+      "description": "Regulator output"
+    },
+    {
+      "id": "saturated",
+      "direction": "input",
+      "type": "bool",
+      "count": 1,
+      "control": "toggle",
+      "description": "The output is at a limit"
+    },
+    {
+      "id": "setpoint",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "unit": "°C",
+      "min": -50,
+      "max": 150,
+      "indicator": "number",
+      "description": "Setpoint"
+    },
+    {
+      "id": "kp",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "indicator": "number",
+      "description": "Proportional gain"
+    },
+    {
+      "id": "ki",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "unit": "1/s",
+      "indicator": "number",
+      "description": "Integral gain, per second"
+    },
+    {
+      "id": "kd",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "unit": "s",
+      "indicator": "number",
+      "description": "Derivative gain, in seconds"
+    },
+    {
+      "id": "max_dgain",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "indicator": "number",
+      "description": "Highest gain of the derivative term"
+    },
+    {
+      "id": "min",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "unit": "V",
+      "min": 0,
+      "max": 10,
+      "indicator": "number",
+      "description": "Lower output limit"
+    },
+    {
+      "id": "max",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "unit": "V",
+      "min": 0,
+      "max": 10,
+      "indicator": "number",
+      "description": "Upper output limit"
+    },
+    {
+      "id": "reverse",
+      "direction": "output",
+      "type": "bool",
+      "count": 1,
+      "indicator": "lamp",
+      "description": "Reverse acting"
+    },
+    {
+      "id": "auto",
+      "direction": "output",
+      "type": "bool",
+      "count": 1,
+      "indicator": "lamp",
+      "description": "Automatic (true) or manual (false) mode"
+    },
+    {
+      "id": "manual",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "unit": "V",
+      "min": 0,
+      "max": 10,
+      "indicator": "number",
+      "description": "Output in manual mode"
+    },
+    {
+      "id": "sample_ms",
+      "direction": "output",
+      "type": "number",
+      "count": 1,
+      "unit": "ms",
+      "indicator": "number",
+      "description": "Sample period"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "type": "colibri_wifi",
+  "name": "Colibri WiFi",
+  "vendor": "CurrentMakers",
+  "params": [
+    "ip",
+    "wifi"
+  ]
+}

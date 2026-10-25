@@ -1,0 +1,17 @@
+{
+  "type": "colibri_triac1",
+  "name": "Colibri TRIAC1",
+  "vendor": "CurrentMakers",
+  "description": "4 × triac outputs, 500 mA AC",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": [
+    {
+      "id": "dq",
+      "direction": "output",
+      "type": "bool",
+      "count": 4,
+      "indicator": "lamp",
+      "description": "Triac output"
+    }
+  ]
+}

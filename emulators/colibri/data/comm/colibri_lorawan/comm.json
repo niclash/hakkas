@@ -1,0 +1,8 @@
+{
+  "type": "colibri_lorawan",
+  "name": "Colibri LoRaWAN",
+  "vendor": "CurrentMakers",
+  "params": [
+    "lorawan"
+  ]
+}

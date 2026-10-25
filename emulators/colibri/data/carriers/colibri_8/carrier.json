@@ -1,0 +1,33 @@
+{
+  "type": "colibri_8",
+  "name": "Colibri 8",
+  "vendor": "CurrentMakers",
+  "documentation": "https://currentmakers.com/products/colibri/colibri_8/",
+  "slots": 7,
+  "builtin": [
+    {
+      "slot": 0,
+      "type": "carrier"
+    }
+  ],
+  "power": {
+    "voltage": {
+      "min": 7,
+      "max": 30
+    },
+    "ac": true,
+    "dc": true,
+    "current": 2.0
+  },
+  "comm": [
+    {
+      "slot": 1,
+      "types": [
+        "colibri_ethernet",
+        "colibri_wifi",
+        "colibri_rs485",
+        "colibri_lorawan"
+      ]
+    }
+  ]
+}

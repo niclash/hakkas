@@ -1,4 +1,5 @@
 // The emulator's run: from startup to a stop request.
+import {loadCatalog} from './catalog.js';
 import type {Options} from './cli.js';
 import type {Logger} from './log.js';
 import {BUILTIN_DATA, VERSION} from './package.js';
@@ -10,13 +11,13 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
     log.fine(`plugin directories: ${[BUILTIN_DATA, ...options.plugins].join(', ')}`);
     log.fine(`environment socket ${options.socket}, control socket ${options.controlSocket}, ` +
         `HTTP port ${options.httpPort}`);
-    if (stop.aborted)
-        return;
+    await loadCatalog([BUILTIN_DATA, ...options.plugins], log);
     // Nothing listens yet (the sockets come with plan tasks E7 and E10), so a timer keeps the
     // process alive until the stop request.
     const alive = setInterval(() => {}, 1 << 30);
     try {
-        await new Promise<void>(resolve => stop.addEventListener('abort', () => resolve(), {once: true}));
+        if (!stop.aborted)
+            await new Promise<void>(resolve => stop.addEventListener('abort', () => resolve(), {once: true}));
     } finally {
         clearInterval(alive);
     }

@@ -9,8 +9,8 @@ The specification is `specifications/00-README.md`; the order of the work, and w
 `docs/plan.md`. The control protocol and the generic UI are shared with other emulators:
 `../specifications/`.
 
-> Work in progress: the command line and logging exist (plan task E1); the emulated system, the
-> link to hakkas and the UI follow.
+> Work in progress: the command line, logging and the module catalog (`data/`) exist (plan
+> tasks E1, E2); the emulated system, the link to hakkas and the UI follow.
 
 ## Building and testing
 

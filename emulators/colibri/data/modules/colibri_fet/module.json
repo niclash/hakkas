@@ -1,0 +1,17 @@
+{
+  "type": "colibri_fet",
+  "name": "Colibri FET",
+  "vendor": "CurrentMakers",
+  "description": "4 × MOSFET outputs, 1 A, 60 V",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": [
+    {
+      "id": "dq",
+      "direction": "output",
+      "type": "bool",
+      "count": 4,
+      "indicator": "lamp",
+      "description": "MOSFET output"
+    }
+  ]
+}

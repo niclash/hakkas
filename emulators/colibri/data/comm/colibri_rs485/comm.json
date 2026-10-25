@@ -1,0 +1,8 @@
+{
+  "type": "colibri_rs485",
+  "name": "Colibri RS-485",
+  "vendor": "CurrentMakers",
+  "params": [
+    "rs485"
+  ]
+}

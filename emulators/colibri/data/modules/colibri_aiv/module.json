@@ -1,0 +1,23 @@
+{
+  "type": "colibri_aiv",
+  "name": "Colibri AIV",
+  "vendor": "CurrentMakers",
+  "description": "2 × 0-10 V analog inputs",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": [
+    {
+      "id": "ai",
+      "direction": "input",
+      "type": "number",
+      "count": 2,
+      "unit": "V",
+      "min": 0,
+      "max": 10,
+      "resolution": 0.001,
+      "default": 0,
+      "noise": 0.005,
+      "control": "slider",
+      "description": "0-10 V input"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "type": "colibri_dii",
+  "name": "Colibri DII",
+  "vendor": "CurrentMakers",
+  "description": "2 isolated digital inputs",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "signals": [
+    {
+      "id": "in",
+      "type": "pulse",
+      "count": 2,
+      "description": "Input terminal: a pulse train"
+    }
+  ],
+  "channels": [
+    {
+      "id": "di",
+      "direction": "input",
+      "type": "bool",
+      "count": 2,
+      "measure": {
+        "signal": "in",
+        "quantity": "state"
+      },
+      "description": "Input state"
+    },
+    {
+      "id": "freq",
+      "direction": "input",
+      "type": "number",
+      "count": 2,
+      "unit": "Hz",
+      "min": 0,
+      "max": 10000,
+      "resolution": 0.01,
+      "measure": {
+        "signal": "in",
+        "quantity": "frequency"
+      },
+      "description": "Frequency"
+    },
+    {
+      "id": "duty",
+      "direction": "input",
+      "type": "number",
+      "count": 2,
+      "unit": "%",
+      "min": 0,
+      "max": 100,
+      "resolution": 0.1,
+      "measure": {
+        "signal": "in",
+        "quantity": "duty"
+      },
+      "description": "Duty cycle"
+    },
+    {
+      "id": "count",
+      "direction": "input",
+      "type": "number",
+      "count": 2,
+      "min": 0,
+      "max": 4294967295,
+      "resolution": 1,
+      "measure": {
+        "signal": "in",
+        "quantity": "count"
+      },
+      "description": "Pulse count, 32 bits, rolling over"
+    }
+  ]
+}

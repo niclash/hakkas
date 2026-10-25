@@ -288,16 +288,21 @@ modules/colibri_pt1000/
  "ui": {"bindings": […], "controls": […]}}
 ```
 
-- `type`, `name` (§2.1), `vendor`, `revision`, `description`, `documentation`: the module's metadata, given to hakkas in the description's module list (§6). `type` and `name` are required, `type` matching the directory's name.
-- `signals` (optional): the module's field-side signals that are not channels (§7.2), each with `id`, `type` (`pulse`), `count`, `default` (a source) and `description`.
+- `type`, `name` (§2.1), `vendor`, `revision`, `description`, `documentation`: the module's metadata, given to hakkas in the description's module list (§6). `type` is required and is the directory's name (1–64 lower-case letters, digits and `_`); `name` is there for every module that has one (not slot 0's `carrier`). Each string is at most 1024 bytes, hakkas' limit.
+- `signals` (optional): the module's field-side signals that are not channels (§7.2), each with `id`, `type` (`pulse`), `count`, `default` (a source; without one, `{"pulse": {"frequency": 0, "duty": 0}}`) and `description`.
 - `channels`, each with:
   - `id`, `type` (`number` or `bool`), `description`, `unit`, `min`/`max` — they become the environment description's port (§6); `count` > 1 makes the port addressable (default 1).
   - `direction`: `input` (a module input: a sensor to hakkas, an environment output port) or `output` (a module output: an actuator, an environment input port). A module may have both (DIO1, PID1).
-  - **Inputs**: `resolution` (values are rounded to it), `default` (the source at power-up, a constant by default), `noise` (§7.2), `control` (the UI's default control: `slider`, `number`, `toggle` or `button`, momentary), or `measure` instead of a source (below).
-  - **Outputs**: `default` (the value until hakkas writes one: 0 or false by default) and `indicator` — how the UI shows the value hakkas writes: `lamp` (bool), `number`, `bar` or `meter` (number, between `min` and `max`). Without one: `lamp` for a bool, `number` for a number.
-  - **Measured inputs**: `{"measure": {"signal": "in", "quantity": "state" | "frequency" | "duty" | "count"}}` — the channel is measured from the signal with the same index (§7.2).
+  - **Inputs**: `resolution` (values are rounded to it), `default` (the source at power-up, of a kind the channel accepts, §8.3; without one, false, or 0 brought into the channel's range), `noise` (§7.2, default 0), `control` (the UI's default control: `slider` or `number` for a number — a slider needs `min` and `max`; without a control, a slider when the channel has both, else a number field — and `toggle` or `button`, momentary, for a bool, `toggle` by default), or `measure` instead of a source (below).
+  - **Outputs**: `default` (the value until hakkas writes one: 0 or false by default) and `indicator` — how the UI shows the value hakkas writes: `lamp` (bool), `number`, `bar` or `meter` (number, between `min` and `max`, which they need). Without one: `lamp` for a bool, `number` for a number. An output has no `resolution`, `noise`, `control` or `measure`.
+  - A bool channel has no `min`, `max`, `resolution` or `noise`.
+  - **Measured inputs**: `{"measure": {"signal": "in", "quantity": "state" | "frequency" | "duty" | "count"}}` — the channel is measured from the signal with the same index (§7.2), so it has the signal's `count`; `state` is a bool, the others numbers. It has no `default` or `control`.
 - A module with **no channels** (RS485I, RS485U, `carrier`) is only placed with its picture: no controls, no indicators, no ports.
-- Ids are 1–32 characters of lower-case letters, digits and `_`, so the port ids (§6) and keys (§8) are well formed.
+- Ids are 1–32 characters of lower-case letters, digits and `_`, unique among the module's channels and signals, so the port ids (§6) and keys (§8) are well formed.
+- `faceplate` is a picture file in the descriptor's directory (`.svg`, `.png`, `.jpg`, `.webp`), a plain file name; a picture that is not there is left out, with a warning. The `ui` section's keys must name the module's channels and signals: a binding's key a channel or signal (with its index when its group has several), its `source` (an input with a source, or a signal) or its `noise` (a number input); a control's key a `source`.
+- A member the descriptor format does not know is warned about and ignored (most likely a typing error).
+
+**Loading** (implemented in plan task E2, `src/catalog.ts`): the plugin directories are read in order, each type directory's descriptor checked as above; a descriptor that cannot be read or is invalid is skipped with an error per problem, naming the file and the member (`modules/colibri_x/module.json: channels[1].min: greater than max`). Then what the carriers name is checked: a carrier whose built-in module type is not in the catalog is skipped (its slot could not be filled); a communication module type that is not in the catalog is left out of its slot's list, with a warning. A carrier's `carrier.json` is checked like hakkas checks a carrier (04 §0: 1–31 I/O slots with the built-in ones, built-in slot numbers among them and none twice, at most 4 communication slots numbered 1–4); its `picture` like a faceplate. The info line `catalog: module types <n>, carrier types <m>, communication module types <k>` follows.
 
 ### 7.2 Inputs: sources, signals and noise
 

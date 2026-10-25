@@ -113,13 +113,24 @@ Follow-ups, decided the same day:
   the command line, the log, names, and the built command as a process (help, version, usage
   error, `SIGINT`/`SIGTERM`). Decided on the way (spec §3.1): `--log-level`, `--http 0`, the
   temporary-directory fallback without `XDG_RUNTIME_DIR`, the exit codes 0/1/2.
-- [ ] **E2. Plugins and carrier definitions** (§5.4, §7.1): load and validate `module.json` and
+- [x] **E2. Plugins and carrier definitions** (§5.4, §7.1): load and validate `module.json` and
   `carrier.json` (each with its type and human-readable `name`, follow-ups A and B) from the
   built-in directory (`data/`) and `--plugins` directories (`modules/`, `carriers/`, `comm/`,
   a later definition replacing an earlier one), with clear errors per file; the built-in
   plugins for every catalogue module (§2.1: AIV, AIC, AQV, Pt1000, DP1–DP3, DII, DIU, DIO1,
   FET, SSR, TRIAC1, Fallback, PID1, RS485I/U without channels, slot 0's `carrier` without
   channels), the four communication module types and the `colibri_8` carrier (decision 4).
+  *Done*: `src/check.ts` (reading JSON with a path per problem, every problem reported in one
+  pass), `src/sources.ts` (the source forms of control protocol §5, and which a row accepts),
+  `src/descriptors.ts` (the three descriptor kinds), `src/catalog.ts` (loading, replacing, the
+  carriers' cross-check), the built-in `data/` (18 module types, `colibri_8`, 4 communication
+  module types); the emulator loads the catalog at startup. Tests for sources, descriptors
+  (every refusal), the built-in catalog against the spec's §2.1 table, and the loader (a later
+  directory replacing a type, unreadable and invalid files, missing pictures, a carrier naming
+  unknown types). Decided on the way (spec §7.1): an input without a default rests at false or
+  0 in its range; a slider needs a range; bar and meter indicators need one; unknown members are
+  warnings; a missing picture is left out; a carrier with an unknown built-in module is skipped,
+  an unknown communication type left out of its slot.
 - [ ] **E3. Environment files and the library** (§5, §5.1): load, validate and save
   `<name>.json` (atomic write, only on `persist`, decision 6); list, create, duplicate, rename
   and delete; remember the last one run; the `environments/` and `bindings/` directories.

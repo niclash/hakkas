@@ -1,0 +1,23 @@
+{
+  "type": "colibri_dp1",
+  "name": "Colibri DP1",
+  "vendor": "CurrentMakers",
+  "description": "0-500 Pa differential pressure",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": [
+    {
+      "id": "ai",
+      "direction": "input",
+      "type": "number",
+      "count": 1,
+      "unit": "Pa",
+      "min": 0,
+      "max": 500,
+      "resolution": 0.1,
+      "default": 0,
+      "noise": 0.5,
+      "control": "slider",
+      "description": "Differential pressure"
+    }
+  ]
+}

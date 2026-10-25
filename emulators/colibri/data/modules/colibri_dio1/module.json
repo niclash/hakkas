@@ -1,0 +1,41 @@
+{
+  "type": "colibri_dio1",
+  "name": "Colibri DIO1",
+  "vendor": "CurrentMakers",
+  "description": "4 × IEC 61131-2 digital inputs or outputs",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": [
+    {
+      "id": "dir",
+      "direction": "output",
+      "type": "bool",
+      "count": 4,
+      "indicator": "lamp",
+      "description": "Direction: true makes the channel an output"
+    },
+    {
+      "id": "dq",
+      "direction": "output",
+      "type": "bool",
+      "count": 4,
+      "indicator": "lamp",
+      "description": "Output"
+    },
+    {
+      "id": "di",
+      "direction": "input",
+      "type": "bool",
+      "count": 4,
+      "control": "toggle",
+      "description": "Input"
+    },
+    {
+      "id": "fault",
+      "direction": "input",
+      "type": "bool",
+      "count": 4,
+      "control": "toggle",
+      "description": "Any fault of the channel or the module"
+    }
+  ]
+}

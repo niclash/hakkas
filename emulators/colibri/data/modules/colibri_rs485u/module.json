@@ -1,0 +1,8 @@
+{
+  "type": "colibri_rs485u",
+  "name": "Colibri RS485U",
+  "vendor": "CurrentMakers",
+  "description": "RS-485 (not emulated)",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": []
+}

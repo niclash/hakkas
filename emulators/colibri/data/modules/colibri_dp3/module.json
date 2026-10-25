@@ -1,0 +1,23 @@
+{
+  "type": "colibri_dp3",
+  "name": "Colibri DP3",
+  "vendor": "CurrentMakers",
+  "description": "0-100 kPa differential pressure (planned)",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": [
+    {
+      "id": "ai",
+      "direction": "input",
+      "type": "number",
+      "count": 1,
+      "unit": "Pa",
+      "min": 0,
+      "max": 100000,
+      "resolution": 10,
+      "default": 0,
+      "noise": 50,
+      "control": "slider",
+      "description": "Differential pressure"
+    }
+  ]
+}

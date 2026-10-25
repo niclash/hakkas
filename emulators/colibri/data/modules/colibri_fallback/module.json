@@ -1,0 +1,17 @@
+{
+  "type": "colibri_fallback",
+  "name": "Colibri Fallback",
+  "vendor": "CurrentMakers",
+  "description": "1 × SPDT relay",
+  "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "channels": [
+    {
+      "id": "dq",
+      "direction": "output",
+      "type": "bool",
+      "count": 1,
+      "indicator": "lamp",
+      "description": "Relay"
+    }
+  ]
+}

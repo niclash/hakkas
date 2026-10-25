@@ -1,0 +1,5 @@
+{
+  "type": "carrier",
+  "description": "The carrier board's built-in I/O slot (nothing emulated)",
+  "channels": []
+}

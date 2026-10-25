@@ -62,6 +62,7 @@ describe('colibri-emulator', () => {
         it(`runs until ${signal}`, async () => {
             const r = await command([], pid => process.kill(pid, signal));
             expect(r.code).toBe(0);
-            expect(r.stderr).toMatch(new RegExp(`^info colibri-emulator ${VERSION}: library .*\ninfo stopped\n$`));
+            expect(r.stderr).toMatch(new RegExp(`^info colibri-emulator ${VERSION}: library .*\n` +
+                'info catalog: module types 18, carrier types 1, communication module types 4\ninfo stopped\n$'));
         });
 });
