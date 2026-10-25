@@ -66,8 +66,9 @@ class Connection {
             return;
         if (warning !== undefined)
             this.link.log.warn(`environment link: ${warning}`);
-        this.closed = true;
         this.socket.destroy();
+        // Gone at once, not at the socket's close event: hakkas may already be reconnecting.
+        this.link.closed(this);
     }
 }
 
@@ -80,7 +81,7 @@ export class LinkServer {
     private restartTimer: NodeJS.Timeout | undefined;
     private warnedNoEnvironment = false;
 
-    constructor(readonly socketPath: string, readonly log: Logger, private readonly events: LinkEvents = {}) {}
+    constructor(readonly socketPath: string, readonly log: Logger, readonly events: LinkEvents = {}) {}
 
     get state(): LinkState {
         return this.current;
@@ -110,8 +111,9 @@ export class LinkServer {
         this.connection?.end();
         const server = this.server;
         this.server = undefined;
-        if (server !== undefined)
-            await new Promise<void>(resolve => server.close(() => resolve()));
+        if (server === undefined)
+            return;         // not listening: the file is not ours (maybe another emulator's)
+        await new Promise<void>(resolve => server.close(() => resolve()));
         await unlink(this.socketPath).catch(() => {});
     }
 
@@ -121,12 +123,18 @@ export class LinkServer {
         const powerCycle = this.described;
         this.served = served;
         this.warnedNoEnvironment = false;
-        if (this.connection !== undefined)
-            this.connection.end();
         if (powerCycle) {
             this.described = false;
             this.setState('restart');
         }
+        this.connection?.end();
+    }
+
+    // A new description that is no power cycle: a communication module's parameters, which
+    // hakkas does not compare (04 §0.1) and sees at its next start.
+    updateDescription(description: Description): void {
+        if (this.served !== undefined)
+            this.served = {...this.served, description};
     }
 
     // A scan turn's changed inputs, sent to the runtime.
@@ -176,7 +184,8 @@ export class LinkServer {
         this.described = true;
     }
 
-    private closed(c: Connection): void {
+    // A connection ended, by either side (once per connection).
+    closed(c: Connection): void {
         c.closed = true;
         if (this.connection !== c)
             return;
@@ -262,7 +271,7 @@ function excerpt(line: string): string {
 }
 
 // Removes a socket file nobody listens on; refuses a live one and anything else.
-async function removeStale(file: string): Promise<void> {
+export async function removeStale(file: string): Promise<void> {
     const st = await lstat(file).catch(() => undefined);
     if (st === undefined)
         return;

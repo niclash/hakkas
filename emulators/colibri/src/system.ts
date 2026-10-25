@@ -254,6 +254,18 @@ export class System {
 
     // Sets a `….source` or `….noise` key (control protocol §4.1); refusals are ModelErrors.
     set(key: string, value: Json): void {
+        this.prepare(key, value)();
+    }
+
+    // Sets several keys, all or none.
+    setMany(values: Record<string, Json>): void {
+        const apply = Object.entries(values).map(([key, value]) => this.prepare(key, value));
+        for (const f of apply)
+            f();
+    }
+
+    // Checks a change and returns what makes it.
+    private prepare(key: string, value: Json): () => void {
         const attribute = key.endsWith('.source') ? 'source' : key.endsWith('.noise') ? 'noise' : undefined;
         const base = attribute === undefined ? key : key.slice(0, -attribute.length - 1);
         const item = this.items.get(base);
@@ -273,23 +285,26 @@ export class System {
             const source = readSource(c, value, '', item.kind === 'signal' ? 'pulse' : item.def.type, accepted);
             if (source === undefined)
                 throw new ModelError(`Invalid source: ${key}: ${c.errors.join('; ')}`);
-            const now = this.clock();
-            if (item.kind === 'signal') {
-                advance(item, now);
-                item.source = source as SignalState['source'];
-                item.since = now;
-                [item.frequency, item.duty] = pulseNow(item, now);
-            } else {
-                item.source = source;
-                item.since = now;
-            }
-            return;
+            return () => {
+                const now = this.clock();
+                if (item.kind === 'signal') {
+                    advance(item, now);
+                    item.source = source as SignalState['source'];
+                    item.since = now;
+                    [item.frequency, item.duty] = pulseNow(item, now);
+                } else {
+                    item.source = source;
+                    item.since = now;
+                }
+            };
         }
         if (item.kind === 'signal' || item.kind === 'output' || !hasNoise(item.def))
             throw new ModelError(item.kind === 'output' ? `Not settable: ${key}` : `Unknown key: ${key}`);
         if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
             throw new ModelError(`Invalid noise: ${key}`);
-        item.noise = value;
+        return () => {
+            item.noise = value;
+        };
     }
 
     private applyInput(key: string, input: InputConfig, warnings: string[]): void {

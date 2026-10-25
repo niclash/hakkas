@@ -228,18 +228,41 @@ Follow-ups, decided the same day:
   through); a power cycle (an SSR moved to slot 4): hakkas logs that the description changed and
   the link stays `restart`; hakkas exits 0 each time. Also run once by hand with the built
   command (`node dist/main.js … lab`) and hakkas: described and accepted.
-- [ ] **E9. The control protocol** (§8.1, §8.3, its spec in `emulators/specifications/`): a transport-neutral
+- [x] **E9. The control protocol** (§8.1, §8.3, its spec in `emulators/specifications/`): a transport-neutral
   session with `scene`, `state`, `settings` and `stats` to the client and `set`/`configure`
   from it. The emulator applies each request and broadcasts the result to every client, the
   sender included, and answers a refused request with an error.
-- [ ] **E10. Transports**: the Unix socket with newline-delimited JSON, and an HTTP server
+- [x] **E10. Transports**: the Unix socket with newline-delimited JSON, and an HTTP server
   (localhost only) that serves the UI's built files, the plugins' and carriers'
   assets, and the WebSocket. `examples/` gets a short Python script that sets an input and
   follows an output.
-- [ ] **E11. Configuration over the channel** (§5.1): library operations, selecting an
+- [x] **E11. Configuration over the channel** (§5.1): library operations, selecting an
   environment, carrier and modules per slot, communication modules and their parameters,
   cycle time and queue size; power cycles where §5.1 says so; `persist` and the unsaved
   state (decision 6, follow-up D).
+  *Done* (E9–E11 in one go, at the user's request, 2026-10-25): `src/core.ts` (`Core`: the
+  running environment with its system, scanner and link; the clients; requests one at a time in
+  arrival order; state at most every 50 ms and a request's changes before its `ok`; stats once
+  a second, only what changed; power cycles keeping the inputs' sources where their keys still
+  exist), `src/settings.ts` (the form and `configure`), `src/scene.ts`, `src/transports.ts`
+  (`ControlSocket`; `HttpServer` on 127.0.0.1 and ::1 with the WebSocket at `/control` through
+  the `ws` package, the Origin check, the assets and the UI's files), `examples/follow.py`; the
+  emulator runs them all (`src/emulator.ts`), and `System.setMany` sets keys all or none. Tests:
+  the core's every request and refusal with two clients, configuration (slot type and serial in
+  one request, the form's fields coming and going, communication modules and their parameters,
+  refusals all or none), persist and its failure, the library (create, copy, rename, the running
+  one renamed, delete, select with and without unsaved changes, one that cannot be run, none
+  running), resetstats; the transports (lines, a too-long line or WebSocket message — 1009 —,
+  origins, 404/405, nothing served outside the UI and the plugins' pictures, a live control
+  socket left alone); with hakkas, the whole emulator driven over its control socket (a value
+  and a square wave through a process to a relay); the command's run logs its three listeners
+  and removes both sockets. Two fixes found by repeated runs: an ended link connection is gone at
+  once (hakkas' quick reconnection after a power cycle was refused as a second runtime), and
+  an emulator that cannot start removes no socket file that is not its own. Decided on the way
+  (control protocol §1–§4, spec §3.1, §8.3): see the *decided* notes of 2026-10-25 there —
+  `Invalid field`, `No environment`, `Cannot be run`, `Persist failed`, `null` settings values,
+  the order of `configure`, no change for an equal value, empty parts' `null` type, the HTTP
+  server's details, `features` empty until E16, the settings in detail.
 
 ## Phase 3 — The UI (`emulators/ui/`, generic; Vue 3 + Vite, decision 9)
 

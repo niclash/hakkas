@@ -293,6 +293,16 @@ describe('the environment link', () => {
         expect(states).toEqual(['connected', 'restart', 'connected']);
     }, 5000);
 
+    it('takes a reconnection at once after a power cycle, before the old socket has closed', async () => {
+        link.serve(served());
+        const a = await connect();
+        await a.next();
+        link.serve(served({modules: [{slot: 2, type: 'colibri_ssr'}]}));
+        const b = await connect();      // no wait for the old connection's close
+        expect(Object.keys((await b.next())[0]!)).toEqual(['describe']);
+        expect(notices).toEqual([]);
+    });
+
     it('is no power cycle when no hakkas had the description', async () => {
         link.serve(served());
         link.serve(served({modules: []}));

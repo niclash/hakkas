@@ -10,8 +10,8 @@ The specification is `specifications/00-README.md`; the order of the work, and w
 `../specifications/`.
 
 > Work in progress: the command line, logging, the module catalog (`data/`), the environment
-> library, the emulated system's model, the scan cycle, the environment description and the link to
-> hakkas exist and are tested with hakkas (plan tasks E1–E8); the UI follows.
+> library, the emulated system's model, the scan cycle, the environment description, the link to
+> hakkas (tested with hakkas) and the control channel exist (plan tasks E1–E11); the UI follows.
 
 ## Building and testing
 
@@ -46,6 +46,21 @@ node dist/main.js [options] [<environment>]
 | `--log-level <level>` | `info` (`fine`, `info`, `warn`, `error`) |
 
 `SIGINT` (Ctrl+C) or `SIGTERM` stops it. The log goes to standard error.
+
+### The control channel
+
+Every client — the UI, a script — sees and changes the emulated system through the control
+protocol (`../specifications/01-control-protocol.md`): newline-delimited JSON on the
+`--control-socket`, or a WebSocket at `ws://localhost:<--http>/control`. For example, from a
+shell:
+
+```sh
+echo '{"set": {"key": "slot1.ai.1.source", "value": 7.5}}' | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/colibri-emulator/control.sock
+```
+
+`examples/follow.py` sets an input to a sine and prints an output's values, with nothing but
+Python 3. Changes take effect at once; `{"persist": {}}` writes them to the environment's
+file.
 
 ### With hakkas
 

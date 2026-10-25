@@ -12,7 +12,9 @@ import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {loadCatalog} from '../src/catalog.js';
 import {Checker, type JsonObject} from '../src/check.js';
 import {describe as describeSystem} from '../src/description.js';
+import {runEmulator} from '../src/emulator.js';
 import {readEnvironment} from '../src/environment.js';
+import {Library} from '../src/library.js';
 import {LinkServer, type Served} from '../src/link.js';
 import {createLogger} from '../src/log.js';
 import {BUILTIN_DATA, PACKAGE_ROOT} from '../src/package.js';
@@ -92,7 +94,13 @@ async function startHakkas(): Promise<void> {
     const proc = spawn(HAKKAS, ['--info', '--confdir', conf, '--basedir', data, 'run',
         '--host', '127.0.0.1', '--port', String(port), '--webdir', tmp], {stdio: ['ignore', 'pipe', 'pipe']});
     hakkas = proc;
-    const collect = (d: Buffer) => hakkasLog.push(...d.toString().split('\n').filter(l => l !== ''));
+    // Whole lines: a chunk may end in the middle of one.
+    let partial = '';
+    const collect = (d: Buffer) => {
+        const lines = (partial + d.toString()).split('\n');
+        partial = lines.pop()!;
+        hakkasLog.push(...lines.filter(l => l !== ''));
+    };
     proc.stdout!.on('data', collect);
     proc.stderr!.on('data', collect);
     await until(() => hakkasLog.some(l => / process(es)? loaded/.test(l)), 'hakkas to start');
@@ -164,7 +172,8 @@ describe.skipIf(!existsSync(HAKKAS))('the emulator with hakkas', () => {
         await until(() => dq1.value === true, 'the relay to switch');
         const later = turns.slice(from);
         const sampled = later.findIndex(t => t.slot.index === 1 && t.changed.some(ch => ch.key === 'slot1.ai.1'));
-        const applied = later.findIndex(t => t.applied.some(ch => ch.key === 'slot3.dq.1'));
+        // (The process's first write may be applied in these turns too, before the sample.)
+        const applied = later.findIndex((t, i) => i > sampled && t.applied.some(ch => ch.key === 'slot3.dq.1'));
         expect(sampled).toBeGreaterThanOrEqual(0);
         expect(applied).toBeGreaterThan(sampled);
         expect(later[applied]!.slot.index).toBe(3);
@@ -197,6 +206,51 @@ describe.skipIf(!existsSync(HAKKAS))('the emulator with hakkas', () => {
         await until(() => dq1.value === false, 'the relay to switch back');
         expect(problems().filter(l => l.startsWith('error'))).toEqual([]);
         expect(await stopHakkas()).toBe(0);
+    }, 20_000);
+
+    it('runs with the whole emulator, driven over its control socket like a script', async () => {
+        // The emulator as the command runs it, with its own link in place of the test's.
+        await link.close();
+        const library = new Library(path.join(tmp, 'library'));
+        await library.init();
+        writeFileSync(library.file('lab'), JSON.stringify({carrier: 'colibri_8',
+            modules: [{slot: 1, type: 'colibri_aiv'}, {slot: 3, type: 'colibri_ssr'}]}));
+        const controlSocket = path.join(os.tmpdir(), `cc-${randomBytes(6).toString('hex')}.sock`);
+        const stop = new AbortController();
+        const running = runEmulator({library: library.dir, plugins: [], socket: socketPath, controlSocket, httpPort: 0,
+            seed: 1, logLevel: 'fine', environment: 'lab'}, createLogger('fine', l => emulatorLog.push(l)), stop.signal);
+        try {
+            await until(() => emulatorLog.some(l => l.startsWith('info http: listening')), 'the emulator to start');
+            await startHakkas();
+            const socket = net.connect(controlSocket);
+            const state: JsonObject = {};
+            let buffer = '';
+            socket.on('data', d => {
+                buffer += d.toString();
+                let nl;
+                while ((nl = buffer.indexOf('\n')) >= 0) {
+                    const m = JSON.parse(buffer.slice(0, nl)) as JsonObject;
+                    buffer = buffer.slice(nl + 1);
+                    if ('state' in m)
+                        Object.assign(state, (m.state as JsonObject).values);
+                    if ('link' in m)
+                        state.link = (m.link as JsonObject).state!;
+                }
+            });
+            await until(() => state.link === 'connected', 'the link to be connected');
+            socket.write(JSON.stringify({set: {key: 'slot1.ai.1.source', value: 8}}) + '\n');
+            await until(() => state['slot3.dq.1'] === true, 'the relay to switch on');
+            socket.write(JSON.stringify({set: {key: 'slot1.ai.1.source', value: {square: {low: 0, high: 10,
+                period: 1, duty: 50}}}}) + '\n');
+            await until(() => state['slot3.dq.1'] === false, 'the relay to follow the square wave off', 3000);
+            await until(() => state['slot3.dq.1'] === true, 'and on again', 3000);
+            socket.destroy();
+            expect(await stopHakkas()).toBe(0);
+        } finally {
+            stop.abort();
+            await running;
+            await startLink();     // for afterEach
+        }
     }, 20_000);
 
     it('after a power cycle with another description, hakkas stops its IO until restarted', async () => {

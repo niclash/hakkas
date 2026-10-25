@@ -1,6 +1,7 @@
 # 01 — The control protocol
 
-> **Draft** (emulator plan task E0, 2026-10-25), for review before code depends on it.
+> Drafted in emulator plan task E0; implemented by the Colibri emulator in its tasks E9–E11
+> (2026-10-25, `../colibri/src/core.ts`, `transports.ts`, `settings.ts`, `scene.ts`).
 
 The control protocol connects an emulator to its **clients**: the generic browser UI
 (`00-README.md`) and external programs (a Python script, a demo, a plant model). All clients are
@@ -27,6 +28,12 @@ The same messages on two transports (*decided*, 2026-10-23); only the framing di
   (`../../specifications/04-drivers.md` §0.1): one message per line, UTF-8. It can be reached
   from a shell (`socat - UNIX-CONNECT:<path>`) or a few lines of Python.
 
+(*Decided* in the Colibri emulator's task E10, 2026-10-25.) The HTTP server listens on `127.0.0.1`
+and, where there is one, `::1`, so `localhost` works whichever it resolves to; `http://[::1]:<port>`
+is an allowed `Origin` too. It answers `GET` and `HEAD` only (405 otherwise); a path that names no
+file is 404, except `/` without a built UI, which is a short page saying how to build it. The UI's
+files and the assets are served with `Cache-Control: no-cache`.
+
 Both listen on the local machine only (localhost, and a socket in the user's runtime directory)
 and need no login (*decided*, 2026-10-25): an emulator is a desktop tool. A message is at most
 **256 KiB**; a longer one closes the connection (the WebSocket with close code 1009). There is
@@ -44,6 +51,10 @@ object) is its payload: `{"set": {"key": "slot1.ai.1.source", "value": 5}}`.
 - A message that is not a JSON object with one member, or a request with an unknown name, is
   answered with `error` (`"Invalid message"`, `"Unknown request: <name>"`). A member the
   receiver does not know inside a known payload is ignored (forward compatibility).
+- (*Decided*, 2026-10-25.) A request whose payload is not an object is `"Invalid message"` too,
+  with its `request` named; a payload member that a request needs and that is missing or of the
+  wrong type is `"Invalid field: <member>"` (e.g. `set` without `key` or `values`). Any request
+  that needs a running environment, when none runs, is `"No environment"`.
 - Requests are applied one at a time, in the order they arrive (per client, and across clients
   in arrival order).
 
@@ -72,7 +83,9 @@ The emulator's environments (an **environment** is one emulated system, kept in 
              "running": "lab", "unsaved": true}}
 ```
 
-`running` is the environment that runs, or `null` when there is none (the library is empty).
+`running` is the environment that runs, or `null` when there is none (the library is empty, or
+the environment to run cannot be run: then `settings` has no fields, `scene` no board, parts or
+rows, and `state` and `stats` are empty, until one is selected).
 `unsaved` is true when the running environment has changes that `persist` (§4.3) has not
 written yet.
 
@@ -107,6 +120,11 @@ link and `link` says so (§3.7). The emulator sends the whole `settings` again w
 or a value changes. Fields can appear and go: choosing another module for a slot brings that
 module's fields.
 
+A value is `null` for a field that is optional and not set (*decided*, 2026-10-25: e.g. a
+communication module's static address under DHCP); `configure` sets it to `null`, or a `text` to
+`""` or a `list` to `[]`, to clear it. An `enum`'s `options` may have values of any JSON type
+(numbers for a bitrate).
+
 ### 3.4 `scene`
 
 What the UI draws: the board, the parts on it, and one **row** per channel.
@@ -128,8 +146,9 @@ What the UI draws: the board, the parts on it, and one **row** per channel.
 - **`board`**: a picture (SVG or a photo) in which each part's place is an element with an id,
   or `null`. Without a board, the UI lays the parts out in a row.
 - **`parts`**: each has an `id` (the first component of its keys, §3.5), its `place` (an element
-  id in the board's picture), `type` and `name`, and optionally its picture `asset` with
-  `bindings` and `controls` (§6). A part without a picture is drawn as a labelled box.
+  id in the board's picture), `type` and `name` (both `null` for an empty place), `builtin: true`
+  for one the user cannot change, and optionally its picture `asset` with `bindings` and
+  `controls` (§6). A part without a picture is drawn as a labelled box.
 - **`rows`**: the signal panel (*decided*, 2026-10-23: every channel is usable without a picture).
   A row's `kind` is one of:
   - `input`: a field-side input whose value is a channel (an analog input). It has a source and
@@ -168,7 +187,9 @@ several (`1…count`; no index when it has one), and optionally an attribute:
 On connect, `state` holds every key. After that it holds the keys that changed, each with its
 latest value. It is sent **at most every 50 ms** (a channel can change at every scan turn, and a
 slow client must not build up a backlog). So a value that lasts less than that may never be seen
-by a client; the stats (§3.6) count every one.
+by a client; the stats (§3.6) count every one. (*Decided*, 2026-10-25.) The changes a request
+makes are sent at once, before its `ok`, with whatever else has changed; a power cycle sends
+`state` with every key.
 
 ### 3.6 `stats`
 
@@ -242,12 +263,19 @@ and `link`. Several `restart` fields in one request are one power cycle. Refusal
 `Unknown setting: <id>`, `Read-only: <id>`, `Invalid value: <id>`. It makes the environment
 unsaved.
 
+(*Decided*, 2026-10-25.) The fields that bring others — the emulator's (Colibri: `carrier` and
+the `….type` fields) — are applied first, so a request can set a field it brings (a slot's type
+and its serial number together); the others in their order. A value equal to the current one
+changes nothing (also of a `readonly` field) and does not make the environment unsaved. A power
+cycle to a configuration that cannot be run is refused, `Cannot be run: <name>: <problem>`.
+
 ### 4.3 `persist`
 
 `{"persist": {}}` writes the running environment to its file, all of it: its structure, settings,
 and every source and noise (*decided*, 2026-10-25). Until then, no change is written: everything
 a client changes takes effect at once in the running emulator, and `library`'s `unsaved` says
-that the file differs. Refusal: `No environment`, or the write's failure (also a `notice`).
+that the file differs. Refusal: `No environment`, or the write's failure (also a `notice`,
+`Persist failed: <the failure>`).
 
 ### 4.4 The library
 
@@ -259,12 +287,13 @@ Each acts on the files at once:
 - `{"delete": {"name": "lab2"}}`. The running environment cannot be deleted.
 - `{"select": {"name": "pump-room"}}`: runs that environment instead, a power cycle. With unsaved
   changes it is refused (`Unsaved changes`) unless the request has `"discard": true`, so the UI
-  asks the user first.
+  asks the user first. One that cannot be run is refused, `Cannot be run: <name>: <problem>`,
+  and the running one goes on. Selecting the running environment runs it again from its file.
 
 A name is 1–64 characters of letters, digits, `.`, `_` and `-`, not starting with `.` (it is a
 file name and the runtime's environment name). Refusals: `Invalid name`,
 `Environment exists: <name>`, `Unknown environment: <name>`, `Environment running: <name>`,
-`Unsaved changes`.
+`Unsaved changes`, `Cannot be run: <name>: <problem>`.
 
 ### 4.5 Emulator-specific requests
 
