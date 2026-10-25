@@ -124,17 +124,20 @@ The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM
 
 ```
 colibri-emulator [--library <dir>] [--plugins <dir>]… [--socket <path>] [--control-socket <path>]
-                 [--http <port>] [--seed <n>] [<environment>]
+                 [--http <port>] [--seed <n>] [--log-level <level>] [-h|--help] [--version]
+                 [<environment>]
 ```
 
-- `--library`: the library directory (§5.1), default `$XDG_DATA_HOME/colibri-emulator/` (`~/.local/share/colibri-emulator/`).
+- `--library`: the library directory (§5.1), default `$XDG_DATA_HOME/colibri-emulator/` (`~/.local/share/colibri-emulator/`); with neither `XDG_DATA_HOME` nor `HOME` set it must be given.
 - `--plugins`: a further plugin directory (§7), repeatable, after the built-in one.
-- `--socket`: the environment link's socket, default `$XDG_RUNTIME_DIR/colibri-emulator/environment.sock` (the path hakkas' `environment.socket` names); `--control-socket`: the control channel's, default `…/control.sock`. A socket path must fit a Unix socket address (107 bytes on Linux). A stale socket file is replaced; a socket another emulator is listening on refuses startup.
-- `--http`: the HTTP port for the UI, its assets and the control WebSocket, on localhost only; default 8090.
-- `--seed`: seeds the noise's random generator, so a run is reproducible (tests); without it the seed is random.
+- `--socket`: the environment link's socket, default `$XDG_RUNTIME_DIR/colibri-emulator/environment.sock` (the path hakkas' `environment.socket` names); `--control-socket`: the control channel's, default `…/control.sock`. Without `XDG_RUNTIME_DIR` the directory is `colibri-emulator-<uid>` in the system's temporary directory. A socket path must fit a Unix socket address (107 bytes on Linux), and the two must differ. A stale socket file is replaced; a socket another emulator is listening on refuses startup.
+- `--http`: the HTTP port for the UI, its assets and the control WebSocket, on localhost only; default 8090, `0` for any free port (tests).
+- `--seed`: seeds the noise's random generator, so a run is reproducible (tests), 0 to 4294967295; without it the seed is random.
+- `--log-level`: `fine`, `info` (the default), `warn` or `error`, hakkas' levels (05 §4).
+- `-h`/`--help` prints the usage, `--version` the version, both on standard output, exit 0.
 - `<environment>`: the environment to run; without it, the one that ran last (§5.1).
 
-The emulator logs to standard error, one line per event; `SIGINT`/`SIGTERM` stop it, closing its sockets and removing their files.
+The emulator logs to standard error, one line per event, `<level> <message>` (line breaks in a message become spaces; no timestamp, as hakkas'). `SIGINT`/`SIGTERM` stop it, closing its sockets and removing their files. Exit codes (implemented in plan task E1): 0 after a stop request, 1 when the emulator cannot start (logged as errors, then `the emulator did not start`), 2 for a usage error (the message and the usage on standard error).
 
 ## 4. The slot scan cycle
 

@@ -103,9 +103,16 @@ Follow-ups, decided the same day:
 
 ## Phase 1 — The emulated system and the link to hakkas (no UI)
 
-- [ ] **E1. Project skeleton**: `emulators/colibri/` with `package.json`, `tsconfig.json`,
+- [x] **E1. Project skeleton**: `emulators/colibri/` with `package.json`, `tsconfig.json`,
   `src/`, `tests/`, `npm run build`, `npm test`; the command line (task E0's options), logging;
   a `README.md` with how to run it against hakkas (`environment.socket` in `hakkas.json`).
+  *Done*: `src/cli.ts` (`node:util` `parseArgs`, defaults from an injected `Host` so tests do not
+  touch the real environment), `src/log.ts`, `src/names.ts` (the environment name rule),
+  `src/package.ts` (the version, the built-in `data/` directory), `src/emulator.ts` (runs until
+  the stop signal; a timer keeps the process alive until sockets exist), `src/main.ts`; tests for
+  the command line, the log, names, and the built command as a process (help, version, usage
+  error, `SIGINT`/`SIGTERM`). Decided on the way (spec §3.1): `--log-level`, `--http 0`, the
+  temporary-directory fallback without `XDG_RUNTIME_DIR`, the exit codes 0/1/2.
 - [ ] **E2. Plugins and carrier definitions** (§5.4, §7.1): load and validate `module.json` and
   `carrier.json` (each with its type and human-readable `name`, follow-ups A and B) from the
   built-in directory (`data/`) and `--plugins` directories (`modules/`, `carriers/`, `comm/`,
