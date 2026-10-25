@@ -1,6 +1,7 @@
 // The emulator's run: from startup to a stop request.
 import {loadCatalog, type Catalog} from './catalog.js';
 import type {Options} from './cli.js';
+import {checkDescription, describe} from './description.js';
 import {carrierOf, checkEnvironment, type Environment} from './environment.js';
 import {Library} from './library.js';
 import type {Logger} from './log.js';
@@ -30,8 +31,18 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
         const {system, warnings} = System.build(name, env, catalog, clock, random);
         for (const w of warnings)
             log.warn(`environment ${name}: ${w}`);
-        scanner = new Scanner(system, env, clock, log);
-        scanner.start();
+        const description = describe(system);
+        const problems = checkDescription(description);
+        for (const p of problems)
+            log.error(`environment ${name}: description: ${p}`);
+        if (problems.length > 0) {
+            log.error(`environment ${name} cannot be run`);
+        } else {
+            log.fine(`environment ${name}: ${description.outPorts.length} sensor ports, ` +
+                `${description.inPorts.length} actuator ports`);
+            scanner = new Scanner(system, env, clock, log);
+            scanner.start();
+        }
     }
     // Nothing listens yet (the sockets come with plan tasks E7 and E10), so a timer keeps the
     // process alive until the stop request.

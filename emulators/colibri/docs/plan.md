@@ -182,9 +182,19 @@ Follow-ups, decided the same day:
   communication slot, in `src/hakkas_env.h`, the JSON form and its validation (a string of at
   most 1024 bytes, like the other metadata), the identical-description check, and
   `environment:describe`. The frontend's Environment panel shows the name, else the type.
-- [ ] **E6. The environment description** (§6, 04 §1): from the model, ports `slot<n>-<group>`,
+- [x] **E6. The environment description** (§6, 04 §1): from the model, ports `slot<n>-<group>`,
   modules (built-in marked), the carrier with power and communication slots; tested against
   04 §0's validation limits (port ids, counts, 256 ports, 64 modules, slots).
+  *Done*: `src/description.ts` (`describe(system)`: ports per slot and group, sensors and
+  actuators apart, in slot and channel order, a group of one a plain port; the filled slots'
+  modules with names and serials, the built-in one marked; the carrier with power and its
+  communication slots' types, names and parameters; `checkDescription`: hakkas' checks of
+  04 §0). The emulator checks the description before running an environment; one hakkas would
+  refuse is logged and not run. Tests: every member, every rule of the check, every module type
+  of the catalog passing it; also checked once by hand with hakkas' own validator
+  (`env_description_from_json` + `env_description_validate`) on the same descriptions, all
+  accepted. Decided on the way (spec §6): absent members left out, an unknown module type's
+  slot not listed, no carrier serial yet.
 - [ ] **E7. The environment link server** (§3, 04 §0.1): a Unix socket with newline-delimited
   JSON. On every connection: `describe`, then all current sensor values, then the changes;
   `hello` check; `write` into the module's queue; malformed lines warned about and ignored; the
