@@ -171,10 +171,8 @@ static void on_event(void *ctx, const GraphEvent *ev)
 	switch (ev->type) {
 	case GRAPH_EVENT_BINDING_ADDED:
 	case GRAPH_EVENT_BINDING_REMOVED: {
-		const PortDescriptor *p = b->actuator ? block_output_port(b->block, b->port)
-						      : block_input_port(b->block, b->port);
-		append(events, sizeof(events), "%s:%cbind %s.%s%s%s[%u];", id,
-		       ev->type == GRAPH_EVENT_BINDING_ADDED ? '+' : '-', b->block->name, p->name,
+		append(events, sizeof(events), "%s:%cbind %s%s%s[%u];", id,
+		       ev->type == GRAPH_EVENT_BINDING_ADDED ? '+' : '-', b->name,
 		       b->actuator ? ">" : "<", b->env, (unsigned)b->env_index);
 		break;
 	}
@@ -261,10 +259,25 @@ static void sense(int port, int index, HakkasValue v)
 	CHECK(hakkas_env_sink_push(fake.sink, port, index, &v));
 }
 
+/* Every port of block node of graph exposed as a process port named
+ * "<node>.<port>" (bindings name process ports, 04 §4). */
+static void expose(const char *graph, const char *node)
+{
+	char name[32];
+	for (int i = 1; i <= 2; i++) {
+		snprintf(name, sizeof(name), "%s.in%d", node, i);
+		CHECK(graphs_add_port(&gs, graph, GRAPH_INPORT, name, node, name + strlen(node) + 1,
+				      NULL) == GRAPH_OK);
+	}
+	snprintf(name, sizeof(name), "%s.out", node);
+	CHECK(graphs_add_port(&gs, graph, GRAPH_OUTPORT, name, node, "out", NULL) == GRAPH_OK);
+}
+
 /*
  * Two processes, every block math/Add2 (out = in1 + in2):
- *   P: a, b; Q: c. All stopped. The environment open (current values on
- *   when current is set), the logs and events cleared.
+ *   P: a, b; Q: c, each port exposed as a process port "<block>.<port>".
+ *   All stopped. The environment open (current values on when current is
+ *   set), the logs and events cleared.
  */
 static void build(bool current)
 {
@@ -281,6 +294,9 @@ static void build(bool current)
 	CHECK(graphs_add_node(&gs, "P", "a", "math/Add2", NULL, NULL) == GRAPH_OK);
 	CHECK(graphs_add_node(&gs, "P", "b", "math/Add2", NULL, NULL) == GRAPH_OK);
 	CHECK(graphs_add_node(&gs, "Q", "c", "math/Add2", NULL, NULL) == GRAPH_OK);
+	expose("P", "a");
+	expose("P", "b");
+	expose("Q", "c");
 	environment_init(&env, platform_clock);
 	HakkasEnvironment spi = fake_spi();
 	CHECK(environment_open(&env, &rt, &spi, push_direct));
@@ -295,21 +311,21 @@ static void teardown(void)
 	runtime_deinit(&rt);
 }
 
-/* One binding (as the C API makes it) on graph; its status, the message in
- * msg. */
+/* One binding (as the C API makes it) of a process port of graph; its
+ * status, the message in msg. */
 static char msg[ENVIRONMENT_MESSAGE_MAX];
 
-static enum environment_status bind(const char *graph, const char *node, const char *port,
-				    const char *env_port, uint32_t index)
+static enum environment_status bind(const char *graph, const char *port, const char *env_port,
+				    uint32_t index)
 {
-	EnvBindingRequest req = {node, port, env_port, index};
+	EnvBindingRequest req = {port, env_port, index};
 	return environment_bind(&env, graphs_find(&gs, graph), &req, msg, sizeof(msg));
 }
 
-static enum environment_status unbind(const char *graph, const char *node, const char *port,
-				      const char *env_port, uint32_t index)
+static enum environment_status unbind(const char *graph, const char *port, const char *env_port,
+				      uint32_t index)
 {
-	EnvBindingRequest req = {node, port, env_port, index};
+	EnvBindingRequest req = {port, env_port, index};
 	return environment_unbind(&env, graphs_find(&gs, graph), &req, msg, sizeof(msg));
 }
 
@@ -756,21 +772,19 @@ static void bad_file(const char *text, const char *want)
 static void test_bindings_file(void)
 {
 	const char *text = "{\"environment\": \"emulator\", \"bindings\": ["
-			   "{\"block\": \"block1\", \"port\": \"in1\", \"env\": \"analog-in\","
-			   " \"index\": 1},"
-			   "{\"block\": \"b.2\", \"port\": \"out\", \"env\": \"lamp\","
-			   " \"index\": null, \"note\": \"x\"}],"
+			   "{\"port\": \"temperature\", \"env\": \"analog-in\", \"index\": 1},"
+			   "{\"port\": \"lamp.1\", \"env\": \"lamp\", \"index\": null,"
+			   " \"note\": \"x\"}],"
 			   " \"version\": 2}\n";
 	BindingsFile f;
 	logs[0] = '\0';
 	CHECK(bindings_file_parse(text, strlen(text), "b.json", &f, NULL, 0) == BINDINGS_FILE_OK);
 	CHECK_STREQ(f.environment, "emulator");
 	CHECK(f.count == 2);
-	CHECK_STREQ(f.entries[0].block, "block1");
-	CHECK_STREQ(f.entries[0].port, "in1");
+	CHECK_STREQ(f.entries[0].port, "temperature");
 	CHECK_STREQ(f.entries[0].env, "analog-in");
 	CHECK(f.entries[0].index == 1);
-	CHECK_STREQ(f.entries[1].block, "b.2");
+	CHECK_STREQ(f.entries[1].port, "lamp.1");
 	CHECK(f.entries[1].index == 0);
 	CHECK_STREQ(logs, "warn b.json: unknown member \"version\" ignored\n"
 			  "warn b.json: bindings[1]: unknown member \"note\" ignored\n");
@@ -790,20 +804,22 @@ static void test_bindings_file(void)
 		 "environment: expected a non-empty string");
 	bad_file("{\"environment\": \"e\"}", "bindings: expected an array");
 	bad_file("{\"environment\": \"e\", \"bindings\": [1]}", "bindings[0]: expected an object");
-	bad_file("{\"environment\": \"e\", \"bindings\": [{\"port\": \"p\", \"env\": \"x\"}]}",
-		 "bindings[0]: block: expected a non-empty string");
-	bad_file("{\"environment\": \"e\", \"bindings\": [{\"block\": \"b\", \"port\": \"\","
-		 " \"env\": \"x\"}]}",
+	bad_file("{\"environment\": \"e\", \"bindings\": [{\"env\": \"x\"}]}",
 		 "bindings[0]: port: expected a non-empty string");
-	bad_file("{\"environment\": \"e\", \"bindings\": [{\"block\": \"b\", \"port\": \"p\"}]}",
+	bad_file("{\"environment\": \"e\", \"bindings\": [{\"port\": \"\", \"env\": \"x\"}]}",
+		 "bindings[0]: port: expected a non-empty string");
+	bad_file("{\"environment\": \"e\", \"bindings\": [{\"port\": \"p\"}]}",
 		 "bindings[0]: env: expected a non-empty string");
+	/* The earlier form, which bound block ports, is not read (plan task 70). */
+	bad_file("{\"environment\": \"e\", \"bindings\": [{\"port\": \"p\", \"env\": \"x\"},"
+		 " {\"block\": \"b\", \"port\": \"p\", \"env\": \"x\"}]}",
+		 "bindings[1]: block: block ports are not bound; bind a process port");
 	static const char *const bad_index[] = {"0", "-1", "1.5", "\"1\"", "true", "1e10"};
 	for (size_t i = 0; i < sizeof(bad_index) / sizeof(bad_index[0]); i++) {
 		char file[256];
 		snprintf(file, sizeof(file),
-			 "{\"environment\": \"e\", \"bindings\": [{\"block\": \"b\", \"port\": "
-			 "\"p\", \"env\": \"x\"}, {\"block\": \"b\", \"port\": \"p\", \"env\": "
-			 "\"x\", \"index\": %s}]}",
+			 "{\"environment\": \"e\", \"bindings\": [{\"port\": \"p\","
+			 " \"env\": \"x\"}, {\"port\": \"p\", \"env\": \"x\", \"index\": %s}]}",
 			 bad_index[i]);
 		bad_file(file, "bindings[1]: index: expected an integer of at least 1");
 	}
@@ -898,15 +914,15 @@ static void test_sensor_values(void)
 	      environment_sensor_value(&env, 1, 2)->type == LINKABLE_BOOL);
 
 	/* A binding delivers the current value at once, after its event. */
-	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a.in1", "ain", 1) == ENVIRONMENT_OK);
 	CHECK_STREQ(events, "P:+bind a.in1<ain[1];");
 	CHECK(num("P", "a", "in1") == 1.5);
 	CHECK(out("P", "a") == 0); /* P is stopped: stored only */
 	/* A channel without a value yet leaves the input at its default. */
-	CHECK(bind("P", "a", "in2", "ain", 2) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a.in2", "ain", 2) == ENVIRONMENT_OK);
 	CHECK(num("P", "a", "in2") == 0);
 	/* One channel feeds inputs in several processes. */
-	CHECK(bind("Q", "c", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(bind("Q", "c.in1", "ain", 1) == ENVIRONMENT_OK);
 	CHECK(num("Q", "c", "in1") == 1.5);
 	CHECK(runtime_binding_count(&rt) == 3);
 
@@ -943,7 +959,7 @@ static void test_sensor_values(void)
 	sense(1, 1, linkable_from_f64(3));
 	drain();
 	CHECK(environment_sensor_value(&env, 1, 1)->type == LINKABLE_BOOL);
-	CHECK(bind("P", "b", "in1", "din", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "b.in1", "din", 1) == ENVIRONMENT_OK);
 	CHECK(in("P", "b", "in1")->type == LINKABLE_BOOL && num("P", "b", "in1") == 1);
 	CHECK(out("P", "b") == 1);
 	sense(1, 1, linkable_from_bool(false));
@@ -972,12 +988,12 @@ static void test_fan_in(void)
 	build(true);
 	init("P", "a", "in2", 3);
 	CHECK(graphs_add_edge(&gs, "P", "b", "out", "a", "in1", NULL, NULL) == GRAPH_OK);
-	REFUSED(bind("P", "a", "in1", "ain", 1), "Input already connected: a.in1");
-	REFUSED(bind("P", "a", "in2", "ain", 1), "Input already connected: a.in2");
-	CHECK(bind("P", "b", "in1", "ain", 1) == ENVIRONMENT_OK);
+	REFUSED(bind("P", "a.in1", "ain", 1), "Input already connected: a.in1");
+	REFUSED(bind("P", "a.in2", "ain", 1), "Input already connected: a.in2");
+	CHECK(bind("P", "b.in1", "ain", 1) == ENVIRONMENT_OK);
 	/* A second binding of the same input, even to the same channel. */
-	REFUSED(bind("P", "b", "in1", "ain", 1), "Input already connected: b.in1");
-	REFUSED(bind("P", "b", "in1", "ain", 2), "Input already connected: b.in1");
+	REFUSED(bind("P", "b.in1", "ain", 1), "Input already connected: b.in1");
+	REFUSED(bind("P", "b.in1", "ain", 2), "Input already connected: b.in1");
 	/* An edge, an initial or a link onto the bound input. */
 	GraphsMessage gm;
 	CHECK(graphs_add_edge(&gs, "P", "a", "out", "b", "in1", NULL, &gm) ==
@@ -994,7 +1010,7 @@ static void test_fan_in(void)
 	CHECK(graphs_add_port(&gs, "Q", GRAPH_INPORT, "qi", "c", "in2", NULL) == GRAPH_OK);
 	CHECK(graphs_add_port(&gs, "P", GRAPH_OUTPORT, "po", "a", "out", NULL) == GRAPH_OK);
 	CHECK(graphs_add_link(&gs, "P", "po", "Q", "qi", NULL) == GRAPH_OK);
-	REFUSED(bind("Q", "c", "in2", "temp", 0), "Input already connected: c.in2");
+	REFUSED(bind("Q", "c.in2", "temp", 0), "Input already connected: c.in2");
 	teardown();
 }
 
@@ -1005,9 +1021,9 @@ static void test_actuator_writes(void)
 	build(false);
 	init("P", "a", "in1", 1);
 	/* Bound while stopped: nothing written until the process starts. */
-	CHECK(bind("P", "a", "out", "aout", 2) == ENVIRONMENT_OK);
-	CHECK(bind("P", "a", "out", "relay", 1) == ENVIRONMENT_OK); /* one output, two */
-	CHECK(bind("P", "b", "out", "lamp", 0) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a.out", "aout", 2) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a.out", "relay", 1) == ENVIRONMENT_OK); /* one output, two */
+	CHECK(bind("P", "b.out", "lamp", 0) == ENVIRONMENT_OK);
 	CHECK_STREQ(events, "P:+bind a.out>aout[2];P:+bind a.out>relay[1];P:+bind b.out>lamp[0];");
 	CHECK_STREQ(fake.writes, "");
 	/* The start push writes every bound output, converted to the port's
@@ -1033,23 +1049,23 @@ static void test_actuator_writes(void)
 	fake.writes[0] = '\0';
 
 	/* One driver per actuator channel, across processes. */
-	REFUSED(bind("Q", "c", "out", "aout", 2), "Actuator already driven: aout[2]");
-	REFUSED(bind("P", "b", "out", "lamp", 0), "Actuator already driven: lamp");
+	REFUSED(bind("Q", "c.out", "aout", 2), "Actuator already driven: aout[2]");
+	REFUSED(bind("P", "b.out", "lamp", 0), "Actuator already driven: lamp");
 	/* A binding on a running process writes the output's value at once. */
 	start("Q");
 	init("Q", "c", "in1", 4);
-	CHECK(bind("Q", "c", "out", "aout", 1) == ENVIRONMENT_OK);
+	CHECK(bind("Q", "c.out", "aout", 1) == ENVIRONMENT_OK);
 	CHECK_STREQ(fake.writes, "aout[1]=4;");
 	fake.writes[0] = '\0';
 
 	/* Unbinding: the actuator keeps its value (nothing written), the
 	 * output no longer writes. */
-	CHECK(unbind("P", "a", "out", "relay", 1) == ENVIRONMENT_OK);
+	CHECK(unbind("P", "a.out", "relay", 1) == ENVIRONMENT_OK);
 	CHECK_STREQ(fake.writes, "");
 	init("P", "a", "in1", 8);
 	CHECK_STREQ(fake.writes, "aout[2]=8;");
 	/* The channel is free for another driver. */
-	CHECK(bind("Q", "c", "out", "relay", 1) == ENVIRONMENT_OK);
+	CHECK(bind("Q", "c.out", "relay", 1) == ENVIRONMENT_OK);
 	teardown();
 }
 
@@ -1077,11 +1093,11 @@ static void skipped_file(const EnvBindingRequest *reqs, size_t n, size_t bad, co
 	CHECK_STREQ(logs, line);
 	CHECK(strncmp(events, "P:+bind a.in1<ain[1];", 21) == 0);
 	CHECK(runtime_binding_count(&rt) == n - 1);
-	CHECK(unbind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(unbind("P", "a.in1", "ain", 1) == ENVIRONMENT_OK);
 	for (size_t i = 1; i < n; i++)
 		if (i != bad)
-			CHECK(unbind("P", reqs[i].block, reqs[i].port, reqs[i].env,
-				     reqs[i].index) == ENVIRONMENT_OK);
+			CHECK(unbind("P", reqs[i].port, reqs[i].env, reqs[i].index) ==
+			      ENVIRONMENT_OK);
 	CHECK(runtime_binding_count(&rt) == 0);
 }
 
@@ -1090,11 +1106,11 @@ static void test_bindings_apply(void)
 	build(true);
 	drain();
 	EnvBindingRequest ok[] = {
-		{"a", "in1", "ain", 1},
-		{"a", "out", "relay", 3},
-		{"b", "in1", "ain", 9},	 /* beyond the count: skipped */
-		{"b", "in2", "spare", 0}, /* not in this environment: skipped */
-		{"b", "out", "lamp", 0},
+		{"a.in1", "ain", 1},
+		{"a.out", "relay", 3},
+		{"b.in1", "ain", 9},	 /* beyond the count: skipped */
+		{"b.in2", "spare", 0}, /* not in this environment: skipped */
+		{"b.out", "lamp", 0},
 	};
 	size_t applied, skipped;
 	CHECK(apply("P", ok, 5, &applied, &skipped) == ENVIRONMENT_OK);
@@ -1109,34 +1125,34 @@ static void test_bindings_apply(void)
 
 	/* Every other refusal skips its entry too; the rest are made. */
 	build(false);
-	EnvBindingRequest r1[] = {{"a", "in1", "ain", 1}, {"x", "in1", "ain", 2}};
-	skipped_file(r1, 2, 1, "Unknown node: x");
-	EnvBindingRequest r2[] = {{"a", "in1", "ain", 1}, {"a", "in3", "ain", 2}};
+	EnvBindingRequest r1[] = {{"a.in1", "ain", 1}, {"x.in1", "ain", 2}};
+	skipped_file(r1, 2, 1, "Unknown port: x.in1");
+	EnvBindingRequest r2[] = {{"a.in1", "ain", 1}, {"a.in3", "ain", 2}};
 	skipped_file(r2, 2, 1, "Unknown port: a.in3");
-	EnvBindingRequest r3[] = {{"a", "in1", "ain", 1}, {"a", "out", "ain", 2}};
+	EnvBindingRequest r3[] = {{"a.in1", "ain", 1}, {"a.out", "ain", 2}};
 	skipped_file(r3, 2, 1, "Invalid binding direction");
-	EnvBindingRequest r4[] = {{"a", "in1", "ain", 1}, {"a", "in2", "relay", 1}};
+	EnvBindingRequest r4[] = {{"a.in1", "ain", 1}, {"a.in2", "relay", 1}};
 	skipped_file(r4, 2, 1, "Invalid binding direction");
 	/* Against the file's earlier entries: one source per input, one
 	 * driver per actuator channel. */
-	EnvBindingRequest r5[] = {{"a", "in1", "ain", 1}, {"a", "in1", "din", 1}};
+	EnvBindingRequest r5[] = {{"a.in1", "ain", 1}, {"a.in1", "din", 1}};
 	skipped_file(r5, 2, 1, "Input already connected: a.in1");
 	EnvBindingRequest r6[] = {
-		{"a", "in1", "ain", 1}, {"a", "out", "relay", 2}, {"b", "out", "relay", 2}};
+		{"a.in1", "ain", 1}, {"a.out", "relay", 2}, {"b.out", "relay", 2}};
 	skipped_file(r6, 3, 2, "Actuator already driven: relay[2]");
-	EnvBindingRequest r7[] = {{"a", "in1", "ain", 1}, {"a", "in2", "ain", 0}};
+	EnvBindingRequest r7[] = {{"a.in1", "ain", 1}, {"a.in2", "ain", 0}};
 	skipped_file(r7, 2, 1, "Index required: ain");
-	EnvBindingRequest r8[] = {{"a", "in1", "ain", 1}, {"a", "in2", "temp", 1}};
+	EnvBindingRequest r8[] = {{"a.in1", "ain", 1}, {"a.in2", "temp", 1}};
 	skipped_file(r8, 2, 1, "No index expected: temp");
-	EnvBindingRequest r9[] = {{"a", "in1", "ain", 1}, {"", "in1", "temp", 0}};
+	EnvBindingRequest r9[] = {{"a.in1", "ain", 1}, {"", "temp", 0}};
 	skipped_file(r9, 2, 1, "Invalid id");
 	/* Against what is already there: an input with a source, a driven
 	 * channel (in another process). */
 	init("P", "a", "in2", 1);
-	EnvBindingRequest r10[] = {{"a", "in1", "ain", 1}, {"a", "in2", "temp", 0}};
+	EnvBindingRequest r10[] = {{"a.in1", "ain", 1}, {"a.in2", "temp", 0}};
 	skipped_file(r10, 2, 1, "Input already connected: a.in2");
-	CHECK(bind("Q", "c", "out", "aout", 1) == ENVIRONMENT_OK);
-	EnvBindingRequest r11[] = {{"a", "out", "aout", 1}};
+	CHECK(bind("Q", "c.out", "aout", 1) == ENVIRONMENT_OK);
+	EnvBindingRequest r11[] = {{"a.out", "aout", 1}};
 	events[0] = '\0';
 	logs[0] = '\0';
 	CHECK(apply("P", r11, 1, &applied, &skipped) == ENVIRONMENT_OK);
@@ -1150,7 +1166,7 @@ static void test_bindings_apply(void)
 	environment_close(&env);
 	CHECK(apply("P", ok, 1, NULL, NULL) == ENVIRONMENT_REFUSED);
 	CHECK_STREQ(msg, "No environment");
-	REFUSED(bind("P", "a", "in1", "ain", 1), "No environment");
+	REFUSED(bind("P", "a.in1", "ain", 1), "No environment");
 	teardown();
 }
 
@@ -1158,20 +1174,20 @@ static void test_bindings_apply(void)
 static void test_bind_refusals(void)
 {
 	build(false);
-	REFUSED(bind("P", "a", "in1", "nope", 0), "Unknown environment port: nope");
-	REFUSED(bind("P", "a", "in1", "ain", 5), "Index out of range: ain[5]");
-	REFUSED(bind("P", "a", "in1", "ain", 0), "Index required: ain");
-	REFUSED(bind("P", "a", "in1", "temp", 2), "No index expected: temp");
-	REFUSED(bind("P", "", "in1", "temp", 0), "Invalid id");
-	REFUSED(bind("P", "a", "in1", NULL, 0), "Invalid id");
-	REFUSED(bind("P", "zz", "in1", "temp", 0), "Unknown node: zz");
-	REFUSED(bind("P", "a", "zz", "temp", 0), "Unknown port: a.zz");
-	REFUSED(bind("P", "a", "out", "temp", 0), "Invalid binding direction");
-	REFUSED(unbind("P", "a", "in1", "temp", 0), "No such binding");
-	CHECK(bind("P", "a", "in1", "temp", 0) == ENVIRONMENT_OK);
-	REFUSED(unbind("P", "a", "in1", "ain", 1), "No such binding");
-	REFUSED(unbind("P", "b", "in1", "temp", 0), "No such binding");
-	REFUSED(unbind("P", "a", "in1", "nope", 0), "Unknown environment port: nope");
+	REFUSED(bind("P", "a.in1", "nope", 0), "Unknown environment port: nope");
+	REFUSED(bind("P", "a.in1", "ain", 5), "Index out of range: ain[5]");
+	REFUSED(bind("P", "a.in1", "ain", 0), "Index required: ain");
+	REFUSED(bind("P", "a.in1", "temp", 2), "No index expected: temp");
+	REFUSED(bind("P", "", "temp", 0), "Invalid id");
+	REFUSED(bind("P", "a.in1", NULL, 0), "Invalid id");
+	REFUSED(bind("P", "zz.in1", "temp", 0), "Unknown port: zz.in1");
+	REFUSED(bind("P", "a.zz", "temp", 0), "Unknown port: a.zz");
+	REFUSED(bind("P", "a.out", "temp", 0), "Invalid binding direction");
+	REFUSED(unbind("P", "a.in1", "temp", 0), "No such binding");
+	CHECK(bind("P", "a.in1", "temp", 0) == ENVIRONMENT_OK);
+	REFUSED(unbind("P", "a.in1", "ain", 1), "No such binding");
+	REFUSED(unbind("P", "b.in1", "temp", 0), "No such binding");
+	REFUSED(unbind("P", "a.in1", "nope", 0), "Unknown environment port: nope");
 	teardown();
 }
 
@@ -1183,8 +1199,8 @@ static void test_bindings_end(void)
 	drain();
 	start("P");
 	init("P", "b", "in2", 3);
-	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
-	CHECK(bind("P", "a", "out", "relay", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a.in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a.out", "relay", 1) == ENVIRONMENT_OK);
 	CHECK(graphs_add_edge(&gs, "P", "a", "out", "b", "in1", NULL, NULL) == GRAPH_OK);
 	drain();
 	CHECK(num("P", "a", "in1") == 1.5 && num("P", "b", "in1") == 1.5);
@@ -1195,7 +1211,7 @@ static void test_bindings_end(void)
 	 * inputs bound when it is drained. */
 	sense(0, 1, linkable_from_f64(9));
 	events[0] = '\0';
-	CHECK(unbind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(unbind("P", "a.in1", "ain", 1) == ENVIRONMENT_OK);
 	CHECK_STREQ(events, "P:-bind a.in1<ain[1];");
 	CHECK(num("P", "a", "in1") == 0 && out("P", "a") == 0);
 	CHECK_STREQ(fake.writes, "relay[1]=false;");
@@ -1203,25 +1219,25 @@ static void test_bindings_end(void)
 	CHECK(num("P", "a", "in1") == 0 && num("P", "b", "in1") == 0);
 	/* The input is free again. */
 	init("P", "a", "in1", 2);
-	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_REFUSED);
+	CHECK(bind("P", "a.in1", "ain", 1) == ENVIRONMENT_REFUSED);
 
-	/* Removing the block: its bindings go with its connections (inputs
-	 * first, then its outputs'), nothing is written. */
+	/* Removing the block: its edges, then its process ports, each with its
+	 * bindings (plan task 70); nothing reverts or is written. */
 	CHECK(graphs_remove_initial(&gs, "P", "a", "in1", NULL) == GRAPH_OK);
-	CHECK(bind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "a.in1", "ain", 1) == ENVIRONMENT_OK);
 	fake.writes[0] = '\0';
 	events[0] = '\0';
 	CHECK(graphs_remove_node(&gs, "P", "a", NULL) == GRAPH_OK);
-	CHECK_STREQ(events, "P:-bind a.in1<ain[1];P:-edge;P:-bind a.out>relay[1];P:-node a;");
+	CHECK_STREQ(events, "P:-edge;P:-bind a.in1<ain[1];P:-bind a.out>relay[1];P:-node a;");
 	CHECK_STREQ(fake.writes, "");
 	CHECK(runtime_binding_count(&rt) == 0);
 	sense(0, 1, linkable_from_f64(5)); /* to nobody */
 	drain();
 
 	/* Deleting a process: after its stop, before its deletion. */
-	CHECK(bind("P", "b", "in1", "ain", 1) == ENVIRONMENT_OK);
-	CHECK(bind("P", "b", "out", "lamp", 0) == ENVIRONMENT_OK);
-	CHECK(bind("Q", "c", "in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "b.in1", "ain", 1) == ENVIRONMENT_OK);
+	CHECK(bind("P", "b.out", "lamp", 0) == ENVIRONMENT_OK);
+	CHECK(bind("Q", "c.in1", "ain", 1) == ENVIRONMENT_OK);
 	fake.writes[0] = '\0';
 	events[0] = '\0';
 	CHECK(graphs_delete_graph(&gs, "P", "P", NULL) == GRAPH_OK);
@@ -1230,14 +1246,67 @@ static void test_bindings_end(void)
 	CHECK(runtime_binding_count(&rt) == 1);
 	CHECK(runtime_binding_at(&rt, 0)->graph == graphs_find(&gs, "Q"));
 	/* The lamp may be driven by another process now. */
-	CHECK(bind("Q", "c", "out", "lamp", 0) == ENVIRONMENT_OK);
+	CHECK(bind("Q", "c.out", "lamp", 0) == ENVIRONMENT_OK);
 
 	/* Renaming the block keeps its bindings. */
 	CHECK(graphs_rename_node(&gs, "Q", "c", "c2", NULL) == GRAPH_OK);
 	sense(0, 1, linkable_from_f64(6));
 	drain();
 	CHECK(num("Q", "c2", "in1") == 6);
+
+	/* Renaming the process port keeps them too, under the new name, with
+	 * no binding event (unlike a link, plan task 70). */
+	events[0] = '\0';
+	CHECK(graphs_rename_port(&gs, "Q", GRAPH_INPORT, "c.in1", "temperature", NULL) == GRAPH_OK);
+	CHECK(strstr(events, "bind") == NULL);
+	CHECK_STREQ(runtime_binding_at(&rt, 0)->name, "temperature");
+	sense(0, 1, linkable_from_f64(7));
+	drain();
+	CHECK(num("Q", "c2", "in1") == 7);
+	REFUSED(unbind("Q", "c.in1", "ain", 1), "No such binding");
+	/* An outport of the same name is another port: the actuator's stays. */
+	CHECK(graphs_rename_port(&gs, "Q", GRAPH_OUTPORT, "c.out", "temperature", NULL) ==
+	      GRAPH_OK);
+	CHECK_STREQ(runtime_binding_at(&rt, 1)->name, "temperature");
+	CHECK(runtime_binding_at(&rt, 1)->actuator);
+	CHECK(unbind("Q", "temperature", "lamp", 0) == ENVIRONMENT_OK);
+	CHECK(runtime_binding_at(&rt, 0)->name != NULL && !runtime_binding_at(&rt, 0)->actuator);
+
+	/* Removing the process port ends its binding, before the port's event;
+	 * the input reverts to its default, like any severed input. */
+	start("Q");
+	events[0] = '\0';
+	CHECK(graphs_remove_port(&gs, "Q", GRAPH_INPORT, "temperature", NULL) == GRAPH_OK);
+	CHECK_STREQ(events, "Q:-bind temperature<ain[1];");
+	CHECK(num("Q", "c2", "in1") == 0 && out("Q", "c2") == 0);
+	CHECK(runtime_binding_count(&rt) == 0);
 	/* Bindings left at shutdown go silently (asan). */
+	CHECK(bind("Q", "c.in2", "ain", 2) == ENVIRONMENT_OK);
+	teardown();
+}
+
+/* The environment port decides the direction: an inport and an outport may
+ * share a name (04 §4, plan task 70). */
+static void test_bind_direction(void)
+{
+	build(true);
+	drain();
+	CHECK(graphs_add_port(&gs, "P", GRAPH_INPORT, "x", "a", "in1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "P", GRAPH_OUTPORT, "x", "a", "out", NULL) == GRAPH_OK);
+	CHECK(bind("P", "x", "ain", 1) == ENVIRONMENT_OK);   /* the inport */
+	CHECK(bind("P", "x", "relay", 2) == ENVIRONMENT_OK); /* the outport */
+	CHECK_STREQ(events, "P:+bind x<ain[1];P:+bind x>relay[2];");
+	CHECK(num("P", "a", "in1") == 1.5);
+	/* Only the other direction has the name: the wrong direction. */
+	CHECK(graphs_add_port(&gs, "P", GRAPH_INPORT, "only-in", "b", "in1", NULL) == GRAPH_OK);
+	REFUSED(bind("P", "only-in", "relay", 3), "Invalid binding direction");
+	REFUSED(bind("P", "nope", "relay", 3), "Unknown port: nope");
+	/* A bound outport may also feed a link; a bound inport cannot be linked. */
+	CHECK(graphs_add_port(&gs, "Q", GRAPH_INPORT, "qi", "c", "in1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_link(&gs, "P", "x", "Q", "qi", NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "Q", GRAPH_OUTPORT, "qo", "c", "out", NULL) == GRAPH_OK);
+	GraphsMessage gm;
+	CHECK(graphs_add_link(&gs, "Q", "qo", "P", "x", &gm) == GRAPH_ERR_INPUT_CONNECTED);
 	teardown();
 }
 
@@ -1257,6 +1326,7 @@ int main(void)
 	RUN(test_bindings_apply);
 	RUN(test_bind_refusals);
 	RUN(test_bindings_end);
+	RUN(test_bind_direction);
 	block_types_reset();
 	return test_result();
 }

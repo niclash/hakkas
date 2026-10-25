@@ -263,7 +263,7 @@ static enum channel_status channel(const Environment *env, const EnvBindingReque
 		return CHANNEL_INDEX_UNEXPECTED;
 	if (!env_port_has_channel(p, req->index))
 		return CHANNEL_INDEX_RANGE;
-	*spec = (EnvBindingSpec){req->block, req->port, actuator, req->env, port, req->index};
+	*spec = (EnvBindingSpec){req->port, actuator, req->env, port, req->index};
 	return CHANNEL_OK;
 }
 
@@ -309,7 +309,7 @@ static enum environment_status graph_msg(enum graph_status st, const EnvBindingR
 	}
 	char name[2 * HAKKAS_ENV_ID_MAX + 16];
 	channel_name(req, name, sizeof(name));
-	GraphRefusal what = {.node = req->block, .port = req->port, .name = name};
+	GraphRefusal what = {.port = req->port, .name = name}; /* a process port: no node */
 	if (msg != NULL && cap > 0)
 		graph_refusal_message(st, &what, msg, cap);
 	return st == GRAPH_ERR_NO_MEMORY ? ENVIRONMENT_NO_MEMORY : ENVIRONMENT_REFUSED;
@@ -323,7 +323,7 @@ static bool precheck(const Environment *env, const EnvBindingRequest *req, char 
 		set_msg(msg, cap, "%s", "No environment");
 		return false;
 	}
-	if (!graph_id_valid(req->block) || !graph_id_valid(req->port) || req->env == NULL) {
+	if (!graph_id_valid(req->port) || req->env == NULL) {
 		set_msg(msg, cap, "%s", "Invalid id");
 		return false;
 	}

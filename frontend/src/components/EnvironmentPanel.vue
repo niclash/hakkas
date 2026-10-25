@@ -76,7 +76,7 @@ const groups = computed(() => {
   const channel = (port: string) => channelsOfPort(desc, port).map(c => ({
     ...c,
     bound: boundTo(c.env, c.index).map(b => (b.graph === vueModel.currentGraphId.value ? "" : processName(b.graph) + ": ")
-        + b.block + "." + b.port).join(", "),
+        + b.port).join(", "),
   }));
   const listed = new Set<string>();
   const out = desc.modules.map((m, i) => {

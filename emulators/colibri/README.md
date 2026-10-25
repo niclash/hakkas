@@ -85,3 +85,7 @@ Start the emulator first, then hakkas with its `environment.socket` set to the e
 hakkas waits for the emulator's description at its startup (`04-drivers.md` §0.1). After the
 emulated system changes its structure (another environment, a module put into a slot), hakkas
 has to be restarted.
+
+Bindings are made in hakkas' frontend, on **process ports**: *Bind to environment…* in a
+process port marker's menu, or in a block port's menu, which exposes the port as a process port
+first (hakkas `06-frontend.md` §4.14).

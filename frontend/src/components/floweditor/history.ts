@@ -5,7 +5,8 @@
 // is as the step left it, then sends its inverse; Ctrl+Shift+Z (or Ctrl+Y) does the reverse. A
 // step changed by someone else meanwhile is skipped with a message.
 
-import {can, isBindingNode, isProcessPortNode, PrimitiveNode, vueModel} from "@/components/model";
+import {can, isProcessPortNode, PrimitiveNode, vueModel} from "@/components/model";
+import {bindingLabel, bindingsAt, environment} from "@/components/environment";
 import {Connection, Packet} from "@/components/protocols/websocket";
 import {Cmd, ENVIRONMENT_COMMANDS, factsOf, History, holds, inverseOf, Link, makeStep, push, StateReader, Step, UNDOABLE} from "@/components/undo";
 import type {FlowEditor} from "./viewmodel/default";
@@ -66,15 +67,12 @@ const reader: StateReader = {
         const b = p && editor?.getNode(p.block);
         return p && b instanceof PrimitiveNode ? {node: b.label, port: p.port} : undefined;
     },
-    bindings(node) {
-        const b = findBlock(node);
-        return b === undefined || editor === undefined ? [] : editor.getNodes().filter(isBindingNode)
-            .filter(m => m.block === b.id).map(m => ({port: m.port, env: m.env, index: m.index}));
+    portBindings(direction, name) {
+        return bindingsAt(vueModel.currentGraphId.value, direction, name).map(b => ({env: b.env, index: b.index}));
     },
-    binding(node, port) {
-        const b = findBlock(node);
-        return b === undefined ? undefined
-            : editor?.getNodes().filter(isBindingNode).find(m => m.block === b.id && m.port === port)?.name;
+    bound(port, channel) {
+        const graph = vueModel.currentGraphId.value;
+        return environment.bindings.some(b => b.graph === graph && b.port === port && bindingLabel(b) === channel);
     },
 };
 
@@ -138,6 +136,13 @@ export function begin() {
 export function end() {
     if (depth > 0 && --depth === 0)
         flush();
+}
+
+// A user action that came to nothing (its first command was refused, or what it made was taken
+// back): its commands are no step.
+export function cancelGroup() {
+    group = undefined;
+    depth = 0;
 }
 
 // Commands sent while fn runs are not recorded (e.g. building a composite type's graph).

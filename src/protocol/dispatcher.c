@@ -647,15 +647,16 @@ static void cmd_getbindings(ProtoConn *c, const Envelope *env)
 	reply(c, proto_msg_bindings(c->p->graphs->rt));
 }
 
-/* bind / unbind {"graph","block","port","env","index"?}: checked in the
+/* bind / unbind {"graph","port","env","index"?} (port: a process port, plan
+ * task 70): checked in the
  * order of the C API's hakkas_binding_add (02 §6): the fields, the process,
  * then the environment's refusals (04 §4). The event is the reply. */
 static void bind_command(ProtoConn *c, const Envelope *env, bool bind)
 {
 	const cJSON *pl = env->payload;
-	const char *graph = str_field(pl, "graph"), *block, *port, *env_port;
-	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "block", graph, &block) ||
-	    !need_str(c, pl, "port", graph, &port) || !need_str(c, pl, "env", graph, &env_port))
+	const char *graph = str_field(pl, "graph"), *port, *env_port;
+	if (!need_str(c, pl, "graph", graph, &graph) || !need_str(c, pl, "port", graph, &port) ||
+	    !need_str(c, pl, "env", graph, &env_port))
 		return;
 	const cJSON *index = cJSON_GetObjectItemCaseSensitive(pl, "index");
 	uint32_t channel = 0;
@@ -681,7 +682,7 @@ static void bind_command(ProtoConn *c, const Envelope *env, bool bind)
 		reply_error(c, "No environment", graph);
 		return;
 	}
-	EnvBindingRequest req = {block, port, env_port, channel};
+	EnvBindingRequest req = {port, env_port, channel};
 	char text[ENVIRONMENT_MESSAGE_MAX];
 	enum environment_status st =
 		bind ? environment_bind(c->p->env, g, &req, text, sizeof(text))

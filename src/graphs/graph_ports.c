@@ -83,10 +83,12 @@ enum graph_status graph_add_port(Graph *g, enum graph_port_dir dir, const char *
 	return GRAPH_OK;
 }
 
-/* Remove port i's links, take it out of the array, report it, free it. */
-static void port_remove_at(Graph *g, enum graph_port_dir dir, uint32_t i)
+/* Remove port i's links and bindings (revert: a sensor-bound input reverts
+ * to its default), take it out of the array, report it, free it. */
+static void port_remove_at(Graph *g, enum graph_port_dir dir, uint32_t i, bool revert)
 {
 	graph_links_remove_port(g, dir, g->ports[dir][i].name);
+	graph_bindings_remove_port(g, dir, g->ports[dir][i].name, revert); /* plan task 70 */
 	GraphPort p = g->ports[dir][i];
 	memmove(&g->ports[dir][i], &g->ports[dir][i + 1],
 		(g->port_count[dir] - i - 1) * sizeof(GraphPort));
@@ -102,7 +104,7 @@ enum graph_status graph_remove_port(Graph *g, enum graph_port_dir dir, const cha
 	int32_t i = port_index(g, dir, name);
 	if (i < 0)
 		return GRAPH_ERR_UNKNOWN_PORT;
-	port_remove_at(g, dir, (uint32_t)i);
+	port_remove_at(g, dir, (uint32_t)i, true);
 	return GRAPH_OK;
 }
 
@@ -119,6 +121,11 @@ enum graph_status graph_rename_port(Graph *g, enum graph_port_dir dir, const cha
 	char *name = graph_str_dup(to);
 	if (name == NULL)
 		return GRAPH_ERR_NO_MEMORY;
+	/* Bindings follow the rename (plan task 70), unlike links. */
+	if (!graph_bindings_rename_port(g, dir, from, to)) {
+		free(name);
+		return GRAPH_ERR_NO_MEMORY;
+	}
 	/* A link names the port: the renamed port is not its port any more
 	 * (decided, plan task 21f; graphs/graph.h). */
 	graph_links_remove_port(g, dir, from);
@@ -137,7 +144,7 @@ void graph_ports_remove_block(Graph *g, const Block *b)
 		uint32_t i = 0;
 		while (i < g->port_count[dir]) {
 			if (g->ports[dir][i].block == b)
-				port_remove_at(g, (enum graph_port_dir)dir, i);
+				port_remove_at(g, (enum graph_port_dir)dir, i, false);
 			else
 				i++;
 		}

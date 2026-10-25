@@ -1,5 +1,6 @@
 // Environment bindings in the frontend (06 §4.14): the environment's channels, what binding a
-// block port to one would give, a bindings file's form (04-drivers.md §4) and its mapping.
+// process port to one would give (plan task 70: process ports, never block ports), a bindings
+// file's form (04-drivers.md §4) and its mapping.
 // Kept free of Vue so that it can be unit tested. The checks follow the engine's own, in its
 // order (04 §4, 02 §3.7), so the mapping dialog warns about exactly what the engine would skip;
 // the engine stays the judge (a refusal is shown as usual).
@@ -10,15 +11,14 @@ import type {Binding, EnvDescription, EnvPort} from "@/components/protocols/envi
 export interface Channel {
     env: string;
     index?: number;
-    sensor: boolean;        // an environment output port: binds a block input
+    sensor: boolean;        // an environment output port: binds a process inport
     label: string;          // "ain[2]", or "temp"
     type: string;
     unit?: string;
 }
 
-// A bindings file's entry, and a binding without its process.
+// A bindings file's entry, and a binding without its process: `port` is a process port.
 export interface Entry {
-    block: string;
     port: string;
     env: string;
     index?: number;
@@ -83,14 +83,11 @@ export function isSensor(d: EnvDescription, env: string): boolean | undefined {
 }
 
 // What the checks need to know of the process and of the other processes.
-export interface BlockPorts {
-    inputs: string[];
-    outputs: string[];
-}
-
 export interface CheckContext {
     description: EnvDescription;
-    blocks: Record<string, BlockPorts>;   // the process's blocks, by id
+    // The process's ports by name, each with the block port behind it ("block.port").
+    inports: Record<string, string>;
+    outports: Record<string, string>;
     sourced: Set<string>;                 // "block.port": inputs with a connection or a fixed value
     bindings: Binding[];                  // what stays bound meanwhile (other processes' too)
     graph: string;                        // the process
@@ -111,25 +108,25 @@ export function checkEntries(entries: Entry[], ctx: CheckContext): (string | und
 }
 
 function checkOne(e: Entry, ctx: CheckContext, made: Binding[]): string | undefined {
-    if (!idOk(e.block) || !idOk(e.port))
+    if (!idOk(e.port))
         return "Invalid id";
     const channel = channelProblem(ctx.description, e.env, e.index);
     if (channel !== undefined)
         return channel;
-    const block = ctx.blocks[e.block];
-    if (block === undefined)
-        return "Unknown node: " + e.block;
-    const isInput = block.inputs.includes(e.port), isOutput = block.outputs.includes(e.port);
-    if (!isInput && !isOutput)
-        return `Unknown port: ${e.block}.${e.port}`;
+    // The environment port decides the direction: a sensor binds the inport of the name, an
+    // actuator the outport (04 §4).
     const sensor = isSensor(ctx.description, e.env)!;
-    if (sensor !== isInput)
-        return "Invalid binding direction";
+    const inner = (sensor ? ctx.inports : ctx.outports)[e.port];
+    if (inner === undefined)
+        return (sensor ? ctx.outports : ctx.inports)[e.port] !== undefined
+            ? "Invalid binding direction" : "Unknown port: " + e.port;
     const index = e.index ?? 0;
     if (sensor) {
-        const key = e.block + "." + e.port;
-        if (ctx.sourced.has(key) || made.some(b => b.graph === ctx.graph && b.block === e.block && b.port === e.port))
-            return `Input already connected: ${key}`;
+        // One source per input: the block input behind the inport, whichever inport binds it.
+        const bound = made.some(b => b.graph === ctx.graph && isSensor(ctx.description, b.env)
+            && ctx.inports[b.port] === inner);
+        if (ctx.sourced.has(inner) || bound)
+            return "Input already connected: " + e.port;
     } else if (made.some(b => b.env === e.env && (b.index ?? 0) === index)) {
         return "Actuator already driven: " + channelLabel(e.env, index);
     }
@@ -165,13 +162,16 @@ export function parseBindingsFile(text: string): BindingsFile | string {
         const b = o.bindings[i] as Record<string, unknown>;
         if (b === null || typeof b !== "object" || Array.isArray(b))
             return `bindings[${i}]: expected an object`;
-        for (const key of ["block", "port", "env"])
+        // The earlier form bound block ports; it is not read (plan task 70).
+        if (b.block !== undefined)
+            return `bindings[${i}]: block: block ports are not bound; bind a process port`;
+        for (const key of ["port", "env"])
             if (!nonEmpty(b[key]))
                 return `bindings[${i}]: ${key}: expected a non-empty string`;
         const index = b.index;
         if (index !== undefined && index !== null && (typeof index !== "number" || !Number.isInteger(index) || index < 1))
             return `bindings[${i}]: index: expected an integer of at least 1`;
-        const entry: Entry = {block: b.block as string, port: b.port as string, env: b.env as string};
+        const entry: Entry = {port: b.port as string, env: b.env as string};
         if (typeof index === "number")
             entry.index = index;
         bindings.push(entry);
@@ -182,7 +182,7 @@ export function parseBindingsFile(text: string): BindingsFile | string {
 // The bindings file of a process's bindings, as the engine saves one (05 §2.3).
 export function bindingsFileText(environment: string, bindings: Binding[]): string {
     const entries = bindings.map(b => {
-        const e: Record<string, unknown> = {block: b.block, port: b.port, env: b.env};
+        const e: Record<string, unknown> = {port: b.port, env: b.env};
         if (b.index !== undefined && b.index > 0)
             e.index = b.index;
         return e;
@@ -196,7 +196,7 @@ export function bindingsFileText(environment: string, bindings: Binding[]): stri
 // chosen yet), or skipped.
 export interface MappingRow {
     entry: Entry;
-    blockPort: string;      // "block.port"
+    port: string;           // a process port's name
     channel: string;        // a channel label
     skip: boolean;
 }
@@ -204,12 +204,11 @@ export interface MappingRow {
 // The rows as the file gives them: what exists is kept, what does not is left to choose.
 export function initialRows(entries: Entry[], ctx: CheckContext): MappingRow[] {
     return entries.map(e => {
-        const block = ctx.blocks[e.block];
-        const portExists = block !== undefined && (block.inputs.includes(e.port) || block.outputs.includes(e.port));
+        const portExists = e.port in ctx.inports || e.port in ctx.outports;
         const channelExists = channelProblem(ctx.description, e.env, e.index) === undefined;
         return {
             entry: e,
-            blockPort: portExists ? e.block + "." + e.port : "",
+            port: portExists ? e.port : "",
             channel: channelExists ? channelLabel(e.env, e.index) : "",
             skip: false,
         };
@@ -218,17 +217,16 @@ export function initialRows(entries: Entry[], ctx: CheckContext): MappingRow[] {
 
 // A row as an entry; undefined while either side is not chosen.
 export function rowEntry(row: MappingRow): Entry | undefined {
-    if (row.blockPort === "" || row.channel === "")
+    if (row.port === "" || row.channel === "")
         return undefined;
-    const dot = row.blockPort.lastIndexOf(".");
     const {env, index} = parseChannel(row.channel);
-    const e: Entry = {block: row.blockPort.substring(0, dot), port: row.blockPort.substring(dot + 1), env};
+    const e: Entry = {port: row.port, env};
     if (index !== undefined)
         e.index = index;
     return e;
 }
 
-// Each row's problem with the current choices ("Choose a block port", a check's warning), or
+// Each row's problem with the current choices ("Choose a process port", a check's warning), or
 // undefined where it would be made; skipped rows have none.
 export function rowProblems(rows: MappingRow[], ctx: CheckContext): (string | undefined)[] {
     const active = rows.map((r, i) => ({r, i})).filter(x => !x.r.skip);
@@ -238,7 +236,7 @@ export function rowProblems(rows: MappingRow[], ctx: CheckContext): (string | un
     for (const {r, i} of active) {
         const e = rowEntry(r);
         if (e === undefined) {
-            problems[i] = r.blockPort === "" ? "Choose a block port" : "Choose a channel";
+            problems[i] = r.port === "" ? "Choose a process port" : "Choose a channel";
             continue;
         }
         entries.push(e);

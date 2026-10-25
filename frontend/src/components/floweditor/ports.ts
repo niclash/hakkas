@@ -1,25 +1,20 @@
 // Process ports drawn as markers (06 §4.8): a PortNode per inport and outport, connected to its
-// block port and placed at the process's edge; and environment bindings drawn the same way
-// (06 §4.14), a BindingNode each. Called from the event handlers, so every change here follows
-// an engine event.
+// block port and placed at the process's edge; a marker shows its port's environment bindings
+// (06 §4.14, from the environment's store). Called from the event handlers, so every change here
+// follows an engine event.
 
-import {BindingNode, Connection, isBindingNode, isPortNode, isProcessPortNode, isValueNode, PortNode, PrimitiveNode} from "@/components/model";
+import {Connection, isPortNode, isProcessPortNode, isValueNode, PortNode, PrimitiveNode} from "@/components/model";
 import type {FlowEditor} from "./viewmodel/default";
 import {Box, layoutPorts} from "./port-layout";
 import {socketOffset} from "./values";
 
-// Every marker: the process ports' and the bindings'.
+// Every marker.
 export function portNodes(editor: FlowEditor): PortNode[] {
     return editor.getNodes().filter(isPortNode);
 }
 
-// The process ports' markers only.
 export function processPortNodes(editor: FlowEditor): PortNode[] {
     return editor.getNodes().filter(isProcessPortNode);
-}
-
-export function bindingNodes(editor: FlowEditor): BindingNode[] {
-    return editor.getNodes().filter(isBindingNode);
 }
 
 function portNode(editor: FlowEditor, direction: "in" | "out", name: string): PortNode | undefined {
@@ -36,8 +31,18 @@ async function addMarker(editor: FlowEditor, marker: PortNode, block: PrimitiveN
     await placePorts(editor);
 }
 
+// Who waits for a port to be shown (binding a block port through a new process port, 06 §4.14).
+const shownListeners = new Set<(direction: "in" | "out", name: string) => void>();
+
+export function onPortShown(fn: (direction: "in" | "out", name: string) => void): () => void {
+    shownListeners.add(fn);
+    return () => shownListeners.delete(fn);
+}
+
 export async function showPort(editor: FlowEditor, direction: "in" | "out", name: string, block: PrimitiveNode, port: string) {
     await addMarker(editor, new PortNode(direction, name, block, port), block, port);
+    for (const fn of [...shownListeners])
+        fn(direction, name);
 }
 
 async function removeMarker(editor: FlowEditor, marker: PortNode) {
@@ -51,29 +56,6 @@ export async function removePort(editor: FlowEditor, direction: "in" | "out", na
     const marker = portNode(editor, direction, name);
     if (marker !== undefined)
         await removeMarker(editor, marker);
-}
-
-// A binding's marker (06 §4.14): a sensor's beside the block's input, an actuator's beside its
-// output. Shown once, also if its event and the bindings' list both bring it.
-export async function showBinding(editor: FlowEditor, block: PrimitiveNode, port: string, env: string, index?: number) {
-    if (bindingNode(editor, block, port) !== undefined)
-        return;
-    const direction = port in block.inputs ? "in" : "out";
-    await addMarker(editor, new BindingNode(direction, block, port, env, index), block, port);
-}
-
-function bindingNode(editor: FlowEditor, block: PrimitiveNode, port: string): BindingNode | undefined {
-    return bindingNodes(editor).find(b => b.block === block.id && b.port === port);
-}
-
-export async function removeBinding(editor: FlowEditor, block: PrimitiveNode, port: string) {
-    const marker = bindingNode(editor, block, port);
-    if (marker !== undefined)
-        await removeMarker(editor, marker);
-}
-
-export async function removeBindingMarker(editor: FlowEditor, marker: BindingNode) {
-    await removeMarker(editor, marker);
 }
 
 export async function renamePort(editor: FlowEditor, direction: "in" | "out", from: string, to: string) {

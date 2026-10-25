@@ -4,12 +4,12 @@ import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
 import {createEditor} from './viewmodel/default';
 import {editor} from './viewmodel/default';
 import {
-  BindingNode, can, componentTemplates, Connection, errorClaims, isPortNode, isValueNode, PortNode, PrimitiveNode, ValueNode, vueModel
+  can, componentTemplates, Connection, errorClaims, isPortNode, isValueNode, PortNode, PrimitiveNode, ValueNode, vueModel
 } from "../model";
 import {SocketData} from "rete-connection-plugin";
 import {inputSources, placeValues, renameValues, showValue} from "./values";
 import {
-  bindingNodes, placePorts, portNodes, processPortNodes, removeBinding, removeBindingMarker, removePort, renamePort, showBinding, showPort
+  placePorts, portNodes, processPortNodes, removePort, renamePort, showPort
 } from "./ports";
 import Popup from "@/components/Popup.vue";
 import {
@@ -23,8 +23,8 @@ import {allowed} from "@/components/roles";
 import ValueDraft from "./ValueDraft.vue";
 import CompositeDialog from "./CompositeDialog.vue";
 import BindDialog from "./BindDialog.vue";
-import {environment} from "@/components/environment";
-import type {Binding} from "@/components/protocols/environment";
+import {bindingLabel, bindingsAt, environment} from "@/components/environment";
+import {parseChannel} from "@/components/bindings";
 import {blockArrived, copySelection, duplicateSelection, hasClip, pasteClipAt, setupCopyPaste} from "./copypaste";
 import {eventApplied, setupHistory} from "./history";
 import {Link, ProcessPort, SelBlock} from "@/components/composite";
@@ -474,23 +474,19 @@ const openMenu = (event: MouseEvent, context: unknown) => {
   if (context === "root") {
     const selected = editor.blockSelection?.selection.ids().length ?? 0;
     open = {target: {kind: "canvas", watchingAll: live.all, canPaste: hasClip(), selected}};
-  } else if (context instanceof BindingNode) {
-    const block = editor.getNode(context.block);
-    open = block instanceof PrimitiveNode
-      ? {target: {kind: "binding", id: block.label, port: context.port, channel: context.name}, node: block.id, port: context.port}
-      : undefined;
   } else if (context instanceof ValueNode) {
     const value = context as ValueNode;
     const input = {node: value.blockLabel, port: value.port};
     open = {target: {kind: "value", id: value.blockLabel, port: value.port, watched: isWatched(input)}, node: value.id, input};
   } else if (context instanceof PortNode) {
-    open = {target: {kind: "port", direction: context.direction, name: context.name}, node: context.id};
+    open = {target: portTarget(context), node: context.id};
   } else if (context instanceof PrimitiveNode
       && event.target instanceof Element && event.target.closest(".output[data-testid^='output-']") !== null) {
     const row = event.target.closest<HTMLElement>(".output[data-testid^='output-']")!;
     const port = row.dataset.testid!.substring("output-".length);
-    const binding = bindingNodes(editor).find(b => b.block === context.id && b.port === port)?.name;
-    open = {target: {kind: "output", id: context.label, port, environment: canBind(), binding}, node: context.id, port};
+    const exposed = exposing(context, "out", port);
+    const bindings = exposed === undefined ? [] : channelsOf(exposed);
+    open = {target: {kind: "output", id: context.label, port, environment: canBind(), bindings}, node: context.id, port};
   } else if (context instanceof PrimitiveNode) {
     const row = event.target instanceof Element ? event.target.closest<HTMLElement>(".input[data-testid^='input-']") : null;
     const port = row?.dataset.testid?.substring("input-".length);
@@ -511,13 +507,8 @@ const openMenu = (event: MouseEvent, context: unknown) => {
     const source = editor.getNode(c.source);
     const input = {node: editor.getNode(c.target)?.label ?? "", port: c.targetInput};
     const marker = [source, editor.getNode(c.target)].find(isPortNode);
-    const bound = marker instanceof BindingNode ? editor.getNode(marker.block) : undefined;
-    open = marker instanceof BindingNode
-      ? (bound instanceof PrimitiveNode
-        ? {target: {kind: "binding", id: bound.label, port: marker.port, channel: marker.name}, node: bound.id, port: marker.port}
-        : undefined)
-      : marker !== undefined
-      ? {target: {kind: "port", direction: marker.direction, name: marker.name}, node: marker.id}
+    open = marker !== undefined
+      ? {target: portTarget(marker), node: marker.id}
       : isValueNode(source)
       ? {target: {kind: "value", id: source.blockLabel, port: source.port, watched: isWatched(input)}, node: source.id, input}
       : {target: {kind: "connection", watched: isWatched(input)}, connection: c.id, input};
@@ -530,6 +521,17 @@ const openMenu = (event: MouseEvent, context: unknown) => {
 
 // Whether the open process can be bound: an environment, and a process, not a type's graph.
 const canBind = () => environment.description !== undefined && vueModel.currentComponent.value === undefined;
+
+// The channels a process port is bound to (06 §4.14).
+const channelsOf = (marker: PortNode): string[] =>
+    bindingsAt(vueModel.currentGraphId.value, marker.direction, marker.name).map(bindingLabel);
+
+const portTarget = (marker: PortNode): MenuTarget =>
+    ({kind: "port", direction: marker.direction, name: marker.name, environment: canBind(), bindings: channelsOf(marker)});
+
+// The process port that exposes a block's port, if any (the first, if several do).
+const exposing = (block: PrimitiveNode, direction: "in" | "out", port: string): PortNode | undefined =>
+    processPortNodes(editor).find(p => p.block === block.id && p.direction === direction && p.port === port);
 
 // The menu key: the menu of the first selected block, else the canvas's, in the middle.
 const menuKey = () => {
@@ -548,7 +550,7 @@ const closeMenu = () => {
 
 const graph = () => vueModel.connection.value?.proto.graph;
 
-const act = async (action: MenuAction) => {
+const act = async (action: MenuAction, arg?: string) => {
   const m = menu.value;
   closeMenu();
   if (m === undefined)
@@ -640,14 +642,30 @@ const act = async (action: MenuAction) => {
       if (block !== undefined && m.port !== undefined)
         openPortDialog({mode: "add", direction: action === "expose-input" ? "in" : "out", block: block.label, port: m.port});
       break;
-    case "bind":
-      if (block !== undefined && m.port !== undefined)
-        bindDialog.value = {block: block.label, port: m.port, sensor: m.port in block.inputs};
+    case "bind": {
+      // A process port binds; a block port binds the process port that exposes it, made first if
+      // there is none (06 §4.14).
+      if (m.target.kind === "port") {
+        bindDialog.value = {direction: m.target.direction, port: m.target.name};
+      } else if (block !== undefined && m.port !== undefined) {
+        const direction = m.target.kind === "input" ? "in" : "out";
+        const exposed = exposing(block, direction, m.port);
+        bindDialog.value = exposed !== undefined ? {direction, port: exposed.name}
+            : {direction, block: block.label, blockPort: m.port};
+      }
       break;
+    }
     case "unbind": {
-      const marker = block !== undefined ? bindingNodes(editor).find(b => b.block === block.id && b.port === m.port) : undefined;
-      if (block !== undefined && marker !== undefined)
-        vueModel.connection.value?.proto.environment.request_unbind(bindingOf(block.label, marker));
+      // The process port: the marker's, the bound input's, or the one exposing the output.
+      const name = m.target.kind === "port" ? m.target.name
+          : m.target.kind === "input" && m.target.source.kind === "bound" ? m.target.source.port
+          : block !== undefined && m.port !== undefined ? exposing(block, "out", m.port)?.name : undefined;
+      if (name !== undefined && arg !== undefined) {
+        const {env, index} = parseChannel(arg);
+        vueModel.connection.value?.proto.environment.request_unbind(index !== undefined
+            ? {graph: vueModel.currentGraphId.value, port: name, env, index}
+            : {graph: vueModel.currentGraphId.value, port: name, env});
+      }
       break;
     }
     case "rename-port":
@@ -690,39 +708,17 @@ const act = async (action: MenuAction) => {
   }
 };
 
-// Binding a block port (06 §4.14): the dialog of BindDialog.vue.
-const bindDialog = ref<{ block: string, port: string, sensor: boolean } | undefined>();
+// Binding a process port (06 §4.14): the dialog of BindDialog.vue, for a process port or for a
+// block port to expose first.
+const bindDialog = ref<{ direction: "in" | "out", port?: string, block?: string, blockPort?: string } | undefined>();
 
-const bindingOf = (block: string, marker: BindingNode): Binding => marker.index !== undefined && marker.index > 0
-    ? {graph: vueModel.currentGraphId.value, block, port: marker.port, env: marker.env, index: marker.index}
-    : {graph: vueModel.currentGraphId.value, block, port: marker.port, env: marker.env};
-
-// The environment's events for the open process (02 §3.7): the markers follow them.
+// The environment's events for the open process (02 §3.7). The markers show the environment's
+// store, which the events change; through the event queue, so an undo waiting for them settles.
 const bindingEvents = {
-  onBind: async (b: Binding) => {
-    const block = findNodeByName(b.block);
-    if (block !== undefined)
-      await showBinding(editor, block, b.port, b.env, b.index);
-  },
-  onUnbind: async (b: Binding) => {
-    const block = findNodeByName(b.block);
-    if (block !== undefined)
-      await removeBinding(editor, block, b.port);
-  },
-  // Every process's bindings (asked for when a process opens): the open one's markers.
-  onBindings: async (p: { bindings: Binding[] }) => {
-    const graph = vueModel.currentGraph.id;
-    const wanted = (p.bindings ?? []).filter(b => b.graph === graph);
-    for (const marker of bindingNodes(editor)) {
-      const block = editor.getNode(marker.block);
-      if (!(block instanceof PrimitiveNode) || !wanted.some(b => b.block === block.label && b.port === marker.port && b.env === marker.env
-          && (b.index ?? 0) === (marker.index ?? 0)))
-        await removeBindingMarker(editor, marker);
-    }
-    for (const b of wanted)
-      await bindingEvents.onBind(b);
-    scheduleFit();   // they come right after a process's snapshot (06 §4)
-  },
+  onBind: async () => {},
+  onUnbind: async () => {},
+  // Every process's bindings come right after a process's snapshot (06 §4).
+  onBindings: async () => scheduleFit(),
 };
 
 // The process port name dialog (06 §4.8): exposing a block port, or renaming a process port.
@@ -1021,10 +1017,10 @@ onMounted(() => {
     conn.addClosedListener(connectionLost);
     // Applied like the graph's events: the editor's changes are not the user's (no commands).
     for (const [key, handler] of Object.entries(bindingEvents))
-      conn.proto.environment.addListener(key as "onBind" | "onUnbind" | "onBindings", enqueue(async (payload: any) => {
+      conn.proto.environment.addListener(key as "onBind" | "onUnbind" | "onBindings", enqueue(async () => {
         vueModel.pipesDisabled = true;
         try {
-          await handler(payload);
+          await handler();
         } finally {
           vueModel.pipesDisabled = false;
         }
@@ -1065,8 +1061,8 @@ onMounted(() => {
         <p v-if="portError" class="hk-inspector-note" role="alert" data-testid="port-name-error">{{ portError }}</p>
       </div>
     </Popup>
-    <BindDialog v-if="bindDialog" :block="bindDialog.block" :port="bindDialog.port" :sensor="bindDialog.sensor"
-                @close="bindDialog = undefined"/>
+    <BindDialog v-if="bindDialog" :direction="bindDialog.direction" :port="bindDialog.port" :block="bindDialog.block"
+                :block-port="bindDialog.blockPort" @close="bindDialog = undefined"/>
     <CompositeDialog v-if="compositeDialog" :blocks="compositeDialog.blocks" :links="compositeDialog.links"
                      :process-ports="compositeDialog.processPorts" @close="compositeDialog = undefined"
                      @created="compositeCreated"/>

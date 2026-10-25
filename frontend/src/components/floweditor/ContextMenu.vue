@@ -3,9 +3,9 @@
        @pointerdown.stop @contextmenu.prevent.stop @keydown="key">
     <template v-if="!searching">
       <div role="menu" aria-label="Actions">
-        <button v-for="(item, i) in items" :key="item.action" ref="buttons" type="button" role="menuitem"
-                class="hk-menu-item" data-testid="menu-item" :data-action="item.action" tabindex="-1"
-                @click="choose(item.action)" @pointerenter="focus(i)">
+        <button v-for="(item, i) in items" :key="item.action + (item.arg ?? '')" ref="buttons" type="button"
+                role="menuitem" class="hk-menu-item" data-testid="menu-item" :data-action="item.action"
+                :data-arg="item.arg" tabindex="-1" @click="choose(item.action, item.arg)" @pointerenter="focus(i)">
           <span>{{ item.label }}</span>
           <span v-if="item.shortcut" class="hk-menu-shortcut">{{ item.shortcut }}</span>
         </button>
@@ -35,7 +35,7 @@ import {MenuAction, MenuItem, nextIndex, searchTypes} from "./menus";
 // A context menu (06 §4.4) at x, y in the editor pane. "Add block…" turns it into a search
 // over the block types; the parent carries out what is chosen and closes it.
 const props = defineProps<{ items: MenuItem[], x: number, y: number, types: string[] }>();
-const emit = defineEmits<{ action: [action: MenuAction], addBlock: [type: string], close: [] }>();
+const emit = defineEmits<{ action: [action: MenuAction, arg?: string], addBlock: [type: string], close: [] }>();
 
 const buttons = ref<HTMLButtonElement[]>([]);
 const root = ref<HTMLElement | null>(null);
@@ -63,7 +63,7 @@ const focus = (i: number) => {
   buttons.value[i]?.focus();
 };
 
-const choose = async (action: MenuAction) => {
+const choose = async (action: MenuAction, arg?: string) => {
   if (action === "add-block") {
     searching.value = true;
     await nextTick();
@@ -71,7 +71,7 @@ const choose = async (action: MenuAction) => {
     search.value?.focus();
     return;
   }
-  emit("action", action);
+  emit("action", action, arg);
 };
 
 const key = (event: KeyboardEvent) => {

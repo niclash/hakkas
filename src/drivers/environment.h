@@ -104,8 +104,7 @@ const Linkable *environment_sensor_value(const Environment *env, uint32_t port, 
 /* A binding as a bindings file or the C API names it (04 §4): a block port
  * and an environment port id with its channel index (0: none). */
 typedef struct {
-	const char *block;
-	const char *port;
+	const char *port; /* the process port (04 §4, plan task 70) */
 	const char *env;
 	uint32_t index;
 } EnvBindingRequest;

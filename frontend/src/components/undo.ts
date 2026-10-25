@@ -34,9 +34,10 @@ export interface StateReader {
     edgeInto(node: string, port: string): Link | undefined;
     ports(node: string): { direction: "in" | "out", name: string, port: string }[];
     port(direction: "in" | "out", name: string): End | undefined;
-    // The block's environment bindings (06 §4.14), and one port's channel ("ain[2]").
-    bindings(node: string): { port: string, env: string, index?: number }[];
-    binding(node: string, port: string): string | undefined;
+    // A process port's environment bindings (06 §4.14; plan task 70), and whether the port of
+    // that name is bound to a channel ("ain[2]"; the channel says the direction, 04 §4).
+    portBindings(direction: "in" | "out", name: string): { env: string, index?: number }[];
+    bound(port: string, channel: string): boolean;
 }
 
 // The commands that can be undone; any other is not recorded. All are graph:*, but bind and
@@ -48,8 +49,14 @@ export const UNDOABLE = new Set(["addnode", "removenode", "renamenode", "changen
 export const ENVIRONMENT_COMMANDS = new Set(["bind", "unbind"]);
 
 const channel = (env: string, index?: number) => index !== undefined && index > 0 ? `${env}[${index}]` : env;
-const bindCmd = (command: string, graph: string, block: string, port: string, env: string, index?: number): Cmd =>
-    ({command, payload: index !== undefined && index > 0 ? {graph, block, port, env, index} : {graph, block, port, env}});
+const bindCmd = (command: string, graph: string, port: string, env: string, index?: number): Cmd =>
+    ({command, payload: index !== undefined && index > 0 ? {graph, port, env, index} : {graph, port, env}});
+
+// A process port and its bindings, made again (its bindings went with it, 04 §4).
+const portBack = (graph: string, direction: "in" | "out", node: string, port: string, name: string, s: StateReader): Cmd[] => [
+    {command: direction === "in" ? "addinport" : "addoutport", payload: {graph, node, port, public: name}},
+    ...s.portBindings(direction, name).map(b => bindCmd("bind", graph, name, b.env, b.index)),
+];
 
 export const HISTORY_SIZE = 500;
 
@@ -72,9 +79,7 @@ export function inverseOf(cmd: Cmd, s: StateReader): Cmd[] {
             for (const [port, data] of Object.entries(s.initials(p.id)))
                 out.push({command: "addinitial", payload: {graph, tgt: {node: p.id, port}, src: {data}}});
             for (const gp of s.ports(p.id))
-                out.push({command: gp.direction === "in" ? "addinport" : "addoutport", payload: {graph, node: p.id, port: gp.port, public: gp.name}});
-            for (const b of s.bindings(p.id))
-                out.push(bindCmd("bind", graph, p.id, b.port, b.env, b.index));
+                out.push(...portBack(graph, gp.direction, p.id, gp.port, gp.name, s));
             return out;
         }
         case "renamenode":
@@ -103,15 +108,15 @@ export function inverseOf(cmd: Cmd, s: StateReader): Cmd[] {
         case "removeinport":
         case "removeoutport": {
             const at = s.port(dirOf(cmd.command), p.public);
-            return at === undefined ? [] : [{command: cmd.command.replace("remove", "add"), payload: {graph, node: at.node, port: at.port, public: p.public}}];
+            return at === undefined ? [] : portBack(graph, dirOf(cmd.command), at.node, at.port, p.public, s);
         }
         case "renameinport":
         case "renameoutport":
             return [{command: cmd.command, payload: {graph, from: p.to, to: p.from}}];
         case "bind":
-            return [bindCmd("unbind", graph, p.block, p.port, p.env, p.index)];
+            return [bindCmd("unbind", graph, p.port, p.env, p.index)];
         case "unbind":
-            return s.binding(p.block, p.port) === undefined ? [] : [bindCmd("bind", graph, p.block, p.port, p.env, p.index)];
+            return s.bound(p.port, channel(p.env, p.index)) ? [bindCmd("bind", graph, p.port, p.env, p.index)] : [];
     }
     return [];
 }
@@ -204,10 +209,10 @@ export function factsOf(cmds: Cmd[]): Map<string, string | null> {
                 f.set(dirOf(c.command) + "renamed:" + p.to, "yes");
                 break;
             case "bind":
-                f.set("binding:" + p.block + "." + p.port, channel(p.env, p.index));
+                f.set("binding:" + p.port + "|" + channel(p.env, p.index), "yes");
                 break;
             case "unbind":
-                f.set("binding:" + p.block + "." + p.port, null);
+                f.set("binding:" + p.port + "|" + channel(p.env, p.index), null);
                 break;
         }
     }
@@ -241,8 +246,8 @@ export function holds(facts: Map<string, string | null>, s: StateReader): boolea
         } else if (kind === "inrenamed" || kind === "outrenamed") {
             have = s.port(kind === "inrenamed" ? "in" : "out", what) !== undefined ? "yes" : null;
         } else if (kind === "binding") {
-            const e = splitEnd(what);
-            have = s.binding(e.node, e.port) ?? null;
+            const bar = what.lastIndexOf("|");
+            have = s.bound(what.substring(0, bar), what.substring(bar + 1)) ? "yes" : null;
         }
         if (have !== want)
             return false;

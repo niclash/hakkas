@@ -58,18 +58,18 @@ export interface EnvDescription {
     carrier?: EnvCarrier;
 }
 
-// A binding of a block port to an environment channel (02 §3.7): a bindings file's entry plus
-// its process.
+// A binding of a process port to an environment channel (02 §3.7, plan task 70): a bindings
+// file's entry plus its process. `port` is the process's inport of that name for a sensor, its
+// outport for an actuator (the environment port decides, 04 §4).
 export interface Binding {
     graph: string;
-    block: string;
     port: string;
     env: string;
     index?: number;
 }
 
 // The environment group of specifications/02-wire-protocol.md §3.7: the description, the
-// bindings, and binding and unbinding a block port.
+// bindings, and binding and unbinding a process port.
 export class EnvironmentProtocol {
     private connection: Connection;
     listeners: {

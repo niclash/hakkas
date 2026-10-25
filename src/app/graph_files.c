@@ -383,12 +383,9 @@ char *graph_files_serialize_bindings(const GraphFiles *gf, const Graph *g, size_
 		const EnvBinding *b = runtime_binding_at(rt, i);
 		if (b->graph != g)
 			continue;
-		const char *port = b->actuator ? block_output_port(b->block, b->port)->name
-					       : block_input_port(b->block, b->port)->name;
 		cJSON *e = cJSON_CreateObject();
 		ok = e != NULL && cJSON_AddItemToArray(list, e) &&
-		     add(e, "block", cJSON_CreateString(b->block->name)) &&
-		     add(e, "port", cJSON_CreateString(port)) &&
+		     add(e, "port", cJSON_CreateString(b->name)) &&
 		     add(e, "env", cJSON_CreateString(b->env)) &&
 		     (b->env_index == 0 || add(e, "index", cJSON_CreateNumber(b->env_index)));
 		n++;

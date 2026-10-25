@@ -323,7 +323,8 @@ static void stop_engine(void)
 }
 
 /* A process: a.out = a.in1 + a.in2 with a.in1 bound to ain[1], a.in2 =
- * 0.5; a.out drives aout; n.out = not door drives relay[2]. */
+ * 0.5; a.out drives aout; n.out = not door drives relay[2] — through the
+ * process ports level (in and out), door and alarm. */
 static void build(void)
 {
 	Hakkas *h = e2e_hakkas;
@@ -332,12 +333,17 @@ static void build(void)
 	CHECK(hakkas_block_add(h, "p", "n", "logic/Not", NULL, NULL) == HAKKAS_OK);
 	HakkasValue half = linkable_from_f64(0.5);
 	CHECK(hakkas_initial_add(h, "p", "a", "in2", &half, NULL) == HAKKAS_OK);
+	/* Bindings name process ports (04 §4). */
+	CHECK(hakkas_port_add(h, "p", HAKKAS_INPORT, "level", "a", "in1", NULL) == HAKKAS_OK);
+	CHECK(hakkas_port_add(h, "p", HAKKAS_OUTPORT, "level", "a", "out", NULL) == HAKKAS_OK);
+	CHECK(hakkas_port_add(h, "p", HAKKAS_INPORT, "door", "n", "in", NULL) == HAKKAS_OK);
+	CHECK(hakkas_port_add(h, "p", HAKKAS_OUTPORT, "alarm", "n", "out", NULL) == HAKKAS_OK);
 	const char *path = e2e_path(e2e_root, "bindings.json");
 	e2e_put(path, "{\"environment\":\"sim\",\"bindings\":["
-		      "{\"block\":\"a\",\"port\":\"in1\",\"env\":\"ain\",\"index\":1},"
-		      "{\"block\":\"a\",\"port\":\"out\",\"env\":\"aout\"},"
-		      "{\"block\":\"n\",\"port\":\"in\",\"env\":\"door\"},"
-		      "{\"block\":\"n\",\"port\":\"out\",\"env\":\"relay\",\"index\":2}]}");
+		      "{\"port\":\"level\",\"env\":\"ain\",\"index\":1},"
+		      "{\"port\":\"level\",\"env\":\"aout\"},"
+		      "{\"port\":\"door\",\"env\":\"door\"},"
+		      "{\"port\":\"alarm\",\"env\":\"relay\",\"index\":2}]}");
 	size_t applied = 0;
 	HakkasMessage msg;
 	CHECK(hakkas_bindings_apply(h, "p", path, &applied, NULL, &msg) == HAKKAS_OK);

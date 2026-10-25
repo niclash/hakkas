@@ -46,19 +46,28 @@ describe("menuFor", () => {
         expect(actions({kind: "port", direction: "in", name: "x"})).toEqual(["rename-port", "remove-port"]);
     });
 
-    // 06 §4.14: binding to the environment, when there is one.
-    it("binding: a free input or an output binds, a bound one unbinds", () => {
+    // 06 §4.14: binding (a process port, plan task 70) to the environment, when there is one.
+    it("binding: a free input, an output or a process port binds; a bound one unbinds", () => {
         expect(actions({kind: "input", id: "a", port: "in", source: {kind: "default"}, environment: true}))
             .toEqual(["set-value", "bind", "watch", "expose-input"]);
         expect(actions({kind: "input", id: "a", port: "in", source: {kind: "fixed", value: "1"}, environment: true}))
             .not.toContain("bind");
-        const bound = menuFor({kind: "input", id: "a", port: "in", source: {kind: "bound", channel: "ain[2]"}, environment: true});
+        const bound = menuFor({kind: "input", id: "a", port: "in", source: {kind: "bound", channel: "ain[2]", port: "level"},
+            environment: true});
         expect(bound.map(i => i.action)).toEqual(["unbind", "watch", "expose-input"]);
-        expect(bound[0].label).toBe("Unbind from ain[2]");
+        expect(bound[0]).toMatchObject({label: "Unbind from ain[2]", arg: "ain[2]"});
         expect(actions({kind: "output", id: "a", port: "out", environment: true})).toEqual(["bind", "expose-output"]);
-        expect(actions({kind: "output", id: "a", port: "out", environment: true, binding: "relay[1]"}))
-            .toEqual(["unbind", "expose-output"]);
-        expect(menuFor({kind: "binding", id: "a", port: "out", channel: "relay[1]"})[0].label).toBe("Unbind a.out from relay[1]");
+        // An output may drive several actuators: one unbind each, and binding stays offered.
+        const out = menuFor({kind: "output", id: "a", port: "out", environment: true, bindings: ["relay[1]", "lamp"]});
+        expect(out.map(i => [i.action, i.arg])).toEqual([["bind", undefined], ["unbind", "relay[1]"], ["unbind", "lamp"],
+            ["expose-output", undefined]]);
+        // A process port: a bound inport has its one source.
+        expect(actions({kind: "port", direction: "in", name: "x", environment: true}))
+            .toEqual(["bind", "rename-port", "remove-port"]);
+        expect(actions({kind: "port", direction: "in", name: "x", environment: true, bindings: ["ain[1]"]}))
+            .toEqual(["unbind", "rename-port", "remove-port"]);
+        expect(actions({kind: "port", direction: "out", name: "y", environment: true, bindings: ["relay[1]"]}))
+            .toEqual(["bind", "unbind", "rename-port", "remove-port"]);
     });
 });
 

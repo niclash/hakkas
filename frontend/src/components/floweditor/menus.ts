@@ -5,15 +5,16 @@
 import {InputSource} from "@/components/initials";
 
 // `watched`: whether the input (a block: any of its inputs) has its live value watched (06 §4.7).
+// `environment`: there is one to bind to (06 §4.14); `bindings`: the channels the port (a process
+// port, or the one exposing a block's output) is bound to.
 export type MenuTarget =
     | { kind: "canvas", watchingAll?: boolean, canPaste?: boolean, selected?: number }   // blocks selected
     | { kind: "block", id: string, selected: number, watched?: boolean }   // `selected`: blocks selected with it
     | { kind: "input", id: string, port: string, source: InputSource, watched?: boolean, environment?: boolean }
     | { kind: "value", id: string, port: string, watched?: boolean }       // a value node or its line (06 §4.3)
     | { kind: "connection", watched?: boolean }
-    | { kind: "output", id: string, port: string, environment?: boolean, binding?: string }   // a block's output row
-    | { kind: "port", direction: "in" | "out", name: string }               // a process port (06 §4.8)
-    | { kind: "binding", id: string, port: string, channel: string };       // a binding's marker (06 §4.14)
+    | { kind: "output", id: string, port: string, environment?: boolean, bindings?: string[] }   // a block's output row
+    | { kind: "port", direction: "in" | "out", name: string, environment?: boolean, bindings?: string[] };   // 06 §4.8
 
 export type MenuAction =
     | "add-block" | "zoom-fit" | "arrange" | "select-all"
@@ -29,7 +30,12 @@ export interface MenuItem {
     action: MenuAction;
     label: string;
     shortcut?: string;
+    arg?: string;           // unbind: the channel
 }
+
+// One item per channel a port is bound to (04 §4: an outport may drive several actuators).
+const unbindItems = (channels: string[] | undefined): MenuItem[] =>
+    (channels ?? []).map(c => ({action: "unbind", label: `Unbind from ${c}`, arg: c}));
 
 // A composite type from the selection, or from the block alone (06 §4.9).
 const compositeItem = (selected: number): MenuItem => ({
@@ -70,11 +76,11 @@ export function menuFor(target: MenuTarget): MenuItem[] {
             ];
         case "input": {
             const expose: MenuItem = {action: "expose-input", label: "Expose as process input…"};
-            // `environment`: there is one to bind to (06 §4.14); an input with a connection or a
-            // fixed value has its source already.
+            // An input with a connection or a fixed value has its source already. Binding it binds
+            // the process inport that exposes it, made first if there is none (06 §4.14).
             const bind: MenuItem[] = target.environment ? [{action: "bind", label: "Bind to environment…"}] : [];
             if (target.source.kind === "bound")
-                return [{action: "unbind", label: `Unbind from ${target.source.channel}`}, watchItem(target.watched), expose];
+                return [...unbindItems([target.source.channel]), watchItem(target.watched), expose];
             if (target.source.kind === "connected")
                 return [{action: "disconnect", label: "Disconnect"}, watchItem(target.watched), expose];
             if (target.source.kind === "fixed")
@@ -87,18 +93,21 @@ export function menuFor(target: MenuTarget): MenuItem[] {
             return [{action: "set-value", label: "Set fixed value…"}, ...bind, watchItem(target.watched), expose];
         }
         case "output": {
+            // An output may drive several actuators: binding stays offered while it is bound.
             const expose: MenuItem = {action: "expose-output", label: "Expose as process output…"};
-            if (target.binding !== undefined)
-                return [{action: "unbind", label: `Unbind from ${target.binding}`}, expose];
-            return target.environment ? [{action: "bind", label: "Bind to environment…"}, expose] : [expose];
+            const bind: MenuItem[] = target.environment ? [{action: "bind", label: "Bind to environment…"}] : [];
+            return [...bind, ...unbindItems(target.bindings), expose];
         }
-        case "port":
+        case "port": {
+            // A bound inport has its one source (04 §4); an outport may drive several actuators.
+            const free = target.direction === "out" || (target.bindings ?? []).length === 0;
             return [
+                ...(target.environment && free ? [{action: "bind", label: "Bind to environment…"} as MenuItem] : []),
+                ...unbindItems(target.bindings),
                 {action: "rename-port", label: "Rename process port…"},
                 {action: "remove-port", label: "Remove process port"},
             ];
-        case "binding":
-            return [{action: "unbind", label: `Unbind ${target.id}.${target.port} from ${target.channel}`}];
+        }
         case "value":
             return [
                 {action: "change-value", label: "Change value…"},

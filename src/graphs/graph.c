@@ -496,9 +496,9 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 						   .input = i,
 						   .value = &literal});
 			linkable_clear(&literal);
-		} else if (in->source == INPUT_SOURCE_ENV) {
-			graph_bindings_remove_input(g, b, i); /* plan task 22 */
 		}
+		/* A sensor binding goes with its process port, below (plan
+		 * task 70). */
 	}
 
 	/* Outbound links: each downstream input is severed and reverts. A
@@ -528,12 +528,10 @@ enum graph_status graph_remove_block(Graph *g, const char *name)
 		}
 	}
 
-	/* Its outputs' actuator bindings (plan task 22): the actuators keep
-	 * their last values (03 §4). */
-	graph_bindings_remove_outputs(g, b);
-
 	/* Graph ports mapped to the block go before it (decided, 02 §3.4),
-	 * each with its links between processes (plan task 21f). */
+	 * each with its links between processes (plan task 21f) and its
+	 * environment bindings (plan task 70; an actuator keeps its last value,
+	 * 03 §4). */
 	graph_ports_remove_block(g, b);
 	graph_retained_remove_block(g, b); /* no events (05 §2.2) */
 	block_detach_watches(b);

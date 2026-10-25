@@ -25,16 +25,18 @@ const HAKKAS = process.env.HAKKAS_BIN ?? path.resolve(PACKAGE_ROOT, '../../build
 const catalog = await loadCatalog([BUILTIN_DATA], createLogger('error', () => {}));
 const clock = () => performance.now();
 
-// The process: out = slot1-ai[1] > 5, driving slot3-dq[1].
+// The process: alarm = level > 5, its process ports level (gt.in1) bound to slot1-ai[1] and
+// alarm (gt.out) to slot3-dq[1] (bindings name process ports, 04 §4).
 const GRAPH = {
     id: 'threshold', name: 'Threshold', description: '', icon: '', started: true,
     blocks: {gt: {component: 'compare/Greater', metadata: {x: 0, y: 0}}},
     connections: [{src: {data: 5}, tgt: {block: 'gt', port: 'in2'}}],
-    inports: [], outports: [],
+    inports: [{name: 'level', block: 'gt', port: 'in1'}],
+    outports: [{name: 'alarm', block: 'gt', port: 'out'}],
 };
 const BINDINGS = {environment: 'lab', bindings: [
-    {block: 'gt', port: 'in1', env: 'slot1-ai', index: 1},
-    {block: 'gt', port: 'out', env: 'slot3-dq', index: 1},
+    {port: 'level', env: 'slot1-ai', index: 1},
+    {port: 'alarm', env: 'slot3-dq', index: 1},
 ]};
 
 let tmp: string;

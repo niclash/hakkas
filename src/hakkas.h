@@ -211,8 +211,8 @@ enum hakkas_event_type {
 	/* Links between processes (plan task 21f): no wire message yet. */
 	HAKKAS_EVENT_LINK_ADDED,
 	HAKKAS_EVENT_LINK_REMOVED,
-	/* Environment bindings (plan task 22): no wire message (the
-	 * environment is not on the wire yet, 04 §1). */
+	/* Environment bindings (plan tasks 22, 70): environment:bind and
+	 * unbind on the wire (02 §3.7). */
 	HAKKAS_EVENT_BINDING_ADDED,
 	HAKKAS_EVENT_BINDING_REMOVED,
 };
@@ -222,10 +222,12 @@ enum hakkas_event_type {
  * event type does not list are NULL, 0 or false.
  *  process:     the process id; ERROR: the id the error is about, or NULL;
  *               COMPONENT: NULL; LINK_*: the link's source process;
- *               BINDING_*: the bound block's process.
+ *               BINDING_*: the bound process port's process.
  *  name:        PROCESS_*: the process's name (RENAMED: the new one);
  *               *PORT_*: the public port name (RENAMED: the new one);
  *               LINK_*: the source process's outport;
+ *               BINDING_*: the bound process port (an inport for a sensor,
+ *               an outport for an actuator);
  *               GROUP_*, COMPONENT: the block type's name (RENAMED: the new
  *               one; REMOVED: the removed one).
  *  old_name:    *_RENAMED: the previous name (of the process, block, port
@@ -236,9 +238,7 @@ enum hakkas_event_type {
  *               the type's.
  *  block, port: BLOCK_*: the block (RENAMED: its new name), no port;
  *               CONNECTION_*, INITIAL_*: the target block and input;
- *               INPORT_ADDED / OUTPORT_ADDED: the inner block and port;
- *               BINDING_*: the bound block and its input (a sensor) or
- *               output (an actuator).
+ *               INPORT_ADDED / OUTPORT_ADDED: the inner block and port.
  *  src_block, src_port: CONNECTION_*: the source block and output.
  *  component:   BLOCK_ADDED: the block's type name (a placeholder's
  *               component, 05 §2.2).
@@ -566,32 +566,37 @@ typedef struct {
 size_t hakkas_link_count(const Hakkas *h);
 bool hakkas_link_at(const Hakkas *h, size_t i, HakkasLink *out);
 
-/* ---- Environment bindings (04 §4; plan task 22) -------------------------------- */
+/* ---- Environment bindings (04 §4; plan tasks 22, 70) ---------------------------- */
 
-/* A binding connects a block port to a channel of the environment
- * (hakkas_env.h, 04 §1, §4):
- *  - a sensor (a channel of an environment output port) binds a block input
- *    and is its one source: no connection, initial, link or other binding
- *    may feed it, and none can be added while it is bound ("Input already
- *    connected: <block>.<port>"). Its values arrive through the work queue,
+/* A binding connects a process port to a channel of the environment
+ * (hakkas_env.h, 04 §1, §4; plan task 70: process ports, never block ports).
+ * The environment port decides the direction: a sensor binds the process's
+ * inport of the binding's name, an actuator its outport (the two may share
+ * a name).
+ *  - a sensor (a channel of an environment output port) binds an inport and
+ *    is its block input's one source: no connection, initial, link or other
+ *    binding may feed it, and none can be added while it is bound ("Input
+ *    already connected"). Its values arrive through the work queue,
  *    filtered by the engine-wide change threshold, and are delivered to
  *    every input bound to the channel like any value change (a stopped
  *    process only stores them). A new binding delivers the channel's
  *    current value at once, if the environment has delivered one;
- *  - an actuator (a channel of an environment input port) binds a block
- *    output: every propagation of that output, the unconditional push when
- *    its process starts included, is written to the environment; nothing is
- *    written while the process is stopped. One output may drive several
- *    actuators; each actuator channel has one driver across every process.
+ *  - an actuator (a channel of an environment input port) binds an outport:
+ *    every propagation of its block output, the unconditional push when its
+ *    process starts included, is written to the environment; nothing is
+ *    written while the process is stopped. One outport may drive several
+ *    actuators (and feed links); each actuator channel has one driver across
+ *    every process.
  *    A binding made on a started process writes the output's current value
  *    at once.
- * A binding ends when it is removed (hakkas_binding_remove), its block is
- * removed, or its process deleted (after its stop, before PROCESS_DELETED).
- * A sensor-bound input whose binding is removed reverts to its port default,
- * like any severed input (01 §2.2); with its block or process it simply
- * goes. An actuator keeps its last value (03 §4). Renaming the block keeps
- * the binding. Events: BINDING_ADDED (before the value it delivers) and
- * BINDING_REMOVED; no wire message.
+ * A binding ends when it is removed (hakkas_binding_remove), its process port
+ * or that port's block is removed, or its process deleted (after its stop,
+ * before PROCESS_DELETED). A sensor-bound input whose binding or process port
+ * is removed reverts to its port default, like any severed input (01 §2.2);
+ * with its block or process it simply goes. An actuator keeps its last value
+ * (03 §4). Renaming the process port keeps the binding under the new name,
+ * with no event; renaming the block keeps it. Events: BINDING_ADDED (before
+ * the value it delivers) and BINDING_REMOVED (environment:bind/unbind).
  *
  * A channel is named by the environment port's id and an index: 1..count
  * for an addressable port, 0 (no index) for one that is not. */
@@ -599,19 +604,18 @@ bool hakkas_link_at(const Hakkas *h, size_t i, HakkasLink *out);
 /* A binding, read without an event. */
 typedef struct {
 	const char *process;
-	const char *block;
-	const char *port;
+	const char *port; /* the process port */
 	const char *env_port;
 	uint32_t env_index;
 	bool actuator;
 } HakkasBinding;
 
 /* Apply the bindings file at path (04 §4: {"environment", "bindings":
- * [{"block", "port", "env", "index"?}]}) to process, as the host does when
+ * [{"port", "env", "index"?}]}) to process, as the host does when
  * it loads a process (05 §1.2), warning and skipping: each binding is made
  * in file order, and one that hakkas_binding_add would refuse (also against
  * the file's earlier ones) is skipped with the warning "<path>:
- * bindings[<i>]: <refusal>: skipped", the rest made; a skipped entry's block
+ * bindings[<i>]: <refusal>: skipped", the rest made; a skipped entry's process
  * port stays as it was (inert if it has no other source). A file written for
  * another environment is applied after the warning "<path>: Environment
  * mismatch: <the file's> (running: <the environment's name>)". Failures,
@@ -627,27 +631,26 @@ typedef struct {
 enum hakkas_status hakkas_bindings_apply(Hakkas *h, const char *process, const char *path,
 					 size_t *applied, size_t *skipped, HakkasMessage *msg);
 
-/* Bind block.port of process to channel env_index of the environment port
- * env_port. Refused, in this order: "Invalid field: graph" / "id" (block) /
- * "port" / "env" (NULL); "Invalid id" (the process), "Unknown graph: <id>";
- * "No environment"; "Invalid id" (the block or port name);
+/* Bind the process port port of process to channel env_index of the
+ * environment port env_port. Refused, in this order: "Invalid field: graph"
+ * / "port" / "env" (NULL); "Invalid id" (the process), "Unknown graph: <id>";
+ * "No environment"; "Invalid id" (the port name);
  * "Unknown environment port: <env>"; "Index required: <env>"
  * (an addressable port, env_index 0), "No index expected: <env>", "Index out
- * of range: <env>[<index>]"; "Unknown node: <block>", "Unknown port:
- * <block>.<port>", "Invalid binding direction" (a sensor onto an output, an
- * actuator onto an input), "Input already connected: <block>.<port>",
+ * of range: <env>[<index>]"; "Unknown port: <port>" (no process port of that
+ * name), "Invalid binding direction" (only a port of the other direction has
+ * it), "Input already connected: <port>",
  * "Actuator already driven: <channel>" (<channel>: "<env>[<index>]", or
  * "<env>" without an index). Reports BINDING_ADDED. */
-enum hakkas_status hakkas_binding_add(Hakkas *h, const char *process, const char *block,
-				      const char *port, const char *env_port, uint32_t env_index,
-				      HakkasMessage *msg);
+enum hakkas_status hakkas_binding_add(Hakkas *h, const char *process, const char *port,
+				      const char *env_port, uint32_t env_index, HakkasMessage *msg);
 
-/* Remove the binding of block.port of process to that channel; refused as
+/* Remove the binding of the process port port of process to that channel; refused as
  * hakkas_binding_add up to the channel, then "No such binding". Reports
  * BINDING_REMOVED; a sensor-bound input then reverts to its default. */
-enum hakkas_status hakkas_binding_remove(Hakkas *h, const char *process, const char *block,
-					 const char *port, const char *env_port,
-					 uint32_t env_index, HakkasMessage *msg);
+enum hakkas_status hakkas_binding_remove(Hakkas *h, const char *process, const char *port,
+					 const char *env_port, uint32_t env_index,
+					 HakkasMessage *msg);
 
 /* The bindings in creation order: their number, and the i-th one (false if
  * i is out of range). Read-only (allowed from an event callback). The

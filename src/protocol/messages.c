@@ -525,11 +525,8 @@ char *proto_msg_env_description(const HakkasEnvDescription *d)
  * addressable port's channel. */
 static cJSON *binding_json(const EnvBinding *b)
 {
-	const PortDescriptor *port = b->actuator ? block_output_port(b->block, b->port)
-						 : block_input_port(b->block, b->port);
 	cJSON *p = object();
-	bool ok = p != NULL && add_str(p, "graph", b->graph->id) &&
-		  add_str(p, "block", b->block->name) && add_str(p, "port", port->name) &&
+	bool ok = p != NULL && add_str(p, "graph", b->graph->id) && add_str(p, "port", b->name) &&
 		  add_str(p, "env", b->env) &&
 		  (b->env_index == 0 || add_num(p, "index", b->env_index));
 	if (!ok) {

@@ -1143,12 +1143,27 @@ h1, h2, h3 {
 }
 
 /* Environment bindings (06 §4.14): markers like a process port's, in the accent's soft color. */
-#hk-editor .hk-port-node.binding {
-  width: 200px;
+/* A bound process port (06 §4.14): its channels at the marker's outer end. */
+#hk-editor .hk-port-binding {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 8px;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--hk-accent);
   background: var(--hk-accent-soft);
-  outline: 2px solid var(--hk-accent);
-  outline-offset: -2px;
+  border-radius: 3px;
+}
+
+#hk-editor .hk-port-node.in .hk-port-binding {
+  margin-right: auto;
+}
+
+#hk-editor .hk-port-node.out .hk-port-binding {
+  margin-left: auto;
 }
 
 #hk-editor .hk-port-connection.binding path {

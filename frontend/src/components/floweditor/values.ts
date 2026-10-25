@@ -3,7 +3,9 @@
 // handlers, so every change here follows an engine event.
 
 import {NodeEditor} from "rete";
-import {Connection, isBindingNode, isValueNode, PrimitiveNode, Schemes, ValueNode} from "@/components/model";
+import {Connection, isPortNode, isValueNode, PrimitiveNode, Schemes, ValueNode, vueModel} from "@/components/model";
+import {bindingsAt} from "@/components/environment";
+import {channelLabel} from "@/components/bindings";
 import {InputSource} from "@/components/initials";
 import type {FlowEditor} from "./viewmodel/default";
 import {Position, valuePosition} from "./value-position";
@@ -80,7 +82,8 @@ export async function renameValues(editor: FlowEditor, block: PrimitiveNode) {
     }
 }
 
-// What feeds each of the block's inputs that has a connection or a fixed value.
+// What feeds each of the block's inputs that has a connection, a fixed value or an environment
+// sensor (through a bound process inport, 06 §4.14).
 export function inputSources(editor: NodeEditor<Schemes>, block: PrimitiveNode): Record<string, InputSource> {
     const inputs: Record<string, InputSource> = {};
     for (const [port, value] of Object.entries(block.initials))
@@ -89,8 +92,11 @@ export function inputSources(editor: NodeEditor<Schemes>, block: PrimitiveNode):
         const source = editor.getNode(c.source);
         if (c.target === block.id && source instanceof PrimitiveNode)
             inputs[c.targetInput] = {kind: "connected", from: source.label + "." + c.sourceOutput};
-        else if (c.target === block.id && isBindingNode(source))
-            inputs[c.targetInput] = {kind: "bound", channel: source.name};
+        else if (c.target === block.id && isPortNode(source)) {
+            const b = bindingsAt(vueModel.currentGraphId.value, "in", source.name)[0];
+            if (b !== undefined)
+                inputs[c.targetInput] = {kind: "bound", channel: channelLabel(b.env, b.index), port: source.name};
+        }
     }
     return inputs;
 }

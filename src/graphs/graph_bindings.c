@@ -1,6 +1,7 @@
 /*
- * Environment bindings (04 §4; plan task 22): a block input fed by a sensor
- * channel, a block output written to an actuator channel. See graphs/graph.h
+ * Environment bindings (04 §4; plan tasks 22, 70): a process inport whose
+ * block input is fed by a sensor channel, a process outport whose block
+ * output is written to an actuator channel. See graphs/graph.h
  * "Environment bindings".
  */
 #include <stdlib.h>
@@ -37,27 +38,27 @@ static bool actuator_driven(const Runtime *rt, uint32_t env_port, uint32_t env_i
 	return false;
 }
 
-/* Resolve spec's block and port: GRAPH_OK with *bp and *port, else the
- * refusal (the order of graph_bind_check, up to the direction). */
+/* Resolve spec's process port — the inport of its name for a sensor, the
+ * outport for an actuator (04 §4: the environment port decides) — to the
+ * block port behind it: GRAPH_OK with *bp and *port, else the refusal (the
+ * order of graph_bind_check, up to the direction). */
 static enum graph_status resolve(const Graph *g, const EnvBindingSpec *spec, Block **bp,
 				 uint32_t *port)
 {
 	if (spec == NULL)
 		return GRAPH_ERR_INVALID_ARGUMENT;
-	if (!graph_id_valid(spec->block) || !graph_id_valid(spec->port))
+	if (!graph_id_valid(spec->port))
 		return GRAPH_ERR_INVALID_ID;
-	Block *b = graph_find_block(g, spec->block);
-	if (b == NULL)
-		return GRAPH_ERR_UNKNOWN_NODE;
-	int32_t in = block_input_index(b, spec->port);
-	int32_t out = block_output_index(b, spec->port);
-	if (in < 0 && out < 0)
-		return GRAPH_ERR_UNKNOWN_PORT;
-	int32_t i = spec->actuator ? out : in;
-	if (i < 0)
-		return GRAPH_ERR_INVALID_BINDING_DIRECTION;
-	*bp = b;
-	*port = (uint32_t)i;
+	enum graph_port_dir dir = spec->actuator ? GRAPH_OUTPORT : GRAPH_INPORT;
+	const GraphPort *p = graph_find_port(g, dir, spec->port);
+	if (p == NULL) {
+		enum graph_port_dir other = spec->actuator ? GRAPH_INPORT : GRAPH_OUTPORT;
+		return graph_find_port(g, other, spec->port) != NULL
+			       ? GRAPH_ERR_INVALID_BINDING_DIRECTION
+			       : GRAPH_ERR_UNKNOWN_PORT;
+	}
+	*bp = p->block;
+	*port = p->port;
 	return GRAPH_OK;
 }
 
@@ -71,7 +72,7 @@ enum graph_status graph_bind_check(const Graph *g, const EnvBindingSpec *spec)
 	if (!spec->actuator) {
 		/* No fan-in (01 §2.2): the channel is the input's one source. */
 		if (b->inputs[port].source != INPUT_SOURCE_NONE ||
-		    graph_input_retained(g, b, spec->port))
+		    graph_input_retained(g, b, block_input_port(b, port)->name))
 			return GRAPH_ERR_INPUT_CONNECTED;
 	} else if (actuator_driven(g->rt, spec->env_port, spec->env_index)) {
 		return GRAPH_ERR_ACTUATOR_DRIVEN; /* one driver per channel (04 §4) */
@@ -91,13 +92,16 @@ enum graph_status graph_bind(Graph *g, const EnvBindingSpec *spec, const Linkabl
 	if (spec->env == NULL)
 		return GRAPH_ERR_INVALID_ARGUMENT;
 	char *env = graph_str_dup(spec->env);
-	if (env == NULL || !bindings_reserve(rt)) {
+	char *name = graph_str_dup(spec->port);
+	if (env == NULL || name == NULL || !bindings_reserve(rt)) {
 		free(env);
+		free(name);
 		return GRAPH_ERR_NO_MEMORY;
 	}
 
 	EnvBinding *eb = &rt->bindings[rt->binding_count++];
-	*eb = (EnvBinding){g, b, port, spec->actuator, env, spec->env_port, spec->env_index, NULL};
+	*eb = (EnvBinding){g,    name,		 b, port, spec->actuator,
+			   env,	 spec->env_port, spec->env_index, NULL};
 	if (spec->actuator) {
 		eb->out = block_links_output(b, port); /* a composite's inner output (03 §5) */
 		eb->out->actuators++;
@@ -140,24 +144,21 @@ static void binding_remove_at(Runtime *rt, uint32_t i, bool report, bool revert)
 	if (revert && !eb.actuator)
 		input_revert(eb.block, eb.port);
 	free(eb.env);
+	free(eb.name);
 }
 
 enum graph_status graph_unbind(Graph *g, const EnvBindingSpec *spec)
 {
 	if (spec == NULL)
 		return GRAPH_ERR_INVALID_ARGUMENT;
-	if (!graph_id_valid(spec->block) || !graph_id_valid(spec->port))
+	if (!graph_id_valid(spec->port))
 		return GRAPH_ERR_INVALID_ID;
 	Runtime *rt = g->rt;
 	for (uint32_t i = 0; i < rt->binding_count; i++) {
 		const EnvBinding *eb = &rt->bindings[i];
 		if (eb->graph != g || eb->actuator != spec->actuator ||
 		    eb->env_port != spec->env_port || eb->env_index != spec->env_index ||
-		    strcmp(eb->block->name, spec->block) != 0)
-			continue;
-		const PortDescriptor *p = eb->actuator ? block_output_port(eb->block, eb->port)
-						       : block_input_port(eb->block, eb->port);
-		if (strcmp(p->name, spec->port) != 0)
+		    strcmp(eb->name, spec->port) != 0)
 			continue;
 		/* 01 §2.2 Severing: the input falls to its default; an actuator
 		 * keeps its last value (03 §4). */
@@ -167,17 +168,22 @@ enum graph_status graph_unbind(Graph *g, const EnvBindingSpec *spec)
 	return GRAPH_ERR_NO_SUCH_BINDING;
 }
 
-/* Remove every binding of g (report: with events) whose block is b, or every
- * one of g for b NULL; sensor bindings only, actuator bindings only, or both
- * (which: 0 sensors, 1 actuators, 2 both). Nothing reverts. */
-static void remove_matching(Graph *g, const Block *b, int which, bool report)
+/* Whether eb binds g's process port name of direction dir. */
+static bool binds_port(const EnvBinding *eb, const Graph *g, enum graph_port_dir dir,
+		       const char *name)
+{
+	return eb->graph == g && eb->actuator == (dir == GRAPH_OUTPORT) &&
+	       strcmp(eb->name, name) == 0;
+}
+
+/* Remove every binding of g (report: with events), in creation order.
+ * Nothing reverts. */
+static void remove_all(Graph *g, bool report)
 {
 	Runtime *rt = g->rt;
 	uint32_t i = 0;
 	while (i < rt->binding_count) {
-		const EnvBinding *eb = &rt->bindings[i];
-		bool kind = which == 2 || (which == 1) == eb->actuator;
-		if (eb->graph == g && (b == NULL || eb->block == b) && kind)
+		if (rt->bindings[i].graph == g)
 			binding_remove_at(rt, i, report, false);
 		else
 			i++;
@@ -186,29 +192,57 @@ static void remove_matching(Graph *g, const Block *b, int which, bool report)
 
 void graph_bindings_remove_graph(Graph *g)
 {
-	remove_matching(g, NULL, 2, true);
+	remove_all(g, true);
 }
 
 void graph_bindings_drop_graph(Graph *g)
 {
-	remove_matching(g, NULL, 2, false);
+	remove_all(g, false);
 }
 
-void graph_bindings_remove_input(Graph *g, const Block *b, uint32_t input)
+void graph_bindings_remove_port(Graph *g, enum graph_port_dir dir, const char *name,
+				bool revert)
 {
 	Runtime *rt = g->rt;
-	for (uint32_t i = 0; i < rt->binding_count; i++) {
-		const EnvBinding *eb = &rt->bindings[i];
-		if (!eb->actuator && eb->block == b && eb->port == input) {
-			binding_remove_at(rt, i, true, false);
-			return;
-		}
+	uint32_t i = 0;
+	while (i < rt->binding_count) {
+		if (binds_port(&rt->bindings[i], g, dir, name))
+			binding_remove_at(rt, i, true, revert);
+		else
+			i++;
 	}
 }
 
-void graph_bindings_remove_outputs(Graph *g, const Block *b)
+bool graph_bindings_rename_port(Graph *g, enum graph_port_dir dir, const char *from,
+				const char *to)
 {
-	remove_matching(g, b, 1, true);
+	Runtime *rt = g->rt;
+	uint32_t n = 0;
+	for (uint32_t i = 0; i < rt->binding_count; i++)
+		n += binds_port(&rt->bindings[i], g, dir, from);
+	if (n == 0)
+		return true;
+	/* Every new name first, so a failure changes nothing. */
+	char **names = calloc(n, sizeof(*names));
+	bool ok = names != NULL;
+	for (uint32_t k = 0; ok && k < n; k++)
+		ok = (names[k] = graph_str_dup(to)) != NULL;
+	if (!ok) {
+		for (uint32_t k = 0; names != NULL && k < n; k++)
+			free(names[k]);
+		free(names);
+		return false;
+	}
+	uint32_t k = 0;
+	for (uint32_t i = 0; i < rt->binding_count; i++) {
+		EnvBinding *eb = &rt->bindings[i];
+		if (binds_port(eb, g, dir, from)) {
+			free(eb->name);
+			eb->name = names[k++];
+		}
+	}
+	free(names);
+	return true;
 }
 
 void runtime_env_deliver(Runtime *rt, uint32_t env_port, uint32_t env_index,

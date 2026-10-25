@@ -188,25 +188,9 @@ export function isPortNode(node: Node | undefined): node is PortNode {
 // An environment binding (02 §3.7, 06 §4.14): a marker like a process port's, at the process's
 // edge, connected to the bound block port — a sensor's at the inputs' side, an actuator's at the
 // outputs'. Its name is the channel ("ain[2]").
-export class BindingNode extends PortNode {
-    readonly env: string;
-    readonly index?: number;
-
-    constructor(direction: "in" | "out", block: PrimitiveNode, port: string, env: string, index?: number) {
-        super(direction, index !== undefined && index > 0 ? `${env}[${index}]` : env, block, port);
-        this.env = env;
-        this.index = index;
-        this.width = 200;
-    }
-}
-
-export function isBindingNode(node: Node | undefined): node is BindingNode {
-    return node instanceof BindingNode;
-}
-
-// A process port's marker, not a binding's.
+// A process port's marker (its environment bindings are shown on it, 06 §4.14).
 export function isProcessPortNode(node: Node | undefined): node is PortNode {
-    return node instanceof PortNode && !(node instanceof BindingNode);
+    return node instanceof PortNode;
 }
 
 export const vueModel: {

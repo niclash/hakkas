@@ -1,8 +1,10 @@
 <template>
-  <!-- A connection, or a value node's line (06 §4.3), with its input's live value (06 §4.7). -->
-  <svg :class="kind === 'value' ? 'hk-value-connection' : kind === 'connection' ? 'hk-connection' : 'hk-port-connection ' + kind"
-       :data-testid="kind === 'value' ? 'value-connection' : kind === 'port' ? 'port-connection'
-           : kind === 'binding' ? 'binding-connection' : 'connection'">
+  <!-- A connection, or a value node's line (06 §4.3), with its input's live value (06 §4.7); or a
+       process port's line, drawn as a binding's when its port is bound (06 §4.14). -->
+  <svg :class="kind === 'value' ? 'hk-value-connection' : kind === 'connection' ? 'hk-connection'
+           : 'hk-port-connection' + (bound ? ' binding' : '')"
+       :data-testid="kind === 'value' ? 'value-connection' : kind === 'port' ? 'port-connection' : 'connection'"
+       :data-bound="kind === 'port' ? String(bound) : undefined">
     <path ref="line" :d="path"/>
     <foreignObject v-if="value !== undefined" :x="middle.x - 140" :y="middle.y - 24" width="280" height="48">
       <div class="hk-live" :class="{stale: value.stale}" data-testid="live-value" :data-target="target"
@@ -15,7 +17,8 @@
 
 <script lang="ts" setup>
 import {computed, nextTick, ref, watch} from "vue";
-import {isBindingNode, isPortNode, isValueNode, PrimitiveNode} from "@/components/model";
+import {isPortNode, isValueNode, PrimitiveNode, vueModel} from "@/components/model";
+import {bindingsAt} from "@/components/environment";
 import {editor} from "./viewmodel/default";
 import {live, liveValue} from "./live";
 import {formatLive} from "@/components/watches";
@@ -25,15 +28,17 @@ const props = defineProps<{
   start?: unknown, end?: unknown, path: string
 }>();
 
-// A connection, a value node's line (06 §4.3), a process port's line (06 §4.8) or a binding's
-// (06 §4.14).
+// A connection, a value node's line (06 §4.3) or a process port's line (06 §4.8).
 const kind = computed(() => {
   const source = editor.getNode(props.data.source), target = editor.getNode(props.data.target);
   if (isValueNode(source))
     return "value";
-  if (isBindingNode(source) || isBindingNode(target))
-    return "binding";
   return isPortNode(source) || isPortNode(target) ? "port" : "connection";
+});
+// A port's line whose port has an environment binding (06 §4.14).
+const bound = computed(() => {
+  const marker = [editor.getNode(props.data.source), editor.getNode(props.data.target)].find(isPortNode);
+  return marker !== undefined && bindingsAt(vueModel.currentGraphId.value, marker.direction, marker.name).length > 0;
 });
 const block = computed(() => {
   void live.version;
@@ -47,7 +52,7 @@ const target = computed(() => {
 const value = computed(() => {
   void live.version;
   // A port's line shows no value: the input's own line does.
-  return block.value && kind.value !== "port" && kind.value !== "binding" ? liveValue({node: block.value.label, port: props.data.targetInput}) : undefined;
+  return block.value && kind.value !== "port" ? liveValue({node: block.value.label, port: props.data.targetInput}) : undefined;
 });
 const text = computed(() =>
     value.value && block.value ? formatLive(block.value.inputType(props.data.targetInput), value.value.data) : "");

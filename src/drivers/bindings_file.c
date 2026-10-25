@@ -83,15 +83,19 @@ static const char *name_member(Parser *p, const cJSON *obj, const char *key, siz
 
 static void parse_entry(Parser *p, const cJSON *e, size_t i, EnvBindingRequest *out)
 {
-	static const char *const known[] = {"block", "port", "env", "index", NULL};
+	static const char *const known[] = {"port", "env", "index", NULL};
 	if (!cJSON_IsObject(e)) {
 		fail(p, "bindings[%zu]: expected an object", i);
+		return;
+	}
+	/* The earlier form bound block ports; it is not read (plan task 70). */
+	if (cJSON_GetObjectItemCaseSensitive(e, "block") != NULL) {
+		fail(p, "bindings[%zu]: block: block ports are not bound; bind a process port", i);
 		return;
 	}
 	char where[32];
 	snprintf(where, sizeof(where), "bindings[%zu]", i);
 	unknown_members(p, e, where, known);
-	out->block = name_member(p, e, "block", i);
 	out->port = name_member(p, e, "port", i);
 	out->env = name_member(p, e, "env", i);
 	const cJSON *index = cJSON_GetObjectItemCaseSensitive(e, "index");
@@ -167,7 +171,6 @@ void bindings_file_free(BindingsFile *f)
 {
 	free(f->environment);
 	for (size_t i = 0; i < f->count; i++) {
-		free_str(f->entries[i].block);
 		free_str(f->entries[i].port);
 		free_str(f->entries[i].env);
 	}

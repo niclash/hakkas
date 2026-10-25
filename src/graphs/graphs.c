@@ -249,7 +249,10 @@ size_t graph_refusal_message(enum graph_status st, const GraphRefusal *ctx, char
 		n = snprintf(buf, size, "%s", "Invalid edge direction");
 		break;
 	case GRAPH_ERR_INPUT_CONNECTED:
-		n = snprintf(buf, size, "Input already connected: %s.%s", node, port);
+		if (ctx->node != NULL)
+			n = snprintf(buf, size, "Input already connected: %s.%s", node, port);
+		else /* a process port (an environment binding, 04 §4) */
+			n = snprintf(buf, size, "Input already connected: %s", port);
 		break;
 	case GRAPH_ERR_NO_SUCH_CONNECTION:
 		n = snprintf(buf, size, "%s", "No such connection");

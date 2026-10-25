@@ -937,6 +937,33 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   `env_description_equal`; the tests use the new type strings (`colibri_8`, `colibri_ethernet`,
   `carrier`, `colibri_aiv`). The panel shows the name, else the type, with the type as the
   tooltip when a name is shown (06 §4.14); the browser test checks both.
+- [x] **70. Bindings name process ports** (decided with the user 2026-10-25; 04 §4, 02 §3.7,
+  06 §4.14): a binding connects a process's **inport** (to a sensor) or **outport** (to an
+  actuator) to an environment channel, never a block port, so a process shows by its ports what
+  it needs from outside (the environment or other processes). Decided: the environment port
+  decides the direction (an inport and an outport may share a name); renaming a bound process
+  port keeps its bindings (unlike a link); a bound inport counts as its input's one source (no
+  link besides), a bound outport may also feed links; bindings files of the old form (`block`)
+  are malformed and not applied; `examples/bindings-emulator.json` rewritten. Engine: the model
+  (`graph_bindings.c`, ports' removal and renaming), the bindings file, the C API
+  (`hakkas_binding_add(h, process, port, env, index)`), `environment:bind`/`unbind`/`bindings`
+  without `block`. Frontend: *Bind to environment…* and *Unbind* on the process port markers;
+  on a block port a shortcut that exposes it as a process port (a name asked, prefilled with the
+  block port's) and binds that, one undo step, the port removed again if the bind is refused;
+  the marker shows its binding; the Environment panel and the mapping dialog name process ports.
+  Before the emulator's task E13.
+  *Done* 2026-10-25: the engine's bindings name a process port (`EnvBinding.name`, resolved to
+  the block port behind it; removed with the port, before its event, the input reverting; renamed
+  with it, no event); `bindings[<i>]: block: block ports are not bound; bind a process port` for
+  the old form; the C API, `environment:*` and the saved files without `block`; the C tests on
+  process ports (rename and removal of a bound port, a shared name in both directions, a bound
+  outport feeding a link). Frontend: no more binding markers — a process port's marker shows its
+  channels (`⇄ slot1-ai[2]`, `+n` for more actuators), its line dashed; menus with one *Unbind*
+  per channel; the bind dialog with the expose-first shortcut (`history.cancelGroup` when it comes
+  to nothing); undo of a removed port brings its bindings back; unit and browser tests rewritten
+  (a refused binding taking back its port, a renamed port keeping its binding, the old file form
+  refused). The emulator's hakkas test binds process ports. The browser test *values, renames and
+  pastes are undone* was already flaky before this task (2 of 6 runs without it).
 - [ ] **65. The Colibri emulator** (`emulators/colibri/`): its own plan,
   `emulators/colibri/docs/plan.md` (tasks E0–E16, with the questions still to decide).
 

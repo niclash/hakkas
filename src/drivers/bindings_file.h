@@ -1,11 +1,11 @@
 /*
  * The bindings file (04 §4; decided, environment SPI design, step 3): the
- * per-process, per-environment file that binds a process's block ports to
- * the environment's channels, paired with its process in the process list
- * (05 §1.2 "bindings"):
+ * per-process, per-environment file that binds a process's ports (its
+ * inports and outports, plan task 70) to the environment's channels, saved
+ * with its process (05 §2.3):
  *
  *	{"environment": "<name>",
- *	 "bindings": [{"block": "<block>", "port": "<port>",
+ *	 "bindings": [{"port": "<process port>",
  *		       "env": "<environment port id>", "index"?: <1..count>}, ...]}
  *
  * This module parses the text; drivers/environment.h applies the entries
@@ -14,13 +14,14 @@
  *
  * Validation (decided, plan task 22): one JSON object (whitespace around it
  * only) with a non-empty string "environment" and an array "bindings"
- * (empty allowed) of objects, each with non-empty strings "block", "port"
- * and "env" and an optional integer "index" of at least 1 (a null "index"
- * is absent). Whether the names resolve is checked when the bindings are
- * applied: there "index" must be present exactly for an addressable
- * environment port. A member the format does not know, at the top level or
- * in an entry, is logged as a warning and ignored (forward compatibility,
- * like the process list). Anything else makes the file malformed.
+ * (empty allowed) of objects, each with non-empty strings "port" and "env"
+ * and an optional integer "index" of at least 1 (a null "index" is absent).
+ * An entry with a "block" member is the earlier form, which bound block
+ * ports: it makes the file malformed (plan task 70). Whether the names
+ * resolve is checked when the bindings are applied: there "index" must be
+ * present exactly for an addressable environment port. A member the format
+ * does not know, at the top level or in an entry, is logged as a warning and
+ * ignored (forward compatibility, like the process list). Anything else makes the file malformed.
  *
  * Naming: functions are prefixed bindings_file_; the type is BindingsFile.
  *

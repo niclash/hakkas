@@ -70,19 +70,24 @@ void graph_links_remove_port(Graph *g, enum graph_port_dir dir, const char *name
  * other graph's inputs keep their values). Part of graph_destroy. */
 void graph_links_drop_graph(Graph *g);
 
-/* ---- graph_bindings.c: environment bindings (plan task 22) ------------- */
+/* ---- graph_bindings.c: environment bindings (plan tasks 22, 70) -------- */
 
 /* Drop every binding of g, reporting nothing and reverting nothing. Part of
  * graph_destroy. */
 void graph_bindings_drop_graph(Graph *g);
 
-/* Remove the sensor binding of input of b, reporting BINDING_REMOVED (no
- * revert: the block is being removed). Part of graph_remove_block. */
-void graph_bindings_remove_input(Graph *g, const Block *b, uint32_t input);
+/* Remove the bindings of g's process port name of direction dir, in creation
+ * order, reporting BINDING_REMOVED for each; if revert, a sensor-bound input
+ * then reverts to its default (not when the port goes with its block). Part
+ * of removing a graph port, before its event. */
+void graph_bindings_remove_port(Graph *g, enum graph_port_dir dir, const char *name,
+				bool revert);
 
-/* Remove every actuator binding of b's outputs, in creation order,
- * reporting BINDING_REMOVED for each. Part of graph_remove_block. */
-void graph_bindings_remove_outputs(Graph *g, const Block *b);
+/* The bindings of g's process port from (direction dir) follow its rename to
+ * to, without an event (04 §4). False (nothing changed): out of memory. Part
+ * of renaming a graph port, before its event. */
+bool graph_bindings_rename_port(Graph *g, enum graph_port_dir dir, const char *from,
+				const char *to);
 
 /* Write value, a push of output o, to every actuator channel bound to o
  * (the runtime's env_write hook). */

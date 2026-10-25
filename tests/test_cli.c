@@ -509,6 +509,13 @@ static void test_run(void)
 
 #define G_STARTED                                                                                  \
 	"{\"id\":\"g1\",\"started\":true,\"blocks\":{\"a\":{\"component\":\"math/Add2\"}}}"
+/* G_STARTED with process ports to bind (04 §4): inports x (a.in2) and y
+ * (a.in1), outport sum (a.out). */
+#define G_PORTS                                                                                    \
+	"{\"id\":\"g1\",\"started\":true,\"blocks\":{\"a\":{\"component\":\"math/Add2\"}},"  \
+	"\"inports\":[{\"name\":\"x\",\"block\":\"a\",\"port\":\"in2\"},{\"name\":\"y\","     \
+	"\"block\":\"a\",\"port\":\"in1\"}],\"outports\":[{\"name\":\"sum\",\"block\":\"a\","  \
+	"\"port\":\"out\"}]}"
 #define G_STOPPED "{\"id\":\"g2\",\"started\":false}"
 #define G_NOFLAG "{\"id\":\"g3\"}"
 /* Two processes to link: l1's outport out (a.out, a.in1 = 2) to l2's inport
@@ -705,13 +712,13 @@ static void test_run_bindings(void)
 	char text[256];
 	snprintf(text, sizeof(text), "{\"environment\": {\"socket\": \"%s\"}}", sock);
 	put(join(conf, "hakkas.json"), text);
-	put(join(host_base, "graphs/g1.json"), G_STARTED);
+	put(join(host_base, "graphs/g1.json"), G_PORTS);
 	char path[PAL_PATH_MAX]; /* join's buffers rotate */
 	snprintf(path, sizeof(path), "%s", join(host_base, "bindings/g1.json"));
 	put(path, "{\"environment\":\"sim\",\"bindings\":["
-		  "{\"block\":\"a\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1},"
-		  "{\"block\":\"a\",\"port\":\"out\",\"env\":\"aout\"},"
-		  "{\"block\":\"a\",\"port\":\"in1\",\"env\":\"ain\",\"index\":3}]}");
+		  "{\"port\":\"x\",\"env\":\"ain\",\"index\":1},"
+		  "{\"port\":\"sum\",\"env\":\"aout\"},"
+		  "{\"port\":\"y\",\"env\":\"ain\",\"index\":3}]}");
 	const char *saved_conf = host_conf;
 	host_conf = conf;
 	CHECK(run_host() == CLI_EXIT_OK);
@@ -732,10 +739,10 @@ static void test_run_bindings(void)
 
 	/* A graph-side error skips its entry; the process still starts. */
 	put(path, "{\"environment\":\"sim\",\"bindings\":["
-		  "{\"block\":\"zz\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1},"
-		  "{\"block\":\"a\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1}]}");
+		  "{\"port\":\"zz\",\"env\":\"ain\",\"index\":1},"
+		  "{\"port\":\"x\",\"env\":\"ain\",\"index\":1}]}");
 	CHECK(run_host() == CLI_EXIT_OK);
-	snprintf(want, sizeof(want), "warn %s: bindings[0]: Unknown node: zz: skipped\n", path);
+	snprintf(want, sizeof(want), "warn %s: bindings[0]: Unknown port: zz: skipped\n", path);
 	CHECK(logged(want));
 	snprintf(want, sizeof(want), "info process g1: 1 binding applied from %s, 1 skipped\n",
 		 path);

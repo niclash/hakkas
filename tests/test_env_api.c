@@ -113,9 +113,24 @@ static void on_event(void *ctx, const HakkasEvent *ev)
 	if (ev->type != HAKKAS_EVENT_BINDING_ADDED && ev->type != HAKKAS_EVENT_BINDING_REMOVED)
 		return;
 	size_t len = strlen(bind_log);
-	snprintf(bind_log + len, sizeof(bind_log) - len, "%c%s:%s.%s%s%s[%u];",
-		 ev->type == HAKKAS_EVENT_BINDING_ADDED ? '+' : '-', ev->process, ev->block,
-		 ev->port, ev->actuator ? ">" : "<", ev->env_port, (unsigned)ev->env_index);
+	snprintf(bind_log + len, sizeof(bind_log) - len, "%c%s:%s%s%s[%u];",
+		 ev->type == HAKKAS_EVENT_BINDING_ADDED ? '+' : '-', ev->process, ev->name,
+		 ev->actuator ? ">" : "<", ev->env_port, (unsigned)ev->env_index);
+}
+
+/* Block's ports in1, in2 and out exposed as process ports "<block>.in1", ...
+ * (bindings name process ports, 04 §4). */
+static void expose(const char *process, const char *block)
+{
+	char name[32], port[8];
+	for (int i = 1; i <= 2; i++) {
+		snprintf(port, sizeof(port), "in%d", i);
+		snprintf(name, sizeof(name), "%s.%s", block, port);
+		CHECK(hakkas_port_add(h, process, HAKKAS_INPORT, name, block, port, NULL) ==
+		      HAKKAS_OK);
+	}
+	snprintf(name, sizeof(name), "%s.out", block);
+	CHECK(hakkas_port_add(h, process, HAKKAS_OUTPORT, name, block, "out", NULL) == HAKKAS_OK);
 }
 
 /* ---- Startup and shutdown ------------------------------------------------------- */
@@ -184,10 +199,12 @@ static void test_sensor_thread(void)
 	CHECK(hakkas_block_add(h, "p", "a", "math/Add2", NULL, NULL) == HAKKAS_OK);
 	CHECK(hakkas_block_add(h, "p", "b", "compare/GreaterEqual", NULL, NULL) == HAKKAS_OK);
 	CHECK(hakkas_connection_add(h, "p", "a", "out", "b", "in1", NULL, NULL) == HAKKAS_OK);
+	expose("p", "a");
+	expose("p", "b");
 	HakkasValue limit = linkable_from_f64(THREAD_VALUES);
 	CHECK(hakkas_initial_add(h, "p", "b", "in2", &limit, NULL) == HAKKAS_OK);
-	CHECK(hakkas_binding_add(h, "p", "a", "in1", "ain", 3, NULL) == HAKKAS_OK);
-	CHECK(hakkas_binding_add(h, "p", "b", "out", "relay", 2, NULL) == HAKKAS_OK);
+	CHECK(hakkas_binding_add(h, "p", "a.in1", "ain", 3, NULL) == HAKKAS_OK);
+	CHECK(hakkas_binding_add(h, "p", "b.out", "relay", 2, NULL) == HAKKAS_OK);
 	CHECK_STREQ(bind_log, "+p:a.in1<ain[3];+p:b.out>relay[2];");
 	CHECK(hakkas_process_start(h, "p", NULL) == HAKKAS_OK);
 	CHECK_STREQ(fake.writes, "relay[2]=false;");
@@ -262,7 +279,7 @@ static void test_wall_clock(void)
 	HakkasMessage msg;
 	CHECK(hakkas_bindings_apply(h, "w", path, NULL, NULL, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "No environment");
-	CHECK(hakkas_binding_add(h, "w", "x", "in1", "ain", 1, &msg) == HAKKAS_REFUSED);
+	CHECK(hakkas_binding_add(h, "w", "x.in1", "ain", 1, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "No environment");
 	e2e_stop();
 }
@@ -277,13 +294,15 @@ static void test_bindings(void)
 	CHECK(hakkas_process_create(h, "p", "P", NULL, NULL, NULL, NULL) == HAKKAS_OK);
 	CHECK(hakkas_block_add(h, "p", "a", "math/Add2", NULL, NULL) == HAKKAS_OK);
 	CHECK(hakkas_block_add(h, "p", "b", "math/Add2", NULL, NULL) == HAKKAS_OK);
+	expose("p", "a");
+	expose("p", "b");
 
 	const char *path = e2e_path(e2e_root, "b.json");
 	e2e_put(path, "{\"environment\": \"fake\", \"bindings\": ["
-		      "{\"block\": \"a\", \"port\": \"in1\", \"env\": \"temp\"},"
-		      "{\"block\": \"a\", \"port\": \"in2\", \"env\": \"ain\", \"index\": 7},"
-		      "{\"block\": \"a\", \"port\": \"out\", \"env\": \"relay\", \"index\": 1},"
-		      "{\"block\": \"b\", \"port\": \"in1\", \"env\": \"pressure\"}]}");
+		      "{\"port\": \"a.in1\", \"env\": \"temp\"},"
+		      "{\"port\": \"a.in2\", \"env\": \"ain\", \"index\": 7},"
+		      "{\"port\": \"a.out\", \"env\": \"relay\", \"index\": 1},"
+		      "{\"port\": \"b.in1\", \"env\": \"pressure\"}]}");
 	size_t applied = 0, skipped = 0;
 	HakkasMessage msg;
 	e2e_logs_clear();
@@ -298,8 +317,7 @@ static void test_bindings(void)
 	HakkasBinding b;
 	CHECK(hakkas_binding_at(h, 1, &b));
 	CHECK_STREQ(b.process, "p");
-	CHECK_STREQ(b.block, "a");
-	CHECK_STREQ(b.port, "out");
+	CHECK_STREQ(b.port, "a.out");
 	CHECK_STREQ(b.env_port, "relay");
 	CHECK(b.env_index == 1 && b.actuator);
 	CHECK(!hakkas_binding_at(h, 2, &b) && b.process == NULL);
@@ -329,13 +347,18 @@ static void test_bindings(void)
 	CHECK(hakkas_bindings_apply(h, "p", "", NULL, NULL, &msg) == HAKKAS_ERR_INVALID);
 	CHECK(hakkas_bindings_apply(h, "p", e2e_path(e2e_root, "none.json"), NULL, NULL, &msg) ==
 	      HAKKAS_ERR_NOT_FOUND);
-	e2e_put(path, "{\"environment\": \"fake\", \"bindings\": [{\"block\": \"b\"}]}");
+	e2e_put(path, "{\"environment\": \"fake\", \"bindings\": [{\"env\": \"temp\"}]}");
 	CHECK(hakkas_bindings_apply(h, "p", path, NULL, NULL, &msg) == HAKKAS_ERR_MALFORMED);
 	CHECK_STREQ(msg.text, "bindings[0]: port: expected a non-empty string");
+	/* The earlier form, block ports, is not read (plan task 70). */
+	e2e_put(path, "{\"environment\": \"fake\", \"bindings\": [{\"block\": \"a\","
+		      " \"port\": \"in1\", \"env\": \"temp\"}]}");
+	CHECK(hakkas_bindings_apply(h, "p", path, NULL, NULL, &msg) == HAKKAS_ERR_MALFORMED);
+	CHECK_STREQ(msg.text, "bindings[0]: block: block ports are not bound; bind a process port");
 	CHECK_STREQ(bind_log, "");
 	/* Another environment's file: a warning, then applied (04 §4). */
 	e2e_put(path, "{\"environment\": \"colibri\", \"bindings\": ["
-		      "{\"block\": \"b\", \"port\": \"in2\", \"env\": \"temp\"}]}");
+		      "{\"port\": \"b.in2\", \"env\": \"temp\"}]}");
 	e2e_logs_clear();
 	CHECK(hakkas_bindings_apply(h, "p", path, &applied, &skipped, &msg) == HAKKAS_OK);
 	CHECK(applied == 1 && skipped == 0);
@@ -343,35 +366,35 @@ static void test_bindings(void)
 	      NULL);
 	CHECK_STREQ(bind_log, "+p:b.in2<temp[0];");
 	bind_log[0] = '\0';
-	CHECK(hakkas_binding_remove(h, "p", "b", "in2", "temp", 0, &msg) == HAKKAS_OK);
+	CHECK(hakkas_binding_remove(h, "p", "b.in2", "temp", 0, &msg) == HAKKAS_OK);
 	bind_log[0] = '\0';
 
 	/* Single bindings: the argument checks, then the environment's. */
-	CHECK(hakkas_binding_add(h, NULL, "b", "in1", "ain", 1, &msg) == HAKKAS_REFUSED);
+	CHECK(hakkas_binding_add(h, NULL, "b.in1", "ain", 1, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "Invalid field: graph");
-	CHECK(hakkas_binding_add(h, "p", NULL, "in1", "ain", 1, &msg) == HAKKAS_REFUSED);
-	CHECK_STREQ(msg.text, "Invalid field: id");
-	CHECK(hakkas_binding_add(h, "p", "b", NULL, "ain", 1, &msg) == HAKKAS_REFUSED);
+	CHECK(hakkas_binding_add(h, "p", NULL, "ain", 1, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "Invalid field: port");
-	CHECK(hakkas_binding_add(h, "p", "b", "in1", NULL, 1, &msg) == HAKKAS_REFUSED);
+	CHECK(hakkas_binding_add(h, "p", "b.in1", NULL, 1, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "Invalid field: env");
-	CHECK(hakkas_binding_add(h, "q", "b", "in1", "ain", 1, &msg) == HAKKAS_REFUSED);
+	CHECK(hakkas_binding_add(h, "p", "b", "ain", 1, &msg) == HAKKAS_REFUSED);
+	CHECK_STREQ(msg.text, "Unknown port: b");
+	CHECK(hakkas_binding_add(h, "q", "b.in1", "ain", 1, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "Unknown graph: q");
-	CHECK(hakkas_binding_add(h, "p", "b", "in1", "ain", 0, &msg) == HAKKAS_REFUSED);
+	CHECK(hakkas_binding_add(h, "p", "b.in1", "ain", 0, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "Index required: ain");
-	CHECK(hakkas_binding_add(h, "p", "b", "out", "relay", 1, &msg) == HAKKAS_REFUSED);
+	CHECK(hakkas_binding_add(h, "p", "b.out", "relay", 1, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "Actuator already driven: relay[1]");
 	CHECK_STREQ(bind_log, "");
-	CHECK(hakkas_binding_add(h, "p", "b", "in1", "ain", 1, &msg) == HAKKAS_OK);
+	CHECK(hakkas_binding_add(h, "p", "b.in1", "ain", 1, &msg) == HAKKAS_OK);
 	CHECK_STREQ(bind_log, "+p:b.in1<ain[1];");
 
 	/* Removing: a sensor-bound input reverts to its default. */
 	bind_log[0] = '\0';
 	fake.writes[0] = '\0';
-	CHECK(hakkas_binding_remove(h, "p", "a", "in1", "temp", 0, &msg) == HAKKAS_OK);
+	CHECK(hakkas_binding_remove(h, "p", "a.in1", "temp", 0, &msg) == HAKKAS_OK);
 	CHECK_STREQ(bind_log, "-p:a.in1<temp[0];");
 	CHECK_STREQ(fake.writes, "relay[1]=false;"); /* a.out = 0 */
-	CHECK(hakkas_binding_remove(h, "p", "a", "in1", "temp", 0, &msg) == HAKKAS_REFUSED);
+	CHECK(hakkas_binding_remove(h, "p", "a.in1", "temp", 0, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "No such binding");
 	/* Saved with the process (plan task 62): its bindings file, in creation
 	 * order; a binding change makes the process unsaved; deleting the
@@ -382,15 +405,15 @@ static void test_bindings(void)
 	char *text;
 	size_t len;
 	CHECK(graph_files_read(saved, 4096, &text, &len) == GRAPH_FILES_OK);
-	CHECK_STREQ(text, "{\"environment\":\"fake\",\"bindings\":[{\"block\":\"a\","
-			  "\"port\":\"out\",\"env\":\"relay\",\"index\":1},{\"block\":\"b\","
-			  "\"port\":\"in1\",\"env\":\"ain\",\"index\":1}]}");
+	CHECK_STREQ(text, "{\"environment\":\"fake\",\"bindings\":[{\"port\":\"a.out\","
+			  "\"env\":\"relay\",\"index\":1},{\"port\":\"b.in1\",\"env\":\"ain\","
+			  "\"index\":1}]}");
 	free(text);
 	HakkasProcessStatus st;
 	CHECK(hakkas_process_status(h, "p", &st, NULL) == HAKKAS_OK && !st.unsaved);
-	CHECK(hakkas_binding_add(h, "p", "a", "in1", "temp", 0, &msg) == HAKKAS_OK);
+	CHECK(hakkas_binding_add(h, "p", "a.in1", "temp", 0, &msg) == HAKKAS_OK);
 	CHECK(hakkas_process_status(h, "p", &st, NULL) == HAKKAS_OK && st.unsaved);
-	CHECK(hakkas_binding_remove(h, "p", "a", "in1", "temp", 0, &msg) == HAKKAS_OK);
+	CHECK(hakkas_binding_remove(h, "p", "a.in1", "temp", 0, &msg) == HAKKAS_OK);
 	/* A deleted process's bindings go before its deletion. */
 	bind_log[0] = '\0';
 	CHECK(hakkas_process_delete(h, "p", "P", NULL) == HAKKAS_OK);
@@ -426,6 +449,7 @@ static void test_wire(void)
 	CHECK(start_with_env());
 	CHECK(hakkas_process_create(h, "p", "P", NULL, NULL, NULL, NULL) == HAKKAS_OK);
 	CHECK(hakkas_block_add(h, "p", "a", "math/Add2", NULL, NULL) == HAKKAS_OK);
+	expose("p", "a");
 	E2eClient ed, other, viewer;
 	CHECK(e2e_connect(&ed) && e2e_login(&ed, "alice"));
 	CHECK(e2e_connect(&other) && e2e_login(&other, "oscar"));
@@ -446,17 +470,17 @@ static void test_wire(void)
 	e2e_send(&other, "graph", "connect", "{'id':'p'}");
 	drain(&other);
 	e2e_send(&ed, "environment", "bind",
-		 "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+		 "{'graph':'p','port':'a.in1','env':'ain','index':2}");
 	EXPECT(&ed, "environment", "bind",
-	       "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	       "{'graph':'p','port':'a.in1','env':'ain','index':2}");
 	EXPECT(&other, "environment", "bind",
-	       "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	       "{'graph':'p','port':'a.in1','env':'ain','index':2}");
 	drain(&ed); /* its network:status: unsaved */
 	drain(&other);
-	e2e_send(&ed, "environment", "bind", "{'graph':'p','block':'a','port':'out','env':'relay',"
+	e2e_send(&ed, "environment", "bind", "{'graph':'p','port':'a.out','env':'relay',"
 					     "'index':1}");
 	EXPECT(&ed, "environment", "bind",
-	       "{'graph':'p','block':'a','port':'out','env':'relay','index':1}");
+	       "{'graph':'p','port':'a.out','env':'relay','index':1}");
 	drain(&ed);
 	drain(&other);
 	drain(&viewer);
@@ -466,8 +490,8 @@ static void test_wire(void)
 	/* getbindings: every process's, to the sender only. */
 	e2e_send(&viewer, "environment", "getbindings", "{}");
 	EXPECT(&viewer, "environment", "bindings",
-	       "{'bindings':[{'graph':'p','block':'a','port':'in1','env':'ain','index':2},"
-	       "{'graph':'p','block':'a','port':'out','env':'relay','index':1}]}");
+	       "{'bindings':[{'graph':'p','port':'a.in1','env':'ain','index':2},"
+	       "{'graph':'p','port':'a.out','env':'relay','index':1}]}");
 	QUIET(&other);
 
 	/* Refusals, to the sender only, with "graph" when it is a valid id. */
@@ -475,28 +499,29 @@ static void test_wire(void)
 		const char *payload, *message, *graph;
 	} bad[] = {
 		{"{}", "Invalid field: graph", NULL},
-		{"{'graph':'p','port':'in2','env':'ain'}", "Invalid field: block", "p"},
 		{"{'graph':'p','block':'a','env':'ain'}", "Invalid field: port", "p"},
-		{"{'graph':'p','block':'a','port':'in2'}", "Invalid field: env", "p"},
-		{"{'graph':'p','block':'a','port':'in2','env':'ain','index':0}",
+		{"{'graph':'p','port':'a.in2'}", "Invalid field: env", "p"},
+		{"{'graph':'p','port':'a.in2','env':'ain','index':0}",
 		 "Invalid field: index", "p"},
-		{"{'graph':'p','block':'a','port':'in2','env':'ain','index':1.5}",
+		{"{'graph':'p','port':'a.in2','env':'ain','index':1.5}",
 		 "Invalid field: index", "p"},
-		{"{'graph':'p','block':'a','port':'in2','env':'ain','index':'1'}",
+		{"{'graph':'p','port':'a.in2','env':'ain','index':'1'}",
 		 "Invalid field: index", "p"},
-		{"{'graph':'','block':'a','port':'in2','env':'ain','index':1}", "Invalid id", NULL},
-		{"{'graph':'q','block':'a','port':'in2','env':'ain','index':1}", "Unknown graph: q",
+		{"{'graph':'','port':'a.in2','env':'ain','index':1}", "Invalid id", NULL},
+		{"{'graph':'q','port':'a.in2','env':'ain','index':1}", "Unknown graph: q",
 		 "q"},
-		{"{'graph':'p','block':'a','port':'in2','env':'nope'}",
+		{"{'graph':'p','port':'a.in2','env':'nope'}",
 		 "Unknown environment port: nope", "p"},
-		{"{'graph':'p','block':'a','port':'in2','env':'ain'}", "Index required: ain", "p"},
-		{"{'graph':'p','block':'a','port':'in2','env':'ain','index':9}",
+		{"{'graph':'p','port':'a.in2','env':'ain'}", "Index required: ain", "p"},
+		{"{'graph':'p','port':'a.in2','env':'ain','index':9}",
 		 "Index out of range: ain[9]", "p"},
-		{"{'graph':'p','block':'zz','port':'in2','env':'ain','index':1}",
-		 "Unknown node: zz", "p"},
-		{"{'graph':'p','block':'a','port':'in1','env':'temp'}",
+		{"{'graph':'p','port':'zz.in2','env':'ain','index':1}",
+		 "Unknown port: zz.in2", "p"},
+		{"{'graph':'p','port':'a.out','env':'ain','index':1}",
+		 "Invalid binding direction", "p"},
+		{"{'graph':'p','port':'a.in1','env':'temp'}",
 		 "Input already connected: a.in1", "p"},
-		{"{'graph':'p','block':'a','port':'out','env':'relay','index':1}",
+		{"{'graph':'p','port':'a.out','env':'relay','index':1}",
 		 "Actuator already driven: relay[1]", "p"},
 	};
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
@@ -507,27 +532,27 @@ static void test_wire(void)
 		}
 	}
 	e2e_send(&ed, "environment", "unbind",
-		 "{'graph':'p','block':'a','port':'in2','env':'temp'}");
+		 "{'graph':'p','port':'a.in2','env':'temp'}");
 	EXPECT_ERROR(&ed, "No such binding", "p");
 	QUIET(&other);
 
 	/* Capabilities: a viewer and an operator may read, not bind. */
 	e2e_send(&viewer, "environment", "bind",
-		 "{'graph':'p','block':'a','port':'in2','env':'temp'}");
+		 "{'graph':'p','port':'a.in2','env':'temp'}");
 	EXPECT_ERROR(&viewer, "Not permitted: environment:bind", NULL);
 	e2e_send(&other, "environment", "unbind",
-		 "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+		 "{'graph':'p','port':'a.in1','env':'ain','index':2}");
 	EXPECT_ERROR(&other, "Not permitted: environment:unbind", NULL);
 	e2e_send(&ed, "environment", "frob", "{}");
 	EXPECT_ERROR(&ed, "Unknown command: environment:frob", NULL);
 
 	/* unbind: an event like bind's. */
 	e2e_send(&ed, "environment", "unbind",
-		 "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+		 "{'graph':'p','port':'a.in1','env':'ain','index':2}");
 	EXPECT(&ed, "environment", "unbind",
-	       "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	       "{'graph':'p','port':'a.in1','env':'ain','index':2}");
 	EXPECT(&other, "environment", "unbind",
-	       "{'graph':'p','block':'a','port':'in1','env':'ain','index':2}");
+	       "{'graph':'p','port':'a.in1','env':'ain','index':2}");
 	e2e_close(&ed);
 	e2e_close(&other);
 	e2e_close(&viewer);
@@ -540,7 +565,7 @@ static void test_wire(void)
 	CHECK(e2e_connect(&ed) && e2e_login(&ed, "alice"));
 	e2e_send(&ed, "environment", "describe", "{}");
 	EXPECT_ERROR(&ed, "No environment", NULL);
-	e2e_send(&ed, "environment", "bind", "{'graph':'p','block':'a','port':'in1','env':'ain'}");
+	e2e_send(&ed, "environment", "bind", "{'graph':'p','port':'a.in1','env':'ain'}");
 	EXPECT_ERROR(&ed, "No environment", "p");
 	e2e_send(&ed, "environment", "getbindings", "{}");
 	EXPECT(&ed, "environment", "bindings", "{'bindings':[]}");

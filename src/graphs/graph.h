@@ -694,25 +694,30 @@ static inline const ProcessLink *runtime_link_at(const Runtime *rt, uint32_t i)
 	return &rt->links[i];
 }
 
-/* ---- Environment bindings (04 §4; plan task 22) ---------------------------
+/* ---- Environment bindings (04 §4; plan tasks 22, 70) ---------------------
  *
  * A binding is a connection between the environment (hakkas_env.h, 04 §1)
- * and an ordinary block (04 §4 item 3):
- *  - a sensor binding makes a channel of an environment output port the
- *    block input's one source (INPUT_SOURCE_ENV: no fan-in, so a connection,
- *    initial or link onto it is refused as "Input already connected", and a
- *    sensor binding onto an input with any source, a retained connection
- *    included, is refused likewise). One channel may feed any number of
- *    inputs. Its values arrive as IO events of the work queue, delivered to
- *    every input bound to the channel (runtime_env_deliver) through the
- *    block's update, like any value: a stopped process only stores them;
+ * and a process port — the block port behind it (04 §4 item 3; plan task 70:
+ * process ports, never block ports, so a process shows by its ports what it
+ * needs from outside):
+ *  - a sensor binding makes a channel of an environment output port the one
+ *    source of the block input behind a process inport (INPUT_SOURCE_ENV: no
+ *    fan-in, so a connection, initial or link onto it is refused as "Input
+ *    already connected", and a sensor binding onto an inport whose input has
+ *    any source, a retained connection included, is refused likewise). One
+ *    channel may feed any number of inports. Its values arrive as IO events
+ *    of the work queue, delivered to every input bound to the channel
+ *    (runtime_env_deliver) through the block's update, like any value: a
+ *    stopped process only stores them;
  *  - an actuator binding attaches a channel of an environment input port to
- *    a block output (a composite instance's mapped inner output, like a
- *    link): every push of that output — a propagation past the change
- *    threshold, and the unconditional push of start — is written to the
- *    environment (Runtime.env_write). One output may drive several channels;
- *    each channel has one driver across every graph of the runtime
- *    (ACTUATOR_DRIVEN).
+ *    the block output behind a process outport (a composite instance's
+ *    mapped inner output, like a link): every push of that output — a
+ *    propagation past the change threshold, and the unconditional push of
+ *    start — is written to the environment (Runtime.env_write). One outport
+ *    may drive several channels; each channel has one driver across every
+ *    graph of the runtime (ACTUATOR_DRIVEN).
+ * The environment port decides the direction: a sensor binds the inport of
+ * the binding's name, an actuator the outport (the two may share a name).
  * Making a binding reports BINDING_ADDED, then delivers what is already
  * there: a sensor binding the channel's current value (if the environment
  * has delivered one) through the input's update; an actuator binding on a
@@ -720,19 +725,21 @@ static inline const ProcessLink *runtime_link_at(const Runtime *rt, uint32_t i)
  * Ending a binding reports BINDING_REMOVED: graph_unbind (a sensor-bound
  * input then reverts to its port default, like any severed input, 01 §2.2;
  * an actuator keeps its last value, 03 §4: nothing is written), removing the
- * bound block (its sensor inputs with its edges and initials, in port order,
- * its actuator outputs after its outgoing edges; the block goes, so nothing
- * reverts), deleting the graph (after its stop, before GRAPH_DELETED).
- * Destroying a graph without events (at shutdown) drops them silently.
- * Renaming the bound block keeps them (they refer to the block). The
- * environment's channels are numbers here (the port's index in the
- * description's out_ports or in_ports, and the channel index); the
- * environment's side — resolving port ids, the change threshold of sensor
- * values, the SPI calls — is drivers/environment.h. Bindings live in the
- * Runtime (rt->bindings, creation order), like links. */
+ * process port (after its links, before its event; its input reverts),
+ * removing the port's block (its ports go, nothing reverts), deleting the
+ * graph (after its stop, before GRAPH_DELETED). Destroying a graph without
+ * events (at shutdown) drops them silently. Renaming the process port keeps
+ * them, under the new name, without an event (unlike a link); renaming the
+ * block keeps them (they refer to the block). The environment's channels are
+ * numbers here (the port's index in the description's out_ports or
+ * in_ports, and the channel index); the environment's side — resolving port
+ * ids, the change threshold of sensor values, the SPI calls — is
+ * drivers/environment.h. Bindings live in the Runtime (rt->bindings,
+ * creation order), like links. */
 struct EnvBinding {
 	Graph *graph;
-	Block *block;	    /* the bound block (a composite instance itself) */
+	char *name;	    /* the process port's name, owned (inport: sensor, outport: actuator) */
+	Block *block;	    /* the block behind it (a composite instance itself) */
 	uint32_t port;	    /* its input (sensor) or output (actuator) index */
 	bool actuator;	    /* else a sensor */
 	char *env;	    /* the environment port's id, owned */
@@ -741,20 +748,19 @@ struct EnvBinding {
 	Output *out;	    /* actuator: the output whose pushes are written */
 };
 
-/* What a binding names: the block port and the environment channel. */
+/* What a binding names: the process port and the environment channel. */
 typedef struct {
-	const char *block;
-	const char *port;
-	bool actuator; /* the environment port is an input port (an actuator) */
+	const char *port; /* the process port: the inport (sensor) or outport (actuator) */
+	bool actuator;	  /* the environment port is an input port (an actuator) */
 	const char *env;
 	uint32_t env_port;
 	uint32_t env_index;
 } EnvBindingSpec;
 
 /* Check spec against g without changing anything, in this order:
- * INVALID_ID (block or port name), UNKNOWN_NODE, UNKNOWN_PORT,
- * INVALID_BINDING_DIRECTION (a sensor onto an output, an actuator onto an
- * input), INPUT_CONNECTED (a sensor onto an input with a source or a
+ * INVALID_ID (the port name), UNKNOWN_PORT (no process port of that name),
+ * INVALID_BINDING_DIRECTION (only a port of the other direction has it),
+ * INPUT_CONNECTED (a sensor onto an inport whose input has a source or a
  * retained connection), ACTUATOR_DRIVEN (the channel has a driver). */
 enum graph_status graph_bind_check(const Graph *g, const EnvBindingSpec *spec);
 
@@ -763,7 +769,7 @@ enum graph_status graph_bind_check(const Graph *g, const EnvBindingSpec *spec);
  * current value, NULL if none is known (ignored for an actuator). */
 enum graph_status graph_bind(Graph *g, const EnvBindingSpec *spec, const Linkable *current);
 
-/* Remove the binding of spec's block port to spec's channel. Refused:
+/* Remove the binding of spec's process port to spec's channel. Refused:
  * INVALID_ID, NO_SUCH_BINDING. Reports BINDING_REMOVED; a sensor-bound input
  * reverts to its default. */
 enum graph_status graph_unbind(Graph *g, const EnvBindingSpec *spec);
