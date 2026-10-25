@@ -150,7 +150,7 @@ The firmware serves its I/O slots **one at a time, in turn**, and so does the em
 2. compute every input channel's value from its source and noise, and every measured channel's from its signal (§7.2);
 3. send every sensor value that changed to hakkas, and every changed state to the clients (§8).
 
-So a change on the field side reaches hakkas, and a write from hakkas reaches the field side, only when its slot is served — the latency a program sees on the device. The turns are **deadline-based**: turn *k* is due at start + *k* × cycle time, so the cycle does not drift; a turn that comes late (a busy desktop) is served at once, and turns more than a whole cycle (all slots) behind are skipped, with a warning at most once a minute. Changing the cycle time takes effect from the next turn.
+So a change on the field side reaches hakkas, and a write from hakkas reaches the field side, only when its slot is served — the latency a program sees on the device. The turns are **deadline-based**: turn *k* is due at start + *k* × cycle time, so the cycle does not drift; a turn that comes late (a busy desktop) is served at once, and turns more than a whole cycle (all slots) behind are skipped, with a warning at most once a minute. Changing the cycle time takes effect from the next turn. The first turn, slot 0's, is served when the cycle starts (*decided*, 2026-10-25).
 
 ### 4.1 Values arriving faster than the cycle
 
@@ -160,7 +160,7 @@ The point of emulating the cycle is the timing (*decided*, 2026-10-23): a progra
 - **The queue holds 10 values** (its size on the device is not determined yet; it is a setting, §5).
 - **A full queue drops the new value.** So when a program writes a module's outputs more than 10 times within one scan cycle, the last writes are lost and the outputs keep older values — until hakkas writes them again, which it does only when the value changes. **On the input side**, a driver forwards a value to its channel only in its slot's turn (*decided*, 2026-10-23); nothing between turns is reported. An input's source is therefore sampled at its slot's turn, so a `square` faster than the cycle shows only the samples a turn hits; a `counter` or a pulse train's `count` (§7.2) counts at its rate regardless.
 
-The emulator counts, per channel, the writes received, the writes queued, the writes **dropped** on overflow and the sensor changes sent, and per module the queue's current and highest length, and shows them in the UI (the control protocol's `stats`), so the user can see where a program outruns the cycle. A write for a slot whose module was removed by a power cycle cannot arrive: the power cycle closed the link (§5.1).
+The emulator counts, per channel, the writes received, the writes queued, the writes **dropped** on overflow and the sensor changes sent, and per module the queue's current and highest length, and shows them in the UI (the control protocol's `stats`), so the user can see where a program outruns the cycle. (*Decided*, 2026-10-25:) a change "sent" is one a turn reports to the runtime; only filled slots have module counters; resetting the counters keeps a queue's current length, which becomes its highest. **Changing the queue size** takes effect at once; a queue holding more than a smaller new size keeps those writes, and drops new ones until it is below the size. A write for a slot whose module was removed by a power cycle cannot arrive: the power cycle closed the link (§5.1).
 
 ## 5. Environments
 

@@ -6,6 +6,7 @@ import {Library} from './library.js';
 import type {Logger} from './log.js';
 import {BUILTIN_DATA, VERSION} from './package.js';
 import {randomSeed, seededRandom} from './random.js';
+import {Scanner} from './scan.js';
 import {System} from './system.js';
 
 // Runs the emulator until `stop` is aborted (SIGINT/SIGTERM, or a test). A failure that keeps
@@ -23,10 +24,14 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
     const seed = options.seed ?? randomSeed();
     log.fine(`noise seed ${seed}`);
     const random = seededRandom(seed);
+    const clock = () => performance.now();
+    let scanner: Scanner | undefined;
     if (env !== undefined) {
-        const {warnings} = System.build(name, env, catalog, () => performance.now(), random);
+        const {system, warnings} = System.build(name, env, catalog, clock, random);
         for (const w of warnings)
             log.warn(`environment ${name}: ${w}`);
+        scanner = new Scanner(system, env, clock, log);
+        scanner.start();
     }
     // Nothing listens yet (the sockets come with plan tasks E7 and E10), so a timer keeps the
     // process alive until the stop request.
@@ -36,6 +41,7 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
             await new Promise<void>(resolve => stop.addEventListener('abort', () => resolve(), {once: true}));
     } finally {
         clearInterval(alive);
+        scanner?.stop();
     }
     log.info('stopped');
 }

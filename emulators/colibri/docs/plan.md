@@ -163,10 +163,20 @@ Follow-ups, decided the same day:
   invalid source's refusal carries the problem; a counter starts at the row's minimum and has
   no noise; a pulse count takes no noise; a fitted value stays within range after rounding; a
   pulse train's phase continues across a new source.
-- [ ] **E5. The scan cycle and the write queues** (§4, §4.1): serves one slot per cycle time,
+- [x] **E5. The scan cycle and the write queues** (§4, §4.1): serves one slot per cycle time,
   deadline-based so it does not drift; one queue per module (size from the environment),
   applied in order at the module's turn, a full queue drops the new value; inputs sampled only
   at their turn; the counters of §4.1. Cycle time and queue size can change while running.
+  *Done*: `src/scan.ts` (`Scanner`: `poll()` serves the turns due, `write(ch, value)` queues or
+  drops, `setCycleMs`/`setQueueSize`, `stats()`/`resetStats()`, `start()`/`stop()` on a timer;
+  each turn is reported with the outputs applied and the inputs changed, for E7 and E9); the
+  emulator runs it at startup. Tests on a fake clock: the slot order with empty slots, a late
+  turn not moving the next deadline, skipping and its rate-limited warning, a new cycle time,
+  sampling only at a slot's turn, queue order, a full queue, a resized queue, every counter and
+  the reset; one test on real timers. Decided on the way (spec §4, §4.1): a smaller queue keeps
+  what it holds; `sent` counts each change a turn reports; a reset keeps a queue's current
+  length (and makes it the highest); only filled slots have part counters; the first turn is
+  served at once when the cycle starts.
 - [ ] **Hakkas task 68 (in hakkas, `../../../docs/plan.md`). Names in the environment
   description** (follow-up B): an optional `name` for the carrier, each module and each
   communication slot, in `src/hakkas_env.h`, the JSON form and its validation (a string of at

@@ -10,8 +10,8 @@ The specification is `specifications/00-README.md`; the order of the work, and w
 `../specifications/`.
 
 > Work in progress: the command line, logging, the module catalog (`data/`), the environment
-> library and the emulated system's model exist (plan tasks E1–E4); the scan cycle, the link to
-> hakkas and the UI follow.
+> library, the emulated system's model and the scan cycle exist (plan tasks E1–E5); the link
+> to hakkas and the UI follow.
 
 ## Building and testing
 
