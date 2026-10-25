@@ -924,7 +924,15 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
 - [ ] **64. Upload/download of processes, backup and restore** (06 §7): to design. Revisit
   task 63's deployment (a process uploaded together with its bindings file, mapped on the
   target device).
-- [ ] **65. The Colibri emulator** (`emulators/colibri/`): its own plan once its spec is settled.
+- [ ] **68. Human-readable names in the environment description** (04 §1, decided with the user
+  2026-10-25): an optional `name` (e.g. "Colibri Pt1000" for the type `colibri_pt1000`, from the
+  module's EEPROM, or the emulator's module descriptor) for the carrier, each module and each
+  communication slot: `HakkasEnvCarrier`/`HakkasEnvModule`/`HakkasEnvComm`, the JSON form and
+  validation, the identical-description check, `environment:describe` (an addition to the
+  `environment` group, which is not upstream FBP), and the Environment panel (06 §4.14) showing the
+  name, else the type. Needed before the emulator's task E6.
+- [ ] **65. The Colibri emulator** (`emulators/colibri/`): its own plan,
+  `emulators/colibri/docs/plan.md` (tasks E0–E16, with the questions still to decide).
 
 ## Phase 9 — Editor requests (requested 2026-10-24, done 2026-10-25)
 
