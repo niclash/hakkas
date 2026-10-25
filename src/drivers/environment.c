@@ -242,10 +242,10 @@ static void set_msg(char *msg, size_t cap, const char *fmt, ...)
 /* How an environment port and index resolve. */
 enum channel_status {
 	CHANNEL_OK,
-	CHANNEL_UNKNOWN_PORT,	  /* skipped in a bindings file */
-	CHANNEL_INDEX_RANGE,	  /* skipped in a bindings file */
-	CHANNEL_INDEX_REQUIRED,	  /* refused */
-	CHANNEL_INDEX_UNEXPECTED, /* refused */
+	CHANNEL_UNKNOWN_PORT,
+	CHANNEL_INDEX_RANGE,
+	CHANNEL_INDEX_REQUIRED,
+	CHANNEL_INDEX_UNEXPECTED,
 };
 
 static enum channel_status channel(const Environment *env, const EnvBindingRequest *req,
@@ -365,25 +365,6 @@ enum environment_status environment_unbind(Environment *env, Graph *g,
 	return graph_msg(graph_unbind(g, &spec), req, msg, cap);
 }
 
-/* Whether entry i of a file conflicts with an earlier one that is made: the
- * same input twice (no fan-in), or the same actuator channel twice (one
- * driver). */
-static enum graph_status conflict(const EnvBindingSpec *specs, const bool *skip, size_t i)
-{
-	const EnvBindingSpec *a = &specs[i];
-	for (size_t j = 0; j < i; j++) {
-		const EnvBindingSpec *b = &specs[j];
-		if (skip[j] || a->actuator != b->actuator)
-			continue;
-		if (!a->actuator && strcmp(a->block, b->block) == 0 &&
-		    strcmp(a->port, b->port) == 0)
-			return GRAPH_ERR_INPUT_CONNECTED;
-		if (a->actuator && a->env_port == b->env_port && a->env_index == b->env_index)
-			return GRAPH_ERR_ACTUATOR_DRIVEN;
-	}
-	return GRAPH_OK;
-}
-
 enum environment_status environment_bind_all(Environment *env, Graph *g,
 					     const EnvBindingRequest *reqs, size_t n,
 					     const char *origin, size_t *applied, size_t *skipped,
@@ -398,65 +379,23 @@ enum environment_status environment_bind_all(Environment *env, Graph *g,
 		set_msg(msg, cap, "%s", "No environment");
 		return ENVIRONMENT_REFUSED;
 	}
-	EnvBindingSpec *specs = calloc(n + 1, sizeof(*specs));
-	bool *skip = calloc(n + 1, sizeof(*skip));
-	enum environment_status result = ENVIRONMENT_OK;
+	/* Each entry in file order, against the bindings already made, the
+	 * file's earlier ones included (04 §4: warn and skip). */
 	char why[ENVIRONMENT_MESSAGE_MAX];
-	size_t i = 0;
-	if (specs == NULL || skip == NULL) {
-		set_msg(msg, cap, "%s", "Out of memory");
-		result = ENVIRONMENT_NO_MEMORY;
-		goto out;
-	}
-	/* First every check, so a refused file makes nothing. */
-	for (i = 0; i < n; i++) {
-		const EnvBindingRequest *req = &reqs[i];
-		if (!precheck(env, req, why, sizeof(why))) {
-			result = ENVIRONMENT_REFUSED;
-			goto refused;
+	for (size_t i = 0; i < n; i++) {
+		enum environment_status st = environment_bind(env, g, &reqs[i], why, sizeof(why));
+		if (st == ENVIRONMENT_NO_MEMORY) {
+			set_msg(msg, cap, "bindings[%zu]: %s", i, why);
+			return st;
 		}
-		enum channel_status cst = channel(env, req, &specs[i]);
-		if (cst == CHANNEL_UNKNOWN_PORT || cst == CHANNEL_INDEX_RANGE) {
-			/* 04 §4 item 6: a channel this environment does not
-			 * provide stays inert. */
-			channel_msg(cst, req, why, sizeof(why));
-			log_warn("%s: bindings[%zu]: %s: skipped", origin, i, why);
-			skip[i] = true;
+		if (st == ENVIRONMENT_OK) {
+			if (applied != NULL)
+				(*applied)++;
 			continue;
 		}
-		if (cst != CHANNEL_OK) {
-			channel_msg(cst, req, why, sizeof(why));
-			result = ENVIRONMENT_REFUSED;
-			goto refused;
-		}
-		enum graph_status st = graph_bind_check(g, &specs[i]);
-		if (st == GRAPH_OK)
-			st = conflict(specs, skip, i);
-		if (st != GRAPH_OK) {
-			result = graph_msg(st, req, why, sizeof(why));
-			goto refused;
-		}
+		log_warn("%s: bindings[%zu]: %s: skipped", origin, i, why);
+		if (skipped != NULL)
+			(*skipped)++;
 	}
-	/* Then every binding, in file order. Only memory can fail here. */
-	for (i = 0; i < n; i++) {
-		if (skip[i]) {
-			if (skipped != NULL)
-				(*skipped)++;
-			continue;
-		}
-		enum graph_status st = graph_bind(g, &specs[i], current(env, &specs[i]));
-		if (st != GRAPH_OK) {
-			result = graph_msg(st, &reqs[i], why, sizeof(why));
-			goto refused;
-		}
-		if (applied != NULL)
-			(*applied)++;
-	}
-	goto out;
-refused:
-	set_msg(msg, cap, "bindings[%zu]: %s", i, why);
-out:
-	free(specs);
-	free(skip);
-	return result;
+	return ENVIRONMENT_OK;
 }

@@ -1181,13 +1181,12 @@ enum hakkas_status hakkas_bindings_apply(Hakkas *h, const char *process, const c
 	if (d == NULL) {
 		set_msg(msg, "No environment");
 		st = HAKKAS_REFUSED;
-	} else if (strcmp(file.environment, d->name) != 0) {
-		if (msg != NULL)
-			snprintf(msg->text, sizeof(msg->text),
-				 "Environment mismatch: %s (running: %s)", file.environment,
-				 d->name);
-		st = HAKKAS_REFUSED;
 	} else {
+		/* The file's environment is information, not enforcement
+		 * (04 §4). */
+		if (strcmp(file.environment, d->name) != 0)
+			log_warn("%s: Environment mismatch: %s (running: %s)", path,
+				 file.environment, d->name);
 		st = from_environment(environment_bind_all(
 			env, g, file.entries, file.count, path, applied, skipped,
 			msg != NULL ? msg->text : NULL, msg != NULL ? sizeof(msg->text) : 0));

@@ -134,17 +134,17 @@ enum environment_status environment_bind(Environment *env, Graph *g, const EnvBi
 enum environment_status environment_unbind(Environment *env, Graph *g,
 					   const EnvBindingRequest *req, char *msg, size_t cap);
 
-/* Apply the n bindings of a bindings file (04 §4) to g, all or none: first
- * every binding is checked — an environment port the description does not
- * have, or an index beyond its count, is skipped with a warning naming
- * origin and the entry (04 §4 item 6: the block port stays inert); any other
- * refusal of environment_bind, also against an earlier binding of the same
- * file (a second binding of one input, a second driver of one channel),
- * refuses the whole file with msg "bindings[<i>]: <refusal>" and nothing
- * made — then they are made in order (only running out of memory can stop
- * that half-way: ENVIRONMENT_NO_MEMORY, the bindings made so far kept). *applied and *skipped (if not NULL)
- * count them. Without an environment the file is refused ("No
- * environment"). */
+/* Apply the n bindings of a bindings file (04 §4) to g, warning and
+ * skipping: each is made in file order as environment_bind makes it, against
+ * the bindings already there, the file's earlier ones included (a second
+ * binding of one input, a second driver of one channel); one that is refused
+ * is skipped with the warning "<origin>: bindings[<i>]: <refusal>: skipped"
+ * and the rest are made (a channel the environment does not provide leaves
+ * its block port inert, 04 §4 item 6). *applied and *skipped (if not NULL)
+ * count them. Only two things stop it: no environment (ENVIRONMENT_REFUSED,
+ * "No environment", nothing made) and running out of memory
+ * (ENVIRONMENT_NO_MEMORY, "bindings[<i>]: <message>", the bindings made so
+ * far kept). */
 enum environment_status environment_bind_all(Environment *env, Graph *g,
 					     const EnvBindingRequest *reqs, size_t n,
 					     const char *origin, size_t *applied, size_t *skipped,

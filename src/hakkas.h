@@ -602,20 +602,23 @@ typedef struct {
 } HakkasBinding;
 
 /* Apply the bindings file at path (04 §4: {"environment", "bindings":
- * [{"block", "port", "env", "index"?}]}) to process, all or nothing, as the
- * host does when it loads a process (05 §1.2). Every binding is checked
- * first; a channel the environment does not provide (an unknown
- * environment port, an index beyond its count) is skipped with a warning
- * naming path and the entry, and its block port stays inert. Failures:
- * "Invalid field: graph" (process NULL), "Invalid field: bindings" (path
- * NULL), "Invalid id", "Unknown graph: <id>"; the file: HAKKAS_ERR_INVALID,
- * _NOT_FOUND, _TOO_BIG (larger than HAKKAS_BINDINGS_FILE_MAX), _STORAGE,
- * _MALFORMED (msg: the problem, e.g. "bindings[1]: index: expected an
- * integer of at least 1"; drivers/bindings_file.h); refused: "No environment", "Environment
- * mismatch: <the file's> (running: <the environment's name>)", and
- * "bindings[<i>]: <refusal>" with the refusals of hakkas_binding_add. On
- * success *applied and *skipped (if not NULL) count the bindings made and
- * skipped. Reports BINDING_ADDED for each, in file order. */
+ * [{"block", "port", "env", "index"?}]}) to process, as the host does when
+ * it loads a process (05 §1.2), warning and skipping: each binding is made
+ * in file order, and one that hakkas_binding_add would refuse (also against
+ * the file's earlier ones) is skipped with the warning "<path>:
+ * bindings[<i>]: <refusal>: skipped", the rest made; a skipped entry's block
+ * port stays as it was (inert if it has no other source). A file written for
+ * another environment is applied after the warning "<path>: Environment
+ * mismatch: <the file's> (running: <the environment's name>)". Failures,
+ * with nothing made: "Invalid field: graph" (process NULL), "Invalid field:
+ * bindings" (path NULL), "Invalid id", "Unknown graph: <id>"; the file:
+ * HAKKAS_ERR_INVALID, _NOT_FOUND, _TOO_BIG (larger than
+ * HAKKAS_BINDINGS_FILE_MAX), _STORAGE, _MALFORMED (msg: the problem, e.g.
+ * "bindings[1]: index: expected an integer of at least 1";
+ * drivers/bindings_file.h); refused: "No environment". Out of memory part
+ * way: HAKKAS_ERR_NO_MEMORY, "bindings[<i>]: Out of memory", the bindings
+ * made so far kept. *applied and *skipped (if not NULL) count the bindings
+ * made and skipped. Reports BINDING_ADDED for each, in file order. */
 enum hakkas_status hakkas_bindings_apply(Hakkas *h, const char *process, const char *path,
 					 size_t *applied, size_t *skipped, HakkasMessage *msg);
 

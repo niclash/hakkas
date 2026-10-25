@@ -120,15 +120,21 @@ static bool load_files(Hakkas *h, const char *files, Starts *s)
 	}
 }
 
-/* A process's bindings file (04 §4): false (logged) if it does not apply. */
+/* A process's bindings file (04 §4). Bindings never refuse startup: a file
+ * that does not apply is a warning, and the process runs without it. False
+ * (logged) only when memory ran out. */
 static bool apply_bindings(Hakkas *h, const char *id, const char *path)
 {
 	size_t applied, skipped;
 	HakkasMessage msg;
 	enum hakkas_status st = hakkas_bindings_apply(h, id, path, &applied, &skipped, &msg);
-	if (st != HAKKAS_OK) {
+	if (st == HAKKAS_ERR_NO_MEMORY) {
 		log_error("run processes: %s: %s: not starting", path, msg.text);
 		return false;
+	}
+	if (st != HAKKAS_OK) {
+		log_warn("run processes: %s: %s: not applied", path, msg.text);
+		return true;
 	}
 	log_info("process %s: %zu binding%s applied from %s, %zu skipped", id, applied,
 		 applied == 1 ? "" : "s", path, skipped);
@@ -156,8 +162,7 @@ static bool load_list(Hakkas *h, const char *file, Starts *s)
 			ok = false;
 			break;
 		}
-		/* Its bindings (04 §4), before anything starts: each file must
-		 * apply, like each process must load. */
+		/* Its bindings (04 §4), before anything starts. */
 		if (e->bindings != NULL && !apply_bindings(h, l.id, e->bindings)) {
 			ok = false;
 			break;

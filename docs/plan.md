@@ -886,9 +886,16 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   (so an `environment` command is `"Not authenticated"` before login, the generic error
   after, 02 §3.7); the frontend's `environment.ts` became `auth.ts` (`AuthProtocol`,
   `conn.proto.auth`); the console redaction (`loggable`) has a unit test.
-- [ ] **60. Bindings warn and skip** (04 §4): a bindings file's `environment` mismatch is a
+- [x] **60. Bindings warn and skip** (04 §4): a bindings file's `environment` mismatch is a
   warning; each inapplicable entry is skipped with a warning and the rest applied; a malformed
   file is not applied, with a warning; startup is never refused by bindings.
+  *Done*: `environment_bind_all` makes each entry in file order as `environment_bind` does
+  (so the file's own conflicts are checked against what it already made) and skips a refused
+  one with `<file>: bindings[<i>]: <message>: skipped`; `hakkas_bindings_apply` warns about a
+  mismatched `environment` and applies the file; the POSIX host logs a file that cannot be
+  read, is malformed or has no environment as `run processes: <file>: <message>: not applied`
+  and starts the process without it. Decided while implementing: running out of memory part
+  way still refuses startup, as it does for a process that cannot load (04 §4, 05 §1.2).
 - [ ] **61. The carrier board in the environment description** (04 §1): `HakkasEnvDescription`,
   the link's `describe`, validation and the identical-description check gain the carrier
   (slots, built-in modules, power, communication slots with per-type parameters). Emulator

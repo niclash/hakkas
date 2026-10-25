@@ -29,9 +29,12 @@
  *       ("run processes: ... : not starting"). A process's "bindings"
  *       file (04 §4) is applied right after it loads, before anything
  *       starts (hakkas_bindings_apply; info "process <id>: <n> bindings
- *       applied from <path>, <m> skipped"); one that does not apply refuses
- *       startup ("run processes: <path>: <message>: not starting"), as does
- *       any bindings file without an environment. Once every process is
+ *       applied from <path>, <m> skipped"), warning about and skipping
+ *       the entries it cannot make; a file that does not apply at all (not
+ *       readable, malformed, no environment) is the warning "run
+ *       processes: <path>: <message>: not applied" and the process runs
+ *       without it — bindings never refuse startup, only running out of
+ *       memory does ("... : not starting"). Once every process is
  *       loaded, and before any is started, the
  *       list's "links" are made in list order (hakkas_link_add); a link
  *       that is refused refuses startup like a process that does not load

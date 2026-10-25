@@ -789,9 +789,10 @@ static bool env_received(const char *text)
 
 /* `run processes` with a process list naming bindings files: applied after
  * each process loads and before anything starts (05 §1.2); a channel the
- * environment lacks is skipped; every graph-side error, a mismatched
- * environment, a bindings file that does not load and a bindings file
- * without an environment refuse startup. */
+ * environment lacks is skipped; bindings never refuse startup (04 §4): a
+ * graph-side error skips its entry, a mismatched environment is a warning,
+ * and a bindings file that does not load, or has no environment, is not
+ * applied. */
 static void test_run_bindings(void)
 {
 	host_setup();
@@ -838,33 +839,48 @@ static void test_run_bindings(void)
 	CHECK(env_received("{\"hello\":{\"version\":1}}\n"));
 	CHECK(env_received("{\"write\":{\"port\":\"aout\",\"value\":2}}\n"));
 
-	/* Graph-side errors and a mismatched environment refuse startup. */
+	/* A graph-side error skips its entry; the process still starts. */
 	put(join(dir, "b2.json"),
 	    "{\"environment\":\"sim\",\"bindings\":["
-	    "{\"block\":\"zz\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1}]}");
+	    "{\"block\":\"zz\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1},"
+	    "{\"block\":\"a\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1}]}");
 	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":true,\"bindings\":"
 		  "\"b2.json\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
 	snprintf(want, sizeof(want),
-		 "error run processes: %s/b2.json: bindings[0]: Unknown node: zz: not starting\n",
-		 dir);
+		 "warn %s/b2.json: bindings[0]: Unknown node: zz: skipped\n", dir);
 	CHECK(logged(want));
-	CHECK(strstr(logs, "started") == NULL);
+	snprintf(want, sizeof(want), "info process g1: 1 binding applied from %s/b2.json, 1 "
+		 "skipped\n", dir);
+	CHECK(logged(want));
+	CHECK(logged("info process g1 started\n"));
+	/* Another environment's file: a warning, and applied. */
 	put(join(dir, "b2.json"), "{\"environment\":\"colibri\",\"bindings\":[]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	CHECK(logged("b2.json: Environment mismatch: colibri (running: sim): not starting\n"));
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(logged("warn "));
+	CHECK(logged("b2.json: Environment mismatch: colibri (running: sim)\n"));
+	CHECK(logged("bindings applied from "));
+	CHECK(logged("info process g1 started\n"));
+	/* A malformed file and a missing one are not applied. */
 	put(join(dir, "b2.json"), "{\"environment\":\"sim\",\"bindings\":{}}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	CHECK(logged("b2.json: bindings: expected an array: not starting\n"));
-	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"bindings\":\"none.json\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	CHECK(logged("none.json: not found: not starting\n"));
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(logged("b2.json: bindings: expected an array: not applied\n"));
+	CHECK(strstr(logs, "bindings applied") == NULL);
+	CHECK(logged("info process g1 started\n"));
+	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":true,\"bindings\":"
+		  "\"none.json\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(logged("warn run processes: "));
+	CHECK(logged("none.json: not found: not applied\n"));
+	CHECK(logged("info process g1 started\n"));
 
-	/* Without an environment, a bindings file is refused (04 §0.1). */
+	/* Without an environment, a bindings file is not applied (04 §0.1). */
 	host_conf = saved_conf;
-	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"bindings\":\"b1.json\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	CHECK(logged("b1.json: No environment: not starting\n"));
+	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":true,\"bindings\":"
+		  "\"b1.json\"}]}");
+	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(logged("b1.json: No environment: not applied\n"));
+	CHECK(logged("info process g1 started\n"));
 
 	pthread_mutex_lock(&env_srv.lock);
 	env_srv.stop = true;

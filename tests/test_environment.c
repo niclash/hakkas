@@ -831,14 +831,26 @@ static enum environment_status apply(const char *graph, const EnvBindingRequest 
 				    skipped, msg, sizeof(msg));
 }
 
-static void refused_file(const EnvBindingRequest *reqs, size_t n, const char *want)
+/* A file whose entry `bad` is skipped with the warning want: the first
+ * entry, a.in1 <- ain[1], is still made (warn and skip, 04 §4). */
+static void skipped_file(const EnvBindingRequest *reqs, size_t n, size_t bad, const char *want)
 {
 	events[0] = '\0';
+	logs[0] = '\0';
 	size_t applied = 9, skipped = 9;
-	CHECK(apply("P", reqs, n, &applied, &skipped) == ENVIRONMENT_REFUSED);
-	CHECK_STREQ(msg, want);
-	CHECK(applied == 0 && skipped == 0);
-	CHECK_STREQ(events, ""); /* all or nothing */
+	CHECK(apply("P", reqs, n, &applied, &skipped) == ENVIRONMENT_OK);
+	CHECK_STREQ(msg, "");
+	CHECK(applied == n - 1 && skipped == 1);
+	char line[256];
+	snprintf(line, sizeof(line), "warn b.json: bindings[%zu]: %s: skipped\n", bad, want);
+	CHECK_STREQ(logs, line);
+	CHECK(strncmp(events, "P:+bind a.in1<ain[1];", 21) == 0);
+	CHECK(runtime_binding_count(&rt) == n - 1);
+	CHECK(unbind("P", "a", "in1", "ain", 1) == ENVIRONMENT_OK);
+	for (size_t i = 1; i < n; i++)
+		if (i != bad)
+			CHECK(unbind("P", reqs[i].block, reqs[i].port, reqs[i].env,
+				     reqs[i].index) == ENVIRONMENT_OK);
 	CHECK(runtime_binding_count(&rt) == 0);
 }
 
@@ -864,40 +876,45 @@ static void test_bindings_apply(void)
 	CHECK(num("P", "b", "in1") == 0); /* inert */
 	teardown();
 
-	/* Every graph-side error refuses the whole file. */
+	/* Every other refusal skips its entry too; the rest are made. */
 	build(false);
 	EnvBindingRequest r1[] = {{"a", "in1", "ain", 1}, {"x", "in1", "ain", 2}};
-	refused_file(r1, 2, "bindings[1]: Unknown node: x");
-	EnvBindingRequest r2[] = {{"a", "in3", "ain", 1}};
-	refused_file(r2, 1, "bindings[0]: Unknown port: a.in3");
-	EnvBindingRequest r3[] = {{"a", "out", "ain", 1}};
-	refused_file(r3, 1, "bindings[0]: Invalid binding direction");
-	EnvBindingRequest r4[] = {{"a", "in1", "relay", 1}};
-	refused_file(r4, 1, "bindings[0]: Invalid binding direction");
+	skipped_file(r1, 2, 1, "Unknown node: x");
+	EnvBindingRequest r2[] = {{"a", "in1", "ain", 1}, {"a", "in3", "ain", 2}};
+	skipped_file(r2, 2, 1, "Unknown port: a.in3");
+	EnvBindingRequest r3[] = {{"a", "in1", "ain", 1}, {"a", "out", "ain", 2}};
+	skipped_file(r3, 2, 1, "Invalid binding direction");
+	EnvBindingRequest r4[] = {{"a", "in1", "ain", 1}, {"a", "in2", "relay", 1}};
+	skipped_file(r4, 2, 1, "Invalid binding direction");
+	/* Against the file's earlier entries: one source per input, one
+	 * driver per actuator channel. */
 	EnvBindingRequest r5[] = {{"a", "in1", "ain", 1}, {"a", "in1", "din", 1}};
-	refused_file(r5, 2, "bindings[1]: Input already connected: a.in1");
-	EnvBindingRequest r6[] = {{"a", "out", "relay", 2}, {"b", "out", "relay", 2}};
-	refused_file(r6, 2, "bindings[1]: Actuator already driven: relay[2]");
-	EnvBindingRequest r7[] = {{"a", "in1", "ain", 0}};
-	refused_file(r7, 1, "bindings[0]: Index required: ain");
-	EnvBindingRequest r8[] = {{"a", "in1", "temp", 1}};
-	refused_file(r8, 1, "bindings[0]: No index expected: temp");
-	EnvBindingRequest r9[] = {{"", "in1", "temp", 0}};
-	refused_file(r9, 1, "bindings[0]: Invalid id");
+	skipped_file(r5, 2, 1, "Input already connected: a.in1");
+	EnvBindingRequest r6[] = {
+		{"a", "in1", "ain", 1}, {"a", "out", "relay", 2}, {"b", "out", "relay", 2}};
+	skipped_file(r6, 3, 2, "Actuator already driven: relay[2]");
+	EnvBindingRequest r7[] = {{"a", "in1", "ain", 1}, {"a", "in2", "ain", 0}};
+	skipped_file(r7, 2, 1, "Index required: ain");
+	EnvBindingRequest r8[] = {{"a", "in1", "ain", 1}, {"a", "in2", "temp", 1}};
+	skipped_file(r8, 2, 1, "No index expected: temp");
+	EnvBindingRequest r9[] = {{"a", "in1", "ain", 1}, {"", "in1", "temp", 0}};
+	skipped_file(r9, 2, 1, "Invalid id");
 	/* Against what is already there: an input with a source, a driven
 	 * channel (in another process). */
 	init("P", "a", "in2", 1);
-	EnvBindingRequest r10[] = {{"a", "in2", "temp", 0}};
-	refused_file(r10, 1, "bindings[0]: Input already connected: a.in2");
+	EnvBindingRequest r10[] = {{"a", "in1", "ain", 1}, {"a", "in2", "temp", 0}};
+	skipped_file(r10, 2, 1, "Input already connected: a.in2");
 	CHECK(bind("Q", "c", "out", "aout", 1) == ENVIRONMENT_OK);
 	EnvBindingRequest r11[] = {{"a", "out", "aout", 1}};
 	events[0] = '\0';
-	CHECK(apply("P", r11, 1, NULL, NULL) == ENVIRONMENT_REFUSED);
-	CHECK_STREQ(msg, "bindings[0]: Actuator already driven: aout[1]");
+	logs[0] = '\0';
+	CHECK(apply("P", r11, 1, &applied, &skipped) == ENVIRONMENT_OK);
+	CHECK(applied == 0 && skipped == 1);
+	CHECK_STREQ(logs, "warn b.json: bindings[0]: Actuator already driven: aout[1]: skipped\n");
 	CHECK_STREQ(events, "");
 	teardown();
 
-	/* Without an environment, every file is refused. */
+	/* Without an environment, a file is refused: nothing to bind to. */
 	build(false);
 	environment_close(&env);
 	CHECK(apply("P", ok, 1, NULL, NULL) == ENVIRONMENT_REFUSED);

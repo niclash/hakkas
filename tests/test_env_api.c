@@ -305,11 +305,15 @@ static void test_bindings(void)
 	CHECK(hakkas_process_start(h, "p", NULL) == HAKKAS_OK);
 	CHECK_STREQ(fake.writes, "relay[1]=true;"); /* a.out = 21.5 */
 
-	/* A second application is refused as a whole: a.in1 has its source,
-	 * relay[1] its driver. */
+	/* A second application skips every entry with a warning: a.in1 has
+	 * its source, relay[1] its driver (04 §4, warn and skip). */
 	bind_log[0] = '\0';
-	CHECK(hakkas_bindings_apply(h, "p", path, NULL, NULL, &msg) == HAKKAS_REFUSED);
-	CHECK_STREQ(msg.text, "bindings[0]: Input already connected: a.in1");
+	e2e_logs_clear();
+	CHECK(hakkas_bindings_apply(h, "p", path, &applied, &skipped, &msg) == HAKKAS_OK);
+	CHECK(applied == 0 && skipped == 4);
+	CHECK(strstr(e2e_logs(), "bindings[0]: Input already connected: a.in1: skipped") != NULL);
+	CHECK(strstr(e2e_logs(), "bindings[2]: Actuator already driven: relay[1]: skipped") !=
+	      NULL);
 	CHECK_STREQ(bind_log, "");
 
 	/* The file's failures. */
@@ -327,10 +331,19 @@ static void test_bindings(void)
 	e2e_put(path, "{\"environment\": \"fake\", \"bindings\": [{\"block\": \"b\"}]}");
 	CHECK(hakkas_bindings_apply(h, "p", path, NULL, NULL, &msg) == HAKKAS_ERR_MALFORMED);
 	CHECK_STREQ(msg.text, "bindings[0]: port: expected a non-empty string");
-	e2e_put(path, "{\"environment\": \"colibri\", \"bindings\": []}");
-	CHECK(hakkas_bindings_apply(h, "p", path, NULL, NULL, &msg) == HAKKAS_REFUSED);
-	CHECK_STREQ(msg.text, "Environment mismatch: colibri (running: fake)");
 	CHECK_STREQ(bind_log, "");
+	/* Another environment's file: a warning, then applied (04 §4). */
+	e2e_put(path, "{\"environment\": \"colibri\", \"bindings\": ["
+		      "{\"block\": \"b\", \"port\": \"in2\", \"env\": \"temp\"}]}");
+	e2e_logs_clear();
+	CHECK(hakkas_bindings_apply(h, "p", path, &applied, &skipped, &msg) == HAKKAS_OK);
+	CHECK(applied == 1 && skipped == 0);
+	CHECK(strstr(e2e_logs(), "b.json: Environment mismatch: colibri (running: fake)\n") !=
+	      NULL);
+	CHECK_STREQ(bind_log, "+p:b.in2<temp[0];");
+	bind_log[0] = '\0';
+	CHECK(hakkas_binding_remove(h, "p", "b", "in2", "temp", 0, &msg) == HAKKAS_OK);
+	bind_log[0] = '\0';
 
 	/* Single bindings: the argument checks, then the environment's. */
 	CHECK(hakkas_binding_add(h, NULL, "b", "in1", "ain", 1, &msg) == HAKKAS_REFUSED);
