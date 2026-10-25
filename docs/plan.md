@@ -959,3 +959,15 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   only in a block's menu (from the selection when the block is in it, else the block alone).
   Wanted also on a right-click on the empty canvas, from the current selection; **left out of
   the menu when nothing is selected** (decided 2026-10-24). **Done 2026-10-25.**
+
+## Phase 10 — Later (requested 2026-10-25, not started)
+
+- [ ] **69. User labels for environment channels** (requested 2026-10-25): let the user give each
+  input and output channel of a slot a name of their own (e.g. *Boiler temperature* for
+  `slot1-ai[2]`), **for display only**: no behaviour depends on it; bindings, ports and channels
+  keep their ids. The slot's own information (type, name, vendor, serial, …; 04 §1) stays
+  immutable: it comes from the device. Shown in the Environment panel, the bind dialog and the
+  binding markers beside the channel label. To decide when it is taken up: where the labels
+  live (on the device per environment, like the bindings in `<datadir>/bindings/`, or in a
+  bindings file so they travel with a process), whether they follow a module moved to another
+  slot, and the wire messages (an addition to the `environment` group, put to the user first).
