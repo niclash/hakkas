@@ -39,7 +39,7 @@
 	"{\"id\":\"door\",\"type\":\"bool\"}],"                                                    \
 	"\"inPorts\":[{\"id\":\"relay\",\"type\":\"bool\",\"addressable\":true,\"count\":2},"      \
 	"{\"id\":\"aout\",\"type\":\"number\"}],"                                                  \
-	"\"modules\":[{\"slot\":\"1\",\"type\":\"AIV\",\"serial\":\"9\",\"ports\":[\"ain\"]}]}}"
+	"\"modules\":[{\"slot\":1,\"type\":\"AIV\",\"serial\":\"9\",\"ports\":[\"ain\"]}]}}"
 #define CURRENT                                                                                    \
 	"{\"value\":{\"port\":\"ain\",\"index\":1,\"value\":4.5}}\n"                               \
 	"{\"value\":{\"port\":\"ain\",\"index\":2,\"value\":0}}\n"                                 \

@@ -18,7 +18,10 @@
  * indexed 1..count, or a single channel, index 0 (decided, plan task 22: 0
  * stands for "no index", as a bindings file without "index"). A port's id is
  * unique across both directions (a binding names the port by id alone,
- * 04 §4). Modules (04 §1 "Modules and their metadata") are UI metadata only.
+ * 04 §4). Modules (04 §1 "Modules and their metadata") and the carrier board
+ * (04 §1 "The carrier board", plan task 61) are UI metadata only: what they
+ * say is shown, not interpreted, and only their structure is validated (the
+ * slots), not their view-only values (decided with the user 2026-10-25).
  *
  * Rules (04 §0):
  *  - describe, start, stop, write and wall_ms are called on the engine
@@ -72,6 +75,8 @@ typedef Linkable HakkasValue;
 #define HAKKAS_ENV_COUNT_MAX 1024   /* channels of one addressable port */
 #define HAKKAS_ENV_MODULES_MAX 64   /* modules */
 #define HAKKAS_ENV_ID_MAX 64	    /* a port id, the name (bytes) */
+#define HAKKAS_ENV_IO_SLOTS_MAX 31  /* a carrier's I/O slots, built-in ones included */
+#define HAKKAS_ENV_COMM_SLOTS_MAX 4 /* a carrier's communication slots */
 #define HAKKAS_ENV_TEXT_MAX 1024    /* any other string (bytes) */
 
 /* A port's value type (04 §1): "number" or "bool". */
@@ -95,7 +100,9 @@ typedef struct {
 /* A module of a modular environment (04 §1): UI metadata, and the ids of the
  * ports it contributes. Every string may be NULL. */
 typedef struct {
-	const char *slot;
+	bool has_slot;
+	uint32_t slot; /* the I/O slot, from 0; with a carrier required */
+	bool builtin;  /* in a built-in slot of the carrier: cannot be changed */
 	const char *type; /* module type or model, e.g. "AIV" */
 	const char *vendor;
 	const char *revision;
@@ -104,6 +111,75 @@ typedef struct {
 	const char *const *ports;  /* port ids of this description */
 	size_t port_count;
 } HakkasEnvModule;
+
+/* The carrier board's power specification (04 §1), view only. */
+typedef struct {
+	bool has_voltage_min, has_voltage_max;
+	double voltage_min, voltage_max; /* V */
+	bool ac, dc;			 /* the supplies it takes */
+	bool has_current;
+	double current; /* A */
+} HakkasEnvPower;
+
+/* A communication module's address parameters (Ethernet, WiFi), view only:
+ * as the environment gives them, not checked. Strings may be NULL. */
+typedef struct {
+	const char *mode;    /* "dhcp" or "static" */
+	const char *address; /* IPv4 or IPv6; with DHCP the leased one */
+	bool has_prefix;
+	uint32_t prefix;
+	const char *gateway;
+	const char *const *dns;
+	size_t dns_count;
+	const char *mac;
+} HakkasEnvIp;
+
+/* An RS-485 module's parameters, view only. */
+typedef struct {
+	bool has_bitrate;
+	uint32_t bitrate;
+	const char *parity; /* "none", "even" or "odd" */
+} HakkasEnvRs485;
+
+/* A LoRaWAN module's parameters (OTAA), view only. The App Key is a secret:
+ * only whether one is set (02 §2). */
+typedef struct {
+	const char *app_eui; /* 16 hex digits */
+	const char *dev_eui;
+	bool has_app_key_set;
+	bool app_key_set;
+} HakkasEnvLoRaWan;
+
+/* A communication slot and its module (04 §1). The parameter groups present
+ * say what kind of module it is (the type is the vendor's name): ip for
+ * Ethernet, ip and ssid for WiFi, rs485, lorawan; NULL for none. No secret is
+ * ever part of it. */
+typedef struct {
+	uint32_t slot;	  /* 1..HAKKAS_ENV_COMM_SLOTS_MAX */
+	const char *type; /* e.g. "colibri/Ethernet" */
+	const HakkasEnvIp *ip;
+	const char *ssid; /* WiFi */
+	const HakkasEnvRs485 *rs485;
+	const HakkasEnvLoRaWan *lorawan;
+} HakkasEnvComm;
+
+/* The carrier board of a modular environment (04 §1). Its I/O slots are
+ * numbered 0..builtin_count + slots - 1 (1..HAKKAS_ENV_IO_SLOTS_MAX of them);
+ * builtin lists the built-in ones, each holding a module that cannot be
+ * changed. Strings may be NULL. */
+typedef struct {
+	const char *type;
+	const char *vendor;
+	const char *revision;
+	const char *serial;
+	const char *documentation; /* a link */
+	uint32_t slots;		   /* the changeable I/O slots */
+	const uint32_t *builtin;   /* the built-in slots' numbers */
+	size_t builtin_count;
+	const HakkasEnvPower *power; /* NULL: not given */
+	const HakkasEnvComm *comm;   /* the communication slots in use */
+	size_t comm_count;	     /* 0..HAKKAS_ENV_COMM_SLOTS_MAX */
+} HakkasEnvCarrier;
 
 /* The environment's description (04 §1). */
 typedef struct {
@@ -116,6 +192,7 @@ typedef struct {
 	size_t out_port_count;
 	const HakkasEnvModule *modules;
 	size_t module_count;
+	const HakkasEnvCarrier *carrier; /* NULL: not a modular environment */
 } HakkasEnvDescription;
 
 /* The engine's side of sensor delivery, handed to start. Opaque. */

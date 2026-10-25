@@ -896,10 +896,17 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   read, is malformed or has no environment as `run processes: <file>: <message>: not applied`
   and starts the process without it. Decided while implementing: running out of memory part
   way still refuses startup, as it does for a process that cannot load (04 §4, 05 §1.2).
-- [ ] **61. The carrier board in the environment description** (04 §1): `HakkasEnvDescription`,
+- [x] **61. The carrier board in the environment description** (04 §1): `HakkasEnvDescription`,
   the link's `describe`, validation and the identical-description check gain the carrier
   (slots, built-in modules, power, communication slots with per-type parameters). Emulator
   spec §10 questions 9–11 were decided 2026-10-24, so nothing blocks it.
+  *Done*: `HakkasEnvCarrier` (with `HakkasEnvPower`, `HakkasEnvComm` and the parameter groups
+  `HakkasEnvIp`, `HakkasEnvRs485`, `HakkasEnvLoRaWan`) in `src/hakkas_env.h`; a module's
+  `slot` is a number and it has `builtin`. Decided with the user 2026-10-25: I/O slots
+  numbered from 0, 1–31 in all with the built-in ones; communication slots 1–4; the slots'
+  structure is validated (built-in modules agree with the carrier's list), view-only values
+  are not; the identical-description check leaves the communication parameters out (a DHCP
+  lease). Nothing on the FBP wire yet (task 62).
 - [ ] **62. The `environment` wire group** (02 §3.7): the description, bindings, deployment —
   each message put to the user first.
 - [ ] **63. Frontend: binding page, deployment with a mapping dialog** (06 §7).

@@ -12,15 +12,30 @@
  * type of number or bool; min <= max when both are set (neither NaN); an
  * addressable port with a count of 1..HAKKAS_ENV_COUNT_MAX, a port that is
  * not addressable with count 0; at most HAKKAS_ENV_MODULES_MAX modules, each
- * listing only port ids of the description.
+ * listing only port ids of the description. The carrier (plan task 61): 1 to
+ * HAKKAS_ENV_IO_SLOTS_MAX I/O slots, built-in ones included, numbered from 0;
+ * built-in slots among them, none twice; at most HAKKAS_ENV_COMM_SLOTS_MAX
+ * communication slots numbered 1..HAKKAS_ENV_COMM_SLOTS_MAX, none twice. With
+ * a carrier every module has one of its I/O slots, and is builtin exactly
+ * when its slot is built-in; without one no module is builtin; no two
+ * modules share a slot. The carrier's view-only values (its strings, power,
+ * the communication parameters) are not checked (decided with the user
+ * 2026-10-25).
  *
  * The JSON form (04 §1): {"name", "description"?, "icon"?, "inPorts"?: [port],
  * "outPorts"?: [port], "modules"?: [module]}, a port {"id", "type":
  * "number"|"bool", "description"?, "unit"?, "min"?, "max"?, "addressable"?,
- * "count"?} ("count" only with "addressable": true), a module {"slot"?,
- * "type"?, "vendor"?, "revision"?, "serial"?, "documentation"?, "ports"?:
- * [port id]}. A member that is null is absent; unknown members are ignored
- * (forward compatibility).
+ * "count"?} ("count" only with "addressable": true), a module {"slot"?:
+ * integer, "builtin"?: bool, "type"?, "vendor"?, "revision"?, "serial"?,
+ * "documentation"?, "ports"?: [port id]}, and "carrier"?: {"type"?,
+ * "vendor"?, "revision"?, "serial"?, "documentation"?, "slots": integer,
+ * "builtin"?: [{"slot": integer}], "power"?: {"voltage"?: {"min"?, "max"?},
+ * "ac"?, "dc"?, "current"?}, "comm"?: [{"slot": integer, "type"?, "ip"?:
+ * {"mode"?, "address"?, "prefix"?, "gateway"?, "dns"?: [string], "mac"?},
+ * "wifi"?: {"ssid"?}, "rs485"?: {"bitrate"?, "parity"?}, "lorawan"?:
+ * {"appEui"?, "devEui"?, "appKeySet"?}}]}. A view-only member of another type
+ * is absent, not an error. A member that is null is absent; unknown members
+ * are ignored (forward compatibility).
  *
  * Threading: none of its own; a description is read-only once made.
  */
@@ -59,7 +74,9 @@ static inline bool env_port_has_channel(const HakkasEnvPort *p, uint32_t index)
 }
 
 /* Whether a and b describe the same environment, member by member (NULL and
- * a string are different; module and port order matter). */
+ * a string are different; module and port order matter). The communication
+ * slots' parameters are not compared, only their slots and types: they are
+ * live, view-only values (a DHCP lease). */
 bool env_description_equal(const HakkasEnvDescription *a, const HakkasEnvDescription *b);
 
 /* A new description from its JSON form (above), validated: one heap

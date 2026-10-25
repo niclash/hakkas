@@ -67,9 +67,9 @@ static const HakkasEnvPort in_ports[] = {
 };
 static const char *const module_ports[] = {"ain", "relay"};
 static const HakkasEnvModule modules[] = {
-	{.slot = "3", .type = "AIV", .vendor = "stm32world", .revision = "B", .serial = "0042",
-	 .documentation = "https://stm32world.com/wiki/Colibri", .ports = module_ports,
-	 .port_count = 2},
+	{.has_slot = true, .slot = 3, .type = "AIV", .vendor = "stm32world", .revision = "B",
+	 .serial = "0042", .documentation = "https://stm32world.com/wiki/Colibri",
+	 .ports = module_ports, .port_count = 2},
 };
 
 static HakkasEnvDescription description(void)
@@ -399,6 +399,32 @@ static void test_description_validate(void)
 	CHECK(env_description_validate(&d, NULL, 0));
 	d.in_ports = NULL;
 	invalid_desc(d, "a list with a count but no entries");
+
+	/* The carrier (plan task 61), as a firmware builds it in C. */
+	d = description(); /* its module is in slot 3 */
+	static const uint32_t builtin[] = {0};
+	HakkasEnvComm comm[2] = {{.slot = 1, .type = "colibri/Ethernet"}, {.slot = 2}};
+	HakkasEnvCarrier c = {.slots = 7, .builtin = builtin, .builtin_count = 1, .comm = comm,
+			      .comm_count = 2};
+	d.carrier = &c;
+	CHECK(env_description_validate(&d, why, sizeof(why)));
+	c.builtin = NULL;
+	invalid_desc(d, "carrier: a list with a count but no entries");
+	c.builtin = builtin;
+	c.slots = 2;
+	invalid_desc(d, "modules[0]: slot: expected 0 to 2");
+	c.slots = 7;
+	comm[1].slot = 1;
+	invalid_desc(d, "carrier: comm[1]: slot 1 listed twice");
+	comm[1].slot = 2;
+	HakkasEnvModule mods[2] = {modules[0], {.has_slot = true, .slot = 0}};
+	d.modules = mods;
+	d.module_count = 2;
+	invalid_desc(d, "modules[1]: builtin: slot 0 is a built-in slot");
+	mods[1].builtin = true;
+	CHECK(env_description_validate(&d, why, sizeof(why)));
+	mods[1].has_slot = false;
+	invalid_desc(d, "modules[1]: slot: expected 0 to 7");
 }
 
 static void test_description_json(void)
@@ -418,7 +444,7 @@ static void test_description_json(void)
 		" \"count\": 4, \"unit\": \"V\"},"
 		" {\"id\": \"relay\", \"type\": \"bool\", \"addressable\": true, \"count\": 8},"
 		" {\"id\": \"buzzer\", \"type\": \"bool\", \"addressable\": null, \"future\": 1}],"
-		" \"modules\": [{\"slot\": \"3\", \"type\": \"AIV\", \"serial\": \"77\","
+		" \"modules\": [{\"slot\": 3, \"type\": \"AIV\", \"serial\": \"77\","
 		" \"documentation\": \"https://example.com\", \"ports\": [\"analog-in\"]}],"
 		" \"later\": true}";
 	cJSON *json = cJSON_Parse(text);
@@ -493,6 +519,55 @@ static void test_description_json(void)
 		 "modules[0]: ports[0]: no such port"},
 		{"{\"name\": \"e\", \"modules\": [{\"serial\": 42}]}",
 		 "modules[0]: serial: expected a string"},
+		{"{\"name\": \"e\", \"modules\": [{\"slot\": \"3\"}]}",
+		 "modules[0]: slot: expected an integer of at least 0"},
+		{"{\"name\": \"e\", \"modules\": [{\"slot\": -1}]}",
+		 "modules[0]: slot: expected an integer of at least 0"},
+		{"{\"name\": \"e\", \"modules\": [{\"builtin\": 1}]}",
+		 "modules[0]: builtin: expected true or false"},
+		{"{\"name\": \"e\", \"modules\": [{\"slot\": 1}, {\"slot\": 1}]}",
+		 "modules[1]: slot 1 taken twice"},
+		{"{\"name\": \"e\", \"modules\": [{\"slot\": 0, \"builtin\": true}]}",
+		 "modules[0]: builtin: no carrier"},
+		/* The carrier's structure (plan task 61). */
+		{"{\"name\": \"e\", \"carrier\": 7}", "carrier: expected an object"},
+		{"{\"name\": \"e\", \"carrier\": {}}",
+		 "carrier: slots: expected an integer of at least 0"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 0}}",
+		 "carrier: expected 1 to 31 I/O slots, built-in ones included"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 31, \"builtin\": [{\"slot\": 0}]}}",
+		 "carrier: expected 1 to 31 I/O slots, built-in ones included"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"builtin\": {}}}",
+		 "carrier: builtin: expected an array"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"builtin\": [3]}}",
+		 "carrier: builtin[0]: slot: expected an integer of at least 0"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"builtin\": [{\"slot\": 3}]}}",
+		 "carrier: builtin[0]: slot: expected 0 to 2"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"builtin\": [{\"slot\": 0},"
+		 " {\"slot\": 0}]}}",
+		 "carrier: builtin[1]: slot 0 listed twice"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"comm\": [{}]}}",
+		 "carrier: comm[0]: slot: expected an integer of at least 0"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"comm\": [{\"slot\": 0}]}}",
+		 "carrier: comm[0]: slot: expected 1 to 4"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"comm\": [{\"slot\": 5}]}}",
+		 "carrier: comm[0]: slot: expected 1 to 4"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"comm\": [{\"slot\": 1},"
+		 " {\"slot\": 1}]}}",
+		 "carrier: comm[1]: slot 1 listed twice"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"comm\": [{\"slot\": 1},"
+		 " {\"slot\": 2}, {\"slot\": 3}, {\"slot\": 4}, {\"slot\": 1}]}}",
+		 "carrier: comm: more than 4 communication slots"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2}, \"modules\": [{}]}",
+		 "modules[0]: slot: expected 0 to 1"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2}, \"modules\": [{\"slot\": 2}]}",
+		 "modules[0]: slot: expected 0 to 1"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"builtin\": [{\"slot\": 0}]},"
+		 " \"modules\": [{\"slot\": 0}]}",
+		 "modules[0]: builtin: slot 0 is a built-in slot"},
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2, \"builtin\": [{\"slot\": 0}]},"
+		 " \"modules\": [{\"slot\": 1, \"builtin\": true}]}",
+		 "modules[0]: builtin: slot 1 is not a built-in slot"},
 	};
 	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
 		json = cJSON_Parse(bad[i].json);
@@ -506,6 +581,109 @@ static void test_description_json(void)
 		env_description_free(d);
 		cJSON_Delete(json);
 	}
+}
+
+/* The carrier board (04 §1, plan task 61): its view-only values are taken as
+ * given, a wrongly typed one as absent; the communication parameters are not
+ * part of the identical-description check. */
+static void test_carrier_json(void)
+{
+	/* The example of 04 §1, with every communication kind. */
+	const char *text =
+		"{\"name\": \"colibri\","
+		" \"carrier\": {\"type\": \"colibri/Colibri8\", \"vendor\": \"CurrentMakers\","
+		" \"revision\": \"B\", \"serial\": \"C8-0042\", \"documentation\": \"https://x\","
+		" \"slots\": 7, \"builtin\": [{\"slot\": 0}],"
+		" \"power\": {\"voltage\": {\"min\": 12, \"max\": 30}, \"ac\": false, \"dc\": true,"
+		" \"current\": 2.0},"
+		" \"comm\": [{\"slot\": 1, \"type\": \"colibri/Ethernet\","
+		" \"ip\": {\"mode\": \"dhcp\", \"address\": \"192.168.1.40\", \"prefix\": 24,"
+		" \"gateway\": \"192.168.1.1\", \"dns\": [\"192.168.1.1\", 5, \"9.9.9.9\"],"
+		" \"mac\": \"02:00:00:00:00:01\"}},"
+		" {\"slot\": 2, \"type\": \"colibri/WiFi\", \"ip\": {\"mode\": \"static\"},"
+		" \"wifi\": {\"ssid\": \"plant\"}},"
+		" {\"slot\": 3, \"type\": \"colibri/RS485\", \"rs485\": {\"bitrate\": 19200,"
+		" \"parity\": \"mark\"}},"
+		" {\"slot\": 4, \"type\": 9, \"lorawan\": {\"appEui\": \"0011\","
+		" \"devEui\": \"not hex\", \"appKeySet\": true}}]},"
+		" \"outPorts\": [{\"id\": \"slot3-ai\", \"type\": \"number\","
+		" \"addressable\": true, \"count\": 2}],"
+		" \"modules\": [{\"slot\": 0, \"builtin\": true,"
+		" \"type\": \"colibri/Colibri8-IO\"},"
+		" {\"slot\": 3, \"type\": \"colibri/AIV\", \"ports\": [\"slot3-ai\"]}]}";
+	cJSON *json = cJSON_Parse(text);
+	char why[ENV_DESCRIPTION_MESSAGE_MAX] = "";
+	HakkasEnvDescription *d = env_description_from_json(json, why, sizeof(why));
+	CHECK_STREQ(why, "");
+	CHECK(d != NULL && d->carrier != NULL);
+	if (d != NULL && d->carrier != NULL) {
+		const HakkasEnvCarrier *c = d->carrier;
+		CHECK_STREQ(c->type, "colibri/Colibri8");
+		CHECK_STREQ(c->serial, "C8-0042");
+		CHECK(c->slots == 7 && c->builtin_count == 1 && c->builtin[0] == 0);
+		CHECK(c->power != NULL && c->power->has_voltage_min && c->power->voltage_max == 30);
+		CHECK(!c->power->ac && c->power->dc && c->power->current == 2.0);
+		CHECK(c->comm_count == 4);
+		const HakkasEnvIp *ip = c->comm[0].ip;
+		CHECK(ip != NULL && c->comm[0].rs485 == NULL && c->comm[0].ssid == NULL);
+		CHECK_STREQ(ip->mode, "dhcp");
+		CHECK(ip->has_prefix && ip->prefix == 24);
+		CHECK(ip->dns_count == 2); /* a dns entry that is not a string is left out */
+		CHECK_STREQ(ip->dns[1], "9.9.9.9");
+		CHECK_STREQ(c->comm[1].ssid, "plant");
+		CHECK(c->comm[1].ip != NULL && c->comm[1].ip->address == NULL);
+		CHECK(c->comm[2].rs485 != NULL && c->comm[2].rs485->bitrate == 19200);
+		CHECK_STREQ(c->comm[2].rs485->parity, "mark"); /* not validated */
+		CHECK(c->comm[3].type == NULL); /* wrongly typed: absent */
+		CHECK(c->comm[3].lorawan != NULL && c->comm[3].lorawan->app_key_set);
+		CHECK_STREQ(c->comm[3].lorawan->dev_eui, "not hex");
+		CHECK(d->modules[0].builtin && d->modules[0].has_slot && d->modules[0].slot == 0);
+		CHECK(!d->modules[1].builtin && d->modules[1].slot == 3);
+
+		/* A new DHCP lease is the same environment; another module type in
+		 * a communication slot, or another power supply, is not. */
+		cJSON *carrier = cJSON_GetObjectItem(json, "carrier");
+		cJSON *comm0 = cJSON_GetArrayItem(cJSON_GetObjectItem(carrier, "comm"), 0);
+		cJSON_ReplaceItemInObject(cJSON_GetObjectItem(comm0, "ip"), "address",
+					  cJSON_CreateString("192.168.1.41"));
+		HakkasEnvDescription *e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_ReplaceItemInObject(comm0, "type", cJSON_CreateString("colibri/WiFi"));
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_ReplaceItemInObject(comm0, "type", cJSON_CreateString("colibri/Ethernet"));
+		cJSON_ReplaceItemInObject(cJSON_GetObjectItem(carrier, "power"), "ac",
+					  cJSON_CreateTrue());
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_DeleteItemFromObject(json, "carrier");
+		cJSON *builtin_module =
+			cJSON_GetArrayItem(cJSON_GetObjectItem(json, "modules"), 0);
+		cJSON_DeleteItemFromObject(builtin_module, "builtin");
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && e->carrier == NULL && !env_description_equal(d, e));
+		env_description_free(e);
+	}
+	env_description_free(d);
+	cJSON_Delete(json);
+
+	/* The emulator's built-in slot may be empty (emulator spec §2). */
+	json = cJSON_Parse("{\"name\": \"e\", \"carrier\": {\"slots\": 7, \"builtin\": "
+			   "[{\"slot\": 0}], \"power\": \"12 V\"}}");
+	d = env_description_from_json(json, why, sizeof(why));
+	CHECK(d != NULL && d->carrier->power == NULL && d->carrier->comm_count == 0);
+	env_description_free(d);
+	cJSON_Delete(json);
+	/* 31 I/O slots in all is the most. */
+	json = cJSON_Parse("{\"name\": \"e\", \"carrier\": {\"slots\": 30, \"builtin\": "
+			   "[{\"slot\": 30}]}, \"modules\": [{\"slot\": 30, \"builtin\": true}]}");
+	d = env_description_from_json(json, why, sizeof(why));
+	CHECK(d != NULL);
+	env_description_free(d);
+	cJSON_Delete(json);
 }
 
 /* ---- The bindings file (04 §4) ------------------------------------------------------ */
@@ -1017,6 +1195,7 @@ int main(void)
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
 	RUN(test_description_validate);
 	RUN(test_description_json);
+	RUN(test_carrier_json);
 	RUN(test_bindings_file);
 	RUN(test_open);
 	RUN(test_sensor_values);
