@@ -83,13 +83,23 @@ Follow-ups, decided the same day:
 
 ## Phase 0 — Specification
 
-- [ ] **E0. Settle the spec**: record the decisions above in the emulator spec (and in 04 §1
+- [x] **E0. Settle the spec**: record the decisions above in the emulator spec (and in 04 §1
   where they touch hakkas' description: the type names, follow-ups A and B); turn §4's, §7's
   and §8's proposals into decisions; write the control protocol in `emulators/specifications/`
   (decision 10: every message, key and `configure` operation, `persist`, error replies), for
   review before any code depends on it; and complete §2.1 with the final channel table per
   plugin (ids, types, counts, units, ranges, resolutions, defaults, noise, controls), with
   DII/DIU's state and DIO1's fault.
+  *Done* (2026-10-25): the emulator spec rewritten for implementation (§2.1 channel table, §3 one
+  hakkas and the link rules, §3.1 the command line, §4 serving a slot and deadline-based turns,
+  §5/§5.1 persist and power cycles, §5.3 the server-side copy, §5.4 `colibri_8` and the
+  communication module descriptors `comm.json`, §6, §7 descriptors with `name`, signals and
+  measured channels, §8.3 the keys, rows and settings fields); the shared
+  `emulators/specifications/00-README.md` and `01-control-protocol.md`; hakkas' 04 §1 (`name`,
+  the type names, DII/DIU state, DIO1 fault). Decided on the way, unless the user objects: the
+  pulse-train signal's measuring rules (§7.2), the `create`/`select`/`rename` rules and their
+  refusals (protocol §4.4), state sent at most every 50 ms and stats once a second (§3.5–§3.6),
+  the `restart` link state cleared by a connection that stays 2 s (§3.7), HTTP default port 8090.
 
 ## Phase 1 — The emulated system and the link to hakkas (no UI)
 
@@ -98,10 +108,11 @@ Follow-ups, decided the same day:
   a `README.md` with how to run it against hakkas (`environment.socket` in `hakkas.json`).
 - [ ] **E2. Plugins and carrier definitions** (§5.4, §7.1): load and validate `module.json` and
   `carrier.json` (each with its type and human-readable `name`, follow-ups A and B) from the
-  built-in directory and `--plugins` directories, with clear errors per file; the built-in
+  built-in directory (`data/`) and `--plugins` directories (`modules/`, `carriers/`, `comm/`,
+  a later definition replacing an earlier one), with clear errors per file; the built-in
   plugins for every catalogue module (§2.1: AIV, AIC, AQV, Pt1000, DP1–DP3, DII, DIU, DIO1,
   FET, SSR, TRIAC1, Fallback, PID1, RS485I/U without channels, slot 0's `carrier` without
-  channels) and the `colibri_8` carrier (decision 4).
+  channels), the four communication module types and the `colibri_8` carrier (decision 4).
 - [ ] **E3. Environment files and the library** (§5, §5.1): load, validate and save
   `<name>.json` (atomic write, only on `persist`, decision 6); list, create, duplicate, rename
   and delete; remember the last one run; the `environments/` and `bindings/` directories.
