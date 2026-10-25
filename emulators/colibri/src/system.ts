@@ -189,6 +189,11 @@ export class System {
         return this.ports.get(port)?.find(ch => ch.index === index);
     }
 
+    // The channels of a hakkas port, in index order; undefined for no such port.
+    portChannels(port: string): readonly Channel[] | undefined {
+        return this.ports.get(port);
+    }
+
     item(key: string): Channel | SignalState | undefined {
         return this.items.get(key);
     }

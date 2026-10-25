@@ -195,11 +195,21 @@ Follow-ups, decided the same day:
   (`env_description_from_json` + `env_description_validate`) on the same descriptions, all
   accepted. Decided on the way (spec §6): absent members left out, an unknown module type's
   slot not listed, no carrier serial yet.
-- [ ] **E7. The environment link server** (§3, 04 §0.1): a Unix socket with newline-delimited
+- [x] **E7. The environment link server** (§3, 04 §0.1): a Unix socket with newline-delimited
   JSON. On every connection: `describe`, then all current sensor values, then the changes;
   `hello` check; `write` into the module's queue; malformed lines warned about and ignored; the
   256 KiB line limit; one connection at a time (decision 8); a power cycle (§5.1) closes the
   link.
+  *Done*: `src/link.ts` (`LinkServer`: `listen()` with the stale-socket check, `serve()` an
+  environment or none (another one is a power cycle), `turn()` sends a turn's changes,
+  `close()` removes the socket file; the link state and notices as events for E9); the emulator
+  listens at startup and serves the environment it runs. Tests over a real socket: the
+  description and current values, changes at a turn, writes reaching the queue, every warning
+  and the limit of 8, unknown messages ignored, the version check, the 256 KiB limit at and over
+  it, a second connection refused with a notice, no environment, a power cycle and `restart`
+  cleared after 2 s; the command's run removes its socket. Decided on the way (spec §3): see
+  its E7 bullet (current values, `index`/`null`, no environment, the socket directory, when a
+  power cycle means `restart`).
 - [ ] **E8. Integration with hakkas**: a test that runs `build/debug/hakkas run` against the
   emulator. A process binds an AIV input and an SSR output; the test checks the description
   hakkas accepts, a value in both directions with the scan latency, the reconnect (sensor

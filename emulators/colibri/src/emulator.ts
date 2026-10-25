@@ -4,6 +4,7 @@ import type {Options} from './cli.js';
 import {checkDescription, describe} from './description.js';
 import {carrierOf, checkEnvironment, type Environment} from './environment.js';
 import {Library} from './library.js';
+import {LinkServer} from './link.js';
 import type {Logger} from './log.js';
 import {BUILTIN_DATA, VERSION} from './package.js';
 import {randomSeed, seededRandom} from './random.js';
@@ -25,6 +26,8 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
     const seed = options.seed ?? randomSeed();
     log.fine(`noise seed ${seed}`);
     const random = seededRandom(seed);
+    const link = new LinkServer(options.socket, log);
+    await link.listen();
     const clock = () => performance.now();
     let scanner: Scanner | undefined;
     if (env !== undefined) {
@@ -40,19 +43,17 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
         } else {
             log.fine(`environment ${name}: ${description.outPorts.length} sensor ports, ` +
                 `${description.inPorts.length} actuator ports`);
-            scanner = new Scanner(system, env, clock, log);
+            scanner = new Scanner(system, env, clock, log, turn => link.turn(turn));
+            link.serve({system, scanner, description});
             scanner.start();
         }
     }
-    // Nothing listens yet (the sockets come with plan tasks E7 and E10), so a timer keeps the
-    // process alive until the stop request.
-    const alive = setInterval(() => {}, 1 << 30);
     try {
         if (!stop.aborted)
             await new Promise<void>(resolve => stop.addEventListener('abort', () => resolve(), {once: true}));
     } finally {
-        clearInterval(alive);
         scanner?.stop();
+        await link.close();
     }
     log.info('stopped');
 }

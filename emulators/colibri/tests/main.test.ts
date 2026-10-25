@@ -1,6 +1,6 @@
 // The built command, run as a process.
 import {execFileSync, spawn} from 'node:child_process';
-import {mkdtempSync, rmSync} from 'node:fs';
+import {existsSync, mkdtempSync, rmSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
@@ -70,6 +70,9 @@ describe('colibri-emulator', () => {
             expect(r.code).toBe(0);
             expect(r.stderr).toMatch(new RegExp(`^info colibri-emulator ${VERSION}: library .*\n` +
                 'info catalog: module types 18, carrier types 1, communication module types 4\n' +
-                'info environment default: carrier colibri_8, modules 0, cycle 10 ms\ninfo stopped\n$'));
+                'info environment default: carrier colibri_8, modules 0, cycle 10 ms\n' +
+                `info environment link: listening on ${tmp}/colibri-emulator/environment.sock\n` +
+                'info stopped\n$'));
+            expect(existsSync(path.join(tmp, 'colibri-emulator', 'environment.sock'))).toBe(false);
         });
 });
