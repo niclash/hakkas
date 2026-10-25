@@ -25,6 +25,7 @@ describe('the command line', () => {
             socket: '/run/user/1000/colibri-emulator/environment.sock',
             controlSocket: '/run/user/1000/colibri-emulator/control.sock',
             httpPort: DEFAULT_HTTP_PORT,
+            mcu: 'colibri_mcu6',
             seed: undefined,
             logLevel: 'info',
             environment: undefined,
@@ -49,10 +50,10 @@ describe('the command line', () => {
 
     it('takes every option', () => {
         expect(run(['--library', 'lib', '--plugins', 'a', '--plugins', 'b', '--socket', 'e.sock',
-            '--control-socket', 'c.sock', '--http', '0', '--seed', '4294967295', '--log-level', 'fine',
-            'lab-1'])).toEqual({
+            '--control-socket', 'c.sock', '--http', '0', '--mcu', 'colibri_mcu7', '--seed', '4294967295',
+            '--log-level', 'fine', 'lab-1'])).toEqual({
             library: 'lib', plugins: ['a', 'b'], socket: 'e.sock', controlSocket: 'c.sock', httpPort: 0,
-            seed: 4294967295, logLevel: 'fine', environment: 'lab-1',
+            mcu: 'colibri_mcu7', seed: 4294967295, logLevel: 'fine', environment: 'lab-1',
         });
     });
 
@@ -73,6 +74,8 @@ describe('the command line', () => {
         for (const s of ['4294967296', '-1', 'abc'])
             expect(error([`--seed=${s}`])).toMatch(/invalid --seed/);
         expect(error(['--log-level', 'debug'])).toMatch(/invalid --log-level/);
+        for (const m of ['', 'MCU6', 'colibri-mcu6'])
+            expect(error([`--mcu=${m}`])).toMatch(/invalid --mcu/);
         expect(error(['--plugins', ''])).toMatch(/empty directory/);
         expect(error(['--socket', ''])).toMatch(/empty socket/);
     });

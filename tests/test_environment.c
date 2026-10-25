@@ -457,6 +457,11 @@ static void test_description_validate(void)
 	comm[0].name = long_name;
 	invalid_desc(d, "carrier: comm[0]: name: longer than 1024 bytes");
 	comm[0].name = "Colibri Ethernet";
+	HakkasEnvMcu mcu = {.type = "colibri_mcu6", .name = long_name};
+	c.mcu = &mcu;
+	invalid_desc(d, "carrier: mcu: name: longer than 1024 bytes");
+	mcu.name = "Colibri MCU6";
+	CHECK(env_description_validate(&d, why, sizeof(why)));
 	mods[1].name = long_name;
 	invalid_desc(d, "modules[1]: text longer than 1024 bytes");
 	long_name[HAKKAS_ENV_TEXT_MAX] = '\0';
@@ -643,7 +648,9 @@ static void test_carrier_json(void)
 		" {\"slot\": 3, \"type\": \"colibri_rs485\", \"rs485\": {\"bitrate\": 19200,"
 		" \"parity\": \"mark\"}},"
 		" {\"slot\": 4, \"type\": 9, \"lorawan\": {\"appEui\": \"0011\","
-		" \"devEui\": \"not hex\", \"appKeySet\": true}}]},"
+		" \"devEui\": \"not hex\", \"appKeySet\": true}}],"
+		" \"mcu\": {\"type\": \"colibri_mcu6\", \"name\": \"Colibri MCU6\","
+		" \"vendor\": \"CurrentMakers\", \"revision\": 3, \"serial\": \"M6-0007\"}},"
 		" \"outPorts\": [{\"id\": \"slot3-ai\", \"type\": \"number\","
 		" \"addressable\": true, \"count\": 2}],"
 		" \"modules\": [{\"slot\": 0, \"builtin\": true,"
@@ -683,6 +690,13 @@ static void test_carrier_json(void)
 		CHECK_STREQ(c->comm[3].lorawan->dev_eui, "not hex");
 		CHECK(d->modules[0].builtin && d->modules[0].has_slot && d->modules[0].slot == 0);
 		CHECK(!d->modules[1].builtin && d->modules[1].slot == 3);
+		const HakkasEnvMcu *mcu = c->mcu;
+		CHECK(mcu != NULL);
+		CHECK_STREQ(mcu->type, "colibri_mcu6");
+		CHECK_STREQ(mcu->name, "Colibri MCU6");
+		CHECK_STREQ(mcu->serial, "M6-0007");
+		/* revision wrongly typed: absent */
+		CHECK(mcu->revision == NULL && mcu->documentation == NULL);
 
 		/* A new DHCP lease is the same environment; another module type in
 		 * a communication slot, or another power supply, is not. */
@@ -692,6 +706,8 @@ static void test_carrier_json(void)
 		CHECK(e != NULL && env_description_equal(d, e));
 		CHECK(e != NULL && e->carrier->comm[3].lorawan->app_key_set);
 		CHECK(e != NULL && e->carrier->comm[0].ip->dns_count == 2);
+		CHECK(e != NULL && e->carrier->mcu != NULL);
+		CHECK_STREQ(e->carrier->mcu->vendor, "CurrentMakers");
 		env_description_free(e);
 		cJSON_Delete(back);
 		cJSON *carrier = cJSON_GetObjectItem(json, "carrier");
@@ -717,6 +733,19 @@ static void test_carrier_json(void)
 		CHECK(e != NULL && !env_description_equal(d, e));
 		env_description_free(e);
 		cJSON_ReplaceItemInObject(carrier, "name", cJSON_CreateString("Colibri 8"));
+		/* The MCU module is static too: another one, or none, is another
+		 * environment. */
+		cJSON *mcu_json = cJSON_GetObjectItem(carrier, "mcu");
+		cJSON_ReplaceItemInObject(mcu_json, "type", cJSON_CreateString("colibri_mcu2"));
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_ReplaceItemInObject(mcu_json, "type", cJSON_CreateString("colibri_mcu6"));
+		cJSON *detached = cJSON_DetachItemFromObject(carrier, "mcu");
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && e->carrier->mcu == NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_AddItemToObject(carrier, "mcu", detached);
 		cJSON *aiv = cJSON_GetArrayItem(cJSON_GetObjectItem(json, "modules"), 1);
 		cJSON_DeleteItemFromObject(aiv, "name");
 		e = env_description_from_json(json, why, sizeof(why));
@@ -741,9 +770,10 @@ static void test_carrier_json(void)
 
 	/* The emulator's built-in slot may be empty (emulator spec §2). */
 	json = cJSON_Parse("{\"name\": \"e\", \"carrier\": {\"slots\": 7, \"builtin\": "
-			   "[{\"slot\": 0}], \"power\": \"12 V\"}}");
+			   "[{\"slot\": 0}], \"power\": \"12 V\", \"mcu\": \"MCU6\"}}");
 	d = env_description_from_json(json, why, sizeof(why));
 	CHECK(d != NULL && d->carrier->power == NULL && d->carrier->comm_count == 0);
+	CHECK(d != NULL && d->carrier->mcu == NULL); /* not an object: absent */
 	env_description_free(d);
 	cJSON_Delete(json);
 	/* 31 I/O slots in all is the most. */

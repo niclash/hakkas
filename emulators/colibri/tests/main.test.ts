@@ -73,7 +73,7 @@ describe('colibri-emulator', () => {
             });
             expect(r.code).toBe(0);
             expect(r.stderr).toMatch(new RegExp(`^info colibri-emulator ${VERSION}: library .*\n` +
-                'info catalog: module types 18, carrier types 1, communication module types 4\n' +
+                'info catalog: module types 18, carrier types 1, communication module types 4, MCU module types 3\n' +
                 'info environment default: carrier colibri_8, modules 0, cycle 10 ms\n' +
                 `info environment link: listening on ${tmp}/colibri-emulator/environment.sock\n` +
                 `info control: listening on ${tmp}/colibri-emulator/control.sock\n` +

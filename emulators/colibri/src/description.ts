@@ -2,7 +2,7 @@
 // the modules and the carrier, built from the emulated system; and the checks hakkas makes of
 // it (04 §0, "Validation"), so a description it would refuse is found here first.
 import type {Json, JsonObject} from './check.js';
-import type {Channel} from './descriptors.js';
+import type {Channel, McuType} from './descriptors.js';
 import type {System} from './system.js';
 
 // hakkas' limits (src/hakkas_env.h).
@@ -44,7 +44,8 @@ export interface Description {
     carrier: JsonObject;
 }
 
-export function describe(system: System): Description {
+// `mcu` is the MCU module in the carrier's MCU slot, if it takes it (spec §5.4).
+export function describe(system: System, mcu?: McuType): Description {
     const c = system.carrier;
     const d: Description = {
         name: system.name,
@@ -86,6 +87,8 @@ export function describe(system: System): Description {
             ...optional({name: s.def.name}),
             ...(s.params as JsonObject),
         })),
+        ...(mcu !== undefined && {mcu: {type: mcu.type, ...optional({name: mcu.name, vendor: mcu.vendor,
+            revision: mcu.revision, documentation: mcu.documentation})}}),
     };
     return d;
 }

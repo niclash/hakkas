@@ -1,9 +1,10 @@
-// The catalog: every module, carrier and communication module type, loaded from the plugin
+// The catalog: every module, carrier, communication module and MCU module type, loaded from the plugin
 // directories (spec §7): the built-in one, then each --plugins directory, in order.
 import {access, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {Checker, type Json} from './check.js';
-import {readCarrier, readComm, readModule, type CarrierType, type CommType, type ModuleType} from './descriptors.js';
+import {readCarrier, readComm, readMcu, readModule, type CarrierType, type CommType, type McuType,
+    type ModuleType} from './descriptors.js';
 import type {Logger} from './log.js';
 
 export interface Entry<T> {
@@ -15,6 +16,7 @@ export interface Catalog {
     modules: Map<string, Entry<ModuleType>>;
     carriers: Map<string, Entry<CarrierType>>;
     comm: Map<string, Entry<CommType>>;
+    mcu: Map<string, Entry<McuType>>;
 }
 
 type Read = (c: Checker, v: Json, dirName: string) => {type: string} | undefined;
@@ -23,14 +25,15 @@ const KINDS: {subdir: string, file: string, what: string, read: Read}[] = [
     {subdir: 'modules', file: 'module.json', what: 'module', read: readModule},
     {subdir: 'carriers', file: 'carrier.json', what: 'carrier', read: readCarrier},
     {subdir: 'comm', file: 'comm.json', what: 'communication module', read: readComm},
+    {subdir: 'mcu', file: 'mcu.json', what: 'MCU module', read: readMcu},
 ];
 
 // A descriptor that cannot be read or is invalid is skipped, with an error naming the file; a type
 // defined again in a later directory replaces the earlier one, with a warning. Nothing here
 // refuses startup.
 export async function loadCatalog(dirs: string[], log: Logger): Promise<Catalog> {
-    const catalog: Catalog = {modules: new Map(), carriers: new Map(), comm: new Map()};
-    const maps = [catalog.modules, catalog.carriers, catalog.comm] as Map<string, Entry<unknown>>[];
+    const catalog: Catalog = {modules: new Map(), carriers: new Map(), comm: new Map(), mcu: new Map()};
+    const maps = [catalog.modules, catalog.carriers, catalog.comm, catalog.mcu] as Map<string, Entry<unknown>>[];
     for (const dir of dirs) {
         let found = false;
         for (const [k, kind] of KINDS.entries()) {
@@ -60,11 +63,11 @@ export async function loadCatalog(dirs: string[], log: Logger): Promise<Catalog>
             }
         }
         if (!found)
-            log.warn(`${dir}: no modules, carriers or comm directory`);
+            log.warn(`${dir}: no modules, carriers, comm or mcu directory`);
     }
     crossCheck(catalog, log);
     log.info(`catalog: module types ${catalog.modules.size}, carrier types ${catalog.carriers.size}, ` +
-        `communication module types ${catalog.comm.size}`);
+        `communication module types ${catalog.comm.size}, MCU module types ${catalog.mcu.size}`);
     return catalog;
 }
 
@@ -108,8 +111,8 @@ async function checkPicture(def: {faceplate?: string, picture?: string}, dir: st
 }
 
 // What a carrier names must be in the catalog: a carrier whose built-in module type is missing
-// is skipped (its slot could not be filled); a communication type that is missing is left out
-// of its slot's list.
+// is skipped (its slot could not be filled); a communication or MCU type that is missing is left
+// out of its list.
 function crossCheck(catalog: Catalog, log: Logger): void {
     for (const [type, {def, dir}] of catalog.carriers) {
         const file = path.join(dir, 'carrier.json');
@@ -126,6 +129,13 @@ function crossCheck(catalog: Catalog, log: Logger): void {
                 if (catalog.comm.has(t))
                     return true;
                 log.warn(`${file}: communication slot ${slot.slot}: unknown communication module type ${t}, left out`);
+                return false;
+            });
+        if (def.mcu !== undefined)
+            def.mcu.types = def.mcu.types.filter(t => {
+                if (catalog.mcu.has(t))
+                    return true;
+                log.warn(`${file}: unknown MCU module type ${t}, left out`);
                 return false;
             });
     }

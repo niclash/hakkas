@@ -9,12 +9,12 @@ import {System} from '../src/system.js';
 
 const catalog = await loadCatalog([BUILTIN_DATA], createLogger('error', () => {}));
 
-function described(env: JsonObject, name = 'lab'): Description {
+function described(env: JsonObject, name = 'lab', mcu?: string): Description {
     const c = new Checker();
     const environment = readEnvironment(c, {carrier: 'colibri_8', ...env});
     expect(c.errors).toEqual([]);
     const {system} = System.build(name, environment!, catalog, () => 0, () => 0.5);
-    return describe(system);
+    return describe(system, mcu === undefined ? undefined : catalog.mcu.get(mcu)!.def);
 }
 
 const modules: JsonObject[] = [
@@ -71,6 +71,12 @@ group('the environment description', () => {
             comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet', ip}],
         });
         expect(described({}).carrier.comm).toEqual([]);
+    });
+
+    it('names the MCU module, if one is given', () => {
+        expect(described({}, 'lab', 'colibri_mcu6').carrier.mcu)
+            .toEqual({type: 'colibri_mcu6', name: 'Colibri MCU6', vendor: 'CurrentMakers'});
+        expect(described({}).carrier).not.toHaveProperty('mcu');
     });
 
     it('passes hakkas\' checks with every module type in the catalog', () => {

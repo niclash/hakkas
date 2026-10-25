@@ -22,18 +22,20 @@ function table(channels: Channel[]): string[] {
 describe('the built-in catalog', () => {
     it('loads without a warning', async () => {
         const {catalog, lines} = await load([BUILTIN_DATA]);
-        expect(lines).toEqual(['info catalog: module types 18, carrier types 1, communication module types 4']);
+        expect(lines).toEqual(['info catalog: module types 18, carrier types 1, communication module types 4, ' +
+            'MCU module types 3']);
         expect([...catalog.modules.keys()].sort()).toEqual(['carrier', 'colibri_aic', 'colibri_aiv', 'colibri_aqv',
             'colibri_dii', 'colibri_dio1', 'colibri_diu', 'colibri_dp1', 'colibri_dp2', 'colibri_dp3',
             'colibri_fallback', 'colibri_fet', 'colibri_pid1', 'colibri_pt1000', 'colibri_rs485i', 'colibri_rs485u',
             'colibri_ssr', 'colibri_triac1']);
         expect([...catalog.comm.keys()].sort())
             .toEqual(['colibri_ethernet', 'colibri_lorawan', 'colibri_rs485', 'colibri_wifi']);
+        expect([...catalog.mcu.keys()].sort()).toEqual(['colibri_mcu2', 'colibri_mcu6', 'colibri_mcu7']);
     });
 
     it('names every type "Colibri …", except the carrier’s built-in module', async () => {
         const {catalog} = await load([BUILTIN_DATA]);
-        for (const map of [catalog.modules, catalog.carriers, catalog.comm])
+        for (const map of [catalog.modules, catalog.carriers, catalog.comm, catalog.mcu])
             for (const [type, {def}] of map)
                 expect(def.name, type).toEqual(type === 'carrier' ? undefined : expect.stringMatching(/^Colibri /));
         expect(catalog.modules.get('colibri_pt1000')!.def.name).toBe('Colibri Pt1000');
@@ -46,6 +48,7 @@ describe('the built-in catalog', () => {
             name: 'Colibri 8', slots: 7, builtin: [{slot: 0, type: 'carrier'}],
             power: {voltage: {min: 7, max: 30}, ac: true, dc: true, current: 2},
             comm: [{slot: 1, types: ['colibri_ethernet', 'colibri_wifi', 'colibri_rs485', 'colibri_lorawan']}],
+            mcu: {types: ['colibri_mcu2', 'colibri_mcu6', 'colibri_mcu7']},
         });
     });
 
@@ -121,13 +124,13 @@ describe('loading plugin directories', () => {
             `error ${f('empty')}: missing: skipped`,
             `error ${f('wrong')}: type: differs from its directory's name, wrong`,
             `error ${f('wrong')}: skipped`,
-            'info catalog: module types 1, carrier types 0, communication module types 0',
+            'info catalog: module types 1, carrier types 0, communication module types 0, MCU module types 0',
         ]);
     });
 
     it('warns about a directory without descriptors', async () => {
         const {lines} = await load([path.join(tmp, 'nothing')]);
-        expect(lines[0]).toBe(`warn ${path.join(tmp, 'nothing')}: no modules, carriers or comm directory`);
+        expect(lines[0]).toBe(`warn ${path.join(tmp, 'nothing')}: no modules, carriers, comm or mcu directory`);
     });
 
     it('leaves out a picture that is not there', async () => {
@@ -144,17 +147,20 @@ describe('loading plugin directories', () => {
         file('p/modules/io/module.json', {type: 'io'});
         file('p/comm/eth/comm.json', {type: 'eth', params: ['ip']});
         file('p/carriers/ok/carrier.json', {type: 'ok', slots: 2, builtin: [{slot: 0, type: 'io'}],
-            comm: [{slot: 1, types: ['eth', 'smoke_signals']}]});
+            comm: [{slot: 1, types: ['eth', 'smoke_signals']}], mcu: {types: ['m1', 'm9']}});
+        file('p/mcu/m1/mcu.json', {type: 'm1', name: 'M1'});
         file('p/carriers/bad/carrier.json', {type: 'bad', slots: 2, builtin: [{slot: 0, type: 'nope'}]});
         const {catalog, lines} = await load([path.join(tmp, 'p')]);
         expect([...catalog.carriers.keys()]).toEqual(['ok']);
         expect(catalog.carriers.get('ok')!.def.comm).toEqual([{slot: 1, types: ['eth']}]);
+        expect(catalog.carriers.get('ok')!.def.mcu).toEqual({types: ['m1']});
         const f = (name: string) => path.join(tmp, 'p/carriers', name, 'carrier.json');
         expect(lines).toEqual([
             `error ${f('bad')}: built-in slot 0: unknown module type nope`,
             `error ${f('bad')}: skipped`,
             `warn ${f('ok')}: communication slot 1: unknown communication module type smoke_signals, left out`,
-            'info catalog: module types 1, carrier types 1, communication module types 1',
+            `warn ${f('ok')}: unknown MCU module type m9, left out`,
+            'info catalog: module types 1, carrier types 1, communication module types 1, MCU module types 1',
         ]);
     });
 });

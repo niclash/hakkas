@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {Checker, type Json, type JsonObject} from '../src/check.js';
-import {readCarrier, readComm, readModule, type CarrierType, type ModuleType} from '../src/descriptors.js';
+import {readCarrier, readComm, readMcu, readModule, type CarrierType, type ModuleType} from '../src/descriptors.js';
 
 function module(v: JsonObject, dir = v.type as string): {def?: ModuleType, errors: string[], warnings: string[]} {
     const c = new Checker();
@@ -188,6 +188,20 @@ describe('carrier descriptors', () => {
         expect(carrier({slots: 1, comm: [{slot: 1, types: []}]}).errors)
             .toEqual(['comm[0].types: expected at least one communication module type']);
         expect(carrier({slots: 1, power: {current: '2 A'}}).errors).toEqual(['power.current: expected a number']);
+        expect(carrier({slots: 1, mcu: {types: []}}).errors).toEqual(['mcu.types: expected at least one MCU module type']);
+        expect(carrier({slots: 1, mcu: {types: ['MCU6']}}).errors).toEqual(['mcu.types[0]: expected a type name']);
+    });
+});
+
+describe('MCU module descriptors', () => {
+    it('read their metadata', () => {
+        const c = new Checker();
+        expect(readMcu(c, {type: 'colibri_mcu6', name: 'Colibri MCU6', description: 'STM32H735RG'}, 'colibri_mcu6'))
+            .toEqual({type: 'colibri_mcu6', name: 'Colibri MCU6', description: 'STM32H735RG'});
+        expect(c.errors).toEqual([]);
+        const bad = new Checker();
+        readMcu(bad, {type: 'colibri_mcu6', flash: 16}, 'colibri_mcu6');
+        expect(bad.errors.length + bad.warnings.length).toBeGreaterThan(0);
     });
 });
 

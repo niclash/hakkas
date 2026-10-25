@@ -17,7 +17,8 @@ const SIM = {
     modules: [{slot: 0, builtin: true, type: "c/IO", ports: []}, {slot: 1, type: "c_aiv", name: "C AIV", serial: "7", ports: ["slot1-ai"]},
         {slot: 2, type: "c/SSR", ports: ["slot2-dq"]}],
     carrier: {type: "c_8", name: "C 8", vendor: "Maker", slots: 7, builtin: [{slot: 0}],
-        comm: [{slot: 1, type: "c_ethernet", name: "C Ethernet", ip: {mode: "dhcp", address: "10.0.0.5", prefix: 24}}]},
+        comm: [{slot: 1, type: "c_ethernet", name: "C Ethernet", ip: {mode: "dhcp", address: "10.0.0.5", prefix: 24}}],
+        mcu: {type: "c_mcu6", name: "C MCU6", serial: "M6"}},
 };
 
 test.use({environment: SIM});
@@ -55,6 +56,8 @@ test("the panel shows the environment; a port is bound and unbound from its menu
     await expect(page.getByTestId("env-carrier")).toContainText("C 8 · Maker · 8 I/O slots");
     await expect(page.getByTestId("env-carrier")).toHaveAttribute("title", "c_8");
     await expect(page.getByTestId("env-comm")).toHaveText("Comm 1: C Ethernet · dhcp 10.0.0.5/24");
+    await expect(page.getByTestId("env-mcu")).toHaveText("MCU: C MCU6 · serial M6");      // plan task 73
+    await expect(page.getByTestId("env-mcu")).toHaveAttribute("title", "c_mcu6");
     await expect(page.getByTestId("env-module")).toHaveCount(4);   // 3 modules, the ports no module lists
     const summaries = page.getByTestId("env-module").locator("summary");
     await expect(summaries.nth(1)).toHaveText("Slot 1: C AIV");

@@ -47,6 +47,7 @@ node dist/main.js [options] [<environment>]
 | `--socket <path>` | `$XDG_RUNTIME_DIR/colibri-emulator/environment.sock` |
 | `--control-socket <path>` | `$XDG_RUNTIME_DIR/colibri-emulator/control.sock` |
 | `--http <port>` | `8090` (localhost only; `0` for any free port) |
+| `--mcu <type>` | `colibri_mcu6` (the MCU module named to hakkas: `colibri_mcu2`, `colibri_mcu6` or `colibri_mcu7`) |
 | `--seed <n>` | random |
 | `--log-level <level>` | `info` (`fine`, `info`, `warn`, `error`) |
 

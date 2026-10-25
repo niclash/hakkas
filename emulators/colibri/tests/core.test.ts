@@ -1,7 +1,7 @@
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {loadCatalog} from '../src/catalog.js';
 import type {JsonObject} from '../src/check.js';
 import {Core, type Client} from '../src/core.js';
@@ -318,5 +318,35 @@ describe('resetstats', () => {
         const stats = b.of('stats')[0]!;
         expect(Object.keys(stats.channels as object)).toContain('slot1.ai.1');
         expect((stats.channels as JsonObject)['slot1.ai.1']).toEqual({sent: 0});
+    });
+});
+
+describe('the MCU module', () => {
+    async function served(carrier: string, mcu: string) {
+        writeFileSync(library.file('lab'), JSON.stringify({carrier}));
+        const lines: string[] = [];
+        const log = createLogger('warn', l => lines.push(l));
+        const link = new LinkServer(path.join(tmp, 'link.sock'), quiet);
+        const serve = vi.spyOn(link, 'serve');
+        core = new Core(catalog, library, link, () => performance.now(), () => 0.5, log, catalog.mcu.get(mcu)!.def);
+        await core.start('lab');
+        return {description: serve.mock.calls.at(-1)![0]!.description, lines};
+    }
+
+    it('is described when the carrier takes it', async () => {
+        const {description, lines} = await served('colibri_8', 'colibri_mcu2');
+        expect(description.carrier.mcu).toEqual({type: 'colibri_mcu2', name: 'Colibri MCU2', vendor: 'CurrentMakers'});
+        expect(lines).toEqual([]);
+    });
+
+    it('is left out, with a warning, when the carrier does not take it', async () => {
+        catalog.mcu.set('other_mcu', {def: {type: 'other_mcu'}, dir: tmp});
+        try {
+            const {description, lines} = await served('colibri_8', 'other_mcu');
+            expect(description.carrier).not.toHaveProperty('mcu');
+            expect(lines).toEqual(['warn environment lab: carrier colibri_8 takes no MCU module other_mcu: not described']);
+        } finally {
+            catalog.mcu.delete('other_mcu');
+        }
     });
 });

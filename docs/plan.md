@@ -964,6 +964,16 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   (a refused binding taking back its port, a renamed port keeping its binding, the old file form
   refused). The emulator's hakkas test binds process ports. The browser test *values, renames and
   pastes are undone* was already flaky before this task (2 of 6 runs without it).
+- [x] **73. The MCU module in the environment description** (04 §1, decided with the user
+  2026-10-26). The carrier's optional `mcu` — type, name, vendor, revision, serial,
+  documentation, view only, no ports; on Colibri 8 `colibri_mcu2` (STM32H562RG), `colibri_mcu6`
+  (STM32H735RG) or `colibri_mcu7` (RP2350). Its name at most 1024 bytes; static, so compared by
+  the identical-description check. An addition to `environment:describe`, hakkas' own group.
+  **Done 2026-10-26**: `HakkasEnvMcu` and `HakkasEnvCarrier.mcu` (`src/hakkas_env.h`), parsed,
+  validated, compared and written by `src/drivers/env_description.c`; the frontend's Environment
+  panel shows it (*MCU: Colibri MCU6*, 06 §4.14). The Colibri emulator names it from `--mcu`
+  (default `colibri_mcu6`), its carriers listing the MCU types they take, the types being
+  descriptors of their own (emulator spec §3.1, §5.4).
 - [ ] **65. The Colibri emulator** (`emulators/colibri/`): its own plan,
   `emulators/colibri/docs/plan.md` (tasks E0–E16, with the questions still to decide).
 
@@ -999,6 +1009,31 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   bindings file so they travel with a process), whether they follow a module moved to another
   slot, and the wire messages (an addition to the `environment` group, put to the user first).
 
+## Phase 11 — The device view (requested 2026-10-25/26, not started)
+
+The picture of the device and the state of its channels belong in hakkas' UI, not the emulator's:
+they look the same whether hakkas runs against the emulator or a real Colibri (decided with the
+user 2026-10-25). The emulator keeps choosing the hardware, the field-side controls and its
+counters. Decided so far (2026-10-25/26): pictures come from an **https URL** in the description
+(only https), with the **device's own copy** (from the module's EEPROM, the carrier's flash) as
+the fallback for networks without internet; pictures are **WebP**; the frontend **caches** them
+in browser storage (IndexedDB), keyed by type and revision; documentation opens in a **new
+tab**, from the existing `documentation` links; I/O module renders are turned 90° clockwise to
+match the carrier's orientation (connector down). Each wire or description change below is put
+to the user first, one at a time.
+
+- [ ] **75. Pictures in the description**: per carrier, module, communication module and MCU
+  module an optional picture URL (https) and the positions of its channels on the picture.
+  Caching a vendor's picture needs its server to allow CORS (`Access-Control-Allow-Origin`);
+  without it the picture is shown but not cached.
+- [ ] **76. Every channel's live value for the frontend**: an `environment` message giving the
+  values of all channels, not only those bound to a process port.
+- [ ] **77. The device's own copy of a picture**: an `environment` message fetching it through
+  hakkas, for networks without internet.
+- [ ] **78. The device window** in hakkas' frontend: a window that can be popped out, drawing
+  the carrier with its modules in their slots, every channel's state on them, and Help links.
+  The Colibri emulator's E14 shrinks to what the emulator still needs (its own plan).
+
 ## Known issues (noted 2026-10-25, to evaluate later; not critical)
 
 - [ ] **71. Flaky browser test: *values, renames and pastes are undone; the history survives a
@@ -1012,3 +1047,8 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   written into a 3-byte buffer (`snprintf`), seen with the debug preset. Harmless in the test as
   it stands, but the build should be warning-free: size the buffer for any int, or narrow the
   value.
+- [ ] **74. `test_pal_posix` failed once under the asan preset** (2026-10-26), in a full
+  `ctest --preset asan` run during plan task 73; it passed in the rerun of the whole suite and 16
+  runs on its own, so likely timing under load. The failing check was not captured: when it
+  recurs, run `ctest --preset asan -R test_pal_posix --output-on-failure` repeatedly with load,
+  find the check, and fix the cause.

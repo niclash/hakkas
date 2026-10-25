@@ -1,0 +1,6 @@
+{
+  "type": "colibri_mcu6",
+  "name": "Colibri MCU6",
+  "vendor": "CurrentMakers",
+  "description": "STM32H735RG"
+}

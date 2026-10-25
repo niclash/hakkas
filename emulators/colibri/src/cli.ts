@@ -1,6 +1,7 @@
 // The command line (spec §3.1).
 import {parseArgs} from 'node:util';
 import path from 'node:path';
+import {TYPE_NAME} from './descriptors.js';
 import {isLevel, type Level} from './log.js';
 import {isEnvironmentName} from './names.js';
 
@@ -12,6 +13,7 @@ export const USAGE = `usage: colibri-emulator [options] [<environment>]
                            (default $XDG_RUNTIME_DIR/colibri-emulator/environment.sock)
   --control-socket <path>  the control channel's socket (default …/control.sock)
   --http <port>            the UI's HTTP port on localhost, 0 for any free one (default 8090)
+  --mcu <type>             the MCU module in the carrier's MCU slot (default colibri_mcu6)
   --seed <n>               seeds the noise, for a reproducible run (0 to 4294967295)
   --log-level <level>      fine, info, warn or error (default info)
   -h, --help               this text
@@ -19,6 +21,7 @@ export const USAGE = `usage: colibri-emulator [options] [<environment>]
 `;
 
 export const DEFAULT_HTTP_PORT = 8090;
+export const DEFAULT_MCU = 'colibri_mcu6';
 
 // The longest path a Unix socket address holds on Linux (sun_path less its NUL).
 export const SOCKET_PATH_MAX = 107;
@@ -29,6 +32,7 @@ export interface Options {
     socket: string;
     controlSocket: string;
     httpPort: number;
+    mcu: string;              // an MCU module type, checked against the catalog at startup
     seed: number | undefined; // undefined: a random seed
     logLevel: Level;
     environment: string | undefined;
@@ -60,6 +64,7 @@ export function parseCommandLine(argv: string[], host: Host): Command {
                 'socket': {type: 'string'},
                 'control-socket': {type: 'string'},
                 'http': {type: 'string'},
+                'mcu': {type: 'string'},
                 'seed': {type: 'string'},
                 'log-level': {type: 'string'},
                 'help': {type: 'boolean', short: 'h'},
@@ -105,6 +110,10 @@ export function parseCommandLine(argv: string[], host: Host): Command {
     if (httpPort === undefined)
         return {kind: 'error', message: `invalid --http port: ${v.http}`};
 
+    const mcu = v.mcu ?? DEFAULT_MCU;
+    if (!TYPE_NAME.test(mcu))
+        return {kind: 'error', message: `invalid --mcu type: ${mcu}`};
+
     const seed = v.seed === undefined ? undefined : integer(v.seed, 0, 0xffffffff);
     if (v.seed !== undefined && seed === undefined)
         return {kind: 'error', message: `invalid --seed: ${v.seed}`};
@@ -115,7 +124,7 @@ export function parseCommandLine(argv: string[], host: Host): Command {
 
     return {
         kind: 'run',
-        options: {library, plugins: v.plugins ?? [], socket, controlSocket, httpPort, seed, logLevel, environment},
+        options: {library, plugins: v.plugins ?? [], socket, controlSocket, httpPort, mcu, seed, logLevel, environment},
     };
 }
 

@@ -7,6 +7,7 @@
     </div>
     <p class="hk-env-name" data-testid="env-name" :title="d.description">{{ d.name }}</p>
     <p v-if="d.carrier" class="hk-env-carrier" data-testid="env-carrier" :title="d.carrier.name && d.carrier.type">{{ carrierText }}</p>
+    <p v-if="d.carrier?.mcu" class="hk-env-carrier" data-testid="env-mcu" :title="d.carrier.mcu.name && d.carrier.mcu.type">{{ mcuText }}</p>
     <ul v-if="d.carrier && d.carrier.comm.length > 0" class="hk-env-comm">
       <li v-for="c in d.carrier.comm" :key="c.slot" data-testid="env-comm" :title="c.name && c.type">{{ commText(c) }}</li>
     </ul>
@@ -58,6 +59,14 @@ const carrierText = computed(() => {
   const slots = c.slots + c.builtin.length;
   return [c.name ?? c.type, c.vendor, c.revision ? "rev. " + c.revision : "", c.serial ? "serial " + c.serial : "",
     `${slots} I/O slot${slots === 1 ? "" : "s"}`].filter(s => s).join(" · ");
+});
+
+const mcuText = computed(() => {
+  const m = d.value?.carrier?.mcu;
+  if (m === undefined)
+    return "";
+  return ["MCU: " + (m.name ?? m.type ?? "?"), m.revision ? "rev. " + m.revision : "", m.serial ? "serial " + m.serial : ""]
+      .filter(s => s).join(" · ");
 });
 
 const commText = (c: EnvComm) => {

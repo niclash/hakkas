@@ -299,7 +299,14 @@ Follow-ups, decided the same day:
 - [ ] **E14. Carrier and faceplates** (§7.4, §8.4): the carrier's picture with its
   `slot-<n>` places, each module's faceplate in its slot, bindings (attributes, text,
   visibility) and controls (slider, toggle, button, number) on the SVG elements.
+  **To be re-planned** (decided with the user 2026-10-25/26): the device's picture with its
+  channels' state moves to hakkas' UI (hakkas plan, Phase 11), the same for the emulator and a
+  real device. Done towards it: the MCU module, named from `--mcu` (hakkas plan task 73). What
+  the emulator keeps — its pictures as data for the description, and whether its own UI shows
+  the picture with controls — is decided with hakkas' tasks 75–78.
 - [ ] **E15. Artwork** (decision 5): the Colibri 8 board and the modules' faceplates as SVGs.
+  Changed 2026-10-26: the vendor's renders (PNG, in the descriptors' directories) are the
+  pictures, converted to WebP; I/O modules turned 90° clockwise to match the carrier.
 
 ## Phase 4 — Copying an environment from a device
 

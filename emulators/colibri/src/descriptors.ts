@@ -1,5 +1,5 @@
-// The descriptors of module types (spec §7.1), carrier types and communication module types
-// (§5.4): what they hold, and reading one from its JSON form.
+// The descriptors of module types (spec §7.1), carrier types, communication module types and MCU
+// module types (§5.4): what they hold, and reading one from its JSON form.
 import {Checker, join, type Json, type JsonObject} from './check.js';
 import {acceptedSources, readSource, type Source, type SourceKind} from './sources.js';
 
@@ -100,6 +100,7 @@ export interface CarrierType extends Metadata {
     builtin: {slot: number, type: string}[];
     power?: JsonObject;
     comm: {slot: number, types: string[]}[];
+    mcu?: {types: string[]};                    // the MCU module types it takes
     picture?: string;
 }
 
@@ -109,6 +110,9 @@ export type CommParam = typeof COMM_PARAMS[number];
 export interface CommType extends Metadata {
     params: CommParam[];
 }
+
+// An MCU module: only named, not emulated (spec §2).
+export type McuType = Metadata;
 
 // hakkas' limits on a carrier (04 §0, "Validation").
 export const IO_SLOTS_MAX = 31;
@@ -370,7 +374,7 @@ export function readCarrier(c: Checker, v: Json, dirName: string): CarrierType |
     const o = c.object(v, '');
     if (o === undefined)
         return undefined;
-    c.members(o, [...METADATA, 'slots', 'builtin', 'power', 'comm', 'picture'], '');
+    c.members(o, [...METADATA, 'slots', 'builtin', 'power', 'comm', 'mcu', 'picture'], '');
     const slots = c.integer(o, 'slots', '', 0, IO_SLOTS_MAX, true) ?? 0;
     const carrier: CarrierType = {...metadata(c, o, dirName), slots, builtin: [], comm: []};
 
@@ -436,10 +440,37 @@ export function readCarrier(c: Checker, v: Json, dirName: string): CarrierType |
             carrier.comm.push({slot, types: names});
     });
 
+    if (o.mcu !== undefined) {
+        const mcu = c.object(o.mcu, 'mcu');
+        if (mcu !== undefined) {
+            c.members(mcu, ['types'], 'mcu');
+            const types = c.array(mcu.types ?? null, 'mcu.types') ?? [];
+            if (types.length === 0)
+                c.error('mcu.types', 'expected at least one MCU module type');
+            const names: string[] = [];
+            types.forEach((t, j) => {
+                if (typeof t !== 'string' || !TYPE_NAME.test(t))
+                    return c.error(join('mcu.types', j), 'expected a type name');
+                names.push(t);
+            });
+            carrier.mcu = {types: names};
+        }
+    }
+
     const picture = asset(c, o, 'picture');
     if (picture !== undefined)
         carrier.picture = picture;
     return c.ok ? carrier : undefined;
+}
+
+// An MCU module type's descriptor, `mcu.json` (spec §5.4): its metadata.
+export function readMcu(c: Checker, v: Json, dirName: string): McuType | undefined {
+    const o = c.object(v, '');
+    if (o === undefined)
+        return undefined;
+    c.members(o, METADATA, '');
+    const mcu = metadata(c, o, dirName);
+    return c.ok ? mcu : undefined;
 }
 
 // A communication module type's descriptor, `comm.json` (spec §5.4).

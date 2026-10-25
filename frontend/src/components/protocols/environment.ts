@@ -35,6 +35,16 @@ export interface EnvComm {
     lorawan?: { appEui?: string, devEui?: string, appKeySet?: boolean };
 }
 
+// The carrier's MCU module (plan task 73).
+export interface EnvMcu {
+    type?: string;
+    name?: string;          // human-readable, e.g. "Colibri MCU6" for colibri_mcu6
+    vendor?: string;
+    revision?: string;
+    serial?: string;
+    documentation?: string;
+}
+
 export interface EnvCarrier {
     type?: string;
     name?: string;
@@ -46,6 +56,7 @@ export interface EnvCarrier {
     builtin: { slot: number }[];
     power?: { voltage?: { min?: number, max?: number }, ac?: boolean, dc?: boolean, current?: number };
     comm: EnvComm[];
+    mcu?: EnvMcu;
 }
 
 export interface EnvDescription {

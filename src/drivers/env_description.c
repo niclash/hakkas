@@ -154,6 +154,9 @@ static bool carrier_ok(const HakkasEnvCarrier *c, char *msg, size_t cap)
 			return fail(msg, cap, "carrier: comm[%zu]: name: longer than %d bytes", i,
 				    HAKKAS_ENV_TEXT_MAX);
 	}
+	if (c->mcu != NULL && !text_ok(c->mcu->name, HAKKAS_ENV_TEXT_MAX))
+		return fail(msg, cap, "carrier: mcu: name: longer than %d bytes",
+			    HAKKAS_ENV_TEXT_MAX);
 	return true;
 }
 
@@ -298,6 +301,15 @@ static bool power_eq(const HakkasEnvPower *a, const HakkasEnvPower *b)
 	       (!a->has_current || a->current == b->current);
 }
 
+static bool mcu_eq(const HakkasEnvMcu *a, const HakkasEnvMcu *b)
+{
+	if (a == NULL || b == NULL)
+		return a == b;
+	return str_eq(a->type, b->type) && str_eq(a->name, b->name) &&
+	       str_eq(a->vendor, b->vendor) && str_eq(a->revision, b->revision) &&
+	       str_eq(a->serial, b->serial) && str_eq(a->documentation, b->documentation);
+}
+
 /* The communication slots' parameters are left out: they are live values
  * (a DHCP lease changes the address) and view only (decided with the user
  * 2026-10-25, 04 §0.1). */
@@ -310,7 +322,7 @@ static bool carrier_eq(const HakkasEnvCarrier *a, const HakkasEnvCarrier *b)
 	    !str_eq(a->serial, b->serial) || !str_eq(a->documentation, b->documentation) ||
 	    a->slots != b->slots ||
 	    a->builtin_count != b->builtin_count || !power_eq(a->power, b->power) ||
-	    a->comm_count != b->comm_count)
+	    a->comm_count != b->comm_count || !mcu_eq(a->mcu, b->mcu))
 		return false;
 	for (size_t i = 0; i < a->builtin_count; i++) {
 		if (a->builtin[i] != b->builtin[i])
@@ -353,6 +365,7 @@ typedef struct {
 	uint32_t *builtin;
 	HakkasEnvPower power;
 	HakkasEnvComm *comm;
+	HakkasEnvMcu mcu;
 	/* What comm[i]'s parameter pointers point at. */
 	struct {
 		HakkasEnvIp ip;
@@ -403,6 +416,12 @@ void env_description_free(HakkasEnvDescription *d)
 	free_str(o->carrier.revision);
 	free_str(o->carrier.serial);
 	free_str(o->carrier.documentation);
+	free_str(o->mcu.type);
+	free_str(o->mcu.name);
+	free_str(o->mcu.vendor);
+	free_str(o->mcu.revision);
+	free_str(o->mcu.serial);
+	free_str(o->mcu.documentation);
 	for (size_t i = 0; i < o->carrier.comm_count; i++) {
 		free_str(o->comm[i].type);
 		free_str(o->comm[i].name);
@@ -767,6 +786,17 @@ static void parse_carrier(Parse *p, Owned *o, const cJSON *j)
 		w->has_current = view_num(power, "current", &w->current);
 		c->power = w;
 	}
+	const cJSON *mcu = member(j, "mcu");
+	if (cJSON_IsObject(mcu)) {
+		HakkasEnvMcu *m = &o->mcu;
+		m->type = view_str(p, mcu, "type");
+		m->name = view_str(p, mcu, "name");
+		m->vendor = view_str(p, mcu, "vendor");
+		m->revision = view_str(p, mcu, "revision");
+		m->serial = view_str(p, mcu, "serial");
+		m->documentation = view_str(p, mcu, "documentation");
+		c->mcu = m;
+	}
 	const cJSON *list = member(j, "builtin");
 	int n = cJSON_IsArray(list) ? cJSON_GetArraySize(list) : 0;
 	if (list != NULL && !cJSON_IsArray(list)) {
@@ -1033,6 +1063,19 @@ static cJSON *comm_json(const HakkasEnvComm *c)
 	return j;
 }
 
+static cJSON *mcu_json(const HakkasEnvMcu *m)
+{
+	cJSON *j = cJSON_CreateObject();
+	bool ok = j != NULL && put_str(j, "type", m->type) && put_str(j, "name", m->name) &&
+		  put_str(j, "vendor", m->vendor) && put_str(j, "revision", m->revision) &&
+		  put_str(j, "serial", m->serial) && put_str(j, "documentation", m->documentation);
+	if (!ok) {
+		cJSON_Delete(j);
+		return NULL;
+	}
+	return j;
+}
+
 static cJSON *carrier_json(const HakkasEnvCarrier *c)
 {
 	cJSON *j = cJSON_CreateObject();
@@ -1053,7 +1096,8 @@ static cJSON *carrier_json(const HakkasEnvCarrier *c)
 		ok = put(j, "builtin", builtin);
 		builtin = NULL;
 	}
-	ok = ok && (c->power == NULL || put(j, "power", power_json(c->power)));
+	ok = ok && (c->power == NULL || put(j, "power", power_json(c->power))) &&
+	     (c->mcu == NULL || put(j, "mcu", mcu_json(c->mcu)));
 	if (ok) {
 		ok = put(j, "comm", comm);
 		comm = NULL;

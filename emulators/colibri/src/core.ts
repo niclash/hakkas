@@ -6,6 +6,7 @@
 import type {Catalog} from './catalog.js';
 import {isObject, type Json, type JsonObject} from './check.js';
 import {checkDescription, describe, type Description} from './description.js';
+import type {McuType} from './descriptors.js';
 import {carrierOf, checkEnvironment, type Environment} from './environment.js';
 import {LibraryError, type Library} from './library.js';
 import type {LinkServer} from './link.js';
@@ -53,7 +54,8 @@ export class Core {
 
     constructor(private readonly catalog: Catalog, private readonly library: Library,
                 private readonly link: LinkServer, private readonly clock: Clock,
-                private readonly random: Random, private readonly log: Logger) {
+                private readonly random: Random, private readonly log: Logger,
+                private readonly mcu?: McuType) {
         link.events.state = state => this.broadcast({link: {state}});
         link.events.notice = (level, message) => this.broadcast({notice: {level, message}});
     }
@@ -211,7 +213,7 @@ export class Core {
                 const c = env.comm.find(x => x.slot === s.slot)!;
                 s.params = Object.fromEntries(s.def.params.filter(k => c[k] !== undefined).map(k => [k, c[k]!]));
             }
-            run.description = describe(run.system);
+            run.description = this.describe(run.system);
             this.link.updateDescription(run.description);
             this.broadcast(this.settingsMessage());
         }
@@ -260,7 +262,7 @@ export class Core {
         const {system, warnings} = System.build(n, env, this.catalog, this.clock, this.random);
         for (const w of warnings)
             warn(`environment ${n}: ${w}`);
-        const description = describe(system);
+        const description = this.describe(system, warn, n);
         const problems = checkDescription(description);
         if (problems.length > 0) {
             for (const p of problems)
@@ -272,6 +274,16 @@ export class Core {
             `${description.inPorts.length} actuator ports`);
         const scanner = new Scanner(system, env, this.clock, this.log, t => this.turn(t));
         return {run: {name: n, env, system, scanner, description}, errors: []};
+    }
+
+    // The description, with the MCU module if the carrier takes it (spec §5.4); `warn`, if given,
+    // is told when it does not.
+    private describe(system: System, warn?: (m: string) => void, n?: string): Description {
+        const takes = this.mcu !== undefined && system.carrier.mcu?.types.includes(this.mcu.type) === true;
+        if (this.mcu !== undefined && !takes)
+            warn?.(`environment ${n}: carrier ${system.carrier.type} takes no MCU module ${this.mcu.type}: ` +
+                'not described');
+        return describe(system, takes ? this.mcu : undefined);
     }
 
     // A power cycle (spec §5.1): the system built anew; inputs keep their sources and noise where

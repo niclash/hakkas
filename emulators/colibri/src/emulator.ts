@@ -15,13 +15,16 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
     log.info(`colibri-emulator ${VERSION}: library ${options.library}`);
     log.fine(`plugin directories: ${[BUILTIN_DATA, ...options.plugins].join(', ')}`);
     const catalog = await loadCatalog([BUILTIN_DATA, ...options.plugins], log);
+    const mcu = catalog.mcu.get(options.mcu)?.def;
+    if (mcu === undefined)
+        throw new Error(`unknown MCU module type: ${options.mcu}`);
     const library = new Library(options.library);
     await library.init();
     const name = await library.startup(options.environment);
     const seed = options.seed ?? randomSeed();
     log.fine(`noise seed ${seed}`);
     const link = new LinkServer(options.socket, log);
-    const core = new Core(catalog, library, link, () => performance.now(), seededRandom(seed), log);
+    const core = new Core(catalog, library, link, () => performance.now(), seededRandom(seed), log, mcu);
     const control = new ControlSocket(options.controlSocket, core, log);
     const http = new HttpServer(options.httpPort, core, catalog, UI_DIST, log);
     try {

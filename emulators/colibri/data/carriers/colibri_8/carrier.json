@@ -29,5 +29,12 @@
         "colibri_lorawan"
       ]
     }
-  ]
+  ],
+  "mcu": {
+    "types": [
+      "colibri_mcu2",
+      "colibri_mcu6",
+      "colibri_mcu7"
+    ]
+  }
 }

@@ -23,7 +23,7 @@ A Colibri system is, conceptually:
 - one **carrier board**: power supply, the I2C and SPI infrastructure (I2C multiplexed per slot, one SPI chip select per slot, plus two more for a module with several SPI devices; each slot powered and addressed individually), **one I/O slot built into the board**, and the slots below;
 - **1…n I/O module slots** (M.2 connectors) — Colibri 8 has 7, Colibri-16pi 15;
 - one **Comm module slot** (not emulated);
-- one **MCU module slot** (not emulated: hakkas runs on the desktop).
+- one **MCU module slot** (not emulated: hakkas runs on the desktop; the MCU module is only named, §5.4).
 
 The built-in I/O slot exists so that the firmware's (Zephyr's) architecture treats the carrier board's own I/O like any module's (*decided*, 2026-10-23). Colibri 8 thus has **8 I/O slots** in the scan cycle (§4). The built-in slot is **slot 0**; nothing in it is emulated for now (*decided*, 2026-10-23): it takes its turn in the scan cycle with no channels, like an empty slot. A built-in slot holds an **I/O module that cannot be changed** (*decided*, 2026-10-24): it comes with the carrier's definition (§5.4) and is listed among the modules, marked built-in. Slot 0's module has no real name (*decided*, 2026-10-25): its type is **`carrier`**, and it has no human-readable name.
 
@@ -125,7 +125,7 @@ The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM
 
 ```
 colibri-emulator [--library <dir>] [--plugins <dir>]… [--socket <path>] [--control-socket <path>]
-                 [--http <port>] [--seed <n>] [--log-level <level>] [-h|--help] [--version]
+                 [--http <port>] [--mcu <type>] [--seed <n>] [--log-level <level>] [-h|--help] [--version]
                  [<environment>]
 ```
 
@@ -133,6 +133,7 @@ colibri-emulator [--library <dir>] [--plugins <dir>]… [--socket <path>] [--con
 - `--plugins`: a further plugin directory (§7), repeatable, after the built-in one.
 - `--socket`: the environment link's socket, default `$XDG_RUNTIME_DIR/colibri-emulator/environment.sock` (the path hakkas' `environment.socket` names); `--control-socket`: the control channel's, default `…/control.sock`. Without `XDG_RUNTIME_DIR` the directory is `colibri-emulator-<uid>` in the system's temporary directory. A socket path must fit a Unix socket address (107 bytes on Linux), and the two must differ. A stale socket file is replaced; a socket another emulator is listening on refuses startup, and its file is left alone (an emulator removes only the socket files it made).
 - `--http`: the HTTP port for the UI, its assets and the control WebSocket, on localhost only; default 8090, `0` for any free port (tests).
+- `--mcu`: the MCU module in the carrier's MCU slot (§5.4), an MCU module type of the catalog; default `colibri_mcu6` (*decided* with the user 2026-10-26). It is a property of the run, not of an environment: it is not kept in the environment's file, and the UI does not change it. A type the catalog lacks refuses startup; one the running carrier does not take is not described, with a warning.
 - `--seed`: seeds the noise's random generator, so a run is reproducible (tests), 0 to 4294967295; without it the seed is random.
 - `--log-level`: `fine`, `info` (the default), `warn` or `error`, hakkas' levels (05 §4).
 - `-h`/`--help` prints the usage, `--version` the version, both on standard output, exit 0.
@@ -233,6 +234,7 @@ The answer is `ok` with `{"name", "warnings": […]}`, or an error: `Cannot conn
  "builtin": [{"slot": 0, "type": "carrier"}],
  "power": {"voltage": {"min": 7, "max": 30}, "ac": true, "dc": true, "current": 2.0},
  "comm": [{"slot": 1, "types": ["colibri_ethernet", "colibri_wifi", "colibri_rs485", "colibri_lorawan"]}],
+ "mcu": {"types": ["colibri_mcu2", "colibri_mcu6", "colibri_mcu7"]},
  "picture": "board.svg"}
 ```
 
@@ -241,6 +243,8 @@ The answer is `ok` with `{"name", "warnings": […]}`, or an error: `Cannot conn
 - **Built-in slots**: a list, each entry with its slot number and the module type it always holds (a module plugin, §7), which the user cannot change or remove (*decided*, 2026-10-24). Whether a carrier will ever have more than one is not known; the list allows it.
 - **Power specification**: supply voltage range, AC and/or DC, supply current (for the Colibri 8: 7–30 V, AC or DC, 2 A recommended) — described, not emulated.
 - **Communication slots**: the module types each accepts — the Colibri 8 has one slot, taking Ethernet, WiFi, RS-485 (Modbus/RTU) or LoRaWAN. The environment chooses one per slot with its **parameters, which differ per type** and are **view only** (*decided*, 2026-10-24): Ethernet and WiFi DHCP or a static address (with WiFi's SSID), RS-485 bitrate and parity, LoRaWAN (OTAA only) App EUI, Dev EUI and whether an App Key is set (never the key) — the sets of `04-drivers.md` §1. Communication modules are not emulated (§1); they are described to hakkas and copied from a device, and the emulator's UI lets the user enter them for an environment made from scratch. No secret (a WiFi passphrase) is kept in an environment or described.
+
+- **MCU slot** (*decided* with the user 2026-10-26, hakkas plan task 73): the MCU module types it takes (`mcu.types`). The MCU module is not emulated (§1), only named: the one given by `--mcu` (§3.1) is described to hakkas as the carrier's `mcu` (`04-drivers.md` §1) when the carrier takes it. An **MCU module type** is a directory with `mcu.json`, its metadata only: `{"type": "colibri_mcu6", "name": "Colibri MCU6", "vendor": "CurrentMakers", "description": "STM32H735RG"}`; the built-in catalog has `colibri_mcu2` (STM32H562RG), `colibri_mcu6` (STM32H735RG) and `colibri_mcu7` (RP2350). A type a carrier names that the catalog lacks is left out of its list, with a warning.
 
 A **communication module type** is data too, a directory with `comm.json` (*decided*, 2026-10-25), so new types are added by adding a file:
 
@@ -257,7 +261,7 @@ The emulator describes itself to hakkas per `04-drivers.md` §1:
 - `name`: the environment's name (§5); `description`: `"Colibri emulator: <carrier name>"`; `icon`: `"chip"`.
 - **Ports are named per slot**: `slot<n>-<channel group>`, e.g. `slot1-ai` (AIV in slot 1), `slot3-dq` (SSR in slot 3). A group of several identical channels is one addressable port with `count`; a group of one is a plain port (DP1 in slot 4: `slot4-ai`, bound without an index). A module with several groups has several ports (DII in slot 2: `slot2-di`, `slot2-freq`, `slot2-duty` and `slot2-count`). A port's `type`, `unit`, `min`/`max` and `description` come from the module's plugin (§7.1); the field-side signals (§7.2) are not ports. Ports are listed by slot, then in the plugin's channel order; `outPorts` are the module inputs (sensors), `inPorts` the module outputs (actuators).
 - **Modules**: one entry per filled slot, with `slot`, `type`, `name`, `vendor`, `revision`, `serial`, `documentation` from the plugin and the environment, and the ids of its ports; built-in modules marked `builtin` (slot 0's `carrier`: no name, no ports).
-- **Carrier**: the carrier board of `04-drivers.md` §1 — type, name and metadata, number of I/O slots, the built-in slots, power specification, communication slots with their modules' types, names and parameters — from the carrier definition and the environment (§5.4).
+- **Carrier**: the carrier board of `04-drivers.md` §1 — type, name and metadata, number of I/O slots, the built-in slots, power specification, communication slots with their modules' types, names and parameters, and the MCU module (type, name, vendor, revision, documentation; no serial) — from the carrier definition, the environment and `--mcu` (§5.4).
 
 **Built** (implemented in plan task E6, `src/description.ts`; *decided*, 2026-10-25): a member the plugin or the environment does not give is left out (a port's `unit`, a module's `serial`); a slot whose module type the catalog lacks is empty and not listed, like a built-in slot without a module; the carrier has no serial (a device's comes with a copied environment, §5.3, later); a communication slot's parameters are the environment's, as given. Before running an environment, the emulator checks its description as hakkas would (`04-drivers.md` §0, "Validation": the name, port ids and their uniqueness, counts, `min ≤ max`, at most 256 ports and 64 modules, texts at most 1024 bytes); one that hakkas would refuse — possible only with plugins giving more than 256 ports — is logged with its problems, and the environment cannot be run.
 

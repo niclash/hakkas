@@ -165,6 +165,16 @@ typedef struct {
 	const HakkasEnvLoRaWan *lorawan;
 } HakkasEnvComm;
 
+/* The carrier's MCU module (04 §1), view only. Strings may be NULL. */
+typedef struct {
+	const char *type; /* e.g. "colibri_mcu6" */
+	const char *name; /* human-readable, e.g. "Colibri MCU6" */
+	const char *vendor;
+	const char *revision;
+	const char *serial;
+	const char *documentation; /* a link */
+} HakkasEnvMcu;
+
 /* The carrier board of a modular environment (04 §1). Its I/O slots are
  * numbered 0..builtin_count + slots - 1 (1..HAKKAS_ENV_IO_SLOTS_MAX of them);
  * builtin lists the built-in ones, each holding a module that cannot be
@@ -182,6 +192,7 @@ typedef struct {
 	const HakkasEnvPower *power; /* NULL: not given */
 	const HakkasEnvComm *comm;   /* the communication slots in use */
 	size_t comm_count;	     /* 0..HAKKAS_ENV_COMM_SLOTS_MAX */
+	const HakkasEnvMcu *mcu;     /* NULL: not given */
 } HakkasEnvCarrier;
 
 /* The environment's description (04 §1). */

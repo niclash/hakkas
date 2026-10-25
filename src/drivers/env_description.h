@@ -19,8 +19,8 @@
  * a carrier every module has one of its I/O slots, and is builtin exactly
  * when its slot is built-in; without one no module is builtin; no two
  * modules share a slot. The carrier's view-only values (its strings, power,
- * the communication parameters) are not checked (decided with the user
- * 2026-10-25).
+ * the communication parameters, the MCU module) are not checked (decided
+ * with the user 2026-10-25).
  *
  * The JSON form (04 §1): {"name", "description"?, "icon"?, "inPorts"?: [port],
  * "outPorts"?: [port], "modules"?: [module]}, a port {"id", "type":
@@ -33,7 +33,8 @@
  * "ac"?, "dc"?, "current"?}, "comm"?: [{"slot": integer, "type"?, "ip"?:
  * {"mode"?, "address"?, "prefix"?, "gateway"?, "dns"?: [string], "mac"?},
  * "wifi"?: {"ssid"?}, "rs485"?: {"bitrate"?, "parity"?}, "lorawan"?:
- * {"appEui"?, "devEui"?, "appKeySet"?}}]}. A view-only member of another type
+ * {"appEui"?, "devEui"?, "appKeySet"?}}], "mcu"?: {"type"?, "name"?,
+ * "vendor"?, "revision"?, "serial"?, "documentation"?}}. A view-only member of another type
  * is absent, not an error. A member that is null is absent; unknown members
  * are ignored (forward compatibility).
  *

@@ -220,7 +220,7 @@ describe.skipIf(!existsSync(HAKKAS))('the emulator with hakkas', () => {
         const controlSocket = path.join(os.tmpdir(), `cc-${randomBytes(6).toString('hex')}.sock`);
         const stop = new AbortController();
         const running = runEmulator({library: library.dir, plugins: [], socket: socketPath, controlSocket, httpPort: 0,
-            seed: 1, logLevel: 'fine', environment: 'lab'}, createLogger('fine', l => emulatorLog.push(l)), stop.signal);
+            mcu: 'colibri_mcu6', seed: 1, logLevel: 'fine', environment: 'lab'}, createLogger('fine', l => emulatorLog.push(l)), stop.signal);
         try {
             await until(() => emulatorLog.some(l => l.startsWith('info http: listening')), 'the emulator to start');
             await startHakkas();

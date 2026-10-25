@@ -1,0 +1,6 @@
+{
+  "type": "colibri_mcu2",
+  "name": "Colibri MCU2",
+  "vendor": "CurrentMakers",
+  "description": "STM32H562RG"
+}
