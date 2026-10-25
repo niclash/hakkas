@@ -63,6 +63,22 @@ test("create a type from three blocks, choosing and naming its ports", async ({p
     expect(await inputLabels(page, "Sum3_1")).toEqual(["a", "b"]);
 });
 
+test("the canvas's menu creates a type from the selection, and has no item without one", async ({page, engine}) => {
+    await openExample(page, engine.url);
+    const canvas = (await block(page, "block1").boundingBox())!;
+    await page.mouse.click(canvas.x - 10, canvas.y - 10, {button: "right"});
+    await expect(page.getByTestId("context-menu")).toHaveCount(1);
+    await expect(item(page, "create-composite")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await selectAdders(page);
+    await page.mouse.click(canvas.x - 10, canvas.y - 10, {button: "right"});
+    await expect(item(page, "create-composite")).toHaveText("Create composite type from 3 blocks…");
+    await item(page, "create-composite").click();
+    await expect(page.getByTestId("composite-port")).toHaveCount(4 * 3 + 3);
+    await expect(portRow(page, "block3.out").getByTestId("composite-expose")).toBeChecked();
+});
+
 test("names are checked before anything is sent", async ({page, engine}) => {
     await openExample(page, engine.url);
     await selectAdders(page);

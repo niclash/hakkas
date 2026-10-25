@@ -48,25 +48,95 @@ test("clicks select blocks, Escape and the canvas clear the selection", async ({
     expect(await selectedIds(page)).toEqual([]);
 });
 
-test("a Shift-drag on the canvas selects the blocks inside the marquee", async ({page, engine}) => {
-    await openExample(page, engine.url);
-    const before = await blockPosition(page, "block1");
-    // From the empty top-left corner to between block3 and block7 and above block8's middle:
-    // the middles of block1, block2 and block3 are inside.
+// Where a block's middle is on the screen, to the pixel.
+async function centre(page: Page, id: string): Promise<{ x: number, y: number }> {
+    const c = await blockCentre(page, id);
+    return {x: Math.round(c.x), y: Math.round(c.y)};
+}
+
+// From the empty top-left corner to between block3 and block7 and above block8's middle:
+// the middles of block1, block2 and block3 are inside.
+async function marquee(page: Page, modifier?: "Shift") {
     const start = await emptyCanvas(page);
     const c2 = await blockCentre(page, "block2");
     const c3 = await blockCentre(page, "block3");
     const c7 = await blockCentre(page, "block7");
     const c8 = await blockCentre(page, "block8");
-    await page.keyboard.down("Shift");
+    if (modifier !== undefined)
+        await page.keyboard.down(modifier);
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
     await page.mouse.move((c3.x + c7.x) / 2, (c2.y + c8.y) / 2, {steps: 8});
     await page.mouse.up();
-    await page.keyboard.up("Shift");
+    if (modifier !== undefined)
+        await page.keyboard.up(modifier);
+}
+
+test("a drag on the canvas selects the blocks inside the marquee, Shift adds them", async ({page, engine}) => {
+    await openExample(page, engine.url);
+    const before = await centre(page, "block1");
+    await title(page, "block8").click();
+    await marquee(page);
     expect(await selectedIds(page)).toEqual(["block1", "block2", "block3"]);
     // The canvas was not panned.
-    expect(await blockPosition(page, "block1")).toEqual(before);
+    expect(await centre(page, "block1")).toEqual(before);
+
+    await page.keyboard.press("Escape");
+    await title(page, "block8").click();
+    await marquee(page, "Shift");
+    expect(await selectedIds(page)).toEqual(["block1", "block2", "block3", "block8"]);
+});
+
+test("a right drag pans without a menu; a right click opens it", async ({page, engine}) => {
+    await openExample(page, engine.url);
+    const other = await engine.client();
+    await other.connectGraph(G);
+    await title(page, "block1").click();
+    const menu = page.getByTestId("context-menu");
+    const before = await centre(page, "block1");
+    const p7 = await blockPosition(page, "block7");
+
+    // From the canvas, and from a block: the view moves, no block does.
+    const start = await emptyCanvas(page);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down({button: "right"});
+    await page.mouse.move(start.x + 60, start.y + 40, {steps: 6});
+    await page.mouse.up({button: "right"});
+    await expect(menu).toHaveCount(0);
+    const c7 = await blockCentre(page, "block7");
+    await page.mouse.move(c7.x, c7.y);
+    await page.mouse.down({button: "right"});
+    await page.mouse.move(c7.x + 40, c7.y + 20, {steps: 6});
+    await page.mouse.up({button: "right"});
+    await expect(menu).toHaveCount(0);
+    expect(await centre(page, "block1")).toEqual({x: before.x + 100, y: before.y + 60});
+    expect(await blockPosition(page, "block7")).toEqual(p7);
+    expect(await selectedIds(page)).toEqual(["block1"]);
+
+    // Released in place, the press opens the menu of what is under it.
+    await title(page, "block7").click({button: "right"});
+    await expect(menu.locator("[data-action=rename]")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    other.send("graph", "list", {});   // a barrier: nothing sent before it changed anything
+    const next = await other.next(m => m.protocol === "graph" || m.command === "status");
+    expect(next.command).toBe("status");
+});
+
+test("the wheel pans, Ctrl+wheel zooms at the pointer", async ({page, engine}) => {
+    await openExample(page, engine.url);
+    const before = await centre(page, "block1");
+    const start = await emptyCanvas(page);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.wheel(0, 50);
+    await expect.poll(() => centre(page, "block1")).toEqual({x: before.x, y: before.y - 50});
+    await page.mouse.wheel(30, 0);
+    await expect.poll(() => centre(page, "block1")).toEqual({x: before.x - 30, y: before.y - 50});
+
+    const box = (await block(page, "block1").boundingBox())!;
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -100);
+    await page.keyboard.up("Control");
+    await expect.poll(async () => (await block(page, "block1").boundingBox())!.width).toBeGreaterThan(box.width * 1.05);
 });
 
 test("dragging a selection moves every selected block through the engine", async ({page, engine}) => {

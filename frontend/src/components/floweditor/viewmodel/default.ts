@@ -111,6 +111,12 @@ export async function createEditor(container: HTMLElement) {
     });
     vueRender.use(reroutePlugin);
 
+    // Only the main button draws a line from a socket: a right drag pans from there too (06 §4.0).
+    const pick = connection.pick.bind(connection);
+    connection.pick = async (event, type) => {
+        if (type !== 'down' || event.button === 0)
+            await pick(event, type);
+    };
     connection.addPreset(ConnectionPresets.classic.setup());
     connection.addPipe(context => {
         if (context.type === 'connectionpick') {

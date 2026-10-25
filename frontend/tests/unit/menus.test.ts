@@ -10,6 +10,11 @@ describe("menuFor", () => {
         expect(actions({kind: "canvas"})).toEqual(["add-block", "select-all", "zoom-fit", "arrange", "watch-all"]);
         expect(actions({kind: "canvas", canPaste: true})).toEqual(["add-block", "paste", "select-all", "zoom-fit", "arrange", "watch-all"]);
         expect(actions({kind: "canvas", watchingAll: true})).toContain("unwatch-all");
+        // With blocks selected: a composite type from them (06 §4.9).
+        expect(actions({kind: "canvas", selected: 2}))
+            .toEqual(["add-block", "select-all", "zoom-fit", "arrange", "create-composite", "watch-all"]);
+        expect(menuFor({kind: "canvas", selected: 3})[4].label).toBe("Create composite type from 3 blocks…");
+        expect(menuFor({kind: "canvas", selected: 1})[4].label).toBe("Create composite type…");
     });
 
     it("a block, alone or in a selection", () => {

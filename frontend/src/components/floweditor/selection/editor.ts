@@ -1,12 +1,14 @@
 // Selecting blocks in the editor and acting on the selection (06 §4): click, Ctrl/Shift-click,
-// a Shift/Ctrl-drag marquee on the canvas, Escape or a click on the canvas, Ctrl+A, Delete or
-// Backspace, F2 (rename), and dragging the selection. Replaces Rete's selectableNodes, which moves the other
-// selected blocks locally when the dragged one moves; here every move goes to the engine.
+// a left-drag marquee on the canvas (Shift/Ctrl: adding), Escape or a click on the canvas, Ctrl+A,
+// Delete or Backspace, F2 (rename), and dragging the selection; a right drag pans (06 §4.0).
+// Replaces Rete's selectableNodes, which moves the other selected blocks locally when the dragged
+// one moves; here every move goes to the engine.
 
 import {NodeEditor} from 'rete';
 import {AreaPlugin, Drag} from 'rete-area-plugin';
 import {can, isValueNode, PrimitiveNode, Schemes, vueModel} from '@/components/model';
 import {setupSelection} from './index';
+import {menuOnRelease, PanZoom} from './navigation';
 import {BlockSelection, MoveThrottle, Position, SelectionDrag} from './blocks';
 import {inputSources} from '@/components/floweditor/values';
 import * as history from '@/components/floweditor/history';
@@ -82,14 +84,24 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
     // The block being dragged.
     let drag: { id: string, moved: boolean, selection: SelectionDrag } | undefined;
 
-    // A plain drag on the canvas pans it; with Ctrl/Shift it draws the marquee.
-    area.area.setDragHandler(new Drag({
-        down: e => !(e.pointerType === 'mouse' && e.button !== 0) && !accumulates(e),
-        move: () => true,
+    // A left drag on the canvas draws the marquee, which replaces the selection (with Ctrl/Shift:
+    // adds to it); a right drag, anywhere in the editor, pans, and so does a touch's.
+    const pans = (e: PointerEvent) => e.pointerType === 'touch' || e.button === 2;
+    area.area.setDragHandler(new Drag({down: pans, move: () => true}));
+    area.area.setZoomHandler(new PanZoom(0.1, (dx, dy) => {
+        const {x, y} = area.area.transform;
+        void area.area.translate(x - dx, y - dy);
     }));
+    const menus = menuOnRelease(area.container);
     const marquee = setupSelection(area, {
-        starts: event => event.button === 0 && accumulates(event),
-        selected: ids => selection.add(ids.map(String).filter(isBlock)),
+        starts: event => event.button === 0 && event.pointerType !== 'touch',
+        selected: ids => {
+            const blocks = ids.map(String).filter(isBlock);
+            if (pressAccumulates)
+                selection.add(blocks);
+            else
+                selection.set(blocks);
+        },
     });
     marquee.setMode('center');
     marquee.setShape('marquee');
@@ -221,6 +233,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
             document.removeEventListener('keydown', keydown);
             area.container.removeEventListener('pointerdown', capturePress, {capture: true});
             marquee.destroy();
+            menus.destroy();
         },
     };
 }

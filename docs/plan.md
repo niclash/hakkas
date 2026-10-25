@@ -674,8 +674,8 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
   Checked first: the other selected blocks did move, but locally — Rete's `selectableNodes`
   moved them when the dragged block's event came back, without commands. It is replaced by
   `floweditor/selection/` (`blocks.ts`, unit tested; `editor.ts`, the wiring), 06 §4.0. The
-  marquee is a Shift/Ctrl-drag on the canvas (a plain drag pans) and adds to the selection;
-  Ctrl/Shift-click on a selected block unselects it.
+  marquee is a Shift/Ctrl-drag on the canvas (a plain drag pans; changed by task 66) and adds
+  to the selection; Ctrl/Shift-click on a selected block unselects it.
 - [x] **27. Inspector panel**: a panel beside the editor for the selected block — its id, its
   type and the type's description, and every port with its type and description (from
   `component:component`); with several blocks selected, their count and the common actions.
@@ -926,9 +926,9 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   target device).
 - [ ] **65. The Colibri emulator** (`emulators/colibri/`): its own plan once its spec is settled.
 
-## Phase 9 — Editor requests (requested 2026-10-24, not started)
+## Phase 9 — Editor requests (requested 2026-10-24, done 2026-10-25)
 
-- [ ] **66. Left-drag selects, right-drag pans** (06 §4, "The marquee"). Today a plain drag on
+- [x] **66. Left-drag selects, right-drag pans** (06 §4, "The marquee"). Today a plain drag on
   the empty canvas pans and a Shift- or Ctrl-drag draws the marquee. Wanted: a **left** drag on
   the empty canvas draws the marquee (the selection tool), a **right** drag pans, and a right
   click without a drag still opens the context menu (§4.4) — so the menu opens on the button's
@@ -937,8 +937,11 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   selection; a plain left drag replaces it; on a trackpad a **two-finger scroll pans**. Rete
   zooms on the wheel today, and a trackpad's two-finger scroll arrives as the same wheel
   event, so zooming moves to the pinch (a wheel event with `ctrlKey`) and Ctrl+wheel; whether
-  a mouse's plain wheel then pans or still zooms is to decide when starting.
-- [ ] **67. *Create composite type…* in the canvas's context menu** (06 §4.4, §4.9). Today it is
+  a mouse's plain wheel then pans or still zooms is to decide when starting. **Done 2026-10-25**:
+  decided that the plain wheel pans (Shift+wheel sideways), no device guessing; a right drag
+  pans from anywhere in the editor, also over a block or a socket; a `contextmenu` the browser
+  sends on the press is held back until the release (`selection/navigation.ts`).
+- [x] **67. *Create composite type…* in the canvas's context menu** (06 §4.4, §4.9). Today it is
   only in a block's menu (from the selection when the block is in it, else the block alone).
   Wanted also on a right-click on the empty canvas, from the current selection; **left out of
-  the menu when nothing is selected** (decided 2026-10-24).
+  the menu when nothing is selected** (decided 2026-10-24). **Done 2026-10-25.**

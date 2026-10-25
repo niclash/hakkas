@@ -472,7 +472,8 @@ const openMenu = (event: MouseEvent, context: unknown) => {
   const where = {x: event.clientX - origin.left, y: event.clientY - origin.top, at: editor.pointAt(event.clientX, event.clientY)};
   let open: Omit<OpenMenu, "items" | "x" | "y" | "at"> | undefined;
   if (context === "root") {
-    open = {target: {kind: "canvas", watchingAll: live.all, canPaste: hasClip()}};
+    const selected = editor.blockSelection?.selection.ids().length ?? 0;
+    open = {target: {kind: "canvas", watchingAll: live.all, canPaste: hasClip(), selected}};
   } else if (context instanceof BindingNode) {
     const block = editor.getNode(context.block);
     open = block instanceof PrimitiveNode
@@ -671,9 +672,10 @@ const act = async (action: MenuAction) => {
       pasteClipAt(editor, m.at);
       break;
     case "create-composite": {
-      // The selection, if the block is in it; else the block alone.
-      const ids = block === undefined ? [] : editor.blockSelection?.selection.has(block.id)
-          ? editor.blockSelection.selection.ids() : [block.id];
+      // The selection, if the block is in it or the menu is the canvas's; else the block alone.
+      const selection = editor.blockSelection?.selection;
+      const ids = block === undefined || selection?.has(block.id)
+          ? selection?.ids() ?? [] : [block.id];
       openComposite(ids);
       break;
     }
