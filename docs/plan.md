@@ -998,3 +998,17 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   live (on the device per environment, like the bindings in `<datadir>/bindings/`, or in a
   bindings file so they travel with a process), whether they follow a module moved to another
   slot, and the wire messages (an addition to the `environment` group, put to the user first).
+
+## Known issues (noted 2026-10-25, to evaluate later; not critical)
+
+- [ ] **71. Flaky browser test: *values, renames and pastes are undone; the history survives a
+  reload*** (`frontend/tests/e2e/undo.spec.ts`). It fails intermittently (2 of 6 runs, with and
+  without the changes of task 70) with "Timeout 5000ms exceeded while waiting on the predicate":
+  after the reload, one of the three undos does not show its effect in time. Find whether the
+  undo after a reload is sometimes lost or applied late (the history read from sessionStorage,
+  the editor not yet settled, a step waiting for its events), and fix the cause rather than the
+  timeout.
+- [ ] **72. Compiler warning in `tests/test_process_more.c:167`**: `-Wformat-truncation`, a `%d`
+  written into a 3-byte buffer (`snprintf`), seen with the debug preset. Harmless in the test as
+  it stands, but the build should be warning-free: size the buffer for any int, or narrow the
+  value.
