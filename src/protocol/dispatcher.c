@@ -85,7 +85,7 @@ typedef struct {
 } Envelope;
 
 static const char *const protocols[] = {
-	"environment", "runtime", "network", "graph", "component", "trace",
+	"auth", "environment", "runtime", "network", "graph", "component", "trace",
 };
 
 /* ---- Authorizer shorthands ---------------------------------------------------------- */
@@ -419,7 +419,7 @@ static void end_delivery(ProtoConn *c)
 	c->pending &= ~PENDING_CONNECT;
 }
 
-/* ---- environment (02 §2.3, §3.1) --------------------------------------------------- */
+/* ---- auth (02 §2.3, §3.1) ---------------------------------------------------------- */
 
 static void send_challenge(ProtoConn *c, const AuthChallenge *ch)
 {
@@ -1411,9 +1411,9 @@ typedef struct {
 
 /* The commands this layer runs: every command of 02 §3. */
 static const ProtoCommand commands[] = {
-	{"environment", "challenge", cmd_challenge},
-	{"environment", "login", cmd_login},
-	{"environment", "logout", cmd_logout},
+	{"auth", "challenge", cmd_challenge},
+	{"auth", "login", cmd_login},
+	{"auth", "logout", cmd_logout},
 	{"runtime", "getruntime", cmd_getruntime},
 	{"runtime", "new_graph", cmd_new_graph},
 	{"runtime", "delete_graph", cmd_delete_graph},

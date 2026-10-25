@@ -445,8 +445,8 @@ static void expect_error(FakeConn *f, const char *message)
 static const char *login_as(FakeConn *f, enum user_role role)
 {
 	fake.role = role;
-	command(f, "environment", "challenge", "{'user':'u','cnonce':'Y25vbmNl'}", "");
-	command(f, "environment", "login", "{'user':'u','nonce':'n','proof':'p'}", "");
+	command(f, "auth", "challenge", "{'user':'u','cnonce':'Y25vbmNl'}", "");
+	command(f, "auth", "login", "{'user':'u','nonce':'n','proof':'p'}", "");
 	CHECK(f->count == 2);
 	clear(f);
 	static char secret[16][AUTH_SECRET_SIZE];
@@ -486,7 +486,7 @@ static void test_messages(void)
 
 	/* The special shapes, byte for byte (02 §1). */
 	char *m = proto_msg_logout();
-	CHECK_STREQ(m, "{\"protocol\":\"environment\",\"command\":\"logout\"}");
+	CHECK_STREQ(m, "{\"protocol\":\"auth\",\"command\":\"logout\"}");
 	free(m);
 	m = proto_msg_componentsready(7);
 	CHECK_STREQ(m, "{\"protocol\":\"component\",\"command\":\"componentsready\","
@@ -591,9 +591,12 @@ static void test_secret_gating(void)
 	expect_error(&f, "Not authenticated");
 	command(&f, "runtime", "foo", "{}", "x");
 	expect_error(&f, "Not authenticated");
-	/* environment is never gated: an unknown command is the generic error. */
-	command(&f, "environment", "foo", "{}", "");
-	expect_error(&f, "Unknown command: environment:foo");
+	/* auth is never gated: an unknown command is the generic error. */
+	command(&f, "auth", "foo", "{}", "");
+	expect_error(&f, "Unknown command: auth:foo");
+	/* environment is gated (02 §3.7), the old login commands included. */
+	command(&f, "environment", "challenge", "{'user':'u','cnonce':'Y25vbmNl'}", "");
+	expect_error(&f, "Not authenticated");
 	/* getruntime needs no secret. */
 	command(&f, "runtime", "getruntime", "{}", "whatever");
 	CHECK(f.count == 1);
@@ -683,42 +686,42 @@ static void test_capabilities(void)
 	}
 }
 
-/* ---- environment (02 §2.3, §3.1) -------------------------------------------------- */
+/* ---- auth (02 §2.3, §3.1) --------------------------------------------------------- */
 
 static void test_login_flow(void)
 {
 	setup();
 	FakeConn f;
 	conn_open(&f);
-	command(&f, "environment", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
-	expect_one(&f, "{'protocol':'environment','command':'challenge','payload':"
+	command(&f, "auth", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
+	expect_one(&f, "{'protocol':'auth','command':'challenge','payload':"
 		       "{'salt':'c2FsdHNhbHRzYWx0c2FsdA==','iterations':4096,"
 		       "'nonce':'Y25vbmNlSERVER'}}");
 	/* Key order, byte for byte. */
-	command(&f, "environment", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
-	CHECK_STREQ(msg(&f, 0), "{\"protocol\":\"environment\",\"command\":\"challenge\","
+	command(&f, "auth", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
+	CHECK_STREQ(msg(&f, 0), "{\"protocol\":\"auth\",\"command\":\"challenge\","
 				"\"payload\":{\"salt\":\"c2FsdHNhbHRzYWx0c2FsdA==\",\"iterations\":"
 				"4096,\"nonce\":\"Y25vbmNlSERVER\"}}");
 	clear(&f);
 	/* Mistyped or missing fields reach the authorizer as NULL. */
 	fake.challenge_result = AUTH_FAILED;
-	command(&f, "environment", "challenge", "{'user':5}", "");
+	command(&f, "auth", "challenge", "{'user':5}", "");
 	CHECK(fake.saw_null_user && fake.saw_null_cnonce);
 	expect_error(&f, "Login failed");
 
 	/* A resume (02 §2.3.1): the id reaches the authorizer, the reply has
 	 * only the nonce; a mistyped id is refused without asking it. */
 	fake.challenge_result = AUTH_OK;
-	command(&f, "environment", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
+	command(&f, "auth", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
 	CHECK_STREQ(fake.saw_resume, "(null)");
 	clear(&f);
-	command(&f, "environment", "challenge",
+	command(&f, "auth", "challenge",
 		"{'user':'alice','cnonce':'Y25vbmNl','resume':'aWQ'}", "");
 	CHECK_STREQ(fake.saw_resume, "aWQ");
-	expect_one(&f, "{'protocol':'environment','command':'challenge','payload':"
+	expect_one(&f, "{'protocol':'auth','command':'challenge','payload':"
 		       "{'nonce':'Y25vbmNlSERVER'}}");
 	fake.saw_resume[0] = '\0';
-	command(&f, "environment", "challenge",
+	command(&f, "auth", "challenge",
 		"{'user':'alice','cnonce':'Y25vbmNl','resume':5}", "");
 	CHECK_STREQ(fake.saw_resume, "");
 	expect_error(&f, "Login failed");
@@ -726,24 +729,24 @@ static void test_login_flow(void)
 
 	/* Delayed: nothing now; the callback replies later. */
 	fake.challenge_result = AUTH_DELAYED;
-	command(&f, "environment", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
+	command(&f, "auth", "challenge", "{'user':'alice','cnonce':'Y25vbmNl'}", "");
 	CHECK(f.count == 0);
 	AuthConn *ac = auth_of(&f);
 	AuthChallenge ch = {false, "c2FsdA==", 7, "Y25vbmNlX"};
 	ac->events->on_challenge(ac->user, &ch);
-	expect_one(&f, "{'protocol':'environment','command':'challenge','payload':"
+	expect_one(&f, "{'protocol':'auth','command':'challenge','payload':"
 		       "{'salt':'c2FsdA==','iterations':7,'nonce':'Y25vbmNlX'}}");
 	ac->events->on_challenge(ac->user, NULL);
 	expect_error(&f, "Login failed");
 
 	/* Login. */
 	fake.role = USER_ROLE_OPERATOR;
-	command(&f, "environment", "login", "{'user':'alice','nonce':'n','proof':'p'}", "");
+	command(&f, "auth", "login", "{'user':'alice','nonce':'n','proof':'p'}", "");
 	CHECK(!fake.saw_null_user && !fake.saw_null_nonce && !fake.saw_null_proof);
 	CHECK_STREQ(fake.saw_resume, "(null)");
 	CHECK(f.count == 1);
 	CHECK_STREQ(msg(&f, 0),
-		    "{\"protocol\":\"environment\",\"command\":\"login\",\"payload\":{\"secret\":"
+		    "{\"protocol\":\"auth\",\"command\":\"login\",\"payload\":{\"secret\":"
 		    "\"secret0\",\"role\":\"operator\",\"capabilities\":[\"protocol:component\","
 		    "\"graph:readonly\",\"network:status\",\"network:data\",\"network:control\"],"
 		    "\"server_signature\":\"c2lnbmF0dXJl\",\"resume\":\"resume0\"}}");
@@ -751,35 +754,35 @@ static void test_login_flow(void)
 	CHECK(fa_caps(NULL, ac) != 0);
 
 	/* Logout: no payload at all, back to unauthenticated. */
-	command(&f, "environment", "logout", "{}", "");
+	command(&f, "auth", "logout", "{}", "");
 	CHECK(f.count == 1);
-	CHECK_STREQ(msg(&f, 0), "{\"protocol\":\"environment\",\"command\":\"logout\"}");
+	CHECK_STREQ(msg(&f, 0), "{\"protocol\":\"auth\",\"command\":\"logout\"}");
 	clear(&f);
 	command(&f, "trace", "clear", "{'graph':'g'}", "secret0");
 	expect_error(&f, "Not authenticated");
 
 	/* Failures: the secret not issued, a wrong proof, missing fields. */
 	fake.issue_ok = false;
-	command(&f, "environment", "login", "{'user':'alice','nonce':'n','proof':'p'}", "");
+	command(&f, "auth", "login", "{'user':'alice','nonce':'n','proof':'p'}", "");
 	expect_error(&f, "Login failed");
 	fake.issue_ok = true;
 	fake.verify_result = AUTH_FAILED;
-	command(&f, "environment", "login", "{'nonce':7}", "");
+	command(&f, "auth", "login", "{'nonce':7}", "");
 	CHECK(fake.saw_null_user && fake.saw_null_nonce && fake.saw_null_proof);
 	expect_error(&f, "Login failed");
 	/* A resume's id reaches the authorizer; a mistyped one as "" (wrong). */
-	command(&f, "environment", "login",
+	command(&f, "auth", "login",
 		"{'user':'alice','nonce':'n','resume':'aWQ','proof':'p'}", "");
 	CHECK_STREQ(fake.saw_resume, "aWQ");
 	expect_error(&f, "Login failed");
-	command(&f, "environment", "login",
+	command(&f, "auth", "login",
 		"{'user':'alice','nonce':'n','resume':[],'proof':'p'}", "");
 	CHECK_STREQ(fake.saw_resume, "");
 	expect_error(&f, "Login failed");
 	CHECK(!f.closed);
 	/* The third failure closes with 1008 after the reply. */
 	fake.verify_result = AUTH_FAILED_CLOSE;
-	command(&f, "environment", "login", "{'user':'alice','nonce':'n','proof':'p'}", "");
+	command(&f, "auth", "login", "{'user':'alice','nonce':'n','proof':'p'}", "");
 	expect_error(&f, "Login failed");
 	CHECK(f.closed && f.close_code == WS_CLOSE_POLICY);
 	/* Nothing is answered after the close started. */
@@ -819,7 +822,7 @@ static void test_expiry(void)
 	ac->expired = false;
 	ac->events->on_expired(ac->user);
 	CHECK(a.count == 1);
-	CHECK_STREQ(msg(&a, 0), "{\"protocol\":\"environment\",\"command\":\"logout\"}");
+	CHECK_STREQ(msg(&a, 0), "{\"protocol\":\"auth\",\"command\":\"logout\"}");
 	clear(&a);
 	command(&b, "runtime", "new_graph", "{'id':'g3'}", sb);
 	CHECK(a.count == 0 && b.count == 2);
@@ -1283,7 +1286,7 @@ static const char *client_login(FakeConn *f, const char *user, const char *passw
 {
 	char ch[128];
 	snprintf(ch, sizeof(ch), "{'user':'%s','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg=='}", user);
-	command(f, "environment", "challenge", ch, "");
+	command(f, "auth", "challenge", ch, "");
 	CHECK(f->count == 1);
 	char salt64[64], nonce[256];
 	snprintf(salt64, sizeof(salt64), "%s", payload_str(msg(f, 0), "salt"));
@@ -1311,7 +1314,7 @@ static const char *client_login(FakeConn *f, const char *user, const char *passw
 	crypto_base64_encode(ssig, 32, ssig64, sizeof(ssig64));
 	snprintf(payload, sizeof(payload), "{'user':'%s','nonce':'%s','proof':'%s'}", user, nonce,
 		 proof64);
-	command(f, "environment", "login", payload, "");
+	command(f, "auth", "login", payload, "");
 	CHECK(f->count == 1);
 	static char secret[64];
 	snprintf(secret, sizeof(secret), "%s", payload_str(msg(f, 0), "secret"));
@@ -1367,7 +1370,7 @@ static void test_real_authorizer(void)
 	clock_ms += 3000;
 	auth_tick(auth, clock_ms);
 	CHECK(f.count == 1);
-	CHECK_STREQ(msg(&f, 0), "{\"protocol\":\"environment\",\"command\":\"logout\"}");
+	CHECK_STREQ(msg(&f, 0), "{\"protocol\":\"auth\",\"command\":\"logout\"}");
 	clear(&f);
 	CHECK(graphs_new_graph(&gs, "g1", NULL, NULL, NULL, NULL, NULL) == GRAPH_OK);
 	CHECK(f.count == 0);
@@ -1929,7 +1932,7 @@ static void test_scoping(void)
 	clear(&b);
 	clear(&u);
 	/* A logout and a new login start unscoped (02 §4.1). */
-	command(&a, "environment", "logout", "{}", "");
+	command(&a, "auth", "logout", "{}", "");
 	clear(&a);
 	login_as(&a, USER_ROLE_EDITOR);
 	command(&b, "graph", "addnode", "{'id':'k','graph':'g1','component':'math/Add2'}", sb);
@@ -2022,7 +2025,7 @@ static void test_connect_snapshot(void)
 	clear(&o);
 	/* The placeholder can be moved and removed like any block; its
 	 * retained entries go with it, without events. */
-	command(&f, "environment", "logout", "{}", "");
+	command(&f, "auth", "logout", "{}", "");
 	clear(&f);
 	s = login_as(&f, USER_ROLE_EDITOR);
 	/* gs was loaded, so saved: its first change is followed by its status
@@ -2060,7 +2063,7 @@ static void test_connect_buffer(void)
 	command(&f, "graph", "connect", "{'id':'gs'}", s);
 	CHECK(f.count == SNAPSHOT_LEN);
 	clear(&f);
-	command(&f, "environment", "logout", "{}", "");
+	command(&f, "auth", "logout", "{}", "");
 	clear(&f);
 	s = login_as(&f, USER_ROLE_VIEWER); /* unscoped again */
 
@@ -2136,7 +2139,7 @@ static void test_connect_buffer(void)
 	f.pending = 100;
 	command(&f, "graph", "connect", "{'id':'g1'}", s);
 	f.space = 1u << 20;
-	command(&f, "environment", "logout", "{}", "");
+	command(&f, "auth", "logout", "{}", "");
 	clear(&f);
 	f.pending = 0;
 	protocol_conn_drained(f.pc);
@@ -2445,7 +2448,7 @@ static void test_network_edges(void)
 	command(&f, "network", "edges", watch_n1, s);
 	CHECK(f.count == 3);
 	clear(&f);
-	command(&f, "environment", "logout", "{}", "");
+	command(&f, "auth", "logout", "{}", "");
 	clear(&f);
 	set_initial("n1", "in1", 9);
 	runtime_drain(&rt, SIZE_MAX);
@@ -2465,7 +2468,7 @@ static void test_network_edges(void)
 	ac->authenticated = false;
 	ac->expired = false;
 	ac->events->on_expired(ac->user);
-	expect_one(&f, "{'protocol':'environment','command':'logout'}");
+	expect_one(&f, "{'protocol':'auth','command':'logout'}");
 	s = login_as(&f, USER_ROLE_VIEWER);
 	CHECK(protocol_conn_scope(f.pc, "elsewhere"));
 	set_initial("n1", "in1", 12);

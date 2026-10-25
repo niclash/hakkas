@@ -2,7 +2,7 @@
  * Authorization (02 §2): the SCRAM-SHA-256 login of 02 §2.3, sessions and
  * their secrets (02 §2.5), roles and capabilities (02 §2.4), login rate
  * limiting (02 §2.5 item 7) and its logging (item 8). Pure logic: no wire
- * JSON (the protocol dispatcher, plan task 17, maps the environment:*
+ * JSON (the protocol dispatcher, plan task 17, maps the auth:*
  * messages onto it) and no PAL call (the clock and the random source are
  * parameters).
  *
@@ -19,17 +19,17 @@
  * challenge was answered) -> VERIFIED (verify_proof accepted the proof) ->
  * AUTHENTICATED (issue_secret issued the session's secret). The flow:
  *
- *	environment:challenge  ->  challenge()     AUTH_OK: reply with *out
+ *	auth:challenge         ->  challenge()     AUTH_OK: reply with *out
  *	                                           AUTH_DELAYED: on_challenge
  *	                                           replies later (back-off)
  *	                                           AUTH_FAILED: "Login failed"
- *	environment:login      ->  verify_proof()  AUTH_OK: issue_secret(),
+ *	auth:login             ->  verify_proof()  AUTH_OK: issue_secret(),
  *	                                           reply secret, role,
  *	                                           capabilities, signature
  *	                                           AUTH_FAILED: "Login failed"
  *	                                           AUTH_FAILED_CLOSE: "Login
  *	                                           failed", then close (1008)
- *	environment:logout     ->  revoke_secret()
+ *	auth:logout            ->  revoke_secret()
  *	any client message     ->  activity()      (the idle timeout)
  *	a gated message        ->  validate_secret()  false: "Not authenticated"
  *	a command              ->  auth_command_rule(), auth_permits() with
@@ -76,7 +76,7 @@
  *    or max_lifetime_s after issue_secret; from that instant validate_secret
  *    is false and capabilities_for 0, and the tick hook (auth_tick) returns
  *    the connection to UNAUTHENTICATED and calls on_expired, so the protocol
- *    layer sends environment:logout and stops delivering events. A logout
+ *    layer sends auth:logout and stops delivering events. A logout
  *    (revoke_secret) or close ends it at once, without on_expired.
  *  - The users file (plan task 18): re-read through load_users at every
  *    challenge made (also a delayed one, when it is made); see AuthConfig.
@@ -158,10 +158,10 @@ uint32_t auth_role_capabilities(enum user_role role);
 typedef struct {
 	/* A client command of 02 §3 (otherwise the dispatcher answers with
 	 * its generic error, after the secret check: unknown commands are
-	 * gated, except in environment). */
+	 * gated, except in auth). */
 	bool known;
 	/* It must carry the connection's current secret: every command but
-	 * environment:* and runtime:getruntime. */
+	 * auth:* and runtime:getruntime. */
 	bool gated;
 	/* The session needs one of these capabilities; 0: none. */
 	uint32_t caps_any;
@@ -169,8 +169,9 @@ typedef struct {
 
 /*
  * The rule for protocol:command (02 §2.4):
- *  - environment:challenge, login, logout: not gated, no capability (any
- *    other environment command: not gated, unknown);
+ *  - auth:challenge, login, logout: not gated, no capability (any
+ *    other auth command: not gated, unknown; every environment command,
+ *    02 §3.7: gated, unknown);
  *  - runtime:getruntime: not gated, no capability; runtime:new_graph,
  *    delete_graph: protocol:runtime;
  *  - graph:connect, graph:list (the read-only graph commands), every
@@ -242,7 +243,7 @@ enum auth_result {
 	AUTH_DELAYED,	   /* challenge: on_challenge replies later */
 };
 
-/* The environment:challenge reply's payload (02 §2.3; 02 §2.3.1 when
+/* The auth:challenge reply's payload (02 §2.3; 02 §2.3.1 when
  * resume: then only the nonce, salt "" and iterations 0). */
 typedef struct {
 	bool resume;
@@ -251,7 +252,7 @@ typedef struct {
 	char nonce[AUTH_NONCE_TEXT_SIZE]; /* cnonce + base64 of the server's bytes */
 } AuthChallenge;
 
-/* What verify_proof gives on success, for the environment:login reply. */
+/* What verify_proof gives on success, for the auth:login reply. */
 typedef struct {
 	enum user_role role;
 	uint32_t capabilities;
@@ -262,11 +263,11 @@ typedef struct AuthConn AuthConn;
 
 /* The protocol layer's per-connection callbacks; user is open's. */
 typedef struct {
-	/* The session expired (02 §2.5 item 3): send environment:logout and
+	/* The session expired (02 §2.5 item 3): send auth:logout and
 	 * stop event delivery; the connection is UNAUTHENTICATED. */
 	void (*on_expired)(void *user);
 	/* A delayed challenge (AUTH_DELAYED) is ready: send it as the
-	 * environment:challenge reply. NULL if making it failed (the random
+	 * auth:challenge reply. NULL if making it failed (the random
 	 * source): reply "Login failed". */
 	void (*on_challenge)(void *user, const AuthChallenge *challenge);
 } AuthEvents;
@@ -282,12 +283,12 @@ typedef struct {
 	void (*close)(void *self, AuthConn *c);
 	/* A client message arrived (any message): the idle timeout restarts. */
 	void (*activity)(void *self, AuthConn *c);
-	/* environment:challenge {user, cnonce[, resume]}; resume NULL for a
+	/* auth:challenge {user, cnonce[, resume]}; resume NULL for a
 	 * password login. AUTH_OK (*out filled), AUTH_DELAYED, AUTH_FAILED. */
 	enum auth_result (*challenge)(void *self, AuthConn *c, const char *user,
 				      const char *cnonce, const char *resume,
 				      AuthChallenge *out);
-	/* environment:login {user, nonce[, resume], proof}; resume NULL for a
+	/* auth:login {user, nonce[, resume], proof}; resume NULL for a
 	 * password login (it must match the challenge's). AUTH_OK (*out
 	 * filled; the connection is VERIFIED), AUTH_FAILED,
 	 * AUTH_FAILED_CLOSE. */
@@ -303,7 +304,7 @@ typedef struct {
 			     char resume[AUTH_RESUME_SIZE]);
 	/* Whether secret is this connection's current, unexpired one. */
 	bool (*validate_secret)(void *self, AuthConn *c, const char *secret);
-	/* environment:logout: the session (or challenge) ends, and its
+	/* auth:logout: the session (or challenge) ends, and its
 	 * chain's resume entry; UNAUTHENTICATED. */
 	void (*revoke_secret)(void *self, AuthConn *c);
 	/* The session's capabilities; 0 unless AUTHENTICATED and unexpired

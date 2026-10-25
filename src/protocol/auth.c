@@ -52,10 +52,15 @@ typedef struct {
 	uint32_t caps_any;
 } CommandDef;
 
-static const CommandDef environment_commands[] = {
+static const CommandDef auth_commands[] = {
 	{"challenge", false, 0},
 	{"login", false, 0},
 	{"logout", false, 0},
+	{NULL, false, 0},
+};
+
+/* The hardware environment's messages (02 §3.7) are not specified yet. */
+static const CommandDef environment_commands[] = {
 	{NULL, false, 0},
 };
 
@@ -118,9 +123,10 @@ AuthCommandRule auth_command_rule(const char *protocol, const char *command)
 		const char *protocol;
 		const CommandDef *commands;
 	} protocols[] = {
-		{"environment", environment_commands}, {"runtime", runtime_commands},
-		{"network", network_commands},	       {"graph", graph_commands},
-		{"component", component_commands},     {"trace", trace_commands},
+		{"auth", auth_commands},	       {"environment", environment_commands},
+		{"runtime", runtime_commands},	       {"network", network_commands},
+		{"graph", graph_commands},	       {"component", component_commands},
+		{"trace", trace_commands},
 	};
 	AuthCommandRule rule = {false, true, 0};
 	if (protocol == NULL || command == NULL)
@@ -128,8 +134,8 @@ AuthCommandRule auth_command_rule(const char *protocol, const char *command)
 	for (size_t p = 0; p < sizeof(protocols) / sizeof(protocols[0]); p++) {
 		if (strcmp(protocol, protocols[p].protocol) != 0)
 			continue;
-		/* environment is never secret-gated (02 §3.1). */
-		rule.gated = protocols[p].commands != environment_commands;
+		/* auth is never secret-gated (02 §3.1). */
+		rule.gated = protocols[p].commands != auth_commands;
 		for (const CommandDef *d = protocols[p].commands; d->command != NULL; d++) {
 			if (strcmp(command, d->command) == 0) {
 				rule = (AuthCommandRule){true, d->gated, d->caps_any};

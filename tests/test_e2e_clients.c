@@ -597,9 +597,9 @@ static void test_users_edit(void)
 	 * iteration count, not the test users' 64), carol logs in; bob's open
 	 * session goes on. */
 	CHECK(e2e_connect(&c));
-	e2e_send(&c, "environment", "challenge",
+	e2e_send(&c, "auth", "challenge",
 		 "{'user':'bob','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg=='}");
-	EXPECT(&c, "environment", "challenge", "{'salt':'*','iterations':100000,'nonce':'*'}");
+	EXPECT(&c, "auth", "challenge", "{'salt':'*','iterations':100000,'nonce':'*'}");
 	CHECK(e2e_login(&c, "carol"));
 	e2e_send(&bob, "trace", "start", "{'graph':'x'}");
 	EXPECT(&bob, "trace", "start", "{'graph':'x'}");

@@ -42,7 +42,7 @@ import {Connection} from "@/components/protocols/websocket";
 import {attachModel, can, errorClaims, messageLog, vueModel} from "@/components/model";
 import {addressFor, Opened, parseAddress, titleFor} from "@/address";
 import {roleLabel} from "@/components/roles";
-import {OnLogin, OnLoginFailed} from "@/components/protocols/environment";
+import {OnLogin, OnLoginFailed} from "@/components/protocols/auth";
 import {NetworkErrorEvent} from "@/components/protocols/network";
 import {forgetSession, keepSession, keptSession, reconnectDelay} from "@/session";
 
@@ -62,7 +62,7 @@ const connectionCount = ref(0);
 // Every login uses a fresh connection, which ends at logout.
 const login = (user: string, password: string) => {
   resuming.value = false;
-  connect(conn => conn.proto.environment.request_login(user, password));
+  connect(conn => conn.proto.auth.request_login(user, password));
 }
 
 // A reload resumes the kept session instead of asking for the password (02 §2.3.1).
@@ -71,7 +71,7 @@ const resume = () => {
   if (session === undefined)
     return;
   resuming.value = true;
-  connect(conn => conn.proto.environment.request_resume(session));
+  connect(conn => conn.proto.auth.request_resume(session));
 }
 
 const connect = (start: (conn: Connection) => void) => {
@@ -84,9 +84,9 @@ const connect = (start: (conn: Connection) => void) => {
   // While reconnecting, the model keeps what it shows until the session is back (onLogin).
   if (reconnect.value === undefined)
     attachModel(conn);
-  conn.proto.environment.addListener("onLogin", onLogin);
-  conn.proto.environment.addListener("onLoginFailed", (c: Connection, failure: OnLoginFailed) => loginFailed(c, failure.message));
-  conn.proto.environment.addListener("onLogout", onLogout);
+  conn.proto.auth.addListener("onLogin", onLogin);
+  conn.proto.auth.addListener("onLoginFailed", (c: Connection, failure: OnLoginFailed) => loginFailed(c, failure.message));
+  conn.proto.auth.addListener("onLogout", onLogout);
   conn.proto.network.addListener("onNetworkError", (e: NetworkErrorEvent) => {
     if (secret.value === "" || reconnect.value !== undefined)
       loginFailed(conn, e.message);
@@ -108,7 +108,7 @@ const attempt = () => {
     return;
   }
   r.attempt++;
-  connect(conn => conn.proto.environment.request_resume(session));
+  connect(conn => conn.proto.auth.request_resume(session));
 }
 
 const scheduleAttempt = () => {
@@ -129,7 +129,7 @@ const endSession = (message: string) => {
 const loginFailed = (conn: Connection, message: string) => {
   if (conn !== vueModel.connection.value)
     return;
-  conn.proto.environment.abandon_login();
+  conn.proto.auth.abandon_login();
   conn.close();
   vueModel.connection.value = undefined;
   loggingIn.value = false;
@@ -157,7 +157,7 @@ const logout = () => {
     endSession("");
     return;
   }
-  vueModel.connection.value?.proto.environment.request_logout();
+  vueModel.connection.value?.proto.auth.request_logout();
 }
 
 // After a logout or a session expiry.

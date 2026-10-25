@@ -145,7 +145,7 @@ char *proto_msg_output(const char *text)
 
 char *proto_msg_logout(void)
 {
-	return proto_msg_build("environment", "logout", NULL);
+	return proto_msg_build("auth", "logout", NULL);
 }
 
 char *proto_msg_challenge(const AuthChallenge *ch)
@@ -155,7 +155,7 @@ char *proto_msg_challenge(const AuthChallenge *ch)
 	if (!ch->resume) /* a resume has no key stretching (02 §2.3.1) */
 		ok = ok && add_str(p, "salt", ch->salt) && add_num(p, "iterations", ch->iterations);
 	ok = ok && add_str(p, "nonce", ch->nonce);
-	return finish("environment", "challenge", p, ok);
+	return finish("auth", "challenge", p, ok);
 }
 
 char *proto_msg_login(const char *secret, const char *resume, const AuthProof *proof)
@@ -166,7 +166,7 @@ char *proto_msg_login(const char *secret, const char *resume, const AuthProof *p
 		  add(p, "capabilities", proto_msg_capabilities(proof->capabilities)) &&
 		  add_str(p, "server_signature", proof->server_signature) &&
 		  add_str(p, "resume", resume);
-	return finish("environment", "login", p, ok);
+	return finish("auth", "login", p, ok);
 }
 
 char *proto_msg_runtime(const char *id, const char *label, uint32_t caps)

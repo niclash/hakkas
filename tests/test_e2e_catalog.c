@@ -3,7 +3,7 @@
  * the assertion basis, over real WebSocket connections to the whole engine
  * started in-process (e2e.h). For each request/response pair of 02 §3 —
  * runtime, network, graph (the group commands of §3.4.2 included), component,
- * trace, environment — at least one case
+ * trace, auth — at least one case
  * asserting the documented reply or broadcast; each refusal case of 02
  * §3.4.1 as its own case (the error to the sender only, with "graph", and no
  * event anywhere); the envelope errors of §1 and the authentication errors
@@ -144,50 +144,56 @@ static bool same_msgs(char **x, int nx, char **y, int ny)
 	return true;
 }
 
-/* ---- environment (02 §2, §3.1) -------------------------------------------------- */
+/* ---- auth (02 §2, §3.1) --------------------------------------------------------- */
 
 static void test_login(void)
 {
 	E2eClient c;
 	CHECK(e2e_connect(&c));
 	/* The challenge: salt (16 bytes), iterations, the nonce extended. */
-	e2e_send(&c, "environment", "challenge",
+	e2e_send(&c, "auth", "challenge",
 		 "{'user':'alice','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg=='}");
 	const char *m = e2e_recv(&c);
-	CHECK(e2e_match(m, "environment", "challenge", "{'salt':'*','iterations':64,'nonce':'*'}"));
+	CHECK(e2e_match(m, "auth", "challenge", "{'salt':'*','iterations':64,'nonce':'*'}"));
 	CHECK(strlen(e2e_payload_str(m, "salt")) == 24);
 	/* An unknown user gets a normal-looking reply (the default count). */
-	e2e_send(&c, "environment", "challenge",
+	e2e_send(&c, "auth", "challenge",
 		 "{'user':'mallory','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg=='}");
 	m = e2e_recv(&c);
-	CHECK(e2e_match(m, "environment", "challenge",
+	CHECK(e2e_match(m, "auth", "challenge",
 			"{'salt':'*','iterations':100000,'nonce':'*'}"));
 	CHECK(strlen(e2e_payload_str(m, "salt")) == 24);
 	CHECK(strlen(e2e_payload_str(m, "nonce")) == 48);
 	/* The login reply: secret, role, capabilities, server signature. */
 	CHECK(e2e_login(&c, "alice"));
-	CHECK(e2e_match(c.text, "environment", "login",
+	CHECK(e2e_match(c.text, "auth", "login",
 			"{'secret':'*','role':'editor','capabilities':" EDITOR_CAPS
 			",'server_signature':'*','resume':'*'}"));
 	/* A challenge on an authenticated connection: "Login failed". */
-	e2e_send_secret(&c, "environment", "challenge",
+	e2e_send_secret(&c, "auth", "challenge",
 			"{'user':'alice','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg=='}", "");
 	EXPECT_ERROR(&c, "Login failed", NULL);
 	e2e_close(&c);
 
 	/* The roles' capabilities (02 §2.4). */
 	CHECK(e2e_connect(&c) && e2e_login(&c, "oscar"));
-	CHECK(e2e_match(c.text, "environment", "login",
+	CHECK(e2e_match(c.text, "auth", "login",
 			"{'secret':'*','role':'operator','capabilities':" OPERATOR_CAPS
 			",'server_signature':'*','resume':'*'}"));
 	e2e_close(&c);
 	CHECK(e2e_connect(&c) && e2e_login(&c, "vera"));
-	CHECK(e2e_match(c.text, "environment", "login",
+	CHECK(e2e_match(c.text, "auth", "login",
 			"{'secret':'*','role':'viewer','capabilities':" VIEWER_CAPS
 			",'server_signature':'*','resume':'*'}"));
-	/* environment's unknown commands: the generic error (not gated). */
-	e2e_send_secret(&c, "environment", "whoami", "{}", "");
-	EXPECT_ERROR(&c, "Unknown command: environment:whoami", NULL);
+	/* auth's unknown commands: the generic error (not gated). */
+	e2e_send_secret(&c, "auth", "whoami", "{}", "");
+	EXPECT_ERROR(&c, "Unknown command: auth:whoami", NULL);
+	/* The old group of the login commands: environment is gated (02 §3.7),
+	 * and has no commands yet. */
+	e2e_send_secret(&c, "environment", "login", "{}", "");
+	EXPECT_ERROR(&c, "Not authenticated", NULL);
+	e2e_send(&c, "environment", "challenge", "{'user':'vera','cnonce':'Y25vbmNlLWxvbmc='}");
+	EXPECT_ERROR(&c, "Unknown command: environment:challenge", NULL);
 	e2e_close(&c);
 }
 
@@ -200,7 +206,7 @@ static void test_resume(void)
 	e2e_close(&first);
 	/* A new connection: the operator's session again, with a new id. */
 	CHECK(e2e_connect(&resumed) && e2e_resume(&resumed, &kept));
-	CHECK(e2e_match(resumed.text, "environment", "login",
+	CHECK(e2e_match(resumed.text, "auth", "login",
 			"{'secret':'*','role':'operator','capabilities':" OPERATOR_CAPS
 			",'server_signature':'*','resume':'*'}"));
 	CHECK(strstr(e2e_logs(), "login: user 'oscar' from 127.0.0.1 as operator (resumed)") !=
@@ -221,8 +227,8 @@ static void test_resume(void)
 	e2e_close(&c);
 	/* A logout ends the chain. */
 	kept = resumed;
-	e2e_send_secret(&resumed, "environment", "logout", "{}", resumed.secret);
-	CHECK(e2e_expect(&resumed, "environment", "logout", NULL));
+	e2e_send_secret(&resumed, "auth", "logout", "{}", resumed.secret);
+	CHECK(e2e_expect(&resumed, "auth", "logout", NULL));
 	e2e_close(&resumed);
 	CHECK(e2e_connect(&c));
 	CHECK(!e2e_resume(&c, &kept));
@@ -239,11 +245,11 @@ static void test_login_failed(void)
 	/* A wrong password, a login without a challenge: "Login failed". */
 	CHECK(!e2e_login_password(&c, "alice", "wrong"));
 	CHECK(e2e_match(c.text, "network", "error", "{'stack':'','message':'Login failed'}"));
-	e2e_send(&c, "environment", "login",
+	e2e_send(&c, "auth", "login",
 		 "{'user':'alice','nonce':'MDEyMzQ1Njc4OWFiY2RlZg==','proof':'eA=='}");
 	EXPECT_ERROR(&c, "Login failed", NULL);
 	/* A malformed challenge too (not counted as a failed login). */
-	e2e_send(&c, "environment", "challenge", "{'user':'alice','cnonce':'short'}");
+	e2e_send(&c, "auth", "challenge", "{'user':'alice','cnonce':'short'}");
 	EXPECT_ERROR(&c, "Login failed", NULL);
 	/* The third failed login: "Login failed", then the close with 1008. */
 	CHECK(!e2e_login_password(&c, "alice", "pencil2"));
@@ -338,9 +344,9 @@ static void test_not_permitted(void)
 static void test_logout(void)
 {
 	open_clients();
-	e2e_send(&b, "environment", "logout", "{}");
+	e2e_send(&b, "auth", "logout", "{}");
 	CHECK(e2e_recv(&b) != NULL);
-	CHECK_STREQ(b.text, "{\"protocol\":\"environment\",\"command\":\"logout\"}");
+	CHECK_STREQ(b.text, "{\"protocol\":\"auth\",\"command\":\"logout\"}");
 	/* The old secret is dead, and nothing is delivered any more. */
 	e2e_send(&b, "graph", "list", "{}");
 	EXPECT_ERROR(&b, "Not authenticated", NULL);

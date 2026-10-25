@@ -32,10 +32,10 @@ export class ProtocolClient {
         });
         const client = new ProtocolClient(ws);
         const cnonce = clientNonce();
-        client.send("environment", "challenge", {user, cnonce});
+        client.send("auth", "challenge", {user, cnonce});
         const challenge = await client.next(m => m.command === "challenge");
         const {proof} = await computeProof(user, password, challenge.payload);
-        client.send("environment", "login", {user, nonce: challenge.payload.nonce, proof});
+        client.send("auth", "login", {user, nonce: challenge.payload.nonce, proof});
         const login = await client.next(m => m.command === "login" || m.command === "error");
         if (login.command !== "login")
             throw new Error("login failed: " + login.payload.message);

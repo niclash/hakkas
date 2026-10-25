@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {websocketUrl} from "@/components/protocols/websocket";
+import {loggable, websocketUrl} from "@/components/protocols/websocket";
 
 // The WebSocket is on the page's port + 1 (02 §0).
 describe("websocketUrl", () => {
@@ -21,5 +21,17 @@ describe("websocketUrl", () => {
     });
     it("takes VITE_HAKKAS_WS's override as it is", () => {
         expect(websocketUrl(page("http:", "localhost", "5173"), "ws://localhost:8081/")).toBe("ws://localhost:8081/");
+    });
+});
+
+// The console shows no login payload: nonces, proofs, the issued secret (02 §2.5 item 8).
+describe("loggable", () => {
+    it("leaves out the payload of auth messages", () => {
+        expect(loggable("auth", "login", {secret: "s3cr3t", proof: "p"})).toBe("auth:login");
+        expect(loggable("auth", "challenge", {nonce: "n"})).toBe("auth:challenge");
+    });
+
+    it("shows the payload of other messages", () => {
+        expect(loggable("graph", "addnode", {id: "a"})).toBe('graph:addnode {"id":"a"}');
     });
 });

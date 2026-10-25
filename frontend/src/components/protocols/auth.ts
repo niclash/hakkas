@@ -27,7 +27,7 @@ export interface OnLoginFailed {
 // The challenge-response login of specifications/02-wire-protocol.md §2.3, and resuming a
 // session (§2.3.1). A server refusal arrives as network:error "Login failed", which the network
 // protocol reports.
-export class EnvironmentProtocol {
+export class AuthProtocol {
     private connection: Connection;
     private pending: Pending | undefined;
     listeners: {
@@ -45,7 +45,7 @@ export class EnvironmentProtocol {
         };
     }
 
-    addListener( method: keyof EnvironmentProtocol['listeners'], listener: Function ): void {
+    addListener( method: keyof AuthProtocol['listeners'], listener: Function ): void {
         if (!this.listeners[method]) {
             this.listeners[method] = [];
         }
@@ -74,7 +74,7 @@ export class EnvironmentProtocol {
         const cnonce = clientNonce();
         this.pending = {user: user, password: password, cnonce: cnonce};
         this.connection.send({
-            protocol: "environment",
+            protocol: "auth",
             command: "challenge",
             payload: {
                 user: user,
@@ -88,7 +88,7 @@ export class EnvironmentProtocol {
         const cnonce = clientNonce();
         this.pending = {user: session.user, password: "", cnonce: cnonce, resume: session};
         this.connection.send({
-            protocol: "environment",
+            protocol: "auth",
             command: "challenge",
             payload: {
                 user: session.user,
@@ -100,7 +100,7 @@ export class EnvironmentProtocol {
 
     request_logout() {
         this.connection.send({
-            protocol: "environment",
+            protocol: "auth",
             command: "logout",
             payload: {}
         });
@@ -123,7 +123,7 @@ export class EnvironmentProtocol {
             pending.serverSignature = result.serverSignature;
             pending.resumeKey = session.key;
             this.connection.send({
-                protocol: "environment",
+                protocol: "auth",
                 command: "login",
                 payload: {
                     user: session.user,
@@ -147,7 +147,7 @@ export class EnvironmentProtocol {
         pending.serverSignature = result.serverSignature;
         pending.resumeKey = result.resumeKey;
         this.connection.send({
-            protocol: "environment",
+            protocol: "auth",
             command: "login",
             payload: {
                 user: pending.user,

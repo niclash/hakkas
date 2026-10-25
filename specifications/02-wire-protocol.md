@@ -236,7 +236,7 @@ Every command below requires an authenticated connection and the capability list
 
 ### 3.1 `auth` — `challenge`, `login`, `logout` (§2). Not secret-gated. Anything else → generic error.
 
-**Renamed** (decided with the user 2026-10-24; *not implemented yet* — engine and frontend still use `environment`): these three commands were the `environment` group until then. They moved to `auth` so that `environment` can hold the messages about the hardware environment (§3.7), which, unlike these, are secret-gated and need capabilities.
+**Renamed** (decided with the user 2026-10-24; implemented in plan task 59, engine and frontend): these three commands were the `environment` group until then. They moved to `auth` so that `environment` can hold the messages about the hardware environment (§3.7), which, unlike these, are secret-gated and need capabilities.
 
 ### 3.2 `runtime`
 
@@ -434,7 +434,7 @@ Decided (plan task 17): `graph` must be a string (else `"Invalid field: graph"`,
 
 ### 3.7 `environment` — the hardware environment (decided 2026-10-24; messages to be specified)
 
-Everything about the environment (`04-drivers.md` §1) on the wire goes in this group: its description (ports, modules, the carrier board), the bindings of process ports to it, and what deploying a process with a bindings file needs (`06-frontend.md` §7). Every message is secret-gated and needs a capability (§2.4), like the other groups. **None is specified yet**: each one is put to the user first, one at a time (`00-README.md`, "Protocol compatibility policy").
+Everything about the environment (`04-drivers.md` §1) on the wire goes in this group: its description (ports, modules, the carrier board), the bindings of process ports to it, and what deploying a process with a bindings file needs (`06-frontend.md` §7). Every message is secret-gated and needs a capability (§2.4), like the other groups. **None is specified yet**: each one is put to the user first, one at a time (`00-README.md`, "Protocol compatibility policy"). Until then the group has no command: like any unknown gated command (§1), an `environment` command — the old login commands included — answers `"Not authenticated"` before login and the generic error after it (plan task 59).
 
 ## 4. Subscription model
 

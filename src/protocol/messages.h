@@ -1,6 +1,6 @@
 /*
  * The server's wire messages (02 §1, §3): the envelope, the error format,
- * the replies of the environment, runtime, component and trace commands,
+ * the replies of the auth, runtime, component and trace commands,
  * and the mapping from the graphs registry's events (GraphEvent, 01 §4) to
  * the broadcasts of 02 §3.2-§3.3.
  *
@@ -11,7 +11,7 @@
  * carries an engine value is exact (graphs/graph_json.h). A server message
  * never has a "secret" member (02 §1). The two special shapes of 02 §1:
  * component:componentsready has a bare integer payload
- * (proto_msg_componentsready) and environment:logout has no payload at all
+ * (proto_msg_componentsready) and auth:logout has no payload at all
  * (proto_msg_logout).
  *
  * Event mapping (proto_msg_event): one GraphEvent becomes one wire message,
@@ -62,7 +62,7 @@ void proto_msg_time(int64_t ms, char buf[PROTO_TIME_SIZE]);
 
 /* The envelope {"protocol","command","payload"} around payload, which it
  * takes over (freed in every case); payload NULL leaves the "payload" key
- * out (environment:logout only). */
+ * out (auth:logout only). */
 char *proto_msg_build(const char *protocol, const char *command, cJSON *payload);
 
 /* The array of the capability names of caps, in 02 §3.2.1 order. NULL if
@@ -77,14 +77,14 @@ char *proto_msg_error(const char *message, const char *graph);
  * 05 §4). */
 char *proto_msg_output(const char *text);
 
-/* environment:logout without a payload (02 §1). */
+/* auth:logout without a payload (02 §1). */
 char *proto_msg_logout(void);
 
-/* environment:challenge {"salt","iterations","nonce"} (02 §2.3); only
+/* auth:challenge {"salt","iterations","nonce"} (02 §2.3); only
  * {"nonce"} for a resume (02 §2.3.1). */
 char *proto_msg_challenge(const AuthChallenge *ch);
 
-/* environment:login {"secret","role","capabilities","server_signature",
+/* auth:login {"secret","role","capabilities","server_signature",
  * "resume"} (02 §2.3, §2.3.1). */
 char *proto_msg_login(const char *secret, const char *resume, const AuthProof *proof);
 

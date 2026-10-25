@@ -593,9 +593,9 @@ static void test_command_rules(void)
 	const uint32_t rd = AUTH_CAP_GRAPH_READONLY | AUTH_CAP_PROTOCOL_GRAPH;
 	const uint32_t g = AUTH_CAP_PROTOCOL_GRAPH;
 	static const Expect known[] = {
-		{"environment", "challenge", false, 0},
-		{"environment", "login", false, 0},
-		{"environment", "logout", false, 0},
+		{"auth", "challenge", false, 0},
+		{"auth", "login", false, 0},
+		{"auth", "logout", false, 0},
 		{"runtime", "getruntime", false, 0},
 		{"runtime", "new_graph", true, AUTH_CAP_PROTOCOL_RUNTIME},
 		{"runtime", "delete_graph", true, AUTH_CAP_PROTOCOL_RUNTIME},
@@ -649,10 +649,11 @@ static void test_command_rules(void)
 		CHECK(r.known && r.gated == e->gated && r.caps_any == want);
 	}
 
-	/* Unknown commands: gated, no capability, except in environment. */
-	AuthCommandRule r = auth_command_rule("environment", "whoami");
+	/* Unknown commands: gated, no capability, except in auth. */
+	AuthCommandRule r = auth_command_rule("auth", "whoami");
 	CHECK(!r.known && !r.gated && r.caps_any == 0);
-	const char *unknown[][2] = {{"graph", "merge"},	    {"runtime", "packet"},
+	const char *unknown[][2] = {{"environment", "login"}, {"environment", "challenge"},
+				    {"graph", "merge"},	    {"runtime", "packet"},
 				    {"network", "data"},    {"component", "source"},
 				    {"trace", "begin"},	    {"bogus", "list"},
 				    {"Graph", "addnode"},   {NULL, "list"},

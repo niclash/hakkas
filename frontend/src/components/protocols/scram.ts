@@ -15,7 +15,7 @@ export interface Challenge {
 }
 
 export interface LoginProof {
-    proof: string;              // base64, sent in environment:login
+    proof: string;              // base64, sent in auth:login
     serverSignature: string;    // base64, expected in the login reply
 }
 
@@ -39,7 +39,7 @@ export function fromBase64(text: string): Uint8Array {
     return bytes;
 }
 
-// The client nonce of environment:challenge: 18 random bytes (16–64 allowed), base64.
+// The client nonce of auth:challenge: 18 random bytes (16–64 allowed), base64.
 export function clientNonce(): string {
     return toBase64(randomBytes(18));
 }

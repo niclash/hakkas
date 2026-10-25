@@ -39,7 +39,7 @@
  *  5. Capabilities (02 §2.4): "Not permitted: <protocol>:<command>".
  *  6. The command. A missing or mistyped payload field is "Invalid field: <name>"
  *     (checked in the order 02 lists the fields, before any refusal of
- *     02 §3.4.1); of environment:challenge and login it is "Login failed"
+ *     02 §3.4.1); of auth:challenge and login it is "Login failed"
  *     (02 §2.3).
  *
  * Errors carry "graph" only when the command named a valid graph id (02 §1).
@@ -52,7 +52,7 @@
  * network:getstatus and getruntime after login trigger network:status
  * broadcasts; network:persist has no reply on success (a failed save is a
  * broadcast network:error). getruntime, component:*, trace:*,
- * environment:*, graph:connect and network:edges reply to the sender.
+ * auth:*, graph:connect and network:edges reply to the sender.
  *
  * Group commands (02 §3.4.2, plan task 21b): graph:addgroup, removegroup,
  * renamegroup and changegroup run app/type_files.h's group commands with the

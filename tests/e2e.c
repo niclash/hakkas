@@ -526,7 +526,7 @@ static void check_shape(const char *text)
 	if (cJSON_IsString(protocol) && cJSON_IsString(command)) {
 		bool ready = strcmp(protocol->valuestring, "component") == 0 &&
 			     strcmp(command->valuestring, "componentsready") == 0;
-		bool logout = strcmp(protocol->valuestring, "environment") == 0 &&
+		bool logout = strcmp(protocol->valuestring, "auth") == 0 &&
 			      strcmp(command->valuestring, "logout") == 0;
 		if (ready)
 			CHECK(cJSON_IsNumber(payload));
@@ -760,9 +760,9 @@ bool e2e_login_password(E2eClient *c, const char *user, const char *password)
 	char payload[512];
 	snprintf(payload, sizeof(payload), "{'user':'%s','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg=='}",
 		 user);
-	e2e_send_secret(c, "environment", "challenge", payload, "");
+	e2e_send_secret(c, "auth", "challenge", payload, "");
 	const char *reply = e2e_recv(c);
-	if (!e2e_match(reply, "environment", "challenge", NULL))
+	if (!e2e_match(reply, "auth", "challenge", NULL))
 		return false;
 	char salt64[64], nonce[256];
 	snprintf(salt64, sizeof(salt64), "%s", e2e_payload_str(reply, "salt"));
@@ -789,9 +789,9 @@ bool e2e_login_password(E2eClient *c, const char *user, const char *password)
 	crypto_base64_encode(ssig, 32, ssig64, sizeof(ssig64));
 	snprintf(payload, sizeof(payload), "{'user':'%s','nonce':'%s','proof':'%s'}", user, nonce,
 		 proof64);
-	e2e_send_secret(c, "environment", "login", payload, "");
+	e2e_send_secret(c, "auth", "login", payload, "");
 	reply = e2e_recv(c);
-	if (!is_cmd(reply, "environment", "login"))
+	if (!is_cmd(reply, "auth", "login"))
 		return false;
 	snprintf(c->secret, sizeof(c->secret), "%s", e2e_payload_str(reply, "secret"));
 	CHECK_STREQ(e2e_payload_str(reply, "server_signature"), ssig64);
@@ -811,9 +811,9 @@ bool e2e_resume(E2eClient *c, const E2eClient *from)
 	snprintf(payload, sizeof(payload),
 		 "{'user':'%s','cnonce':'MDEyMzQ1Njc4OWFiY2RlZg==','resume':'%s'}", from->user,
 		 from->resume);
-	e2e_send_secret(c, "environment", "challenge", payload, "");
+	e2e_send_secret(c, "auth", "challenge", payload, "");
 	const char *reply = e2e_recv(c);
-	if (!e2e_match(reply, "environment", "challenge", "{'nonce':'*'}"))
+	if (!e2e_match(reply, "auth", "challenge", "{'nonce':'*'}"))
 		return false;
 	char nonce[256];
 	snprintf(nonce, sizeof(nonce), "%s", e2e_payload_str(reply, "nonce"));
@@ -829,9 +829,9 @@ bool e2e_resume(E2eClient *c, const E2eClient *from)
 	crypto_base64_encode(mac, 32, ssig64, sizeof(ssig64));
 	snprintf(payload, sizeof(payload), "{'user':'%s','nonce':'%s','resume':'%s','proof':'%s'}",
 		 from->user, nonce, from->resume, proof64);
-	e2e_send_secret(c, "environment", "login", payload, "");
+	e2e_send_secret(c, "auth", "login", payload, "");
 	reply = e2e_recv(c);
-	if (!is_cmd(reply, "environment", "login"))
+	if (!is_cmd(reply, "auth", "login"))
 		return false;
 	snprintf(c->secret, sizeof(c->secret), "%s", e2e_payload_str(reply, "secret"));
 	CHECK_STREQ(e2e_payload_str(reply, "server_signature"), ssig64);

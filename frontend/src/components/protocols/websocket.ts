@@ -20,8 +20,8 @@ export function websocketUrl(page: { protocol: string, hostname: string, port: s
 }
 
 // Logged without anything secret: the session secret, nonces and proofs of the login.
-function loggable(protocol: string, command: string, payload: any): string {
-    return protocol + ":" + command + (protocol === "environment" ? "" : " " + JSON.stringify(payload));
+export function loggable(protocol: string, command: string, payload: any): string {
+    return protocol + ":" + command + (protocol === "auth" ? "" : " " + JSON.stringify(payload));
 }
 
 export class Connection {

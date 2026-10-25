@@ -879,16 +879,20 @@ behavior tested in `tests/test_process_more.c`.
 Designed with the user 2026-10-23/24: `emulators/colibri/specifications/00-README.md` (a separate
 project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
 
-- [ ] **59. Login commands to the `auth` group** (02 §3.1): `environment:challenge`/`login`/
+- [x] **59. Login commands to the `auth` group** (02 §3.1): `environment:challenge`/`login`/
   `logout` become `auth:…` in the engine, the frontend (incl. the console redaction, 06 §2) and
   the tests; `environment` then answers the generic error until §3.7's messages exist.
+  *Done*: `auth_commands` and an empty, gated `environment` table in `src/protocol/auth.c`
+  (so an `environment` command is `"Not authenticated"` before login, the generic error
+  after, 02 §3.7); the frontend's `environment.ts` became `auth.ts` (`AuthProtocol`,
+  `conn.proto.auth`); the console redaction (`loggable`) has a unit test.
 - [ ] **60. Bindings warn and skip** (04 §4): a bindings file's `environment` mismatch is a
   warning; each inapplicable entry is skipped with a warning and the rest applied; a malformed
   file is not applied, with a warning; startup is never refused by bindings.
 - [ ] **61. The carrier board in the environment description** (04 §1): `HakkasEnvDescription`,
   the link's `describe`, validation and the identical-description check gain the carrier
-  (slots, built-in modules, power, communication slots with per-type parameters). Waits for
-  emulator spec §10 questions 9–10.
+  (slots, built-in modules, power, communication slots with per-type parameters). Emulator
+  spec §10 questions 9–11 were decided 2026-10-24, so nothing blocks it.
 - [ ] **62. The `environment` wire group** (02 §3.7): the description, bindings, deployment —
   each message put to the user first.
 - [ ] **63. Frontend: binding page, deployment with a mapping dialog** (06 §7).
