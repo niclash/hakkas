@@ -1,0 +1,16 @@
+{
+  "extends": "@tsconfig/node20/tsconfig.json",
+  "include": ["tests/**/*.ts", "src/protocol/**/*.ts", "src/sources.ts"],
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM"],
+    "noUncheckedIndexedAccess": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {"@/*": ["./src/*"]}
+  }
+}

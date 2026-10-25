@@ -11,7 +11,8 @@ The specification is `specifications/00-README.md`; the order of the work, and w
 
 > Work in progress: the command line, logging, the module catalog (`data/`), the environment
 > library, the emulated system's model, the scan cycle, the environment description, the link to
-> hakkas (tested with hakkas) and the control channel exist (plan tasks E1–E11); the UI follows.
+> hakkas (tested with hakkas), the control channel and the UI's signal panel exist (plan tasks
+> E1–E12); the rest of the UI follows.
 
 ## Building and testing
 
@@ -46,6 +47,12 @@ node dist/main.js [options] [<environment>]
 | `--log-level <level>` | `info` (`fine`, `info`, `warn`, `error`) |
 
 `SIGINT` (Ctrl+C) or `SIGTERM` stops it. The log goes to standard error.
+
+### The UI
+
+With the UI built (`npm install && npm run build` in `../ui`), the emulator serves it at
+`http://localhost:<--http>/` (default 8090): every module's channels, their sources and noise,
+and the outputs as hakkas writes them.
 
 ### The control channel
 

@@ -266,10 +266,22 @@ Follow-ups, decided the same day:
 
 ## Phase 3 — The UI (`emulators/ui/`, generic; Vue 3 + Vite, decision 9)
 
-- [ ] **E12. UI skeleton and the signal panel** (§8.2): a Vue 3 + Vite package that connects
+- [x] **E12. UI skeleton and the signal panel** (§8.2): a Vue 3 + Vite package that connects
   to the WebSocket and mirrors the state. The signal panel has one row per channel: a control
   or function editor and noise for each input, an indicator for each output, name, unit and
   value. Unit tests, and a Playwright suite against a real emulator.
+  *Done*: `emulators/ui/` (`src/protocol/client.ts`: the WebSocket client, its reactive mirror,
+  requests by id, reconnecting; `src/sources.ts`; `App.vue`, `SignalPanel.vue`, `RowView.vue`,
+  `SourceEditor.vue`/`SourceFields.vue`, `NumberField.vue`), the same tool versions as hakkas'
+  frontend. Unit tests (the client against a fake socket: the mirror, answers by id, notices,
+  reconnecting, another protocol version; the source helpers). Browser tests, one real
+  emulator each, a control client and a stand-in hakkas: the panel built from the scene, a
+  typed value and a slider, typing kept while the values stream in, another client's changes,
+  the source editor (a function, Cancel, back to a constant, a sequence's steps, a pulse train
+  driving the measured channels), an output following hakkas' write, a toggle, noise, a refusal
+  as a notice, a lost connection. Found on the way: Vue sets an input's value at every render,
+  which undid typing in a noisy row (hence `NumberField`). Decided (shared spec
+  `../../specifications/00-README.md`, "The UI, as built").
 - [ ] **E13. Library, settings and statistics**: the environment list (select, create,
   duplicate, rename, delete), the slot editor (module per slot, built-in slots fixed), the
   carrier, communication modules, cycle time and queue size, the power-cycle notice ("restart
