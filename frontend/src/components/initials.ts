@@ -6,6 +6,7 @@
 export type InputSource =
     | { kind: "connected", from: string }   // "<node>.<port>"
     | { kind: "fixed", value: string }
+    | { kind: "bound", channel: string }    // an environment sensor, "ain[2]" (06 §4.14)
     | { kind: "default" };
 
 // The editor that fits a port's type. A type other than "bool" or "string" is parsed by the

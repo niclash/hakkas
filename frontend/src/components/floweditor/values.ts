@@ -3,7 +3,7 @@
 // handlers, so every change here follows an engine event.
 
 import {NodeEditor} from "rete";
-import {Connection, isValueNode, PrimitiveNode, Schemes, ValueNode} from "@/components/model";
+import {Connection, isBindingNode, isValueNode, PrimitiveNode, Schemes, ValueNode} from "@/components/model";
 import {InputSource} from "@/components/initials";
 import type {FlowEditor} from "./viewmodel/default";
 import {Position, valuePosition} from "./value-position";
@@ -89,6 +89,8 @@ export function inputSources(editor: NodeEditor<Schemes>, block: PrimitiveNode):
         const source = editor.getNode(c.source);
         if (c.target === block.id && source instanceof PrimitiveNode)
             inputs[c.targetInput] = {kind: "connected", from: source.label + "." + c.sourceOutput};
+        else if (c.target === block.id && isBindingNode(source))
+            inputs[c.targetInput] = {kind: "bound", channel: source.name};
     }
     return inputs;
 }

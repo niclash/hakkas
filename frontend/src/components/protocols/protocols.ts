@@ -5,6 +5,7 @@ import {TraceProtocol} from "@/components/protocols/trace";
 import {RuntimeProtocol} from "@/components/protocols/runtime";
 import {Connection} from "@/components/protocols/websocket";
 import {AuthProtocol} from "@/components/protocols/auth";
+import {EnvironmentProtocol} from "@/components/protocols/environment";
 
 export interface Port {
     id: string;
@@ -25,6 +26,7 @@ export class Protocols {
     runtime: RuntimeProtocol;
     trace: TraceProtocol;
     auth: AuthProtocol;
+    environment: EnvironmentProtocol;
 
     constructor(connection: Connection) {
         this.network = new NetworkProtocol(connection);
@@ -33,6 +35,7 @@ export class Protocols {
         this.runtime = new RuntimeProtocol(connection);
         this.trace = new TraceProtocol(connection);
         this.auth = new AuthProtocol(connection);
+        this.environment = new EnvironmentProtocol(connection);
     }
 
     onMessage(protocol: string, command: string, payload: any) {
@@ -54,6 +57,9 @@ export class Protocols {
                 break;
             case "auth":
                 this.auth.execute(command, payload);
+                break;
+            case "environment":
+                this.environment.execute(command, payload);
                 break;
         }
         /*

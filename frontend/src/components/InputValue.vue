@@ -3,6 +3,9 @@
     <p v-if="source.kind === 'connected'" class="hk-inspector-source" data-testid="input-state">
       Connected from {{ source.from }}
     </p>
+    <p v-else-if="source.kind === 'bound'" class="hk-inspector-source" data-testid="input-state">
+      From the environment: {{ source.channel }}
+    </p>
     <template v-else>
       <div class="hk-inspector-value-row">
         <label v-if="editor === 'bool'" class="hk-switch">

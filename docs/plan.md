@@ -818,8 +818,8 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
 ### 5d. Waiting for other decisions
 
 - **Links between processes in the UI**: needs the wire messages of 00-README open question 13.
-- **Environment ports and bindings in the UI**: deferred (03 §4, 04 §1); the UI should let users
-  hide and organize environment ports.
+- **Environment ports and bindings in the UI**: shown and bound since tasks 62–63 (06 §4.14);
+  still open: letting users hide and organize environment ports (03 §4).
 - **Connection routes**: Rete's reroute pins kept in the connection's metadata (`changeedge`,
   `route`), so a hand-routed wire survives a reload and is shared with other users.
 
@@ -907,10 +907,23 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   structure is validated (built-in modules agree with the carrier's list), view-only values
   are not; the identical-description check leaves the communication parameters out (a DHCP
   lease). Nothing on the FBP wire yet (task 62).
-- [ ] **62. The `environment` wire group** (02 §3.7): the description, bindings, deployment —
+- [x] **62. The `environment` wire group** (02 §3.7): the description, bindings, deployment —
   each message put to the user first.
-- [ ] **63. Frontend: binding page, deployment with a mapping dialog** (06 §7).
-- [ ] **64. Upload/download of processes, backup and restore** (06 §7): to design.
+  *Done* (the messages approved together, 2026-10-25): `environment:describe` →
+  `description`, `getbindings` → `bindings`, `bind`/`unbind` with their events. Decided with the
+  user on the way: `run process`, `run processes` (the process list) and `run daemon` removed —
+  `run` is what `run daemon` was; a process's bindings are saved with it in
+  `<datadir>/bindings/<id>.json` and the links in `<datadir>/links.json` (05 §1.2, §2.3), both
+  applied by `hakkas_process_load_saved`; a binding change makes the process unsaved.
+- [x] **63. Frontend: binding page, deployment with a mapping dialog** (06 §4.14).
+  *Done*: the Environment panel (carrier, modules, channels and what each is bound to),
+  *Bind to environment…* / *Unbind* in a port's menu, binding markers like process ports,
+  loading a bindings file (applied at once when it fits, else the mapping dialog; it replaces
+  the process's bindings), saving one, undo. Decided: *deploying* means, for now, applying a
+  bindings file to an open process on the connected engine — **revisit with task 64**.
+- [ ] **64. Upload/download of processes, backup and restore** (06 §7): to design. Revisit
+  task 63's deployment (a process uploaded together with its bindings file, mapped on the
+  target device).
 - [ ] **65. The Colibri emulator** (`emulators/colibri/`): its own plan once its spec is settled.
 
 ## Phase 9 — Editor requests (requested 2026-10-24, not started)

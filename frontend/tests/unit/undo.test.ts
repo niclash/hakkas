@@ -10,6 +10,7 @@ class Fake implements StateReader {
     links: Link[] = [];
     inits = new Map<string, string>();
     gports = new Map<string, { node: string, port: string }>();   // "in:name" / "out:name"
+    binds = new Map<string, { env: string, index?: number }>();   // "node.port"
 
     block(id: string) { return this.blocks.get(id); }
     initial(node: string, port: string) { return this.inits.get(node + "." + port); }
@@ -26,6 +27,14 @@ class Fake implements StateReader {
             .map(([k, v]) => ({direction: k.split(":")[0] as "in" | "out", name: k.substring(k.indexOf(":") + 1), port: v.port}));
     }
     port(direction: "in" | "out", name: string) { return this.gports.get(direction + ":" + name); }
+    bindings(node: string) {
+        return [...this.binds].filter(([k]) => k.startsWith(node + "."))
+            .map(([k, v]) => ({port: k.substring(node.length + 1), ...v}));
+    }
+    binding(node: string, port: string) {
+        const b = this.binds.get(node + "." + port);
+        return b === undefined ? undefined : b.index ? `${b.env}[${b.index}]` : b.env;
+    }
 
     apply(c: Cmd) {
         const p = c.payload;
@@ -36,12 +45,18 @@ class Fake implements StateReader {
                 this.links = this.links.filter(l => l.src.node !== p.id && l.tgt.node !== p.id);
                 for (const k of [...this.inits.keys()]) if (k.startsWith(p.id + ".")) this.inits.delete(k);
                 for (const [k, v] of [...this.gports]) if (v.node === p.id) this.gports.delete(k);
+                for (const k of [...this.binds.keys()]) if (k.startsWith(p.id + ".")) this.binds.delete(k);
                 this.blocks.delete(p.id);
                 break;
             case "renamenode": {
                 const b = this.blocks.get(p.from)!;
                 this.blocks.delete(p.from);
                 this.blocks.set(p.to, b);
+                for (const [k, v] of [...this.binds])
+                    if (k.startsWith(p.from + ".")) {
+                        this.binds.delete(k);
+                        this.binds.set(p.to + k.substring(p.from.length), v);
+                    }
                 break;
             }
             case "changenode": Object.assign(this.blocks.get(p.id)!, {x: p.metadata.x, y: p.metadata.y}); break;
@@ -56,6 +71,11 @@ class Fake implements StateReader {
             case "removeinitial": this.inits.delete(p.tgt.node + "." + p.tgt.port); break;
             case "addinport": case "addoutport": this.gports.set(dir + ":" + p.public, {node: p.node, port: p.port}); break;
             case "removeinport": case "removeoutport": this.gports.delete(dir + ":" + p.public); break;
+            case "bind":
+                expect(this.blocks.has(p.block)).toBe(true);
+                this.binds.set(p.block + "." + p.port, p.index ? {env: p.env, index: p.index} : {env: p.env});
+                break;
+            case "unbind": this.binds.delete(p.block + "." + p.port); break;
             case "renameinport": case "renameoutport": {
                 const v = this.gports.get(dir + ":" + p.from)!;
                 this.gports.delete(dir + ":" + p.from);
@@ -67,7 +87,7 @@ class Fake implements StateReader {
 
     snapshot() {
         return JSON.stringify({b: [...this.blocks].sort(), l: this.links.map(l => JSON.stringify(l)).sort(),
-            i: [...this.inits].sort(), p: [...this.gports].sort()});
+            i: [...this.inits].sort(), p: [...this.gports].sort(), e: [...this.binds].map(x => JSON.stringify(x)).sort()});
     }
 }
 
@@ -87,6 +107,7 @@ function process(): Fake {
     f.apply(cmd("addedge", edge("b.out", "c.in1")));
     f.apply(cmd("addinitial", {tgt: {node: "a", port: "in2"}, src: {data: "5"}}));
     f.apply(cmd("addinport", {node: "a", port: "in1", public: "flow"}));
+    f.apply(cmd("bind", {block: "b", port: "out", env: "relay", index: 2}));
     return f;
 }
 
@@ -110,7 +131,22 @@ function roundTrip(cmds: Cmd[]) {
 describe("undo steps", () => {
     it("deleting blocks connected to each other brings back blocks, edges, values and ports", () => {
         const step = roundTrip([cmd("removenode", {id: "a"}), cmd("removenode", {id: "b"})]);
-        expect(step.inverse.map(c => c.command)).toEqual(["addnode", "addnode", "addedge", "addedge", "addinitial", "addinport"]);
+        expect(step.inverse.map(c => c.command)).toEqual(["addnode", "addnode", "addedge", "addedge", "addinitial", "addinport", "bind"]);
+    });
+
+    // 06 §4.14: bindings are undone like the rest; a bindings file applied is one step.
+    it("bindings: bound, unbound, a file replacing them", () => {
+        roundTrip([cmd("bind", {block: "c", port: "in2", env: "temp"})]);
+        roundTrip([cmd("unbind", {block: "b", port: "out", env: "relay", index: 2})]);
+        const file = roundTrip([cmd("unbind", {block: "b", port: "out", env: "relay", index: 2}),
+            cmd("bind", {block: "c", port: "out", env: "relay", index: 2}), cmd("bind", {block: "c", port: "in2", env: "ain", index: 1})]);
+        expect(file.inverse.map(c => c.command)).toEqual(["unbind", "unbind", "bind"]);
+        const f = process();
+        const cmds = [cmd("bind", {block: "c", port: "in2", env: "temp"})];
+        const step = makeStep(g, cmds, cmds.map(c => inverseOf(c, f)));
+        cmds.forEach(c => f.apply(c));
+        f.apply(cmd("unbind", {block: "c", port: "in2", env: "temp"}));   // another user
+        expect(holds(factsOf(step.forward), f)).toBe(false);
     });
 
     it("adding, renaming, moving (a drag is one step), connecting", () => {

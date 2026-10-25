@@ -1,0 +1,23 @@
+// What the binding checks (bindings.ts) need of the open process, read from the editor.
+
+import {PrimitiveNode} from "@/components/model";
+import type {Binding, EnvDescription} from "@/components/protocols/environment";
+import {BlockPorts, CheckContext} from "@/components/bindings";
+import {editor} from "./viewmodel/default";
+import {inputSources} from "./values";
+
+// `bindings`: what stays bound while the entries are made (other processes' bindings, and the
+// open process's unless they are replaced).
+export function checkContext(description: EnvDescription, graph: string, bindings: Binding[]): CheckContext {
+    const blocks: Record<string, BlockPorts> = {};
+    const sourced = new Set<string>();
+    for (const node of editor.getNodes()) {
+        if (!(node instanceof PrimitiveNode))
+            continue;
+        blocks[node.label] = {inputs: node.inports.map(p => p.id), outputs: node.outports.map(p => p.id)};
+        for (const [port, source] of Object.entries(inputSources(editor, node)))
+            if (source.kind === "connected" || source.kind === "fixed")
+                sourced.add(node.label + "." + port);
+    }
+    return {description, blocks, sourced, bindings, graph};
+}

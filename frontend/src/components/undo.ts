@@ -34,12 +34,22 @@ export interface StateReader {
     edgeInto(node: string, port: string): Link | undefined;
     ports(node: string): { direction: "in" | "out", name: string, port: string }[];
     port(direction: "in" | "out", name: string): End | undefined;
+    // The block's environment bindings (06 §4.14), and one port's channel ("ain[2]").
+    bindings(node: string): { port: string, env: string, index?: number }[];
+    binding(node: string, port: string): string | undefined;
 }
 
-// The commands that can be undone; any other is not recorded.
+// The commands that can be undone; any other is not recorded. All are graph:*, but bind and
+// unbind, which are environment:* (02 §3.7).
 export const UNDOABLE = new Set(["addnode", "removenode", "renamenode", "changenode", "addedge", "removeedge",
     "addinitial", "removeinitial", "addinport", "removeinport", "renameinport", "addoutport", "removeoutport",
-    "renameoutport"]);
+    "renameoutport", "bind", "unbind"]);
+
+export const ENVIRONMENT_COMMANDS = new Set(["bind", "unbind"]);
+
+const channel = (env: string, index?: number) => index !== undefined && index > 0 ? `${env}[${index}]` : env;
+const bindCmd = (command: string, graph: string, block: string, port: string, env: string, index?: number): Cmd =>
+    ({command, payload: index !== undefined && index > 0 ? {graph, block, port, env, index} : {graph, block, port, env}});
 
 export const HISTORY_SIZE = 500;
 
@@ -63,6 +73,8 @@ export function inverseOf(cmd: Cmd, s: StateReader): Cmd[] {
                 out.push({command: "addinitial", payload: {graph, tgt: {node: p.id, port}, src: {data}}});
             for (const gp of s.ports(p.id))
                 out.push({command: gp.direction === "in" ? "addinport" : "addoutport", payload: {graph, node: p.id, port: gp.port, public: gp.name}});
+            for (const b of s.bindings(p.id))
+                out.push(bindCmd("bind", graph, p.id, b.port, b.env, b.index));
             return out;
         }
         case "renamenode":
@@ -96,6 +108,10 @@ export function inverseOf(cmd: Cmd, s: StateReader): Cmd[] {
         case "renameinport":
         case "renameoutport":
             return [{command: cmd.command, payload: {graph, from: p.to, to: p.from}}];
+        case "bind":
+            return [bindCmd("unbind", graph, p.block, p.port, p.env, p.index)];
+        case "unbind":
+            return s.binding(p.block, p.port) === undefined ? [] : [bindCmd("bind", graph, p.block, p.port, p.env, p.index)];
     }
     return [];
 }
@@ -105,8 +121,8 @@ export function inverseOf(cmd: Cmd, s: StateReader): Cmd[] {
 // and moves keep their place among themselves, first.
 const phase: Record<string, number> = {
     renamenode: 0, changenode: 0, renameinport: 0, renameoutport: 0,
-    removeinport: 1, removeoutport: 1, removeinitial: 2, removeedge: 3, removenode: 4,
-    addnode: 5, addedge: 6, addinitial: 7, addinport: 8, addoutport: 8,
+    removeinport: 1, removeoutport: 1, unbind: 1, removeinitial: 2, removeedge: 3, removenode: 4,
+    addnode: 5, addedge: 6, addinitial: 7, addinport: 8, addoutport: 8, bind: 9,
 };
 
 export function orderCommands(cmds: Cmd[]): Cmd[] {
@@ -187,6 +203,12 @@ export function factsOf(cmds: Cmd[]): Map<string, string | null> {
                 f.set(dirOf(c.command) + "port:" + p.from, null);
                 f.set(dirOf(c.command) + "renamed:" + p.to, "yes");
                 break;
+            case "bind":
+                f.set("binding:" + p.block + "." + p.port, channel(p.env, p.index));
+                break;
+            case "unbind":
+                f.set("binding:" + p.block + "." + p.port, null);
+                break;
         }
     }
     return f;
@@ -218,6 +240,9 @@ export function holds(facts: Map<string, string | null>, s: StateReader): boolea
             have = at === undefined ? null : at.node + "." + at.port;
         } else if (kind === "inrenamed" || kind === "outrenamed") {
             have = s.port(kind === "inrenamed" ? "in" : "out", what) !== undefined ? "yes" : null;
+        } else if (kind === "binding") {
+            const e = splitEnd(what);
+            have = s.binding(e.node, e.port) ?? null;
         }
         if (have !== want)
             return false;

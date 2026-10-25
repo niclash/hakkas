@@ -8,11 +8,12 @@ import {InputSource} from "@/components/initials";
 export type MenuTarget =
     | { kind: "canvas", watchingAll?: boolean, canPaste?: boolean }
     | { kind: "block", id: string, selected: number, watched?: boolean }   // `selected`: blocks selected with it
-    | { kind: "input", id: string, port: string, source: InputSource, watched?: boolean }
+    | { kind: "input", id: string, port: string, source: InputSource, watched?: boolean, environment?: boolean }
     | { kind: "value", id: string, port: string, watched?: boolean }       // a value node or its line (06 §4.3)
     | { kind: "connection", watched?: boolean }
-    | { kind: "output", id: string, port: string }                          // a block's output row
-    | { kind: "port", direction: "in" | "out", name: string };              // a process port (06 §4.8)
+    | { kind: "output", id: string, port: string, environment?: boolean, binding?: string }   // a block's output row
+    | { kind: "port", direction: "in" | "out", name: string }               // a process port (06 §4.8)
+    | { kind: "binding", id: string, port: string, channel: string };       // a binding's marker (06 §4.14)
 
 export type MenuAction =
     | "add-block" | "zoom-fit" | "arrange" | "select-all"
@@ -21,7 +22,8 @@ export type MenuAction =
     | "delete-connection"
     | "watch" | "unwatch" | "watch-inputs" | "unwatch-inputs" | "watch-all" | "unwatch-all"
     | "expose-input" | "expose-output" | "rename-port" | "remove-port"
-    | "create-composite" | "copy" | "duplicate" | "paste";
+    | "create-composite" | "copy" | "duplicate" | "paste"
+    | "bind" | "unbind";
 
 export interface MenuItem {
     action: MenuAction;
@@ -62,6 +64,11 @@ export function menuFor(target: MenuTarget): MenuItem[] {
             ];
         case "input": {
             const expose: MenuItem = {action: "expose-input", label: "Expose as process input…"};
+            // `environment`: there is one to bind to (06 §4.14); an input with a connection or a
+            // fixed value has its source already.
+            const bind: MenuItem[] = target.environment ? [{action: "bind", label: "Bind to environment…"}] : [];
+            if (target.source.kind === "bound")
+                return [{action: "unbind", label: `Unbind from ${target.source.channel}`}, watchItem(target.watched), expose];
             if (target.source.kind === "connected")
                 return [{action: "disconnect", label: "Disconnect"}, watchItem(target.watched), expose];
             if (target.source.kind === "fixed")
@@ -71,15 +78,21 @@ export function menuFor(target: MenuTarget): MenuItem[] {
                     watchItem(target.watched),
                     expose,
                 ];
-            return [{action: "set-value", label: "Set fixed value…"}, watchItem(target.watched), expose];
+            return [{action: "set-value", label: "Set fixed value…"}, ...bind, watchItem(target.watched), expose];
         }
-        case "output":
-            return [{action: "expose-output", label: "Expose as process output…"}];
+        case "output": {
+            const expose: MenuItem = {action: "expose-output", label: "Expose as process output…"};
+            if (target.binding !== undefined)
+                return [{action: "unbind", label: `Unbind from ${target.binding}`}, expose];
+            return target.environment ? [{action: "bind", label: "Bind to environment…"}, expose] : [expose];
+        }
         case "port":
             return [
                 {action: "rename-port", label: "Rename process port…"},
                 {action: "remove-port", label: "Remove process port"},
             ];
+        case "binding":
+            return [{action: "unbind", label: `Unbind ${target.id}.${target.port} from ${target.channel}`}];
         case "value":
             return [
                 {action: "change-value", label: "Change value…"},

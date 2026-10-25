@@ -7,7 +7,7 @@ import {test as base, expect, type Page} from "@playwright/test";
 import {type ChildProcess, spawn} from "node:child_process";
 import {randomBytes} from "node:crypto";
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
-import {createServer} from "node:net";
+import {createServer, type Server, type Socket} from "node:net";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {makeUser, type UserRecord} from "../support/scram-server";
@@ -39,12 +39,34 @@ export interface Engine {
     stop(): Promise<void>;
     // Stops it and starts it again on the same ports, with the same files.
     restart(): Promise<void>;
+    // What the environment program received from hakkas (04 §0.1), one message per line; ""
+    // without one.
+    environmentReceived(): string;
 }
 
 interface Options {
     graphs: GraphSource[];                  // the processes in <datadir>/graphs/
     config: Record<string, unknown>;        // merged into hakkas.json
     allowedErrors: RegExp[];                // error lines the test causes on purpose
+    // The environment program's description (04 §1): a fake program serving it on a Unix socket
+    // (04 §0.1), named in hakkas.json's environment.socket; none by default.
+    environment: Record<string, unknown> | undefined;
+}
+
+// A fake environment program (04 §0.1): describes itself to every connection and keeps what it
+// receives.
+function startEnvironment(path: string, description: Record<string, unknown>): { server: Server, received: string[] } {
+    const received: string[] = [];
+    const sockets: Socket[] = [];
+    const server = createServer(socket => {
+        sockets.push(socket);
+        socket.write(JSON.stringify({describe: description}) + "\n");
+        socket.on("data", chunk => received.push(...chunk.toString().split("\n").filter(l => l !== "")));
+        socket.on("error", () => {});
+    });
+    server.on("close", () => sockets.forEach(s => s.destroy()));
+    server.listen(path);
+    return {server, received};
 }
 
 async function portFree(port: number): Promise<boolean> {
@@ -112,13 +134,18 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
     graphs: [[EXAMPLE_GRAPH], {option: true}],
     config: [{}, {option: true}],
     allowedErrors: [[], {option: true}],
+    environment: [undefined, {option: true}],
 
-    engine: async ({graphs, config, allowedErrors}, use, testInfo) => {
+    engine: async ({graphs, config, allowedErrors, environment}, use, testInfo) => {
         const dir = mkdtempSync(join(tmpdir(), "hakkas-e2e-"));
         mkdirSync(join(dir, "conf"));
         mkdirSync(join(dir, "data", "graphs"), {recursive: true});
         const auth = {server_secret: randomBytes(32).toString("base64"), ...(config.auth as object ?? {})};
-        writeFileSync(join(dir, "conf", "hakkas.json"), JSON.stringify({...config, auth}));
+        // A Unix socket's path is short (108 bytes): directly in the temporary directory.
+        const socket = join(tmpdir(), "hk-" + randomBytes(6).toString("hex") + ".sock");
+        const env = environment !== undefined ? startEnvironment(socket, environment) : undefined;
+        const settings = env !== undefined ? {...config, auth, environment: {socket}} : {...config, auth};
+        writeFileSync(join(dir, "conf", "hakkas.json"), JSON.stringify(settings));
         writeFileSync(join(dir, "conf", "users.json"), JSON.stringify(
             [EDITOR, VIEWER, OPERATOR].map(u => makeUser(u.user, u.password, u.role))));
         for (const source of graphs) {
@@ -146,11 +173,14 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
                 log.length = 0;
                 ({proc} = await startEngine(dir, port, log));
             },
+            environmentReceived: () => env?.received.join("\n") ?? "",
         });
         clients.forEach(c => c.close());
         const code = await stopEngine(proc);
+        env?.server.close();
         await testInfo.attach("engine.log", {body: log.join("\n"), contentType: "text/plain"});
         rmSync(dir, {recursive: true, force: true});
+        rmSync(socket, {force: true});
         // The engine stops cleanly (05 §1.2) and logged no error.
         expect(code, "the engine's exit code").toBe(0);
         expect(log.filter(l => l.startsWith("error") && !allowedErrors.some(e => e.test(l))),

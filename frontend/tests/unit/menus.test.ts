@@ -40,6 +40,21 @@ describe("menuFor", () => {
         expect(actions({kind: "output", id: "a", port: "out"})).toEqual(["expose-output"]);
         expect(actions({kind: "port", direction: "in", name: "x"})).toEqual(["rename-port", "remove-port"]);
     });
+
+    // 06 §4.14: binding to the environment, when there is one.
+    it("binding: a free input or an output binds, a bound one unbinds", () => {
+        expect(actions({kind: "input", id: "a", port: "in", source: {kind: "default"}, environment: true}))
+            .toEqual(["set-value", "bind", "watch", "expose-input"]);
+        expect(actions({kind: "input", id: "a", port: "in", source: {kind: "fixed", value: "1"}, environment: true}))
+            .not.toContain("bind");
+        const bound = menuFor({kind: "input", id: "a", port: "in", source: {kind: "bound", channel: "ain[2]"}, environment: true});
+        expect(bound.map(i => i.action)).toEqual(["unbind", "watch", "expose-input"]);
+        expect(bound[0].label).toBe("Unbind from ain[2]");
+        expect(actions({kind: "output", id: "a", port: "out", environment: true})).toEqual(["bind", "expose-output"]);
+        expect(actions({kind: "output", id: "a", port: "out", environment: true, binding: "relay[1]"}))
+            .toEqual(["unbind", "expose-output"]);
+        expect(menuFor({kind: "binding", id: "a", port: "out", channel: "relay[1]"})[0].label).toBe("Unbind a.out from relay[1]");
+    });
 });
 
 describe("searchTypes", () => {

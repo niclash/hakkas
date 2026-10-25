@@ -5,6 +5,7 @@ import {Connection as WsConnection, Connection, Packet} from "@/components/proto
 import {onMounted, ref, watch} from "vue";
 import ReteEditor from "@/components/floweditor/ReteController.vue";
 import Inspector from "@/components/Inspector.vue";
+import EnvironmentPanel from "@/components/EnvironmentPanel.vue";
 import {can, vueModel} from "@/components/model";
 import {editor as reteEditor} from "@/components/floweditor/viewmodel/default";
 import {RuntimeEvent} from "@/components/protocols/runtime";
@@ -54,6 +55,7 @@ onMounted(() => {
       <Processes ref="procs" :current="vueModel.currentGraphId.value" @onSelection="(processName:string) => {openProcess(processName)}"/>
       <Components v-if="can.edit" ref="comps" @onSelection="(compType:string) => {addComponent(compType)}"
                   @openType="(type: string) => openProcess(type)"/>
+      <EnvironmentPanel/>
     </aside>
     <ReteEditor ref="editor"/>
     <Inspector/>

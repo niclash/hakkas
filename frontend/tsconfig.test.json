@@ -22,6 +22,7 @@
     "src/components/roles.ts",
     "src/components/messages.ts",
     "src/components/undo.ts",
+    "src/components/bindings.ts",
     "tests/**/*",
     "vitest.config.*",
     "playwright.config.*"

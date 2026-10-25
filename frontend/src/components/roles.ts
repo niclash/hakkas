@@ -39,6 +39,7 @@ const needs: Partial<Record<MenuAction, (p: Permissions) => boolean>> = {
     "disconnect": p => p.edit, "delete-connection": p => p.edit,
     "expose-input": p => p.edit, "expose-output": p => p.edit,
     "rename-port": p => p.edit, "remove-port": p => p.edit,
+    "bind": p => p.edit, "unbind": p => p.edit,
     "watch": p => p.watch, "unwatch": p => p.watch, "watch-inputs": p => p.watch,
     "unwatch-inputs": p => p.watch, "watch-all": p => p.watch, "unwatch-all": p => p.watch,
 };

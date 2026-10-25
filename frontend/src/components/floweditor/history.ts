@@ -5,9 +5,9 @@
 // is as the step left it, then sends its inverse; Ctrl+Shift+Z (or Ctrl+Y) does the reverse. A
 // step changed by someone else meanwhile is skipped with a message.
 
-import {can, isPortNode, PrimitiveNode, vueModel} from "@/components/model";
+import {can, isBindingNode, isProcessPortNode, PrimitiveNode, vueModel} from "@/components/model";
 import {Connection, Packet} from "@/components/protocols/websocket";
-import {Cmd, factsOf, History, holds, inverseOf, Link, makeStep, push, StateReader, Step, UNDOABLE} from "@/components/undo";
+import {Cmd, ENVIRONMENT_COMMANDS, factsOf, History, holds, inverseOf, Link, makeStep, push, StateReader, Step, UNDOABLE} from "@/components/undo";
 import type {FlowEditor} from "./viewmodel/default";
 
 const STORAGE_KEY = "hakkas.undo";
@@ -58,13 +58,23 @@ const reader: StateReader = {
     edgeInto: (node, port) => links().find(l => l.tgt.node === node && l.tgt.port === port),
     ports(node) {
         const b = findBlock(node);
-        return b === undefined || editor === undefined ? [] : editor.getNodes().filter(isPortNode)
+        return b === undefined || editor === undefined ? [] : editor.getNodes().filter(isProcessPortNode)
             .filter(p => p.block === b.id).map(p => ({direction: p.direction, name: p.name, port: p.port}));
     },
     port(direction, name) {
-        const p = editor?.getNodes().filter(isPortNode).find(p => p.direction === direction && p.name === name);
+        const p = editor?.getNodes().filter(isProcessPortNode).find(p => p.direction === direction && p.name === name);
         const b = p && editor?.getNode(p.block);
         return p && b instanceof PrimitiveNode ? {node: b.label, port: p.port} : undefined;
+    },
+    bindings(node) {
+        const b = findBlock(node);
+        return b === undefined || editor === undefined ? [] : editor.getNodes().filter(isBindingNode)
+            .filter(m => m.block === b.id).map(m => ({port: m.port, env: m.env, index: m.index}));
+    },
+    binding(node, port) {
+        const b = findBlock(node);
+        return b === undefined ? undefined
+            : editor?.getNodes().filter(isBindingNode).find(m => m.block === b.id && m.port === port)?.name;
     },
 };
 
@@ -87,7 +97,8 @@ function links(): Link[] {
 
 function record(packet: Packet) {
     const payload = packet.payload as Record<string, any> | undefined;
-    if (!recording || packet.protocol !== "graph" || !UNDOABLE.has(packet.command) || payload?.graph === undefined)
+    const protocol = ENVIRONMENT_COMMANDS.has(packet.command) ? "environment" : "graph";
+    if (!recording || packet.protocol !== protocol || !UNDOABLE.has(packet.command) || payload?.graph === undefined)
         return;
     const cmd: Cmd = {command: packet.command, payload: JSON.parse(JSON.stringify(payload))};
     if (group !== undefined && group.graph !== payload.graph)
@@ -142,8 +153,9 @@ export function unrecorded(fn: () => void) {
 // ---- Undoing and redoing ----------------------------------------------------------------
 
 function send(cmds: Cmd[]) {
-    const proto = vueModel.connection.value?.proto.graph;
-    unrecorded(() => cmds.forEach(c => proto?.request_raw(c.command, c.payload)));
+    const proto = vueModel.connection.value?.proto;
+    unrecorded(() => cmds.forEach(c => ENVIRONMENT_COMMANDS.has(c.command)
+        ? proto?.environment.request_raw(c.command, c.payload) : proto?.graph.request_raw(c.command, c.payload)));
 }
 
 function apply(direction: "undo" | "redo") {
