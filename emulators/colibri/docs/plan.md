@@ -282,10 +282,20 @@ Follow-ups, decided the same day:
   as a notice, a lost connection. Found on the way: Vue sets an input's value at every render,
   which undid typing in a noisy row (hence `NumberField`). Decided (shared spec
   `../../specifications/00-README.md`, "The UI, as built").
-- [ ] **E13. Library, settings and statistics**: the environment list (select, create,
+- [x] **E13. Library, settings and statistics**: the environment list (select, create,
   duplicate, rename, delete), the slot editor (module per slot, built-in slots fixed), the
   carrier, communication modules, cycle time and queue size, the power-cycle notice ("restart
   hakkas"), Persist and the unsaved mark, the §4.1 counters with dropped writes standing out.
+  *Done*: `emulators/ui/` — `LibraryPanel.vue` (with `ModalDialog.vue`), `SettingsPanel.vue`
+  (`TextField.vue` beside `NumberField.vue`), `StatsPanel.vue`, `src/settings.ts` (grouping,
+  lists, option keys, the counters in the scene's order), `App.vue` (the column and the tabs,
+  Persist, the restart banner). Unit tests for the helpers; browser tests: create (refusals in the
+  dialog), duplicate, rename, delete; a setting changed and persisted by another client, a
+  refused value; *Run* with unsaved changes, discarding and persisting first; a slot's module and
+  serial with hakkas connected (the restart banner and badge, the new part on the signal panel),
+  the built-in slot fixed; a communication module's parameters persisted; dropped writes standing
+  out and reset. Decided (shared spec, "The UI, as built"): the layout, the library's actions, the
+  settings' controls and when they send, the counters' display.
 - [ ] **E14. Carrier and faceplates** (§7.4, §8.4): the carrier's picture with its
   `slot-<n>` places, each module's faceplate in its slot, bindings (attributes, text,
   visibility) and controls (slider, toggle, button, number) on the SVG elements.

@@ -1,7 +1,8 @@
 # Emulators — shared specification
 
 > Started 2026-10-25 (Colibri emulator plan task E0). The control protocol is implemented by the
-> Colibri emulator (its tasks E9–E11); the generic UI's signal panel by its task E12.
+> Colibri emulator (its tasks E9–E11); the generic UI's signal panel, library, settings and
+> counters by its tasks E12–E13.
 
 An emulator stands in for a device's I/O side on the desktop, so hakkas programs can be tested
 without hardware. Each emulator is its own project in `emulators/<name>/`, with its own
@@ -43,6 +44,29 @@ built files.
   every second, starting over from `hello`; another protocol version stops it with a message.
 - The build's own files are under `ui/` (not `assets/`, the emulator's pictures); `npm run dev`
   passes `/control` and `/assets` to a running emulator.
+- (*Decided* in the Colibri emulator's task E13, 2026-10-25.) **The layout**: the environment
+  library in a column on the left; the rest in tabs — *Signals* (the signal panel), *Settings*,
+  *Statistics* — the tab chosen kept per browser (`localStorage`, where it can be). The header has
+  **Persist**, enabled while the environment is unsaved, beside the environment's name and its
+  unsaved mark.
+- **The library** lists the environments, the running one marked; each has *Run* (not the running
+  one), *Duplicate* (a name offered, `<name>-copy`), *Rename* (the running one's power cycle
+  said in the dialog) and *Delete* (not the running one, after a confirmation). *New…* asks for a
+  name. A refusal is shown in its dialog. *Run* with unsaved changes asks first: *Persist, then
+  run*, *Discard* or *Cancel*.
+- **The settings** are the emulator's form as it sends it: the fields without a group first,
+  then each group; an `enum` a choice (*— not set —* while it has no value), a number a number
+  field, `text` and `list` (comma-separated) a text field, `bool` a checkbox, a `readonly` field
+  shown but disabled, a `restart` field marked *restart*. A change is a `configure` of that one
+  field, sent when it is made (a choice at once, a typed value on Enter or when the field is left,
+  kept while it is being typed); a refusal is a notice and the field shows the emulator's value
+  again.
+- **A power cycle** (`link` `restart`) shows a banner across the page: restart hakkas so that it
+  sees the new environment.
+- **The counters**: per filled part its queue's length and highest length, and per channel the
+  writes received, queued and dropped (outputs) or the values sent (inputs); a part or channel
+  that dropped writes stands out (in the error color, with a *dropped* badge), and the
+  *Statistics* tab shows the number dropped in all. *Reset counters* sends `resetstats`.
 
 **Principle**, as in hakkas (`../../specifications/00-README.md`): the emulator owns the state;
 clients only mirror it. A client sends a request; the emulator applies or refuses it and

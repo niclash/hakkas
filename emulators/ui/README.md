@@ -6,8 +6,8 @@ about any device and draws what an emulator describes over its control protocol
 serves the built files (`dist/`) on its HTTP port, so the page and the control WebSocket share
 one origin.
 
-> Work in progress (Colibri emulator plan task E12): the signal panel. The library, settings,
-> statistics (E13) and the board with its faceplates (E14) follow.
+> Work in progress: the signal panel, the environment library, the settings and the counters
+> (Colibri emulator plan tasks E12–E13). The board with its faceplates (E14) follows.
 
 ## Building and testing
 

@@ -119,6 +119,7 @@ export class HakkasClient {
 
 export interface Emulator {
     url: string;
+    library: string;        // the library's directory (environments/<name>.json)
     log(): string;
     control(): Promise<ControlClient>;
     hakkas(): Promise<HakkasClient>;
@@ -188,6 +189,7 @@ export const test = base.extend<Options & {emulator: Emulator, pageErrors: strin
         const opened: {close(): void}[] = [];
         await use({
             url: `http://127.0.0.1:${port}/`,
+            library: join(dir, 'library'),
             log: () => log.join('\n'),
             control: async () => {
                 const c = new ControlClient(await Lines.connect(control));
