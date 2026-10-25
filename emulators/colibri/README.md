@@ -11,7 +11,7 @@ The specification is `specifications/00-README.md`; the order of the work, and w
 
 > Work in progress: the command line, logging, the module catalog (`data/`), the environment
 > library, the emulated system's model, the scan cycle, the environment description and the link to
-> hakkas exist (plan tasks E1–E7); the UI follows.
+> hakkas exist and are tested with hakkas (plan tasks E1–E8); the UI follows.
 
 ## Building and testing
 
@@ -23,6 +23,11 @@ npm run build        # dist/
 npm test             # unit tests (vitest)
 npm run type-check
 ```
+
+`npm test` includes a test with the real hakkas (`tests/hakkas.test.ts`): it runs
+`../../build/debug/hakkas` (or `HAKKAS_BIN`), so build hakkas first
+(`cmake --preset debug && cmake --build --preset debug` in the repository's root); without it
+that test is skipped.
 
 ## Running
 

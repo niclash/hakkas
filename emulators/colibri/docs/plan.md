@@ -210,14 +210,24 @@ Follow-ups, decided the same day:
   cleared after 2 s; the command's run removes its socket. Decided on the way (spec §3): see
   its E7 bullet (current values, `index`/`null`, no environment, the socket directory, when a
   power cycle means `restart`).
-- [ ] **E8. Integration with hakkas**: a test that runs `build/debug/hakkas run` against the
+- [x] **E8. Integration with hakkas**: a test that runs `build/debug/hakkas run` against the
   emulator. A process binds an AIV input and an SSR output; the test checks the description
   hakkas accepts, a value in both directions with the scan latency, the reconnect (sensor
   values re-sent, actuators re-written), and a power cycle (hakkas' "changed its description").
   Skipped when the hakkas build is absent.
 
 ## Phase 2 — The control channel
-
+  *Done*: `tests/hakkas.test.ts`, part of `npm test`, skipped without the hakkas build
+  (`HAKKAS_BIN`, else `build/debug/hakkas`). hakkas runs with its own configuration, the process
+  `threshold` (`compare/Greater`, `in1` bound to `slot1-ai[1]`, `out` to `slot3-dq[1]`, `in2`
+  5) and its bindings file; the emulator's link, model and scan cycle run in the test, on real
+  time. Checked: the description accepted and both bindings applied with no warning; the
+  process's first write at its start; a sensor change sampled at slot 1's turn and the result
+  applied at a later slot 3 turn; switching back; the emulator's link closed and opened again
+  (hakkas logs `disconnected` and `reconnected`, re-writes its actuator, and later changes get
+  through); a power cycle (an SSR moved to slot 4): hakkas logs that the description changed and
+  the link stays `restart`; hakkas exits 0 each time. Also run once by hand with the built
+  command (`node dist/main.js … lab`) and hakkas: described and accepted.
 - [ ] **E9. The control protocol** (§8.1, §8.3, its spec in `emulators/specifications/`): a transport-neutral
   session with `scene`, `state`, `settings` and `stats` to the client and `set`/`configure`
   from it. The emulator applies each request and broadcasts the result to every client, the
