@@ -898,3 +898,20 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
 - [ ] **63. Frontend: binding page, deployment with a mapping dialog** (06 §7).
 - [ ] **64. Upload/download of processes, backup and restore** (06 §7): to design.
 - [ ] **65. The Colibri emulator** (`emulators/colibri/`): its own plan once its spec is settled.
+
+## Phase 9 — Editor requests (requested 2026-10-24, not started)
+
+- [ ] **66. Left-drag selects, right-drag pans** (06 §4, "The marquee"). Today a plain drag on
+  the empty canvas pans and a Shift- or Ctrl-drag draws the marquee. Wanted: a **left** drag on
+  the empty canvas draws the marquee (the selection tool), a **right** drag pans, and a right
+  click without a drag still opens the context menu (§4.4) — so the menu opens on the button's
+  release, and only when the pointer has not moved beyond a small threshold. If possible
+  (Rete's area plugin drives panning). Decided 2026-10-24: a **Shift**-left-drag adds to the
+  selection; a plain left drag replaces it; on a trackpad a **two-finger scroll pans**. Rete
+  zooms on the wheel today, and a trackpad's two-finger scroll arrives as the same wheel
+  event, so zooming moves to the pinch (a wheel event with `ctrlKey`) and Ctrl+wheel; whether
+  a mouse's plain wheel then pans or still zooms is to decide when starting.
+- [ ] **67. *Create composite type…* in the canvas's context menu** (06 §4.4, §4.9). Today it is
+  only in a block's menu (from the selection when the block is in it, else the block alone).
+  Wanted also on a right-click on the empty canvas, from the current selection; **left out of
+  the menu when nothing is selected** (decided 2026-10-24).
