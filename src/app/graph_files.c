@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "app/file_names.h"
+#include "app/links_file.h"
 #include "blocktypes/block_types.h"
 #include "cJSON.h"
 #include "graphs/graph_json.h"
@@ -70,6 +71,23 @@ static const char *sep(const GraphFiles *gf)
 	return strcmp(gf->datadir, "/") == 0 ? "" : "/";
 }
 
+void graph_files_set_environment(GraphFiles *gf, const char *name)
+{
+	snprintf(gf->environment, sizeof(gf->environment), "%s", name != NULL ? name : "");
+}
+
+enum graph_files_status graph_files_top_path(const GraphFiles *gf, const char *name, char *buf,
+					     size_t size)
+{
+	int n = snprintf(buf, size, "%s%s%s", gf->datadir, sep(gf), name);
+	if (!fits(n, size) || (size_t)n + sizeof(PAL_TMP_SUFFIX) > PAL_PATH_MAX) {
+		if (size > 0)
+			buf[0] = '\0';
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	return GRAPH_FILES_OK;
+}
+
 enum graph_files_status graph_files_dir(const GraphFiles *gf, const char *subdir, char *buf,
 					size_t size)
 {
@@ -114,7 +132,9 @@ static enum graph_files_status make_dir(const GraphFiles *gf, const char *subdir
 enum graph_files_status graph_files_make_dirs(const GraphFiles *gf)
 {
 	enum graph_files_status st = make_dir(gf, GRAPH_FILES_GRAPHS_DIR);
-	return st != GRAPH_FILES_OK ? st : make_dir(gf, GRAPH_FILES_TYPES_DIR);
+	if (st == GRAPH_FILES_OK)
+		st = make_dir(gf, GRAPH_FILES_TYPES_DIR);
+	return st != GRAPH_FILES_OK ? st : make_dir(gf, GRAPH_FILES_BINDINGS_DIR);
 }
 
 /* ---- Saving (05 §2.1) ------------------------------------------------------- */
@@ -348,6 +368,86 @@ enum graph_files_status graph_files_save(const GraphFiles *gf, const Graph *g)
 	return GRAPH_FILES_OK;
 }
 
+char *graph_files_serialize_bindings(const GraphFiles *gf, const Graph *g, size_t *len,
+				     size_t *count)
+{
+	size_t n = 0;
+	cJSON *root = cJSON_CreateObject();
+	cJSON *list = cJSON_CreateArray();
+	bool ok = root != NULL && add(root, "environment", cJSON_CreateString(gf->environment)) &&
+		  add(root, "bindings", list);
+	if (root == NULL)
+		cJSON_Delete(list);
+	const Runtime *rt = gf->gs->rt;
+	for (uint32_t i = 0; ok && i < runtime_binding_count(rt); i++) {
+		const EnvBinding *b = runtime_binding_at(rt, i);
+		if (b->graph != g)
+			continue;
+		const char *port = b->actuator ? block_output_port(b->block, b->port)->name
+					       : block_input_port(b->block, b->port)->name;
+		cJSON *e = cJSON_CreateObject();
+		ok = e != NULL && cJSON_AddItemToArray(list, e) &&
+		     add(e, "block", cJSON_CreateString(b->block->name)) &&
+		     add(e, "port", cJSON_CreateString(port)) &&
+		     add(e, "env", cJSON_CreateString(b->env)) &&
+		     (b->env_index == 0 || add(e, "index", cJSON_CreateNumber(b->env_index)));
+		n++;
+	}
+	char *text = ok ? cJSON_PrintUnformatted(root) : NULL;
+	cJSON_Delete(root);
+	if (text != NULL && len != NULL)
+		*len = strlen(text);
+	if (count != NULL)
+		*count = n;
+	return text;
+}
+
+/* Write text (len bytes) to path, or remove path when text is NULL. */
+static enum graph_files_status write_or_remove(const char *path, const char *text, size_t len)
+{
+	enum pal_err err = text != NULL ? pal_storage_write(path, text, len)
+					: pal_storage_remove(path);
+	if (err == PAL_OK || (text == NULL && err == PAL_ERR_NOT_FOUND))
+		return GRAPH_FILES_OK;
+	log_error("cannot %s %s: %s", text != NULL ? "write" : "remove", path, pal_err_str(err));
+	return GRAPH_FILES_ERR_STORAGE;
+}
+
+/* What is saved with a process (plan task 62): its bindings file and the
+ * links file. */
+static enum graph_files_status save_with(const GraphFiles *gf, const Graph *g)
+{
+	char path[PAL_PATH_MAX];
+	if (graph_files_path(gf, GRAPH_FILES_BINDINGS_DIR, g->id, path, sizeof(path)) !=
+	    GRAPH_FILES_OK)
+		return GRAPH_FILES_ERR_INVALID;
+	size_t len = 0, count = 0;
+	char *text = graph_files_serialize_bindings(gf, g, &len, &count);
+	if (text == NULL) {
+		log_error("cannot save the bindings of %s: out of memory", g->id);
+		return GRAPH_FILES_ERR_NO_MEMORY;
+	}
+	enum graph_files_status st = GRAPH_FILES_OK;
+	if (count > 0)
+		st = make_dir(gf, GRAPH_FILES_BINDINGS_DIR);
+	if (st == GRAPH_FILES_OK)
+		st = write_or_remove(path, count > 0 ? text : NULL, len);
+	free(text);
+	if (st != GRAPH_FILES_OK)
+		return st;
+	if (graph_files_top_path(gf, LINKS_FILE_NAME, path, sizeof(path)) != GRAPH_FILES_OK)
+		return GRAPH_FILES_ERR_INVALID;
+	const Runtime *rt = gf->gs->rt;
+	text = runtime_link_count(rt) > 0 ? links_file_serialize(rt, &len) : NULL;
+	if (runtime_link_count(rt) > 0 && text == NULL) {
+		log_error("cannot save the links: out of memory");
+		return GRAPH_FILES_ERR_NO_MEMORY;
+	}
+	st = write_or_remove(path, text, len);
+	free(text);
+	return st;
+}
+
 enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, GraphsMessage *msg)
 {
 	GraphRefusal ctx = {.graph = id};
@@ -367,6 +467,8 @@ enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, Grap
 	}
 
 	enum graph_files_status st = graph_files_save(gf, g);
+	if (st == GRAPH_FILES_OK)
+		st = save_with(gf, g);
 	if (msg != NULL)
 		msg->text[0] = '\0';
 	if (st == GRAPH_FILES_OK) {
@@ -952,5 +1054,10 @@ enum graph_status graph_files_delete(GraphFiles *gf, const char *id, const char 
 	enum pal_err err = pal_storage_remove(path);
 	if (err != PAL_OK && err != PAL_ERR_NOT_FOUND)
 		log_error("cannot remove %s: %s", path, pal_err_str(err));
+	/* Its saved bindings go with it (plan task 62); the links file keeps
+	 * its links until the next save (a link to it is skipped at load). */
+	if (graph_files_path(gf, GRAPH_FILES_BINDINGS_DIR, id, path, sizeof(path)) ==
+	    GRAPH_FILES_OK)
+		write_or_remove(path, NULL, 0);
 	return st;
 }

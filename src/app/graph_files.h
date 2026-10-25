@@ -8,7 +8,10 @@
  *
  * Storage goes through the PAL only (platform/pal.h, 01 §0.1). Files live in
  * <datadir>/graphs/<encoded id>.json (05 §2.3, app/file_names.h); composite
- * types in <datadir>/types/ are app/type_files.h's.
+ * types in <datadir>/types/ are app/type_files.h's. A process's environment
+ * bindings are saved with it in <datadir>/bindings/<encoded id>.json (a
+ * bindings file, 04 §4) and the links between processes in
+ * <datadir>/links.json (app/links_file.h; plan task 62).
  *
  * The format (05 §2.1, decisions of plan task 10 recorded there): a compact
  * JSON object with the keys id, name, description, icon, started, blocks,
@@ -45,6 +48,7 @@
 #include <stddef.h>
 
 #include "graphs/graphs.h"
+#include "hakkas_env.h"
 #include "platform/pal.h"
 
 /* The largest graph file that is loaded, in bytes (05 §2.2); a larger one is
@@ -57,6 +61,7 @@
 /* The subdirectories of datadir (05 §2.3). */
 #define GRAPH_FILES_GRAPHS_DIR "graphs"
 #define GRAPH_FILES_TYPES_DIR "types"
+#define GRAPH_FILES_BINDINGS_DIR "bindings"
 
 enum graph_files_status {
 	GRAPH_FILES_OK = 0,
@@ -76,6 +81,9 @@ const char *graph_files_status_str(enum graph_files_status st);
 typedef struct {
 	Graphs *gs;
 	char datadir[PAL_PATH_MAX];
+	/* The running environment's name, which a saved bindings file names
+	 * (04 §4); "" without an environment. */
+	char environment[HAKKAS_ENV_ID_MAX + 1];
 } GraphFiles;
 
 /* Make gf the graph files of gs under datadir (copied; 05 §1.1 datadir).
@@ -96,6 +104,16 @@ enum graph_files_status graph_files_dir(const GraphFiles *gf, const char *subdir
 enum graph_files_status graph_files_path(const GraphFiles *gf, const char *subdir,
 					 const char *name, char *buf, size_t size);
 
+/* Set the environment's name for saved bindings files (cut to
+ * HAKKAS_ENV_ID_MAX bytes; NULL: none). */
+void graph_files_set_environment(GraphFiles *gf, const char *name);
+
+/* The path of <datadir>/<name> (a file directly in datadir, e.g.
+ * LINKS_FILE_NAME) into buf: GRAPH_FILES_ERR_INVALID if it does not fit,
+ * with an atomic write's ".tmp". */
+enum graph_files_status graph_files_top_path(const GraphFiles *gf, const char *name, char *buf,
+					     size_t size);
+
 /* Create <datadir>/graphs and <datadir>/types if missing (datadir itself
  * must exist). GRAPH_FILES_ERR_STORAGE (logged) on failure. */
 enum graph_files_status graph_files_make_dirs(const GraphFiles *gf);
@@ -111,11 +129,22 @@ char *graph_files_serialize(const Graph *g, size_t *len);
  * (logged). */
 enum graph_files_status graph_files_save(const GraphFiles *gf, const Graph *g);
 
-/* network:persist (02 §3.3): save the graph with this id. A refused command
+/* g's environment bindings as a bindings file (04 §4: {"environment",
+ * "bindings": [{"block", "port", "env", "index"?}]}, in creation order): a
+ * heap string of *len bytes plus a NUL, *count (if not NULL) the bindings,
+ * or NULL if memory runs out. */
+char *graph_files_serialize_bindings(const GraphFiles *gf, const Graph *g, size_t *len,
+				     size_t *count);
+
+/* network:persist (02 §3.3): save the graph with this id — its graph file,
+ * its bindings file (removed when it has no bindings) and the links file
+ * with every link between processes (removed when there is none; plan task
+ * 62). A refused command
  * (an invalid id: "Invalid id"; no such graph: "Unknown graph: <id>") changes
  * nothing and reports nothing: the message goes to the requester only, like
  * every refusal (02 §3.4.1). A failed save reports an ERROR event (system-
- * wide, 02 §3.3) with the message "Unable to save graph: <name> (<id>)". On
+ * wide, 02 §3.3) with the message "Unable to save graph: <name> (<id>)" —
+ * also when its bindings or the links could not be written. On
  * any failure msg (if not NULL) holds the message (cut to fit). Success
  * reports nothing (no wire reply). */
 enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, GraphsMessage *msg);
@@ -173,7 +202,7 @@ enum graph_files_status graph_files_persist(GraphFiles *gf, const char *id, Grap
 enum graph_files_status graph_files_load_text(GraphFiles *gf, const char *text, size_t len,
 					      const char *origin, Graph **out, bool *started);
 
-/* Load the graph file at path (any path: `run process` files need not live
+/* Load the graph file at path (any path: hakkas_process_load's files need not live
  * in datadir). Read through the PAL into a buffer sized by pal_storage_stat;
  * refused as GRAPH_FILES_ERR_TOO_BIG beyond HAKKAS_GRAPH_FILE_MAX bytes.
  * Otherwise as graph_files_load_text; failures are logged. */
@@ -184,7 +213,7 @@ enum graph_files_status graph_files_load(GraphFiles *gf, const char *path, Graph
  * started flag. It may start the graph. */
 typedef void (*graph_files_loaded_fn)(void *ctx, Graph *g, bool started);
 
-/* Every saved graph (`run daemon`, 05 §1.2; hakkas_process_load_saved): load
+/* Every saved graph (`run`, 05 §1.2; hakkas_process_load_saved): load
  * every regular file ending in ".json" in <datadir>/graphs, in byte order of
  * their names (so graphs are created in the same order every boot), calling
  * fn (if not NULL) after each one that loaded. A file whose name is not the

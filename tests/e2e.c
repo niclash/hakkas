@@ -163,38 +163,13 @@ static void note_loaded(void *ctx, const HakkasLoaded *l)
 		memcpy(starts[start_count++], l->id, sizeof(l->id));
 }
 
-/* The colon-separated graph files: false if one does not load. */
-static bool load_files(const char *files)
-{
-	char list[4 * PAL_PATH_MAX];
-	CHECK(strlen(files) < sizeof(list));
-	snprintf(list, sizeof(list), "%s", files);
-	for (char *p = list, *end; p != NULL; p = end) {
-		end = strchr(p, ':');
-		if (end != NULL)
-			*end++ = '\0';
-		HakkasLoaded l;
-		if (hakkas_process_load(e2e_hakkas, p, &l, NULL) != HAKKAS_OK)
-			return false;
-		note_loaded(NULL, &l);
-	}
-	return true;
-}
-
-bool e2e_start_with(const Config *cfg, const char *files)
+bool e2e_start_with(const Config *cfg)
 {
 	HakkasParams p = {.ephemeral_ports = true};
 	if (!e2e_start_params(cfg, &p))
 		return false;
 	start_count = 0;
-	if (files == NULL) {
-		hakkas_process_load_saved(e2e_hakkas, note_loaded, NULL, NULL);
-	} else if (!load_files(files)) {
-		hakkas_remove_tick(e2e_hakkas, short_tick, NULL);
-		hakkas_destroy(e2e_hakkas);
-		e2e_hakkas = NULL;
-		return false;
-	}
+	hakkas_process_load_saved(e2e_hakkas, note_loaded, NULL, NULL);
 	for (size_t i = 0; i < start_count; i++)
 		CHECK(hakkas_process_start(e2e_hakkas, starts[i], NULL) == HAKKAS_OK);
 	return true;
@@ -204,7 +179,7 @@ bool e2e_start(void)
 {
 	static Config cfg;
 	e2e_config(&cfg);
-	return e2e_start_with(&cfg, NULL);
+	return e2e_start_with(&cfg);
 }
 
 void e2e_stop(void)

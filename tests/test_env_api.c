@@ -15,6 +15,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 
+#include "app/graph_files.h"
 #include "platform/pal.h"
 #include "protocol/messages.h"
 
@@ -372,9 +373,28 @@ static void test_bindings(void)
 	CHECK_STREQ(fake.writes, "relay[1]=false;"); /* a.out = 0 */
 	CHECK(hakkas_binding_remove(h, "p", "a", "in1", "temp", 0, &msg) == HAKKAS_REFUSED);
 	CHECK_STREQ(msg.text, "No such binding");
+	/* Saved with the process (plan task 62): its bindings file, in creation
+	 * order; a binding change makes the process unsaved; deleting the
+	 * process removes the file. */
+	char saved[PAL_PATH_MAX];
+	snprintf(saved, sizeof(saved), "%s", e2e_path(e2e_path(e2e_basedir, "bindings"), "p.json"));
+	CHECK(hakkas_process_persist(h, "p", &msg) == HAKKAS_OK);
+	char *text;
+	size_t len;
+	CHECK(graph_files_read(saved, 4096, &text, &len) == GRAPH_FILES_OK);
+	CHECK_STREQ(text, "{\"environment\":\"fake\",\"bindings\":[{\"block\":\"a\","
+			  "\"port\":\"out\",\"env\":\"relay\",\"index\":1},{\"block\":\"b\","
+			  "\"port\":\"in1\",\"env\":\"ain\",\"index\":1}]}");
+	free(text);
+	HakkasProcessStatus st;
+	CHECK(hakkas_process_status(h, "p", &st, NULL) == HAKKAS_OK && !st.unsaved);
+	CHECK(hakkas_binding_add(h, "p", "a", "in1", "temp", 0, &msg) == HAKKAS_OK);
+	CHECK(hakkas_process_status(h, "p", &st, NULL) == HAKKAS_OK && st.unsaved);
+	CHECK(hakkas_binding_remove(h, "p", "a", "in1", "temp", 0, &msg) == HAKKAS_OK);
 	/* A deleted process's bindings go before its deletion. */
 	bind_log[0] = '\0';
 	CHECK(hakkas_process_delete(h, "p", "P", NULL) == HAKKAS_OK);
+	CHECK(!pal_storage_exists(saved));
 	CHECK_STREQ(bind_log, "-p:a.out>relay[1];-p:b.in1<ain[1];");
 	CHECK(hakkas_binding_count(h) == 0);
 	hakkas_unsubscribe(h, on_event, NULL);

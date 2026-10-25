@@ -41,13 +41,8 @@ void cli_usage(FILE *out)
 	      "  user passwd <name>             set a user's password\n"
 	      "  user del <name>                remove a user\n"
 	      "  user list                      print every user's name and role\n"
-	      "  run [run options] process <file>[:<file>...]\n"
-	      "                                 run the engine with these graph files\n"
-	      "  run [run options] processes <file>\n"
-	      "                                 run the engine with the processes of a\n"
-	      "                                 process list (processes.json)\n"
-	      "  run [run options] daemon       run the engine with every graph in\n"
-	      "                                 <datadir>/graphs/\n"
+	      "  run [run options]              run the engine with every process saved in\n"
+	      "                                 <datadir> (graphs/, bindings/, links.json)\n"
 	      "\n"
 	      "run options (override the configuration file):\n"
 	      "  --id <id>        engine_id\n"
@@ -106,14 +101,22 @@ static int one_argument(Args *a, const char *command, const char *what, const ch
 
 static int parse_run(Args *a, CliOptions *o)
 {
+	o->command = CLI_RUN;
 	const char *arg;
-	while ((arg = next(a)) != NULL && arg[0] == '-') {
+	while ((arg = next(a)) != NULL) {
 		const char **dst = strcmp(arg, "--id") == 0	 ? &o->id
 				   : strcmp(arg, "--webdir") == 0 ? &o->webdir
 				   : strcmp(arg, "--host") == 0	 ? &o->host
 				   : strcmp(arg, "--port") == 0	 ? &o->port
 				   : strcmp(arg, "--users") == 0  ? &o->users
 								  : NULL;
+		if (dst == NULL && arg[0] != '-') {
+			/* Only the run options: what it runs is <datadir> (plan
+			 * task 62; `run process`, `processes` and `daemon` are
+			 * gone). */
+			log_error("run: unexpected argument '%s'" HINT, arg);
+			return CLI_EXIT_USAGE;
+		}
 		if (dst == NULL) {
 			log_error("run: unknown option '%s'" HINT, arg);
 			return CLI_EXIT_USAGE;
@@ -121,20 +124,7 @@ static int parse_run(Args *a, CliOptions *o)
 		if ((*dst = option_value(a, arg)) == NULL)
 			return CLI_EXIT_USAGE;
 	}
-	if (arg != NULL && strcmp(arg, "process") == 0) {
-		o->command = CLI_RUN_PROCESS;
-		return one_argument(a, "run process", "the graph file list", &o->arg);
-	}
-	if (arg != NULL && strcmp(arg, "processes") == 0) {
-		o->command = CLI_RUN_PROCESSES;
-		return one_argument(a, "run processes", "the process list file", &o->arg);
-	}
-	if (arg != NULL && strcmp(arg, "daemon") == 0) {
-		o->command = CLI_RUN_DAEMON;
-		return no_more(a, "run daemon");
-	}
-	log_error("run: expected 'process <files>', 'processes <file>' or 'daemon'" HINT);
-	return CLI_EXIT_USAGE;
+	return CLI_EXIT_OK;
 }
 
 /* user add <name> --role <role> (the option before or after the name),
@@ -455,12 +445,8 @@ int cli_execute(const CliOptions *o, const Config *cfg, FILE *in, FILE *out)
 		return describe_topology(cfg, o->arg, out);
 	case CLI_USER:
 		return user_command(o, cfg, in, out);
-	case CLI_RUN_PROCESS:
-		return posix_host_run(cfg, POSIX_HOST_FILES, o->arg);
-	case CLI_RUN_PROCESSES:
-		return posix_host_run(cfg, POSIX_HOST_LIST, o->arg);
-	case CLI_RUN_DAEMON:
-		return posix_host_run(cfg, POSIX_HOST_DAEMON, NULL);
+	case CLI_RUN:
+		return posix_host_run(cfg);
 	}
 	return CLI_EXIT_FAILURE;
 }
@@ -480,8 +466,7 @@ int cli_main(int argc, char *const argv[], FILE *in, FILE *out)
 	if (rc != CLI_EXIT_OK)
 		return rc;
 	/* run's engine registers them itself (05 §1.4 step 4). */
-	if (o.command == CLI_RUN_PROCESS || o.command == CLI_RUN_PROCESSES ||
-	    o.command == CLI_RUN_DAEMON)
+	if (o.command == CLI_RUN)
 		return cli_execute(&o, &cfg, in, out);
 	if (block_types_register_builtins() != BLOCK_TYPES_OK) {
 		log_error("cannot register the built-in block types");

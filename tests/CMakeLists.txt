@@ -59,7 +59,7 @@ target_compile_definitions(test_ws_server PRIVATE _GNU_SOURCE)
 hakkas_add_test(test_users LIBS hakkas_pal_posix)
 hakkas_add_test(test_auth)
 hakkas_add_test(test_dispatcher LIBS hakkas_pal_posix)
-hakkas_add_test(test_process_list LIBS hakkas_pal_posix)
+hakkas_add_test(test_links_file LIBS hakkas_pal_posix)
 # The engine in-process with real WebSocket clients (e2e.h): its startup,
 # the end-to-end protocol tests (plan task 20, 05 §5) and the local C API
 # (plan task 21e, 02 §6).

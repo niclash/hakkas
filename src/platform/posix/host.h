@@ -19,34 +19,12 @@
  *     "process <id> started", "... stopped", "... deleted" (whoever caused
  *     it: the host, a client), and every link between processes: "link
  *     <process>.<outport> -> <process>.<inport> made" / "... removed";
- *  3. step 7, the processes of the mode (05 §1.2):
- *     - POSIX_HOST_FILES (`run process <file>[:<file>...]`): the files in
- *       order; any file that does not load refuses startup (logged, then
- *       "run process: a graph file did not load (<cause>): not starting");
- *     - POSIX_HOST_LIST (`run processes <file>`): the process list
- *       (app/process_list.h) in order; a list that cannot be read or is
- *       malformed, or any process that does not load, refuses startup
- *       ("run processes: ... : not starting"). A process's "bindings"
- *       file (04 §4) is applied right after it loads, before anything
- *       starts (hakkas_bindings_apply; info "process <id>: <n> bindings
- *       applied from <path>, <m> skipped"), warning about and skipping
- *       the entries it cannot make; a file that does not apply at all (not
- *       readable, malformed, no environment) is the warning "run
- *       processes: <path>: <message>: not applied" and the process runs
- *       without it — bindings never refuse startup, only running out of
- *       memory does ("... : not starting"). Once every process is
- *       loaded, and before any is started, the
- *       list's "links" are made in list order (hakkas_link_add); a link
- *       that is refused refuses startup like a process that does not load
- *       ("run processes: <file>: link <from> -> <to>: <message>: not
- *       starting"; plan task 21f);
- *     - POSIX_HOST_DAEMON (`run daemon`): every saved process
- *       (hakkas_process_load_saved); a file that does not load is logged
- *       and skipped, the others run;
- *     then every loaded process to be started is started, in load order:
- *     a list entry's "start" if given, else the graph file's started flag
- *     (05 §2.1); in the other modes the flag. Then the info line "<n>
- *     process(es) loaded, <m> started";
+ *  3. step 7: every saved process with its saved bindings, then the saved
+ *     links (hakkas_process_load_saved, 05 §1.2, §2.3; plan task 62, which
+ *     removed `run process` and `run processes`); what does not load or
+ *     apply is logged and skipped, the rest runs. Then every loaded process
+ *     whose file's started flag is set (05 §2.1) is started, in load order,
+ *     and the info line "<n> process(es) loaded, <m> started";
  *  4. hakkas_run until the stop request, then hakkas_destroy (nothing is
  *     saved) and the info line "engine stopped": CLI_EXIT_OK.
  * Processes are loaded before the loop runs, so no client sees the loading
@@ -57,15 +35,8 @@
 
 #include "system/config.h"
 
-enum posix_host_mode {
-	POSIX_HOST_DAEMON, /* every graph in <datadir>/graphs */
-	POSIX_HOST_FILES,  /* a colon-separated list of graph files */
-	POSIX_HOST_LIST,   /* a process list file (processes.json) */
-};
-
-/* Run the engine with the processes of mode (arg: the file list or the
- * process list file; unused for POSIX_HOST_DAEMON) until a stop request.
- * Returns the exit code (CLI_EXIT_OK, CLI_EXIT_FAILURE). */
-int posix_host_run(const Config *cfg, enum posix_host_mode mode, const char *arg);
+/* Run the engine with every saved process until a stop request. Returns the
+ * exit code (CLI_EXIT_OK, CLI_EXIT_FAILURE). */
+int posix_host_run(const Config *cfg);
 
 #endif

@@ -22,4 +22,4 @@ if [ ! -s "$here/conf/users.json" ]; then
 fi
 
 exec "$hakkas" "${LOG:---info}" --confdir "$here/conf" --basedir "$here/data" \
-	run --webdir "$here/web" "$@" daemon
+	run --webdir "$here/web" "$@"

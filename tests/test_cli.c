@@ -3,9 +3,9 @@
  * parsing every command and option, usage errors, the configuration's
  * precedence (defaults < file < options), and the output of list types,
  * describe type (the 02 §3.5 component:component payload) and describe
- * topology, and run as the POSIX host (platform/posix/host.h): which
- * processes `run process`, `run processes` (a process list in both forms)
- * and `run daemon` load and start, and their failures. Configuration and
+ * topology, and run as the POSIX host (platform/posix/host.h): which saved
+ * processes it loads and starts, with their saved bindings, and its
+ * failures. Configuration and
  * graph files live in a fresh temporary directory that is removed
  * afterwards.
  */
@@ -24,6 +24,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "app/graph_files.h"
 #include "blocktypes/block_types.h"
 #include "platform/pal.h"
 #include "platform/posix/cli.h"
@@ -179,17 +180,13 @@ static void test_parse_commands(void)
 	CHECK_STREQ(opts.arg, "list");
 	CHECK(opts.user == NULL);
 
-	CHECK(parse("run", "daemon", NULL) == CLI_EXIT_OK);
-	CHECK(opts.command == CLI_RUN_DAEMON);
+	CHECK(parse("run", NULL) == CLI_EXIT_OK);
+	CHECK(opts.command == CLI_RUN);
 	CHECK(opts.id == NULL && opts.webdir == NULL && opts.host == NULL && opts.port == NULL &&
 	      opts.users == NULL);
-	CHECK(parse("run", "process", "a.json:b.json", NULL) == CLI_EXIT_OK);
-	CHECK(opts.command == CLI_RUN_PROCESS);
-	CHECK_STREQ(opts.arg, "a.json:b.json");
 	CHECK(parse("run", "--id", "e1", "--webdir", "w", "--host", "127.0.0.1", "--port", "9000",
-		    "--users", "u.json", "--port", "9001", "process", "g.json", NULL) ==
-	      CLI_EXIT_OK);
-	CHECK(opts.command == CLI_RUN_PROCESS);
+		    "--users", "u.json", "--port", "9001", NULL) == CLI_EXIT_OK);
+	CHECK(opts.command == CLI_RUN);
 	CHECK_STREQ(opts.id, "e1");
 	CHECK_STREQ(opts.webdir, "w");
 	CHECK_STREQ(opts.host, "127.0.0.1");
@@ -211,11 +208,11 @@ static void test_parse_global_options(void)
 	CHECK(opts.level_set && opts.level == LOG_LEVEL_INFO);
 	CHECK(parse("--fine", "--warn", "list", "types", NULL) == CLI_EXIT_OK);
 	CHECK(opts.level_set && opts.level == LOG_LEVEL_WARN);
-	CHECK(parse("--basedir", "/var/lib/hakkas", "--confdir", "conf", "run", "daemon", NULL) ==
+	CHECK(parse("--basedir", "/var/lib/hakkas", "--confdir", "conf", "run", NULL) ==
 	      CLI_EXIT_OK);
 	CHECK_STREQ(opts.basedir, "/var/lib/hakkas");
 	CHECK_STREQ(opts.confdir, "conf");
-	CHECK(opts.command == CLI_RUN_DAEMON);
+	CHECK(opts.command == CLI_RUN);
 }
 
 /* The arguments are a usage error whose log contains want. */
@@ -243,7 +240,7 @@ static void test_parse_usage_errors(void)
 	usage_error("option --basedir needs a value", "--basedir", NULL);
 	usage_error("option --confdir needs a value", "--confdir", "", "list", "types", NULL);
 	usage_error("unknown command 'lists'", "lists", "types", NULL);
-	usage_error("unknown option '--port'", "--port", "1", "run", "daemon", NULL);
+	usage_error("unknown option '--port'", "--port", "1", "run", NULL);
 	usage_error("list: expected 'types'", "list", NULL);
 	usage_error("list: expected 'types'", "list", "graphs", NULL);
 	usage_error("list types: unexpected argument 'x'", "list", "types", "x", NULL);
@@ -270,17 +267,14 @@ static void test_parse_usage_errors(void)
 		    "admin", NULL);
 	usage_error("user del: unexpected argument 'b'", "user", "del", "a", "b", NULL);
 	usage_error("user list: unexpected argument 'x'", "user", "list", "x", NULL);
-	usage_error("run: expected 'process <files>', 'processes <file>' or 'daemon'", "run", NULL);
-	usage_error("run: expected", "run", "--port", "1", NULL);
-	usage_error("run: expected", "run", "start", NULL);
-	usage_error("run: unknown option '--fine'", "run", "--fine", "daemon", NULL);
+	/* What run runs is <datadir>: the old modes are gone (plan task 62). */
+	usage_error("run: unexpected argument 'daemon'", "run", "daemon", NULL);
+	usage_error("run: unexpected argument 'process'", "run", "process", "a.json", NULL);
+	usage_error("run: unexpected argument 'processes'", "run", "--port", "1", "processes",
+		    "p.json", NULL);
+	usage_error("run: unknown option '--fine'", "run", "--fine", NULL);
 	usage_error("option --port needs a value", "run", "--port", NULL);
-	usage_error("option --id needs a value", "run", "--id", "", "daemon", NULL);
-	usage_error("run process: missing the graph file list", "run", "process", NULL);
-	usage_error("run processes: missing the process list file", "run", "processes", NULL);
-	usage_error("run processes: unexpected argument 'b'", "run", "processes", "a", "b", NULL);
-	usage_error("run process: unexpected argument 'b'", "run", "process", "a", "b", NULL);
-	usage_error("run daemon: unexpected argument 'x'", "run", "daemon", "x", NULL);
+	usage_error("option --id needs a value", "run", "--id", "", NULL);
 	usage_error("list types: unexpected argument '--fine'", "list", "types", "--fine", NULL);
 }
 
@@ -317,8 +311,7 @@ static void test_config_precedence(void)
 
 	/* The file over the defaults; its relative webdir is relative to
 	 * confdir; --basedir does not override a configured datadir. */
-	CHECK(parse("--confdir", conf, "--basedir", "/base", "run", "daemon", NULL) ==
-	      CLI_EXIT_OK);
+	CHECK(parse("--confdir", conf, "--basedir", "/base", "run", NULL) == CLI_EXIT_OK);
 	CHECK(cli_config(&opts, &cfg) == CLI_EXIT_OK);
 	CHECK_STREQ(cfg.engine_id, "file-id");
 	CHECK_STREQ(cfg.label, "From file");
@@ -331,8 +324,8 @@ static void test_config_precedence(void)
 
 	/* The options over the file. */
 	CHECK(parse("--info", "--confdir", conf, "run", "--id", "opt-id", "--webdir", "opt/web",
-		    "--host", "::", "--port", "9100", "--users", "opt-users.json", "process",
-		    "x.json", NULL) == CLI_EXIT_OK);
+		    "--host", "::", "--port", "9100", "--users", "opt-users.json", NULL) ==
+	      CLI_EXIT_OK);
 	CHECK(cli_config(&opts, &cfg) == CLI_EXIT_OK);
 	CHECK_STREQ(cfg.engine_id, "opt-id");
 	CHECK_STREQ(cfg.label, "From file");
@@ -344,13 +337,13 @@ static void test_config_precedence(void)
 	log_set_threshold(LOG_LEVEL_WARN);
 
 	/* An invalid option value is a usage error naming the option. */
-	CHECK(parse("--confdir", conf, "run", "--port", "65535", "daemon", NULL) == CLI_EXIT_OK);
+	CHECK(parse("--confdir", conf, "run", "--port", "65535", NULL) == CLI_EXIT_OK);
 	logs[0] = '\0';
 	CHECK(cli_config(&opts, &cfg) == CLI_EXIT_USAGE);
 	CHECK(strstr(logs, "error --port: port: expected an integer from 1 to 65534") != NULL);
 	CHECK(parse("--confdir", conf, "run", "--id",
-		    "12345678901234567890123456789012345678901234567890123456789012345", "daemon",
-		    NULL) == CLI_EXIT_OK);
+		    "12345678901234567890123456789012345678901234567890123456789012345", NULL) ==
+	      CLI_EXIT_OK);
 	CHECK(cli_config(&opts, &cfg) == CLI_EXIT_USAGE);
 	log_set_threshold(LOG_LEVEL_WARN);
 
@@ -485,19 +478,8 @@ static void test_run(void)
 	const char *conf = subdir("run-conf");
 	const char *base = subdir("run-base");
 	/* run validates its options first. */
-	CHECK(run("--confdir", conf, "run", "--port", "0", "daemon", NULL) == CLI_EXIT_USAGE);
+	CHECK(run("--confdir", conf, "run", "--port", "0", NULL) == CLI_EXIT_USAGE);
 	CHECK(!pal_storage_exists(join(conf, "hakkas.json")));
-
-	/* A graph file that does not load refuses run process. Free ports, so
-	 * that the engine gets as far as loading (another engine may be using
-	 * the default ones). */
-	char missing_port[8];
-	snprintf(missing_port, sizeof(missing_port), "%u", (unsigned)free_port_pair());
-	CHECK(run("--confdir", conf, "--basedir", base, "run", "--host", "127.0.0.1", "--port",
-		  missing_port, "process", join(base, "missing.json"), NULL) == CLI_EXIT_FAILURE);
-	CHECK(strstr(logs, "error run process: a graph file did not load") != NULL);
-	/* Step 1 has generated the server secret (05 §1.1). */
-	CHECK(pal_storage_exists(join(conf, "hakkas.json")));
 
 	/* A clean stop: requested before the loop runs, it stops it at once
 	 * (01 §0.2), and run exits 0. */
@@ -507,15 +489,18 @@ static void test_run(void)
 	snprintf(ports, sizeof(ports), "%u", (unsigned)port);
 	pal_request_stop();
 	CHECK(run("--info", "--confdir", conf, "--basedir", base, "run", "--host", "127.0.0.1",
-		  "--port", ports, "daemon", NULL) == CLI_EXIT_OK);
+		  "--port", ports, NULL) == CLI_EXIT_OK);
 	CHECK(strstr(logs, " ready: web server on 127.0.0.1 port ") != NULL);
 	CHECK(strstr(logs, "info engine stopped") != NULL);
-	CHECK(pal_storage_exists(join(base, "graphs")) && pal_storage_exists(join(base, "types")));
+	CHECK(pal_storage_exists(join(base, "graphs")) && pal_storage_exists(join(base, "types")) &&
+	      pal_storage_exists(join(base, "bindings")));
+	/* Step 1 has generated the server secret (05 §1.1). */
+	CHECK(pal_storage_exists(join(conf, "hakkas.json")));
 	CHECK_STREQ(output, "");
 
 	/* A malformed configuration file refuses every command, run too. */
 	put(join(conf, "hakkas.json"), "{\"port\": 8080,}");
-	CHECK(run("--confdir", conf, "run", "daemon", NULL) == CLI_EXIT_FAILURE);
+	CHECK(run("--confdir", conf, "run", NULL) == CLI_EXIT_FAILURE);
 	CHECK(strstr(logs, "not a valid configuration file") != NULL);
 	CHECK(strstr(logs, "ready") == NULL);
 }
@@ -538,10 +523,10 @@ static void test_run(void)
 
 static const char *host_conf, *host_base;
 
-/* run --info ... run --host 127.0.0.1 --port <free> <mode> [arg], stopped
- * before the loop runs (01 §0.2): the processes are loaded and started,
- * then the engine stops at once. */
-static int run_host(const char *mode, const char *arg)
+/* run --info ... run --host 127.0.0.1 --port <free>, stopped before the
+ * loop runs (01 §0.2): the processes are loaded and started, then the
+ * engine stops at once. */
+static int run_host(void)
 {
 	uint16_t port = free_port_pair();
 	CHECK(port != 0);
@@ -550,7 +535,7 @@ static int run_host(const char *mode, const char *arg)
 	pal_request_stop();
 	/* A failed startup clears the request with the loop (pal_loop_close). */
 	return run("--info", "--confdir", host_conf, "--basedir", host_base, "run", "--host",
-		   "127.0.0.1", "--port", ports, mode, arg, NULL);
+		   "127.0.0.1", "--port", ports, NULL);
 }
 
 static bool logged(const char *text)
@@ -561,159 +546,67 @@ static bool logged(const char *text)
 	return false;
 }
 
-static void host_setup(void)
+/* A fresh basedir (its own per test) with graphs/ and bindings/. */
+static void host_setup(const char *base)
 {
 	host_conf = subdir("host-conf");
-	host_base = subdir("host-base");
-	subdir("host-base/graphs");
-	subdir("host-files");
-	subdir("host-files/sub");
-	put(join(root, "host-files/g1.json"), G_STARTED);
-	put(join(root, "host-files/sub/g2.json"), G_STOPPED);
-	put(join(root, "host-files/g3.json"), G_NOFLAG);
-	put(join(root, "host-files/bad.json"), "{\"id\":");
-	put(join(root, "host-files/l1.json"), G_LINK_SRC);
-	put(join(root, "host-files/l2.json"), G_LINK_TGT);
+	host_base = subdir(base);
+	char dir[PAL_PATH_MAX];
+	snprintf(dir, sizeof(dir), "%s", join(host_base, "graphs"));
+	CHECK(pal_storage_mkdir(dir) == PAL_OK);
+	snprintf(dir, sizeof(dir), "%s", join(host_base, "bindings"));
+	CHECK(pal_storage_mkdir(dir) == PAL_OK);
 }
 
-/* run process <files>: in order, the started flag decides; any file that
- * does not load refuses startup. */
-static void test_run_process(void)
+/* run: every saved process, the flag decides; a file that does not load
+ * is skipped; the saved links are made once every process is loaded and
+ * before any starts, a link that cannot be made is skipped (plan task 62). */
+static void test_run_saved(void)
 {
-	host_setup();
-	char list[3 * PAL_PATH_MAX];
-	snprintf(list, sizeof(list), "%s/host-files/g1.json:%s/host-files/sub/g2.json", root, root);
-	CHECK(run_host("process", list) == CLI_EXIT_OK);
-	CHECK(logged("info process g1 started\n"));
-	CHECK(strstr(logs, "process g2 started") == NULL);
-	CHECK(logged("info 2 processes loaded, 1 started\n"));
-	CHECK(logged("info engine stopped"));
-
-	snprintf(list, sizeof(list), "%s/host-files/g1.json:%s/host-files/bad.json", root, root);
-	CHECK(run_host("process", list) == CLI_EXIT_FAILURE);
-	CHECK(logged("host-files/bad.json: not a valid graph file"));
-	CHECK(logged("error run process: a graph file did not load (malformed graph file): "
-		     "not starting"));
-	CHECK(strstr(logs, "started") == NULL); /* nothing is started before all loaded */
-
-	snprintf(list, sizeof(list), "%s/host-files/g1.json::%s/host-files/g3.json", root, root);
-	CHECK(run_host("process", list) == CLI_EXIT_FAILURE);
-	CHECK(logged("invalid graph file name in list"));
-	snprintf(list, sizeof(list), "%s/host-files/g1.json:%s/host-files/g1.json", root, root);
-	CHECK(run_host("process", list) == CLI_EXIT_FAILURE);
-	CHECK(logged("Graph exists: g1"));
-	CHECK(logged("a graph file did not load (process exists)"));
-}
-
-/* run daemon: every saved process, the flag decides; a file that does not
- * load is skipped. */
-static void test_run_daemon(void)
-{
-	host_setup();
+	host_setup("host-saved");
 	put(join(host_base, "graphs/g1.json"), G_STARTED);
 	put(join(host_base, "graphs/g2.json"), G_STOPPED);
 	put(join(host_base, "graphs/bad.json"), "nonsense");
-	CHECK(run_host("daemon", NULL) == CLI_EXIT_OK);
+	CHECK(run_host() == CLI_EXIT_OK);
 	CHECK(logged("graphs/bad.json: not a valid graph file"));
 	CHECK(logged("warn not every process in "));
 	CHECK(logged("info process g1 started\n"));
 	CHECK(strstr(logs, "process g2 started") == NULL);
 	CHECK(logged("info 2 processes loaded, 1 started\n"));
 	CHECK(pal_storage_remove(join(host_base, "graphs/bad.json")) == PAL_OK);
-}
 
-/* run processes <file> (05 §1.2 "Process list"): both forms, paths relative
- * to the list's directory, "start" over the file's flag, links made after
- * every process is loaded and before any starts; every failure refuses
- * startup, a link that cannot be made too. Bindings: test_run_bindings. */
-static void test_run_processes(void)
-{
-	host_setup();
-	const char *dir = join(root, "host-files");
-	char path[PAL_PATH_MAX];
-	snprintf(path, sizeof(path), "%s/plain.json", dir);
-	/* The sister project's form: an array of paths; the flags decide. */
-	put(path, "[\"g1.json\", \"./sub/g2.json\", \"g3.json\"]");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
-	CHECK(logged("info process g1 started\n"));
-	CHECK(strstr(logs, "process g2 started") == NULL && strstr(logs, "process g3") == NULL);
-	CHECK(logged("info 3 processes loaded, 1 started\n"));
-
-	/* The object form: start over the flag. */
-	snprintf(path, sizeof(path), "%s/object.json", dir);
-	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":false},"
-		  "{\"graph\":\"sub/g2.json\",\"start\":true,\"bindings\":null},"
-		  "{\"graph\":\"g3.json\",\"start\":null,\"note\":1}],"
-		  "\"links\":null,\"version\":2}");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
-	char want[2 * PAL_PATH_MAX];
-	CHECK(logged("object.json: unknown member \"version\" ignored"));
-	CHECK(logged("object.json: processes[2]: unknown member \"note\" ignored"));
-	CHECK(logged("info process g2 started\n"));
-	CHECK(strstr(logs, "process g1 started") == NULL && strstr(logs, "process g3") == NULL);
-	CHECK(logged("info 3 processes loaded, 1 started\n"));
-
-	/* Links (plan task 21f): made once both processes are loaded, before
-	 * either starts. */
-	snprintf(path, sizeof(path), "%s/links.json", dir);
-	put(path, "{\"processes\":[{\"graph\":\"l1.json\",\"start\":true},"
-		  "{\"graph\":\"l2.json\",\"start\":true}],"
-		  "\"links\":[{\"from\":\"l1.out\",\"to\":\"l2.in\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	/* Links (plan task 21f, saved since plan task 62). */
+	host_setup("host-links");
+	put(join(host_base, "graphs/l1.json"), G_LINK_SRC);
+	put(join(host_base, "graphs/l2.json"), G_LINK_TGT);
+	put(join(host_base, "links.json"), "{\"links\":[{\"from\":\"l1.out\",\"to\":\"l2.in\"},"
+					   "{\"from\":\"l1.out\",\"to\":\"l2.nope\"}]}");
+	CHECK(run_host() == CLI_EXIT_OK);
 	CHECK(logged("info link l1.out -> l2.in made\n"));
+	CHECK(logged("links.json: links[1]: l1.out -> l2.nope: Unknown port: l2.nope: skipped\n"));
 	const char *made = strstr(logs, "link l1.out -> l2.in made");
-	const char *started = strstr(logs, "process l1 started");
-	CHECK(made != NULL && started != NULL && made < started);
-	CHECK(logged("info process l2 started\n"));
-	CHECK(logged("info 2 processes loaded, 2 started\n"));
-	CHECK(strstr(logs, "ignored") == NULL);
-	/* A link that cannot be made refuses startup; nothing is started. */
-	put(path, "{\"processes\":[{\"graph\":\"l1.json\",\"start\":true},"
-		  "{\"graph\":\"l2.json\",\"start\":true}],"
-		  "\"links\":[{\"from\":\"l1.out\",\"to\":\"l2.nope\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	char want_link[2 * PAL_PATH_MAX];
-	snprintf(want_link, sizeof(want_link),
-		 "error run processes: %s: link l1.out -> l2.nope: Unknown port: l2.nope: not "
-		 "starting\n",
-		 path);
-	CHECK(logged(want_link));
-	CHECK(strstr(logs, "started") == NULL);
-	put(path, "{\"processes\":[{\"graph\":\"l1.json\"}],"
-		  "\"links\":[{\"from\":\"l1.out\",\"to\":\"l2.in\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	CHECK(logged("link l1.out -> l2.in: Unknown graph: l2: not starting\n"));
-	put(path, "{\"processes\":[{\"graph\":\"l1.json\"}],"
-		  "\"links\":[{\"from\":\"l1out\",\"to\":\"l2.in\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	CHECK(logged("links[0]: from: expected \"<process>.<outport>\""));
+	const char *loaded = strstr(logs, "2 processes loaded");
+	CHECK(made != NULL && loaded != NULL && made < loaded);
+	/* A malformed links file is not applied; startup goes on. */
+	put(join(host_base, "links.json"), "{\"links\":3}");
+	CHECK(run_host() == CLI_EXIT_OK);
+	CHECK(logged("links.json: links: expected an array\n"));
+	CHECK(strstr(logs, "made") == NULL);
+	CHECK(logged("info 2 processes loaded, 0 started\n"));
 
-	/* The sister project's example graph through a process list. */
-	snprintf(path, sizeof(path), "%s/example.json", dir);
-	put(path, "{\"processes\":[{\"graph\":\"" HAKKAS_EXAMPLES_DIR "/example.json\","
-		  "\"start\":true}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
-	CHECK(logged("info process 0826152e-3014-4c89-9380-ec4991a76af2 started\n"));
-	CHECK(logged("info 1 process loaded, 1 started\n"));
-
-	/* Failures: no such list, a malformed one, a process that does not
-	 * load. */
-	snprintf(path, sizeof(path), "%s/none.json", dir);
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	CHECK(logged("none.json: not found: not starting"));
-	snprintf(path, sizeof(path), "%s/bad-list.json", dir);
-	put(path, "{\"processes\":[{\"graph\":3}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	CHECK(logged("bad-list.json: processes[0]: expected an object with a graph file path"));
-	CHECK(logged("bad-list.json: malformed graph file: not starting"));
-	put(path, "[\"g1.json\", \"bad.json\"]");
-	CHECK(run_host("processes", path) == CLI_EXIT_FAILURE);
-	snprintf(want, sizeof(want), "run processes: %s/bad.json did not load", dir);
-	CHECK(logged(want));
-	CHECK(strstr(logs, "started") == NULL);
+	/* The sister project's example graph, saved. */
+	host_setup("host-example");
+	char *text;
+	size_t len;
+	CHECK(graph_files_read(HAKKAS_EXAMPLES_DIR "/example.json", 1 << 20, &text, &len) ==
+	      GRAPH_FILES_OK);
+	CHECK(pal_storage_write(join(host_base, "graphs/example.json"), text, len) == PAL_OK);
+	free(text);
+	CHECK(run_host() == CLI_EXIT_OK);
+	CHECK(logged("info 1 process loaded, "));
 }
 
-/* ---- run processes with environment bindings (04 §0.1, §4) ---------------------- */
+/* ---- run with saved environment bindings (04 §0.1, §4) -------------------------- */
 
 /* A fake environment program (04 §0.1): serves a Unix socket, describes
  * itself and sends its current values on each connection, and keeps what
@@ -787,15 +680,16 @@ static bool env_received(const char *text)
 	}
 }
 
-/* `run processes` with a process list naming bindings files: applied after
- * each process loads and before anything starts (05 §1.2); a channel the
+/* run with a saved process's bindings file, <basedir>/bindings/<id>.json
+ * (plan task 62): applied after the process loads and before anything
+ * starts (05 §1.2); a channel the
  * environment lacks is skipped; bindings never refuse startup (04 §4): a
  * graph-side error skips its entry, a mismatched environment is a warning,
  * and a bindings file that does not load, or has no environment, is not
  * applied. */
 static void test_run_bindings(void)
 {
-	host_setup();
+	host_setup("host-bindings");
 	char sock[108];
 	snprintf(sock, sizeof(sock), "/tmp/hakkas-cli-env-%d.sock", (int)getpid());
 	unlink(sock);
@@ -811,25 +705,22 @@ static void test_run_bindings(void)
 	char text[256];
 	snprintf(text, sizeof(text), "{\"environment\": {\"socket\": \"%s\"}}", sock);
 	put(join(conf, "hakkas.json"), text);
-	char dir[PAL_PATH_MAX]; /* join's buffers rotate */
-	snprintf(dir, sizeof(dir), "%s", join(root, "host-files"));
-	put(join(dir, "b1.json"),
-	    "{\"environment\":\"sim\",\"bindings\":["
-	    "{\"block\":\"a\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1},"
-	    "{\"block\":\"a\",\"port\":\"out\",\"env\":\"aout\"},"
-	    "{\"block\":\"a\",\"port\":\"in1\",\"env\":\"ain\",\"index\":3}]}");
-	char path[PAL_PATH_MAX];
-	snprintf(path, sizeof(path), "%s", join(dir, "env-list.json"));
-	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"bindings\":\"b1.json\"}]}");
+	put(join(host_base, "graphs/g1.json"), G_STARTED);
+	char path[PAL_PATH_MAX]; /* join's buffers rotate */
+	snprintf(path, sizeof(path), "%s", join(host_base, "bindings/g1.json"));
+	put(path, "{\"environment\":\"sim\",\"bindings\":["
+		  "{\"block\":\"a\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1},"
+		  "{\"block\":\"a\",\"port\":\"out\",\"env\":\"aout\"},"
+		  "{\"block\":\"a\",\"port\":\"in1\",\"env\":\"ain\",\"index\":3}]}");
 	const char *saved_conf = host_conf;
 	host_conf = conf;
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
+	CHECK(run_host() == CLI_EXIT_OK);
 	CHECK(logged("info environment sim at "));
 	CHECK(logged("warn "));
-	CHECK(logged("/b1.json: bindings[2]: Index out of range: ain[3]: skipped\n"));
+	CHECK(logged("/bindings/g1.json: bindings[2]: Index out of range: ain[3]: skipped\n"));
 	char want[2 * PAL_PATH_MAX];
-	snprintf(want, sizeof(want), "info process g1: 2 bindings applied from %s/b1.json, 1 "
-		 "skipped\n", dir);
+	snprintf(want, sizeof(want), "info process g1: 2 bindings applied from %s, 1 skipped\n",
+		 path);
 	CHECK(logged(want));
 	CHECK(logged("info process g1 started\n"));
 	const char *applied = strstr(logs, "bindings applied");
@@ -840,46 +731,34 @@ static void test_run_bindings(void)
 	CHECK(env_received("{\"write\":{\"port\":\"aout\",\"value\":2}}\n"));
 
 	/* A graph-side error skips its entry; the process still starts. */
-	put(join(dir, "b2.json"),
-	    "{\"environment\":\"sim\",\"bindings\":["
-	    "{\"block\":\"zz\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1},"
-	    "{\"block\":\"a\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1}]}");
-	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":true,\"bindings\":"
-		  "\"b2.json\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
-	snprintf(want, sizeof(want),
-		 "warn %s/b2.json: bindings[0]: Unknown node: zz: skipped\n", dir);
+	put(path, "{\"environment\":\"sim\",\"bindings\":["
+		  "{\"block\":\"zz\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1},"
+		  "{\"block\":\"a\",\"port\":\"in2\",\"env\":\"ain\",\"index\":1}]}");
+	CHECK(run_host() == CLI_EXIT_OK);
+	snprintf(want, sizeof(want), "warn %s: bindings[0]: Unknown node: zz: skipped\n", path);
 	CHECK(logged(want));
-	snprintf(want, sizeof(want), "info process g1: 1 binding applied from %s/b2.json, 1 "
-		 "skipped\n", dir);
+	snprintf(want, sizeof(want), "info process g1: 1 binding applied from %s, 1 skipped\n",
+		 path);
 	CHECK(logged(want));
 	CHECK(logged("info process g1 started\n"));
 	/* Another environment's file: a warning, and applied. */
-	put(join(dir, "b2.json"), "{\"environment\":\"colibri\",\"bindings\":[]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
-	CHECK(logged("warn "));
-	CHECK(logged("b2.json: Environment mismatch: colibri (running: sim)\n"));
+	put(path, "{\"environment\":\"colibri\",\"bindings\":[]}");
+	CHECK(run_host() == CLI_EXIT_OK);
+	CHECK(logged("g1.json: Environment mismatch: colibri (running: sim)\n"));
 	CHECK(logged("bindings applied from "));
 	CHECK(logged("info process g1 started\n"));
-	/* A malformed file and a missing one are not applied. */
-	put(join(dir, "b2.json"), "{\"environment\":\"sim\",\"bindings\":{}}");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
-	CHECK(logged("b2.json: bindings: expected an array: not applied\n"));
+	/* A malformed file is not applied. */
+	put(path, "{\"environment\":\"sim\",\"bindings\":{}}");
+	CHECK(run_host() == CLI_EXIT_OK);
+	CHECK(logged("g1.json: bindings: expected an array: not applied\n"));
 	CHECK(strstr(logs, "bindings applied") == NULL);
-	CHECK(logged("info process g1 started\n"));
-	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":true,\"bindings\":"
-		  "\"none.json\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
-	CHECK(logged("warn run processes: "));
-	CHECK(logged("none.json: not found: not applied\n"));
 	CHECK(logged("info process g1 started\n"));
 
 	/* Without an environment, a bindings file is not applied (04 §0.1). */
 	host_conf = saved_conf;
-	put(path, "{\"processes\":[{\"graph\":\"g1.json\",\"start\":true,\"bindings\":"
-		  "\"b1.json\"}]}");
-	CHECK(run_host("processes", path) == CLI_EXIT_OK);
-	CHECK(logged("b1.json: No environment: not applied\n"));
+	put(path, "{\"environment\":\"sim\",\"bindings\":[]}");
+	CHECK(run_host() == CLI_EXIT_OK);
+	CHECK(logged("g1.json: No environment: not applied\n"));
 	CHECK(logged("info process g1 started\n"));
 
 	pthread_mutex_lock(&env_srv.lock);
@@ -1098,9 +977,7 @@ int main(void)
 	RUN(test_describe_type);
 	RUN(test_describe_topology);
 	RUN(test_run);
-	RUN(test_run_process);
-	RUN(test_run_daemon);
-	RUN(test_run_processes);
+	RUN(test_run_saved);
 	RUN(test_run_bindings);
 	RUN(test_user_commands);
 	RUN(test_help_and_version);

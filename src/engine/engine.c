@@ -89,11 +89,13 @@ static void remove_tmp(const char *dir)
 static void remove_tmp_all(const Engine *e)
 {
 	char dir[PAL_PATH_MAX], users_dir[PAL_PATH_MAX];
-	const char *subdirs[] = {GRAPH_FILES_GRAPHS_DIR, GRAPH_FILES_TYPES_DIR};
+	const char *subdirs[] = {GRAPH_FILES_GRAPHS_DIR, GRAPH_FILES_TYPES_DIR,
+				 GRAPH_FILES_BINDINGS_DIR};
 	for (size_t i = 0; i < sizeof(subdirs) / sizeof(subdirs[0]); i++) {
 		if (graph_files_dir(&e->gf, subdirs[i], dir, sizeof(dir)) == GRAPH_FILES_OK)
 			remove_tmp(dir);
 	}
+	remove_tmp(e->gf.datadir); /* links.json (plan task 62) */
 	bool have_conf = dir_of(e->cfg.file, dir, sizeof(dir));
 	if (have_conf)
 		remove_tmp(dir);
@@ -228,6 +230,7 @@ bool engine_start(const Config *cfg, const EngineParams *params, Engine **out)
 		if (!environment_open(&e->env, &e->rt, e->params.environment, pal_handoff_push))
 			goto fail; /* logged */
 		loop_set_wall_clock(&e->loop, env_clock, &e->env);
+		graph_files_set_environment(&e->gf, environment_description(&e->env)->name);
 		runtime_set_now(&e->rt, pal_uptime_ms());
 		(void)runtime_set_wall_ms(&e->rt, environment_wall_ms(&e->env));
 	}

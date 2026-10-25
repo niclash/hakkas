@@ -189,7 +189,7 @@ static void test_persist_restart(void)
 	CHECK(nbefore == 1 + 5 + 5 + 3); /* clear, blocks, initials, edges */
 	e2e_close(&e);
 
-	/* The engine stopped and started again, `run daemon`. */
+	/* The engine stopped and started again, `run`. */
 	e2e_stop();
 	CHECK(e2e_start());
 	if (e2e_hakkas == NULL)

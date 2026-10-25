@@ -7,7 +7,7 @@
  * hakkas_run_once while they wait.
  *
  *	e2e_setup("catalog");		temp confdir/basedir/webdir, test users
- *	e2e_start();			run daemon over that basedir
+ *	e2e_start();			run over that basedir
  *	E2eClient a;
  *	e2e_connect(&a);		the upgrade, with the own Origin
  *	e2e_login(&a, "alice");		the SCRAM login of 02 §2.3
@@ -83,14 +83,13 @@ void e2e_config(Config *cfg);
 bool e2e_start_params(const Config *cfg, const HakkasParams *params);
 
 /* e2e_start_params on ephemeral ports, then the processes, as the POSIX
- * host loads them (platform/posix/host.h): files NULL is `run daemon`
- * (every saved process, one that does not load skipped), else the
- * colon-separated graph files (any that does not load: the engine is
- * stopped again and the result is false); then every process whose file's
- * started flag is true is started, in load order. */
-bool e2e_start_with(const Config *cfg, const char *files);
+ * host loads them (platform/posix/host.h, `run`): every saved process with
+ * its saved bindings, one that does not load skipped, and the saved links;
+ * then every process whose file's started flag is true is started, in load
+ * order. */
+bool e2e_start_with(const Config *cfg);
 
-/* e2e_start_with the configuration of e2e_config, `run daemon`. */
+/* e2e_start_with the configuration of e2e_config, `run`. */
 bool e2e_start(void);
 
 /* A stop request, hakkas_run, hakkas_destroy. */

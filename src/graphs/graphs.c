@@ -37,7 +37,8 @@ static bool in_scope(const GraphsSubscriber *s, const GraphEvent *ev)
 /* Whether an event changes what the graph file holds (05 §2.1; 02 §3.3
  * "Unsaved state"). Start and stop are marked where they change the state
  * (graphs_start, graphs_stop): their events are also sent when nothing
- * changed. Groups, links and bindings are not in the graph file. */
+ * changed. Groups and links are not in the graph file; bindings are saved
+ * with it (its bindings file, plan task 62), so they count. */
 static bool changes_file(enum graph_event_type type)
 {
 	switch (type) {
@@ -57,6 +58,8 @@ static bool changes_file(enum graph_event_type type)
 	case GRAPH_EVENT_OUTPORT_REMOVED:
 	case GRAPH_EVENT_OUTPORT_RENAMED:
 	case GRAPH_EVENT_GRAPH_RENAMED:
+	case GRAPH_EVENT_BINDING_ADDED:
+	case GRAPH_EVENT_BINDING_REMOVED:
 		return true;
 	default:
 		return false;

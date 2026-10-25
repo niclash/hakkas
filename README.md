@@ -96,20 +96,18 @@ on its first run, then serves `http://localhost:8080/` with the example process.
 level. A rebuild replaces `dist-debug/bin` and `dist-debug/web` and keeps `conf/` and `data/`.
 The sections below show what it does by hand.
 
-`hakkas run daemon` starts the engine with every graph saved in `<basedir>/graphs/`;
-`hakkas run process a.json:b.json` with the given graph files instead, and
-`hakkas run processes processes.json` with the processes of a process list: either a plain
-array of graph file paths, like `examples/processes.json`, or
-`{"processes":[{"graph":"a.json","start":true}]}`, the paths relative to the list's directory
-(05 §1.2). The engine itself starts no process: `run` is the host, which loads the processes
-through the local C API (`src/hakkas.h`, 02 §6) and starts those whose list entry says
-`"start": true` or, without one, whose graph file was persisted running. For a development
-setup in a scratch directory:
+`hakkas run` starts the engine with every process saved in the data directory (`<basedir>` by
+default): the graphs in `graphs/`, each with its environment bindings from `bindings/<id>.json`,
+and the links between processes from `links.json` (05 §1.2, §2.3). Saving a process from the
+frontend writes all three. The engine itself starts no process: `run` is the host, which loads
+the processes through the local C API (`src/hakkas.h`, 02 §6) and starts those whose graph file
+was saved running. To run a graph file you have, copy it into `graphs/` (named after its id, or
+it is loaded with a warning). For a development setup in a scratch directory:
 
 ```sh
 mkdir -p conf data
 ./build/debug/hakkas --confdir conf user add alice --role editor   # asks for a password
-./build/debug/hakkas --info --confdir conf --basedir data run daemon
+./build/debug/hakkas --info --confdir conf --basedir data run
 ```
 
 Then open `http://localhost:8080/`; the FBP WebSocket is on port 8081 (`port + 1`). The first
@@ -128,7 +126,7 @@ the engine's web server serves:
 
 ```sh
 cd frontend && npm install && npm run build && cd ..
-./build/debug/hakkas --info --confdir conf --basedir data run daemon
+./build/debug/hakkas --info --confdir conf --basedir data run
 ```
 
 If `frontend/dist` is missing, the engine warns at startup (`web: no frontend in …`) and the
@@ -190,12 +188,9 @@ EOF
 socat UNIX-LISTEN:/run/sim/environment.sock,fork SYSTEM:'cat sim.ndjson; cat >&2'
 ```
 
-A process is connected to the environment by a **bindings file** per process and environment,
-named in the process list (`run processes`):
-
-```json
-{"processes": [{"graph": "regulator.json", "bindings": "regulator-sim.json", "start": true}]}
-```
+A process is connected to the environment by its **bindings**, made in the frontend (a port's
+context menu, or a bindings file loaded there) and saved with the process in
+`<datadir>/bindings/<process id>.json`, a **bindings file**:
 
 ```json
 {"environment": "sim",
@@ -204,11 +199,12 @@ named in the process list (`run processes`):
 ```
 
 A sensor (an environment output port) binds a block input, an actuator (an environment input
-port) a block output; `index` is required exactly for an addressable port. A bindings file that
-does not fit the process (an unknown block or port, a wrong direction, an input that already has
-a source, a second driver for an actuator, another environment's name) refuses startup; a channel
-this environment does not have is skipped with a warning. Without `environment.socket` there is
-no environment, any bindings file is refused, and the wall clock is the host's.
+port) a block output; `index` is required exactly for an addressable port. Bindings never stop
+startup (04 §4): an entry that does not fit the process or the environment (an unknown block,
+port or channel, a wrong direction, an input that already has a source, a second driver for an
+actuator) is skipped with a warning and the rest applied, and a file written for another
+environment is applied after a warning. Without `environment.socket` there is no environment,
+bindings files are not applied, and the wall clock is the host's.
 
 ## The schedule standard library
 

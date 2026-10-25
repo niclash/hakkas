@@ -14,7 +14,7 @@
 
 #include <stdlib.h>
 
-#include "app/process_list.h"
+#include "app/graph_files.h"
 #include "cJSON.h"
 #include "graphs/graph_json.h"
 #include "graphs/linkable.h"
@@ -986,32 +986,31 @@ static void test_links(void)
 	wire_same(&wire);
 }
 
-/* Two processes chained from their files by a process list's link, made
- * as the POSIX host makes it (platform/posix/host.c): the value crosses. */
-static void test_links_from_files(void)
+/* Two saved processes chained by a saved link (<datadir>/links.json, plan
+ * task 62), made by hakkas_process_load_saved once both are loaded: the
+ * value crosses; saving writes the links file again, and with no link left
+ * removes it. */
+static void test_saved_links(void)
 {
-	char src[PAL_PATH_MAX], tgt[PAL_PATH_MAX], list[PAL_PATH_MAX];
-	snprintf(src, sizeof(src), "%s", e2e_path(e2e_root, "c1.json"));
-	snprintf(tgt, sizeof(tgt), "%s", e2e_path(e2e_root, "c2.json"));
-	snprintf(list, sizeof(list), "%s", e2e_path(e2e_root, "chain.json"));
-	e2e_put(src, "{\"id\":\"c1\",\"blocks\":{\"a\":{\"component\":\"math/Add2\"}},"
-		     "\"connections\":[{\"src\":{\"data\":3},\"tgt\":{\"block\":\"a\","
-		     "\"port\":\"in1\"}}],\"outports\":[{\"name\":\"out\",\"block\":\"a\","
-		     "\"port\":\"out\"}]}");
-	e2e_put(tgt, "{\"id\":\"c2\",\"blocks\":{\"b\":{\"component\":\"math/Add2\"}},"
-		     "\"inports\":[{\"name\":\"in\",\"block\":\"b\",\"port\":\"in2\"}]}");
-	e2e_put(list, "{\"processes\":[{\"graph\":\"c1.json\"},{\"graph\":\"c2.json\"}],"
-		      "\"links\":[{\"from\":\"c1.out\",\"to\":\"c2.in\"}]}");
-	ProcessList pl;
-	CHECK(process_list_load(list, &pl) == GRAPH_FILES_OK && pl.link_count == 1);
-	for (size_t i = 0; i < pl.count; i++)
-		OK(hakkas_process_load(h, pl.entries[i].graph, NULL, &m));
+	char links[PAL_PATH_MAX];
+	snprintf(links, sizeof(links), "%s", e2e_path(e2e_basedir, "links.json"));
+	e2e_put(graph_file("c1.json"),
+		"{\"id\":\"c1\",\"blocks\":{\"a\":{\"component\":\"math/Add2\"}},"
+		"\"connections\":[{\"src\":{\"data\":3},\"tgt\":{\"block\":\"a\","
+		"\"port\":\"in1\"}}],\"outports\":[{\"name\":\"out\",\"block\":\"a\","
+		"\"port\":\"out\"}]}");
+	e2e_put(graph_file("c2.json"),
+		"{\"id\":\"c2\",\"blocks\":{\"b\":{\"component\":\"math/Add2\"}},"
+		"\"inports\":[{\"name\":\"in\",\"block\":\"b\",\"port\":\"in2\"}]}");
+	/* The second link names a port c2 does not have: skipped. */
+	e2e_put(links, "{\"links\":[{\"from\":\"c1.out\",\"to\":\"c2.in\"},"
+		       "{\"from\":\"c1.out\",\"to\":\"c2.nope\"}]}");
 	link_log[0] = '\0';
-	for (size_t i = 0; i < pl.link_count; i++)
-		OK(hakkas_link_add(h, pl.links[i].from_process, pl.links[i].from_port,
-				   pl.links[i].to_process, pl.links[i].to_port, &m));
-	process_list_free(&pl);
+	e2e_logs_clear();
+	OK(hakkas_process_load_saved(h, NULL, NULL, NULL));
 	CHECK_STREQ(link_log, "+c1.out>c2.in;");
+	CHECK(strstr(e2e_logs(), "links.json: links[1]: c1.out -> c2.nope: Unknown port: "
+				 "c2.nope: skipped") != NULL);
 	OK(hakkas_process_start(h, "c1", &m));
 	OK(hakkas_process_start(h, "c2", &m));
 	wire_same(&wire);
@@ -1025,10 +1024,22 @@ static void test_links_from_files(void)
 	QUIET(&wire);
 	e2e_send(&wire, "network", "edges", "{'graph':'c2','edges':[]}");
 	EXPECT(&wire, "network", "edges", NULL);
+	clear_events();
+	/* Saving either writes every link. */
+	OK(hakkas_process_persist(h, "c2", &m));
+	char *text;
+	size_t len;
+	CHECK(graph_files_read(links, 4096, &text, &len) == GRAPH_FILES_OK);
+	CHECK_STREQ(text, "{\"links\":[{\"from\":\"c1.out\",\"to\":\"c2.in\"}]}");
+	free(text);
+	OK(hakkas_link_remove(h, "c1", "out", "c2", "in", &m));
+	OK(hakkas_process_persist(h, "c1", &m));
+	CHECK(!pal_storage_exists(links));
 	OK(hakkas_process_delete(h, "c2", "<<new graph>>", &m));
 	OK(hakkas_process_delete(h, "c1", "<<new graph>>", &m));
 	CHECK_STREQ(link_log, "+c1.out>c2.in;-c1.out>c2.in;");
 	wire_same(&wire);
+	clear_events();
 }
 
 int main(void)
@@ -1056,7 +1067,7 @@ int main(void)
 	RUN(test_subscribers);
 	RUN(test_tick);
 	RUN(test_links);
-	RUN(test_links_from_files);
+	RUN(test_saved_links);
 
 	e2e_close(&wire);
 	hakkas_unsubscribe(h, on_host_event, NULL);

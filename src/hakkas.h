@@ -333,10 +333,15 @@ enum hakkas_status hakkas_process_load(Hakkas *h, const char *path, HakkasLoaded
 typedef void (*hakkas_loaded_fn)(void *ctx, const HakkasLoaded *loaded);
 
 /* Load every saved process: each graph file in <datadir>/graphs, in byte
- * order of the file names (05 §2.3), calling fn (if not NULL) after each
- * one that loaded. A file that does not load is logged and skipped; the
- * others still load. HAKKAS_OK if all loaded, else the first failure's
- * status. *loaded (if not NULL) is the number loaded. */
+ * order of the file names (05 §2.3), each with its saved bindings
+ * (<datadir>/bindings/<id>.json, applied as hakkas_bindings_apply does,
+ * right after it loads; the process is then saved, 02 §3.3), calling fn (if
+ * not NULL) after each one that loaded. A file that does not load is logged
+ * and skipped; the others still load. Then the saved links
+ * (<datadir>/links.json, app/links_file.h) are made in file order, a link
+ * that cannot be made skipped with a warning (plan task 62). Bindings and
+ * links never make it fail. HAKKAS_OK if every graph loaded, else the first
+ * failure's status. *loaded (if not NULL) is the number loaded. */
 enum hakkas_status hakkas_process_load_saved(Hakkas *h, hakkas_loaded_fn fn, void *ctx,
 					     size_t *loaded);
 

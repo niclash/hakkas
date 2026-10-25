@@ -813,7 +813,7 @@ static void test_log_mirror(void)
 	static Config cfg;
 	e2e_config(&cfg);
 	CHECK(config_set(&cfg, "log.mirror", "true", "test") == CONFIG_OK);
-	CHECK(e2e_start_with(&cfg, NULL));
+	CHECK(e2e_start_with(&cfg));
 	if (e2e_hakkas == NULL)
 		return;
 	E2eClient a, b, u;
@@ -848,7 +848,7 @@ int main(void)
 	static Config cfg;
 	e2e_config(&cfg);
 	CHECK(config_set(&cfg, "max_connections", "8", "test") == CONFIG_OK);
-	if (!e2e_start_with(&cfg, NULL)) {
+	if (!e2e_start_with(&cfg)) {
 		e2e_teardown();
 		return 1;
 	}

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "app/graph_files.h"
+#include "app/links_file.h"
 #include "app/type_files.h"
 #include "cJSON.h"
 #include "drivers/bindings_file.h"
@@ -524,18 +525,79 @@ enum hakkas_status hakkas_process_load(Hakkas *h, const char *path, HakkasLoaded
 }
 
 typedef struct {
+	Hakkas *h;
 	hakkas_loaded_fn fn;
 	void *ctx;
 } LoadSaved;
 
+/* Whether path names an existing file. */
+static bool file_exists(const char *path)
+{
+	struct pal_stat info;
+	return pal_storage_stat(path, &info) == PAL_OK;
+}
+
+/* A saved process's bindings file, <datadir>/bindings/<id>.json (plan task
+ * 62), applied as hakkas_bindings_apply applies one; none is nothing. What
+ * does not apply is a warning: it never refuses startup (04 §4). The
+ * process is as saved afterwards (02 §3.3: its bindings are its file's). */
+static void apply_saved_bindings(Hakkas *h, Graph *g, bool started)
+{
+	char path[PAL_PATH_MAX];
+	if (graph_files_path(files_of(h), GRAPH_FILES_BINDINGS_DIR, g->id, path, sizeof(path)) !=
+		    GRAPH_FILES_OK ||
+	    !file_exists(path))
+		return;
+	size_t applied = 0, skipped = 0;
+	HakkasMessage msg;
+	if (hakkas_bindings_apply(h, g->id, path, &applied, &skipped, &msg) != HAKKAS_OK)
+		log_warn("%s: %s: not applied", path, msg.text);
+	else
+		log_info("process %s: %zu binding%s applied from %s, %zu skipped", g->id, applied,
+			 applied == 1 ? "" : "s", path, skipped);
+	graphs_mark_saved(graphs_of(h), g, started);
+}
+
 static void on_loaded(void *ctx, Graph *g, bool started)
 {
 	LoadSaved *ls = ctx;
+	apply_saved_bindings(ls->h, g, started);
 	if (ls->fn == NULL)
 		return;
 	HakkasLoaded info;
 	loaded_info(g, started, &info);
 	ls->fn(ls->ctx, &info);
+}
+
+/* The saved links, <datadir>/links.json (plan task 62), once every saved
+ * process is loaded: each made in file order; one that cannot be made is
+ * skipped with a warning, a malformed file is not applied (logged). */
+static void make_saved_links(Hakkas *h)
+{
+	char path[PAL_PATH_MAX];
+	if (graph_files_top_path(files_of(h), LINKS_FILE_NAME, path, sizeof(path)) !=
+		    GRAPH_FILES_OK ||
+	    !file_exists(path))
+		return;
+	char *text;
+	size_t len;
+	if (graph_files_read(path, HAKKAS_LINKS_FILE_MAX, &text, &len) != GRAPH_FILES_OK)
+		return; /* logged */
+	LinksFile f;
+	enum graph_files_status st = links_file_parse(text, len, path, &f);
+	free(text);
+	if (st != GRAPH_FILES_OK)
+		return; /* logged */
+	for (size_t i = 0; i < f.count; i++) {
+		const LinksFileLink *k = &f.links[i];
+		HakkasMessage msg;
+		if (hakkas_link_add(h, k->from_process, k->from_port, k->to_process, k->to_port,
+				    &msg) != HAKKAS_OK)
+			log_warn("%s: links[%zu]: %s.%s -> %s.%s: %s: skipped", path, i,
+				 k->from_process, k->from_port, k->to_process, k->to_port,
+				 msg.text);
+	}
+	links_file_free(&f);
 }
 
 enum hakkas_status hakkas_process_load_saved(Hakkas *h, hakkas_loaded_fn fn, void *ctx,
@@ -545,8 +607,11 @@ enum hakkas_status hakkas_process_load_saved(Hakkas *h, hakkas_loaded_fn fn, voi
 		*loaded = 0;
 	if (!enter(h, NULL))
 		return HAKKAS_ERR_BUSY;
-	LoadSaved ls = {fn, ctx};
-	return from_load(graph_files_load_all(files_of(h), on_loaded, &ls, loaded));
+	LoadSaved ls = {h, fn, ctx};
+	enum hakkas_status st =
+		from_load(graph_files_load_all(files_of(h), on_loaded, &ls, loaded));
+	make_saved_links(h);
+	return st;
 }
 
 enum hakkas_status hakkas_process_create(Hakkas *h, const char *id, const char *name,

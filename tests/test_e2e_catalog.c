@@ -1142,7 +1142,7 @@ int main(void)
 	static Config cfg;
 	e2e_config(&cfg);
 	CHECK(config_set(&cfg, "max_connections", "8", "test") == CONFIG_OK);
-	if (!e2e_start_with(&cfg, NULL)) {
+	if (!e2e_start_with(&cfg)) {
 		e2e_teardown();
 		return 1;
 	}

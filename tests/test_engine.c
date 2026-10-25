@@ -229,7 +229,7 @@ static void test_other_failures(void)
 	refused(&cfg, true, "with the generated auth.server_secret");
 }
 
-/* A saved graph that does not load is skipped by `run daemon`, as the
+/* A saved graph that does not load is skipped by `run`, as the
  * host loads them (hakkas_process_load_saved): the others load. */
 static void test_broken_graph(void)
 {

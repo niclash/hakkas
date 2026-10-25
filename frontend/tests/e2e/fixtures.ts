@@ -73,7 +73,7 @@ async function startEngine(dir: string, port?: number, log: string[] = []): Prom
     port ??= await freePortPair();
     const proc = spawn(HAKKAS_BIN, [
         "--info", "--confdir", join(dir, "conf"), "--basedir", join(dir, "data"),
-        "run", "--host", "127.0.0.1", "--port", String(port), "--webdir", DIST_DIR, "daemon",
+        "run", "--host", "127.0.0.1", "--port", String(port), "--webdir", DIST_DIR,
     ], {stdio: ["ignore", "pipe", "pipe"]});
     const collect = (chunk: Buffer) => log.push(...chunk.toString().split("\n").filter(l => l !== ""));
     proc.stdout!.on("data", collect);
