@@ -6,9 +6,9 @@
       <h2 class="hk-panel-title">Environment</h2>
     </div>
     <p class="hk-env-name" data-testid="env-name" :title="d.description">{{ d.name }}</p>
-    <p v-if="d.carrier" class="hk-env-carrier" data-testid="env-carrier">{{ carrierText }}</p>
+    <p v-if="d.carrier" class="hk-env-carrier" data-testid="env-carrier" :title="d.carrier.name && d.carrier.type">{{ carrierText }}</p>
     <ul v-if="d.carrier && d.carrier.comm.length > 0" class="hk-env-comm">
-      <li v-for="c in d.carrier.comm" :key="c.slot" data-testid="env-comm">{{ commText(c) }}</li>
+      <li v-for="c in d.carrier.comm" :key="c.slot" data-testid="env-comm" :title="c.name && c.type">{{ commText(c) }}</li>
     </ul>
     <details v-for="group in groups" :key="group.key" class="hk-group" data-testid="env-module" :data-slot="group.slot">
       <summary :title="group.title">{{ group.label }}</summary>
@@ -56,7 +56,7 @@ const carrierText = computed(() => {
   if (c === undefined)
     return "";
   const slots = c.slots + c.builtin.length;
-  return [c.type, c.vendor, c.revision ? "rev. " + c.revision : "", c.serial ? "serial " + c.serial : "",
+  return [c.name ?? c.type, c.vendor, c.revision ? "rev. " + c.revision : "", c.serial ? "serial " + c.serial : "",
     `${slots} I/O slot${slots === 1 ? "" : "s"}`].filter(s => s).join(" · ");
 });
 
@@ -65,7 +65,7 @@ const commText = (c: EnvComm) => {
       .filter(s => s).join(" ") : "";
   const rs = c.rs485 ? [c.rs485.bitrate, c.rs485.parity].filter(s => s !== undefined).join(" ") : "";
   const lora = c.lorawan ? "Dev EUI " + (c.lorawan.devEui ?? "?") + (c.lorawan.appKeySet ? ", App Key set" : ", no App Key") : "";
-  return [`Comm ${c.slot}: ${c.type ?? "?"}`, ip, c.wifi?.ssid ? "SSID " + c.wifi.ssid : "", rs, lora].filter(s => s).join(" · ");
+  return [`Comm ${c.slot}: ${c.name ?? c.type ?? "?"}`, ip, c.wifi?.ssid ? "SSID " + c.wifi.ssid : "", rs, lora].filter(s => s).join(" · ");
 };
 
 // The channels by module (in slot order), then the ports no module lists.
@@ -83,8 +83,8 @@ const groups = computed(() => {
     m.ports.forEach(p => listed.add(p));
     return {
       key: "m" + i, slot: m.slot ?? "",
-      label: (m.slot !== undefined ? `Slot ${m.slot}: ` : "") + (m.type ?? "module") + (m.builtin ? ", built in" : ""),
-      title: [m.vendor, m.revision && "rev. " + m.revision, m.serial && "serial " + m.serial, m.documentation].filter(s => s).join(" · "),
+      label: (m.slot !== undefined ? `Slot ${m.slot}: ` : "") + (m.name ?? m.type ?? "module") + (m.builtin ? ", built in" : ""),
+      title: [m.name !== undefined && m.type, m.vendor, m.revision && "rev. " + m.revision, m.serial && "serial " + m.serial, m.documentation].filter(s => s).join(" · "),
       channels: m.ports.flatMap(channel),
     };
   });

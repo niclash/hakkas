@@ -103,7 +103,8 @@ typedef struct {
 	bool has_slot;
 	uint32_t slot; /* the I/O slot, from 0; with a carrier required */
 	bool builtin;  /* in a built-in slot of the carrier: cannot be changed */
-	const char *type; /* module type or model, e.g. "AIV" */
+	const char *type; /* machine-readable module type, e.g. "colibri_aiv" */
+	const char *name; /* human-readable, e.g. "Colibri AIV" */
 	const char *vendor;
 	const char *revision;
 	const char *serial;
@@ -156,7 +157,8 @@ typedef struct {
  * ever part of it. */
 typedef struct {
 	uint32_t slot;	  /* 1..HAKKAS_ENV_COMM_SLOTS_MAX */
-	const char *type; /* e.g. "colibri/Ethernet" */
+	const char *type; /* e.g. "colibri_ethernet" */
+	const char *name; /* human-readable, e.g. "Colibri Ethernet"; may be NULL */
 	const HakkasEnvIp *ip;
 	const char *ssid; /* WiFi */
 	const HakkasEnvRs485 *rs485;
@@ -168,7 +170,8 @@ typedef struct {
  * builtin lists the built-in ones, each holding a module that cannot be
  * changed. Strings may be NULL. */
 typedef struct {
-	const char *type;
+	const char *type; /* e.g. "colibri_8" */
+	const char *name; /* human-readable, e.g. "Colibri 8" */
 	const char *vendor;
 	const char *revision;
 	const char *serial;

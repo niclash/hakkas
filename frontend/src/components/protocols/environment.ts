@@ -17,6 +17,7 @@ export interface EnvModule {
     slot?: number;
     builtin?: boolean;
     type?: string;
+    name?: string;          // human-readable, e.g. "Colibri AIV" for colibri_aiv
     vendor?: string;
     revision?: string;
     serial?: string;
@@ -27,6 +28,7 @@ export interface EnvModule {
 export interface EnvComm {
     slot: number;
     type?: string;
+    name?: string;
     ip?: { mode?: string, address?: string, prefix?: number, gateway?: string, dns?: string[], mac?: string };
     wifi?: { ssid?: string };
     rs485?: { bitrate?: number, parity?: string };
@@ -35,6 +37,7 @@ export interface EnvComm {
 
 export interface EnvCarrier {
     type?: string;
+    name?: string;
     vendor?: string;
     revision?: string;
     serial?: string;

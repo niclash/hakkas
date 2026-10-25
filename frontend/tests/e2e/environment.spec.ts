@@ -13,10 +13,10 @@ const SIM = {
     description: "Test environment",
     outPorts: [{id: "slot1-ai", type: "number", addressable: true, count: 2, unit: "V"}, {id: "temp", type: "number"}],
     inPorts: [{id: "slot2-dq", type: "bool", addressable: true, count: 2}],
-    modules: [{slot: 0, builtin: true, type: "c/IO", ports: []}, {slot: 1, type: "c/AIV", serial: "7", ports: ["slot1-ai"]},
+    modules: [{slot: 0, builtin: true, type: "c/IO", ports: []}, {slot: 1, type: "c_aiv", name: "C AIV", serial: "7", ports: ["slot1-ai"]},
         {slot: 2, type: "c/SSR", ports: ["slot2-dq"]}],
-    carrier: {type: "c/C8", vendor: "Maker", slots: 7, builtin: [{slot: 0}],
-        comm: [{slot: 1, type: "c/Ethernet", ip: {mode: "dhcp", address: "10.0.0.5", prefix: 24}}]},
+    carrier: {type: "c_8", name: "C 8", vendor: "Maker", slots: 7, builtin: [{slot: 0}],
+        comm: [{slot: 1, type: "c_ethernet", name: "C Ethernet", ip: {mode: "dhcp", address: "10.0.0.5", prefix: 24}}]},
 };
 
 test.use({environment: SIM});
@@ -44,9 +44,15 @@ async function bind(page: Page, id: string, side: "input" | "output", port: stri
 test("the panel shows the environment; a port is bound and unbound from its menu, and undone", async ({page, engine}) => {
     await openExample(page, engine.url);
     await expect(page.getByTestId("env-name")).toHaveText("sim");
-    await expect(page.getByTestId("env-carrier")).toContainText("c/C8 · Maker · 8 I/O slots");
-    await expect(page.getByTestId("env-comm")).toHaveText("Comm 1: c/Ethernet · dhcp 10.0.0.5/24");
+    // A name is shown, else the type; with a name the type is the tooltip (plan task 68).
+    await expect(page.getByTestId("env-carrier")).toContainText("C 8 · Maker · 8 I/O slots");
+    await expect(page.getByTestId("env-carrier")).toHaveAttribute("title", "c_8");
+    await expect(page.getByTestId("env-comm")).toHaveText("Comm 1: C Ethernet · dhcp 10.0.0.5/24");
     await expect(page.getByTestId("env-module")).toHaveCount(4);   // 3 modules, the ports no module lists
+    const summaries = page.getByTestId("env-module").locator("summary");
+    await expect(summaries.nth(1)).toHaveText("Slot 1: C AIV");
+    await expect(summaries.nth(1)).toHaveAttribute("title", "c_aiv · serial 7");
+    await expect(summaries.nth(2)).toHaveText("Slot 2: c/SSR");
     const other = await engine.client();
     await other.connectGraph(G);
 

@@ -408,7 +408,7 @@ static void test_description_validate(void)
 	/* The carrier (plan task 61), as a firmware builds it in C. */
 	d = description(); /* its module is in slot 3 */
 	static const uint32_t builtin[] = {0};
-	HakkasEnvComm comm[2] = {{.slot = 1, .type = "colibri/Ethernet"}, {.slot = 2}};
+	HakkasEnvComm comm[2] = {{.slot = 1, .type = "colibri_ethernet"}, {.slot = 2}};
 	HakkasEnvCarrier c = {.slots = 7, .builtin = builtin, .builtin_count = 1, .comm = comm,
 			      .comm_count = 2};
 	d.carrier = &c;
@@ -430,6 +430,21 @@ static void test_description_validate(void)
 	CHECK(env_description_validate(&d, why, sizeof(why)));
 	mods[1].has_slot = false;
 	invalid_desc(d, "modules[1]: slot: expected 0 to 7");
+	mods[1].has_slot = true;
+
+	/* A name is at most HAKKAS_ENV_TEXT_MAX bytes (plan task 68). */
+	static char long_name[HAKKAS_ENV_TEXT_MAX + 2];
+	memset(long_name, 'n', HAKKAS_ENV_TEXT_MAX + 1);
+	c.name = long_name;
+	invalid_desc(d, "carrier: name: longer than 1024 bytes");
+	c.name = "Colibri 8";
+	comm[0].name = long_name;
+	invalid_desc(d, "carrier: comm[0]: name: longer than 1024 bytes");
+	comm[0].name = "Colibri Ethernet";
+	mods[1].name = long_name;
+	invalid_desc(d, "modules[1]: text longer than 1024 bytes");
+	long_name[HAKKAS_ENV_TEXT_MAX] = '\0';
+	CHECK(env_description_validate(&d, why, sizeof(why)));
 }
 
 static void test_description_json(void)
@@ -596,26 +611,29 @@ static void test_carrier_json(void)
 	/* The example of 04 §1, with every communication kind. */
 	const char *text =
 		"{\"name\": \"colibri\","
-		" \"carrier\": {\"type\": \"colibri/Colibri8\", \"vendor\": \"CurrentMakers\","
+		" \"carrier\": {\"type\": \"colibri_8\", \"name\": \"Colibri 8\","
+		" \"vendor\": \"CurrentMakers\","
 		" \"revision\": \"B\", \"serial\": \"C8-0042\", \"documentation\": \"https://x\","
 		" \"slots\": 7, \"builtin\": [{\"slot\": 0}],"
 		" \"power\": {\"voltage\": {\"min\": 12, \"max\": 30}, \"ac\": false, \"dc\": true,"
 		" \"current\": 2.0},"
-		" \"comm\": [{\"slot\": 1, \"type\": \"colibri/Ethernet\","
+		" \"comm\": [{\"slot\": 1, \"type\": \"colibri_ethernet\","
+		" \"name\": \"Colibri Ethernet\","
 		" \"ip\": {\"mode\": \"dhcp\", \"address\": \"192.168.1.40\", \"prefix\": 24,"
 		" \"gateway\": \"192.168.1.1\", \"dns\": [\"192.168.1.1\", 5, \"9.9.9.9\"],"
 		" \"mac\": \"02:00:00:00:00:01\"}},"
-		" {\"slot\": 2, \"type\": \"colibri/WiFi\", \"ip\": {\"mode\": \"static\"},"
+		" {\"slot\": 2, \"type\": \"colibri_wifi\", \"ip\": {\"mode\": \"static\"},"
 		" \"wifi\": {\"ssid\": \"plant\"}},"
-		" {\"slot\": 3, \"type\": \"colibri/RS485\", \"rs485\": {\"bitrate\": 19200,"
+		" {\"slot\": 3, \"type\": \"colibri_rs485\", \"rs485\": {\"bitrate\": 19200,"
 		" \"parity\": \"mark\"}},"
 		" {\"slot\": 4, \"type\": 9, \"lorawan\": {\"appEui\": \"0011\","
 		" \"devEui\": \"not hex\", \"appKeySet\": true}}]},"
 		" \"outPorts\": [{\"id\": \"slot3-ai\", \"type\": \"number\","
 		" \"addressable\": true, \"count\": 2}],"
 		" \"modules\": [{\"slot\": 0, \"builtin\": true,"
-		" \"type\": \"colibri/Colibri8-IO\"},"
-		" {\"slot\": 3, \"type\": \"colibri/AIV\", \"ports\": [\"slot3-ai\"]}]}";
+		" \"type\": \"carrier\"},"
+		" {\"slot\": 3, \"type\": \"colibri_aiv\", \"name\": \"Colibri AIV\","
+		" \"ports\": [\"slot3-ai\"]}]}";
 	cJSON *json = cJSON_Parse(text);
 	char why[ENV_DESCRIPTION_MESSAGE_MAX] = "";
 	HakkasEnvDescription *d = env_description_from_json(json, why, sizeof(why));
@@ -623,7 +641,12 @@ static void test_carrier_json(void)
 	CHECK(d != NULL && d->carrier != NULL);
 	if (d != NULL && d->carrier != NULL) {
 		const HakkasEnvCarrier *c = d->carrier;
-		CHECK_STREQ(c->type, "colibri/Colibri8");
+		CHECK_STREQ(c->type, "colibri_8");
+		CHECK_STREQ(c->name, "Colibri 8");
+		CHECK_STREQ(c->comm[0].name, "Colibri Ethernet");
+		CHECK(c->comm[1].name == NULL);
+		CHECK_STREQ(d->modules[1].name, "Colibri AIV");
+		CHECK(d->modules[0].name == NULL);
 		CHECK_STREQ(c->serial, "C8-0042");
 		CHECK(c->slots == 7 && c->builtin_count == 1 && c->builtin[0] == 0);
 		CHECK(c->power != NULL && c->power->has_voltage_min && c->power->voltage_max == 30);
@@ -662,11 +685,28 @@ static void test_carrier_json(void)
 		e = env_description_from_json(json, why, sizeof(why));
 		CHECK(e != NULL && env_description_equal(d, e));
 		env_description_free(e);
-		cJSON_ReplaceItemInObject(comm0, "type", cJSON_CreateString("colibri/WiFi"));
+		cJSON_ReplaceItemInObject(comm0, "type", cJSON_CreateString("colibri_wifi"));
 		e = env_description_from_json(json, why, sizeof(why));
 		CHECK(e != NULL && !env_description_equal(d, e));
 		env_description_free(e);
-		cJSON_ReplaceItemInObject(comm0, "type", cJSON_CreateString("colibri/Ethernet"));
+		cJSON_ReplaceItemInObject(comm0, "type", cJSON_CreateString("colibri_ethernet"));
+		/* A name is static: another one is another environment. */
+		cJSON_ReplaceItemInObject(comm0, "name", cJSON_CreateString("Ethernet"));
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_ReplaceItemInObject(comm0, "name", cJSON_CreateString("Colibri Ethernet"));
+		cJSON_ReplaceItemInObject(carrier, "name", cJSON_CreateString("Colibri Eight"));
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_ReplaceItemInObject(carrier, "name", cJSON_CreateString("Colibri 8"));
+		cJSON *aiv = cJSON_GetArrayItem(cJSON_GetObjectItem(json, "modules"), 1);
+		cJSON_DeleteItemFromObject(aiv, "name");
+		e = env_description_from_json(json, why, sizeof(why));
+		CHECK(e != NULL && !env_description_equal(d, e));
+		env_description_free(e);
+		cJSON_AddStringToObject(aiv, "name", "Colibri AIV");
 		cJSON_ReplaceItemInObject(cJSON_GetObjectItem(carrier, "power"), "ac",
 					  cJSON_CreateTrue());
 		e = env_description_from_json(json, why, sizeof(why));

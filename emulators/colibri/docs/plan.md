@@ -177,7 +177,7 @@ Follow-ups, decided the same day:
   what it holds; `sent` counts each change a turn reports; a reset keeps a queue's current
   length (and makes it the highest); only filled slots have part counters; the first turn is
   served at once when the cycle starts.
-- [ ] **Hakkas task 68 (in hakkas, `../../../docs/plan.md`). Names in the environment
+- [x] **Hakkas task 68 (in hakkas, `../../../docs/plan.md`). Names in the environment
   description** (follow-up B): an optional `name` for the carrier, each module and each
   communication slot, in `src/hakkas_env.h`, the JSON form and its validation (a string of at
   most 1024 bytes, like the other metadata), the identical-description check, and
