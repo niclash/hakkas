@@ -58,11 +58,18 @@ describe('colibri-emulator', () => {
         expect(r.stderr).toMatch(/^colibri-emulator: invalid --http port: x\nusage:/);
     });
 
+    it('exits 1 when the environment named is not in the library', async () => {
+        const r = await command(['nope']);
+        expect(r.code).toBe(1);
+        expect(r.stderr).toMatch(/\nerror Unknown environment: nope\nerror the emulator did not start\n$/);
+    });
+
     for (const signal of ['SIGINT', 'SIGTERM'] as const)
         it(`runs until ${signal}`, async () => {
             const r = await command([], pid => process.kill(pid, signal));
             expect(r.code).toBe(0);
             expect(r.stderr).toMatch(new RegExp(`^info colibri-emulator ${VERSION}: library .*\n` +
-                'info catalog: module types 18, carrier types 1, communication module types 4\ninfo stopped\n$'));
+                'info catalog: module types 18, carrier types 1, communication module types 4\n' +
+                'info environment default: carrier colibri_8, modules 0, cycle 10 ms\ninfo stopped\n$'));
         });
 });

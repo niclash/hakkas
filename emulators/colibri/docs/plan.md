@@ -131,9 +131,21 @@ Follow-ups, decided the same day:
   0 in its range; a slider needs a range; bar and meter indicators need one; unknown members are
   warnings; a missing picture is left out; a carrier with an unknown built-in module is skipped,
   an unknown communication type left out of its slot.
-- [ ] **E3. Environment files and the library** (§5, §5.1): load, validate and save
+- [x] **E3. Environment files and the library** (§5, §5.1): load, validate and save
   `<name>.json` (atomic write, only on `persist`, decision 6); list, create, duplicate, rename
   and delete; remember the last one run; the `environments/` and `bindings/` directories.
+  *Done*: `src/files.ts` (atomic write: a synced temporary file renamed, or linked for an
+  exclusive create; the directory synced), `src/environment.ts` (the file's form, the check
+  against the catalog in errors and warnings, writing it back with unknown members kept),
+  `src/library.ts` (list, read, write, create, duplicate, rename, delete, the last one run, the
+  startup choice); the emulator opens its environment at startup. Tests for the file form (the
+  spec's example, every refusal, an embedded carrier, unknown members kept), the catalog check,
+  the library's operations and refusals, the startup choice, and the process exiting 1 for an
+  unknown environment. Decided on the way (spec §5, §5.1): unknown members are kept at the top
+  level only; communication parameters are checked for their JSON types only; an unknown
+  environment on the command line refuses startup; a library without a usable last one starts
+  with the first by name; an environment that cannot be run leaves the emulator running without
+  one.
 - [ ] **E4. The model** (§7.2, §7.3): an emulated system built from an environment and its
   plugins, with slots, channels, state keys (§8.3), sources (constant, `sine`, `square`, `ramp`,
   `counter`, `sequence`, and decision 2's pulse train with its derived channels), noise, clamping and rounding. The clock
