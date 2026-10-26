@@ -6,6 +6,7 @@ import type {Binding, EnvDescription} from "@/components/protocols/environment";
 import {Connection} from "@/components/protocols/websocket";
 import {errorClaims} from "@/components/model";
 import {channelLabel, isSensor} from "@/components/bindings";
+import {attachDevice, device, watchDevice} from "@/components/device";
 
 export const environment = reactive({
     // The description; undefined until it came, or when there is none (`none`).
@@ -64,12 +65,16 @@ export function attachEnvironment(conn: Connection) {
     // Bindings of a process this connection does not view come with no event (02 §4.1): read
     // them all again whenever a process is opened.
     conn.proto.graph.addListener("onGraphClear", () => conn.proto.environment.request_getbindings());
+    attachDevice(conn);
 }
 
 // Asked once after login; an engine without one says "No environment".
 export function describeEnvironment(conn: Connection) {
     describing = true;
     conn.proto.environment.request_describe();
+    // An open device window watches again after a reconnect (06 §4.15).
+    if (device.open)
+        watchDevice(conn, true);
 }
 
 errorClaims.push((message: string) => {

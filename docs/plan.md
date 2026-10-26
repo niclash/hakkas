@@ -1043,9 +1043,13 @@ to the user first, one at a time.
   filled by the firmware from the EEPROMs at boot). HTTP, not an `environment` message: a
   picture does not fit an MCU's WebSocket buffer. The emulator's `--pictures <dir>` publishes
   its WebP copies (one per type with a render) there.
-- [ ] **78. The device window** in hakkas' frontend: a window that can be popped out, drawing
-  the carrier with its modules in their slots, every channel's state on them, and Help links.
-  The Colibri emulator's E14 shrinks to what the emulator still needs (its own plan).
+- [x] **78. The device window** (done 2026-10-26; 06 §4.15): the Environment panel's *Device*
+  button; a floating window that pops out into a browser window of its own; the carrier's
+  picture with the modules', communication and MCU modules' in their places, every channel's
+  live value as a badge (or listed when it has no position), Help links to the documentation.
+  Pictures from the cache, the vendor's https url, then the device's copy. The Colibri 8's
+  render is now cropped to its board (places measured again). The Colibri emulator's E14
+  shrinks to what the emulator still needs (its own plan).
 
 ## Known issues (noted 2026-10-25, to evaluate later; not critical)
 

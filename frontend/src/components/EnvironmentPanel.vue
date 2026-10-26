@@ -4,6 +4,8 @@
   <section v-if="d" class="hk-panel hk-env" data-testid="env-panel">
     <div class="hk-panel-header">
       <h2 class="hk-panel-title">Environment</h2>
+      <button v-if="d.carrier" type="button" class="hk-button" data-testid="env-device"
+              :aria-pressed="device.open" @click="device.open = !device.open">Device</button>
     </div>
     <p class="hk-env-name" data-testid="env-name" :title="d.description">{{ d.name }}</p>
     <p v-if="d.carrier" class="hk-env-carrier" data-testid="env-carrier" :title="d.carrier.name && d.carrier.type">{{ carrierText }}</p>
@@ -30,6 +32,7 @@
              @change="load"/>
     </div>
     <p v-if="message" class="hk-inspector-note" role="status" data-testid="env-message">{{ message }}</p>
+    <DeviceWindow v-if="device.open"/>
     <MappingDialog v-if="mapping" :file="mapping.file" :rows="mapping.rows" :context="mapping.context"
                    :mismatch="mapping.mismatch" @close="mapping = undefined" @apply="applyMapped"/>
   </section>
@@ -45,6 +48,8 @@ import {
 } from "@/components/bindings";
 import {checkContext} from "@/components/floweditor/bind-context";
 import MappingDialog from "@/components/floweditor/MappingDialog.vue";
+import DeviceWindow from "@/components/DeviceWindow.vue";
+import {device} from "@/components/device";
 
 const d = computed(() => environment.description);
 // The open process (a component graph has no bindings).

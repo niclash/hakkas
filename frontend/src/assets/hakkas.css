@@ -1392,3 +1392,161 @@ h1, h2, h3 {
   font-size: 12px;
   color: var(--hk-danger);
 }
+
+
+/* ---- The device window (06 §4.15) ---------------------------------------------------- */
+
+.hk-device {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  resize: both;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--hk-surface);
+  color: var(--hk-text);
+  border: var(--hk-border-width, 1px) solid var(--hk-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px var(--hk-shadow);
+}
+
+.hk-device.popped {
+  position: static;
+  width: auto;
+  max-height: none;
+  resize: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+body.hk-device-window {
+  margin: 0;
+  background: var(--hk-surface);
+}
+
+.hk-device-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hk-device-header .hk-panel-title {
+  flex: 1;
+  margin: 0;
+}
+
+.hk-device-help {
+  color: var(--hk-accent);
+}
+
+.hk-device-board {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.hk-device-part {
+  cursor: default;
+}
+
+a.hk-device-part {
+  cursor: pointer;
+}
+
+a.hk-device-part:hover image,
+a.hk-device-part:focus image {
+  filter: brightness(1.15);
+}
+
+.hk-device-empty {
+  fill: var(--hk-surface-2);
+  stroke: var(--hk-border);
+  stroke-dasharray: 4 3;
+}
+
+.hk-device-label {
+  font-size: 14px;
+  fill: var(--hk-text-muted);
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.hk-device-badge circle,
+.hk-device-badge rect {
+  stroke-width: 2;
+}
+
+.hk-device-badge text {
+  font-size: 10px;
+  font-family: ui-monospace, monospace;
+  text-anchor: middle;
+  fill: var(--hk-text);
+}
+
+.hk-device-badge.sensor rect,
+.hk-device-badge.sensor circle {
+  fill: var(--hk-surface);
+  stroke: var(--hk-accent);
+}
+
+.hk-device-badge.actuator rect,
+.hk-device-badge.actuator circle {
+  fill: var(--hk-surface);
+  stroke: var(--hk-running, #2a9d55);
+}
+
+.hk-device-badge.on circle {
+  fill: var(--hk-accent);
+}
+
+.hk-device-badge.actuator.on circle {
+  fill: var(--hk-running, #2a9d55);
+}
+
+.hk-device-badge.none rect,
+.hk-device-badge.none circle {
+  stroke-dasharray: 3 2;
+  opacity: 0.7;
+}
+
+.hk-device-others {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  font-size: 12px;
+}
+
+.hk-device-other h3 {
+  font-size: 12px;
+  margin: 4px 0;
+  color: var(--hk-text-muted);
+}
+
+.hk-device-other ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hk-device-other li {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.hk-device-other li.none .hk-device-value {
+  color: var(--hk-text-muted);
+}
+
+.hk-device-value {
+  font-family: ui-monospace, monospace;
+}

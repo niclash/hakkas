@@ -42,6 +42,8 @@ export interface Engine {
     // What the environment program received from hakkas (04 §0.1), one message per line; ""
     // without one.
     environmentReceived(): string;
+    // Sends a message of the environment program to hakkas (04 §0.1), e.g. a sensor value.
+    environmentSend(message: Record<string, unknown>): void;
 }
 
 interface Options {
@@ -51,11 +53,14 @@ interface Options {
     // The environment program's description (04 §1): a fake program serving it on a Unix socket
     // (04 §0.1), named in hakkas.json's environment.socket; none by default.
     environment: Record<string, unknown> | undefined;
+    // Files of hakkas' environment.pictures (05 §1.1, plan task 77); none by default.
+    pictures: Record<string, string | Buffer> | undefined;
 }
 
 // A fake environment program (04 §0.1): describes itself to every connection and keeps what it
 // receives.
-function startEnvironment(path: string, description: Record<string, unknown>): { server: Server, received: string[] } {
+function startEnvironment(path: string, description: Record<string, unknown>):
+    { server: Server, received: string[], send: (m: Record<string, unknown>) => void } {
     const received: string[] = [];
     const sockets: Socket[] = [];
     const server = createServer(socket => {
@@ -66,7 +71,8 @@ function startEnvironment(path: string, description: Record<string, unknown>): {
     });
     server.on("close", () => sockets.forEach(s => s.destroy()));
     server.listen(path);
-    return {server, received};
+    const send = (m: Record<string, unknown>) => sockets.forEach(s => s.write(JSON.stringify(m) + "\n"));
+    return {server, received, send};
 }
 
 async function portFree(port: number): Promise<boolean> {
@@ -135,8 +141,9 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
     config: [{}, {option: true}],
     allowedErrors: [[], {option: true}],
     environment: [undefined, {option: true}],
+    pictures: [undefined, {option: true}],
 
-    engine: async ({graphs, config, allowedErrors, environment}, use, testInfo) => {
+    engine: async ({graphs, config, allowedErrors, environment, pictures}, use, testInfo) => {
         const dir = mkdtempSync(join(tmpdir(), "hakkas-e2e-"));
         mkdirSync(join(dir, "conf"));
         mkdirSync(join(dir, "data", "graphs"), {recursive: true});
@@ -144,7 +151,14 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
         // A Unix socket's path is short (108 bytes): directly in the temporary directory.
         const socket = join(tmpdir(), "hk-" + randomBytes(6).toString("hex") + ".sock");
         const env = environment !== undefined ? startEnvironment(socket, environment) : undefined;
-        const settings = env !== undefined ? {...config, auth, environment: {socket}} : {...config, auth};
+        const picturesDir = join(dir, "pictures");
+        if (pictures !== undefined) {
+            mkdirSync(picturesDir);
+            for (const [name, content] of Object.entries(pictures))
+                writeFileSync(join(picturesDir, name), content);
+        }
+        const environmentSettings = {socket, ...(pictures !== undefined && {pictures: picturesDir})};
+        const settings = env !== undefined ? {...config, auth, environment: environmentSettings} : {...config, auth};
         writeFileSync(join(dir, "conf", "hakkas.json"), JSON.stringify(settings));
         writeFileSync(join(dir, "conf", "users.json"), JSON.stringify(
             [EDITOR, VIEWER, OPERATOR].map(u => makeUser(u.user, u.password, u.role))));
@@ -174,6 +188,7 @@ export const test = base.extend<Options & { engine: Engine, pageErrors: string[]
                 ({proc} = await startEngine(dir, port, log));
             },
             environmentReceived: () => env?.received.join("\n") ?? "",
+            environmentSend: m => env?.send(m),
         });
         clients.forEach(c => c.close());
         const code = await stopEngine(proc);

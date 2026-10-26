@@ -303,7 +303,11 @@ Follow-ups, decided the same day:
   channels' state moves to hakkas' UI (hakkas plan, Phase 11), the same for the emulator and a
   real device. Done towards it: the MCU module, named from `--mcu` (hakkas plan task 73). What
   the emulator keeps — its pictures as data for the description, and whether its own UI shows
-  the picture with controls — is decided with hakkas' tasks 75–78.
+  the picture with controls — is decided with hakkas' tasks 75–78. Hakkas' tasks 75–78 are done
+  (2026-10-26): the descriptors carry the renders, copies, positions and places, and hakkas'
+  device window shows the picture with every channel's value. Still to decide with the user:
+  whether the emulator's own UI shows the picture with its field-side controls on it, or keeps
+  the signal panel only.
 - [ ] **E15. Artwork** (decision 5): the Colibri 8 board and the modules' faceplates as SVGs.
   Changed 2026-10-26: the vendor's renders (PNG, in the descriptors' directories) are the
   pictures, converted to WebP; I/O modules turned 90° clockwise to match the carrier.
