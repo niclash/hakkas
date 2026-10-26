@@ -1,4 +1,6 @@
 <template>
+  <!-- In <body>: inside a sticky panel its z-index would only count within the panel. -->
+  <Teleport to="body">
   <div class="overlay" @pointerdown.self="emit('cancel')">
     <form class="dialog" role="dialog" aria-modal="true" :aria-label="title" data-testid="dialog"
           @submit.prevent="emit('ok')" @keydown.esc.prevent="emit('cancel')">
@@ -13,6 +15,7 @@
       </div>
     </form>
   </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

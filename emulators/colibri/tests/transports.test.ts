@@ -140,6 +140,17 @@ describe('the HTTP server', () => {
             expect((await get(p)).status, p).toBe(404);
     });
 
+    it('serves the render copies of the carrier, the modules, the communication and MCU modules', async () => {
+        for (const p of ['/assets/carriers/colibri_8/picture.webp', '/assets/modules/colibri_aiv/picture.webp',
+            '/assets/comm/colibri_ethernet/picture.webp', '/assets/mcu/colibri_mcu6/picture.webp']) {
+            const r = await get(p);
+            expect(r.status, p).toBe(200);
+            expect(r.headers.get('content-type'), p).toBe('image/webp');
+        }
+        expect((await get('/assets/mcu/colibri_mcu6/mcu.json')).status).toBe(404);
+        expect((await get('/assets/comm/nope/picture.webp')).status).toBe(404);
+    });
+
     it('says the UI is not built when it is not', async () => {
         const bare = new HttpServer(0, core, catalog, path.join(tmp, 'none'), quiet);
         await bare.listen();

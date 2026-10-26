@@ -41,9 +41,23 @@ export interface Settings {
     values: JsonObject;
 }
 
+// A rectangle or a point on the board's picture, in fractions of its width and height.
+export interface Rect {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
+export interface Point {
+    x: number;
+    y: number;
+}
+
 export interface Part {
     id: string;
     place: string;
+    rect?: Rect;                // its place on a board drawn from pictures (§3.4)
     type: string | null;
     name: string | null;
     builtin?: boolean;
@@ -71,10 +85,18 @@ export interface Row {
     control?: Control;
     indicator?: Indicator;
     sources?: SourceKind[];
+    at?: Point;                 // where it is on the board's picture (§3.4)
+}
+
+// A picture on the board that is not a part (a communication or MCU module).
+export interface Extra {
+    name: string;
+    rect: Rect;
+    asset?: string;
 }
 
 export interface Scene {
-    board: {asset: string} | null;
+    board: {asset: string, extras?: Extra[]} | null;
     parts: Part[];
     rows: Row[];
 }

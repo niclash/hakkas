@@ -103,12 +103,14 @@ export function describe(system: System, mcu?: McuType): Description {
     return d;
 }
 
-// A render as hakkas' `picture` (04 §1 "Pictures"), or nothing; its copy is the name the loader
-// published it under (catalog.ts, publishCopies).
+// A render as hakkas' `picture` (04 §1 "Pictures"), or nothing; its copy only when the loader
+// published it (catalog.ts, publishCopies), under that name.
 function pictureOf(r: Render | undefined): {picture?: JsonObject} {
     if (r === undefined)
         return {};
-    return {picture: {...(r.url !== undefined && {url: r.url}), ...(r.copy !== undefined && {copy: r.copy}),
+    if (r.url === undefined && r.published === undefined)
+        return {};
+    return {picture: {...(r.url !== undefined && {url: r.url}), ...(r.published !== undefined && {copy: r.published}),
         ...(r.rotation !== undefined && {rotation: r.rotation}), ...(r.crop !== undefined && {crop: {...r.crop}})}};
 }
 

@@ -84,3 +84,9 @@ input:focus-visible, select:focus-visible, button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
 }
+
+/* A row the board's picture points at (BoardView), marked for a moment. */
+tr.flash > td {
+    background: var(--accent-soft);
+    transition: background 0.3s;
+}

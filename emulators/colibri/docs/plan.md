@@ -296,7 +296,10 @@ Follow-ups, decided the same day:
   the built-in slot fixed; a communication module's parameters persisted; dropped writes standing
   out and reset. Decided (shared spec, "The UI, as built"): the layout, the library's actions, the
   settings' controls and when they send, the counters' display.
-- [ ] **E14. Carrier and faceplates** (§7.4, §8.4): the carrier's picture with its
+- [x] **E14. Carrier and faceplates** (§7.4, §8.4; done 2026-10-26 as the device as a picture,
+  §8.4: the render copies with places and points in the scene, the UI's board above the signal
+  panel, inputs operable on it; to revert if it does not make visual sense in use, as the user
+  said): the carrier's picture with its
   `slot-<n>` places, each module's faceplate in its slot, bindings (attributes, text,
   visibility) and controls (slider, toggle, button, number) on the SVG elements.
   **To be re-planned** (decided with the user 2026-10-25/26): the device's picture with its
@@ -305,9 +308,8 @@ Follow-ups, decided the same day:
   the emulator keeps — its pictures as data for the description, and whether its own UI shows
   the picture with controls — is decided with hakkas' tasks 75–78. Hakkas' tasks 75–78 are done
   (2026-10-26): the descriptors carry the renders, copies, positions and places, and hakkas'
-  device window shows the picture with every channel's value. Still to decide with the user:
-  whether the emulator's own UI shows the picture with its field-side controls on it, or keeps
-  the signal panel only.
+  device window shows the picture with every channel's value. Decided with the user 2026-10-26:
+  the emulator's UI shows the picture too, with its field-side controls on it.
 - [ ] **E15. Artwork** (decision 5): the Colibri 8 board and the modules' faceplates as SVGs.
   Changed 2026-10-26: the vendor's renders (PNG, in the descriptors' directories) are the
   pictures, converted to WebP; I/O modules turned 90° clockwise to match the carrier.

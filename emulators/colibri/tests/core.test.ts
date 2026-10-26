@@ -84,7 +84,6 @@ describe('a client', () => {
             ['slot0', 'slot-0', 'carrier'], ['slot1', 'slot-1', 'colibri_aiv'], ['slot2', 'slot-2', null],
             ['slot3', 'slot-3', 'colibri_ssr'], ['slot4', 'slot-4', null], ['slot5', 'slot-5', null],
             ['slot6', 'slot-6', null], ['slot7', 'slot-7', null]]);
-        expect(scene.board).toBeNull();
         const rows = scene.rows as JsonObject[];
         expect(rows.find(r => r.key === 'slot1.ai.1')).toMatchObject({part: 'slot1', label: 'slot1-ai[1]',
             kind: 'input', type: 'number', unit: 'V', control: 'slider'});
@@ -92,6 +91,24 @@ describe('a client', () => {
         const state = a.of('state')[0]!.values as JsonObject;
         expect(state).toMatchObject({'slot1.ai.1.source': 0, 'slot1.ai.1.noise': expect.any(Number), 'slot3.dq.1': false});
         expect(a.of('stats')[0]!.channels).toMatchObject({'slot3.dq.1': {received: 0, queued: 0, dropped: 0}});
+    });
+
+    it('sees the render copies: the board, each part in its place, each channel at its point', async () => {
+        const {a} = await start();
+        const scene = a.of('scene')[0]!;
+        const carrier = catalog.carriers.get('colibri_8')!.def;
+        expect(scene.board).toEqual({asset: 'assets/carriers/colibri_8/picture.webp', extras: []});
+        const parts = scene.parts as JsonObject[];
+        const place = carrier.places!.slots.find(r => r.slot === 1)!;
+        expect(parts[1]).toMatchObject({id: 'slot1', asset: 'assets/modules/colibri_aiv/picture.webp',
+            rect: {x: place.x, y: place.y, w: place.w, h: place.h}});
+        expect(parts[2]).toHaveProperty('rect');                // empty: its place, no picture
+        expect(parts[2]).not.toHaveProperty('asset');
+        expect(parts[0]).not.toHaveProperty('rect');            // built in: on the board itself
+        const aiv = catalog.modules.get('colibri_aiv')!.def.positions.find(p => p.index === 1)!;
+        expect((scene.rows as JsonObject[]).find(r => r.key === 'slot1.ai.1')!.at)
+            .toEqual({x: place.x + aiv.x * place.w, y: place.y + aiv.y * place.h});
+        expect((scene.rows as JsonObject[]).find(r => r.key === 'slot3.dq.1')!.at).toBeDefined();
     });
 
     it('with a DII sees signal and measured rows', async () => {

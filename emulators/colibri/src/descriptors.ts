@@ -31,10 +31,12 @@ export interface Metadata {
 // show (`crop`, fractions of the file) and the clockwise turn after it (0, 90, 180 or 270) that
 // shows the board in the carrier's orientation; and the device's own copy (hakkas plan task
 // 77): a picture file in the descriptor's directory, already cropped and turned, served by
-// hakkas from --pictures under the name the loader gives it. At least one of url and copy.
+// hakkas from --pictures under the name the loader gives it (`published`), and the picture the
+// emulator's own UI shows (spec §8.4). At least one of url and copy.
 export interface Render {
     url?: string;
     copy?: string;
+    published?: string;     // the copy's name in --pictures, once the loader put it there
     rotation?: 90 | 180 | 270;
     crop?: Rect;
 }

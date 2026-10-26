@@ -144,11 +144,16 @@ What the UI draws: the board, the parts on it, and one **row** per channel.
 ```
 
 - **`board`**: a picture (SVG or a photo) in which each part's place is an element with an id,
-  or `null`. Without a board, the UI lays the parts out in a row.
+  or `null`. Without a board, the UI lays the parts out in a row. A board drawn from pictures
+  (added 2026-10-26, Colibri plan task E14) gives the places as rectangles instead — each part's
+  `rect` — and may have `extras`, `[{"name", "rect", "asset"?}]`: further pictures on it that are
+  not parts (a communication module), each in its rectangle. Rectangles and points are fractions
+  (0–1) of the board picture's width and height, from its top left corner.
 - **`parts`**: each has an `id` (the first component of its keys, §3.5), its `place` (an element
   id in the board's picture), `type` and `name` (both `null` for an empty place), `builtin: true`
   for one the user cannot change, and optionally its picture `asset` with `bindings` and
-  `controls` (§6). A part without a picture is drawn as a labelled box.
+  `controls` (§6). A part without a picture is drawn as a labelled box. On a board drawn from
+  pictures a part has its `rect`, and its `asset` is a picture drawn into it (no bindings).
 - **`rows`**: the signal panel (*decided*, 2026-10-23: every channel is usable without a picture).
   A row's `kind` is one of:
   - `input`: a field-side input whose value is a channel (an analog input). It has a source and
@@ -162,7 +167,8 @@ What the UI draws: the board, the parts on it, and one **row** per channel.
   A row also has its `type` (`number`, `bool` or `pulse`), and optionally `unit`, `min`, `max`,
   `resolution`, `description`, `control` (an input's or signal's default control: `slider`,
   `number`, `toggle` or `button`, momentary) or `indicator` (an output's: `lamp`, `number`,
-  `bar` or `meter`), and `sources` (the source kinds the row accepts, §5).
+  `bar` or `meter`), `sources` (the source kinds the row accepts, §5), and `at` `{"x", "y"}`:
+  where the channel is on a board drawn from pictures, so the UI can show and operate it there.
 
 **Assets** are paths relative to the HTTP server's root, so a browser fetches them from the same
 origin. A Unix socket client gets the same paths and can fetch them over HTTP.

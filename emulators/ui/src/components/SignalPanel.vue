@@ -1,5 +1,6 @@
 <template>
   <div class="panel" data-testid="signal-panel">
+    <BoardView :client="client"/>
     <section v-for="g in groups" :key="g.part.id" class="part" data-testid="part" :data-part="g.part.id">
       <h2>
         <span class="place">{{ g.part.id }}</span>
@@ -30,6 +31,7 @@
 <script setup lang="ts">
 import {computed} from 'vue';
 import type {Client} from '../protocol/client';
+import BoardView from './BoardView.vue';
 import RowView from './RowView.vue';
 
 const props = defineProps<{client: Client}>();

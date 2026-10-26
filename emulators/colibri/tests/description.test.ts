@@ -2,6 +2,7 @@ import {describe as group, expect, it} from 'vitest';
 import {loadCatalog} from '../src/catalog.js';
 import {Checker, type JsonObject} from '../src/check.js';
 import {checkDescription, describe, type Description} from '../src/description.js';
+import type {Render} from '../src/descriptors.js';
 import {readEnvironment} from '../src/environment.js';
 import {createLogger} from '../src/log.js';
 import {BUILTIN_DATA} from '../src/package.js';
@@ -15,6 +16,14 @@ function described(env: JsonObject, name = 'lab', mcu?: string): Description {
     expect(c.errors).toEqual([]);
     const {system} = System.build(name, environment!, catalog, () => 0, () => 0.5);
     return describe(system, mcu === undefined ? undefined : catalog.mcu.get(mcu)!.def);
+}
+
+// A render as described without --pictures: its copy is not published (catalog.ts).
+function unpublished(r: Render | undefined): JsonObject | undefined {
+    if (r === undefined)
+        return undefined;
+    const {copy: _copy, published: _published, ...described} = r;
+    return described as JsonObject;
 }
 
 const modules: JsonObject[] = [
@@ -67,11 +76,11 @@ group('the environment description', () => {
         expect(d.carrier).toEqual({
             type: 'colibri_8', name: 'Colibri 8', vendor: 'CurrentMakers',
             documentation: 'https://currentmakers.com/products/colibri/colibri_8/',
-            picture: def.render,
+            picture: unpublished(def.render),
             slots: 7, builtin: [{slot: 0}],
             power: {voltage: {min: 7, max: 30}, ac: true, dc: true, current: 2.0},
-            comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet',
-                picture: catalog.comm.get('colibri_ethernet')!.def.render, ip}],
+            // Ethernet's render is only a copy, not published here: no picture.
+            comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet', ip}],
             places: {slots: def.places!.slots, comm: def.places!.comm},
         });
         expect(described({}).carrier.comm).toEqual([]);
@@ -80,7 +89,7 @@ group('the environment description', () => {
     it('names the MCU module, if one is given', () => {
         const d = described({}, 'lab', 'colibri_mcu6');
         expect(d.carrier.mcu).toEqual({type: 'colibri_mcu6', name: 'Colibri MCU6', vendor: 'CurrentMakers',
-            picture: catalog.mcu.get('colibri_mcu6')!.def.render});
+            picture: unpublished(catalog.mcu.get('colibri_mcu6')!.def.render)});
         expect((d.carrier.mcu as JsonObject).picture).toMatchObject({rotation: 90});
         // Its slot's place only with a module in it.
         expect((d.carrier.places as JsonObject).mcu).toEqual(catalog.carriers.get('colibri_8')!.def.places!.mcu);
@@ -92,7 +101,7 @@ group('the environment description', () => {
         const d = described({modules: [{slot: 2, type: 'colibri_aiv'}, {slot: 3, type: 'colibri_dp1'},
             {slot: 4, type: 'colibri_dp2'}]});
         const aiv = catalog.modules.get('colibri_aiv')!.def;
-        expect(d.modules[1]!.picture).toEqual(aiv.render);
+        expect(d.modules[1]!.picture).toEqual(unpublished(aiv.render));
         expect(d.modules[1]!.picture).toHaveProperty('crop');
         expect(d.modules[1]!.positions).toEqual(aiv.positions.map(p => ({port: 'slot2-ai', index: p.index,
             x: p.x, y: p.y})));
@@ -101,6 +110,17 @@ group('the environment description', () => {
         // No picture (DP2 has no render at all), no positions: neither member.
         expect(d.modules[3]).not.toHaveProperty('picture');
         expect(d.modules[3]).not.toHaveProperty('positions');
+    });
+
+    it('names a render\'s copy only once it is published (--pictures)', () => {
+        const aiv = catalog.modules.get('colibri_aiv')!.def;
+        aiv.render!.published = 'colibri_aiv.webp';
+        try {
+            const d = described({modules: [{slot: 1, type: 'colibri_aiv'}]});
+            expect(d.modules[1]!.picture).toMatchObject({url: aiv.render!.url, copy: 'colibri_aiv.webp'});
+        } finally {
+            delete aiv.render!.published;
+        }
     });
 
     it('passes hakkas\' checks with every module type in the catalog', () => {

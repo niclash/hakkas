@@ -12,7 +12,7 @@ import type {Client, Core} from './core.js';
 import {ASSET_NAME, TYPE_NAME} from './descriptors.js';
 import {encode, removeStale} from './link.js';
 import type {Logger} from './log.js';
-import {CARRIER_ASSETS, MODULE_ASSETS} from './scene.js';
+import {CARRIER_ASSETS, COMM_ASSETS, MCU_ASSETS, MODULE_ASSETS} from './scene.js';
 
 export const MESSAGE_MAX = 256 * 1024;      // bytes (§1)
 
@@ -209,6 +209,10 @@ export class HttpServer {
             return asset(MODULE_ASSETS, this.catalog.modules);
         if (joined.startsWith(CARRIER_ASSETS + '/'))
             return asset(CARRIER_ASSETS, this.catalog.carriers);
+        if (joined.startsWith(COMM_ASSETS + '/'))
+            return asset(COMM_ASSETS, this.catalog.comm);
+        if (joined.startsWith(MCU_ASSETS + '/'))
+            return asset(MCU_ASSETS, this.catalog.mcu);
         if (parts.some(p => p.startsWith('.')))
             return undefined;
         const file = path.join(this.uiDir, ...(parts.length === 0 ? ['index.html'] : parts));

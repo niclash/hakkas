@@ -14,7 +14,7 @@ import type {Logger} from './log.js';
 import {VERSION} from './package.js';
 import type {Random} from './random.js';
 import {Scanner, type Stats, type Turn} from './scan.js';
-import {EMPTY_SCENE, scene} from './scene.js';
+import {EMPTY_SCENE, type Scene, scene} from './scene.js';
 import {configure, fieldToJson, settings, SettingsError} from './settings.js';
 import {ModelError, System, type Clock} from './system.js';
 
@@ -85,7 +85,7 @@ export class Core {
         client.send({hello: {protocol: PROTOCOL, emulator: 'colibri', version: VERSION, features: []}});
         client.send(this.libraryMessage());
         client.send(this.settingsMessage());
-        client.send({scene: this.run === undefined ? EMPTY_SCENE : scene(this.run.system, this.catalog)});
+        client.send({scene: this.run === undefined ? EMPTY_SCENE : this.scene(this.run.system)});
         client.send({state: {values: this.run?.system.state() ?? {}}});
         client.send({stats: this.run?.scanner.stats() ?? {parts: {}, channels: {}}});
         client.send({link: {state: this.link.state}});
@@ -276,10 +276,19 @@ export class Core {
         return {run: {name: n, env, system, scanner, description}, errors: []};
     }
 
+    // The scene, with the MCU module's picture if the carrier takes it.
+    private scene(system: System): Scene {
+        return scene(system, this.catalog, this.takesMcu(system) ? this.mcu : undefined);
+    }
+
+    private takesMcu(system: System): boolean {
+        return this.mcu !== undefined && system.carrier.mcu?.types.includes(this.mcu.type) === true;
+    }
+
     // The description, with the MCU module if the carrier takes it (spec §5.4); `warn`, if given,
     // is told when it does not.
     private describe(system: System, warn?: (m: string) => void, n?: string): Description {
-        const takes = this.mcu !== undefined && system.carrier.mcu?.types.includes(this.mcu.type) === true;
+        const takes = this.takesMcu(system);
         if (this.mcu !== undefined && !takes)
             warn?.(`environment ${n}: carrier ${system.carrier.type} takes no MCU module ${this.mcu.type}: ` +
                 'not described');
@@ -307,7 +316,7 @@ export class Core {
         this.dirty.clear();
         this.sentStats = run.scanner.stats();
         this.broadcast(this.settingsMessage());
-        this.broadcast({scene: scene(run.system, this.catalog)});
+        this.broadcast({scene: this.scene(run.system)});
         this.broadcast({state: {values: run.system.state()}});
         this.broadcast({stats: this.sentStats});
         this.broadcast({link: {state: this.link.state}});

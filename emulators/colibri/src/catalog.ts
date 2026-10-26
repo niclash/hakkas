@@ -128,12 +128,14 @@ async function checkCopy(def: Metadata, dir: string, file: string, log: Logger):
 }
 
 // The renders' copies (hakkas plan task 77): with a directory (--pictures), each is copied into
-// it as <type><extension>, the name it is described under, so types from different plugin
-// directories cannot clash; without one, they are left out of the descriptors (hakkas would
-// have nothing to serve). A copy that cannot be written is left out, with a warning.
+// it as <type><extension>, the name it is described under (`published`), so types from different
+// plugin directories cannot clash; without one, none is described (hakkas would have nothing to
+// serve), though the emulator's own UI still shows them (spec §8.4). A copy that cannot be
+// written is not described, with a warning.
 export async function publishCopies(catalog: Catalog, dir: string | undefined, log: Logger): Promise<void> {
-    if (dir !== undefined)
-        await mkdir(dir, {recursive: true});
+    if (dir === undefined)
+        return;
+    await mkdir(dir, {recursive: true});
     let n = 0;
     const maps = [catalog.modules, catalog.carriers, catalog.comm, catalog.mcu] as Map<string, Entry<Metadata>>[];
     for (const map of maps) {
@@ -143,22 +145,15 @@ export async function publishCopies(catalog: Catalog, dir: string | undefined, l
                 continue;
             const name = def.type + path.extname(r.copy).toLowerCase();
             try {
-                if (dir === undefined)
-                    throw new Error('no --pictures directory');
                 await copyFile(path.join(from, r.copy), path.join(dir, name));
-                r.copy = name;
+                r.published = name;
                 n++;
             } catch (e) {
-                if (dir !== undefined)
-                    log.warn(`pictures: ${def.type}: ${(e as Error).message}: copy left out`);
-                delete r.copy;
-                if (r.url === undefined)
-                    delete def.render;
+                log.warn(`pictures: ${def.type}: ${(e as Error).message}: copy not described`);
             }
         }
     }
-    if (dir !== undefined)
-        log.info(`pictures: ${n} copies in ${dir}`);
+    log.info(`pictures: ${n} copies in ${dir}`);
 }
 
 // What a carrier names must be in the catalog: a carrier whose built-in module type is missing

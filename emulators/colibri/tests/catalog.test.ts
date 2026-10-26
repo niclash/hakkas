@@ -153,7 +153,7 @@ describe('loading plugin directories', () => {
             'render copy picture.webp not found, left out');
     });
 
-    it('publishes the render copies under their types\' names, or leaves them out without a directory',
+    it('publishes the render copies under their types\' names, or none without a directory',
         async () => {
             file('p/modules/m/module.json', {type: 'm', render: {copy: 'picture.webp'}});
             file('p/modules/m/picture.webp', 'RIFF-M');
@@ -162,16 +162,18 @@ describe('loading plugin directories', () => {
             let {catalog, lines} = await load([path.join(tmp, 'p')]);
             const dir = path.join(tmp, 'out', 'pictures');
             await publishCopies(catalog, dir, createLogger('fine', l => lines.push(l)));
-            expect(catalog.modules.get('m')!.def.render).toEqual({copy: 'm.webp'});
-            expect(catalog.mcu.get('u')!.def.render).toEqual({url: 'https://x/u.png', copy: 'u.png'});
+            expect(catalog.modules.get('m')!.def.render).toEqual({copy: 'picture.webp', published: 'm.webp'});
+            expect(catalog.mcu.get('u')!.def.render).toEqual({url: 'https://x/u.png', copy: 'board.png',
+                published: 'u.png'});
             expect(readFileSync(path.join(dir, 'm.webp'), 'utf8')).toBe('RIFF-M');
             expect(readFileSync(path.join(dir, 'u.png'), 'utf8')).toBe('PNG-U');
             expect(lines.at(-1)).toBe(`info pictures: 2 copies in ${dir}`);
 
             ({catalog, lines} = await load([path.join(tmp, 'p')]));
             await publishCopies(catalog, undefined, createLogger('fine', l => lines.push(l)));
-            expect(catalog.modules.get('m')!.def.render).toBeUndefined();
-            expect(catalog.mcu.get('u')!.def.render).toEqual({url: 'https://x/u.png'});
+            // The local copies stay, for the emulator's own UI; none is published.
+            expect(catalog.modules.get('m')!.def.render).toEqual({copy: 'picture.webp'});
+            expect(catalog.mcu.get('u')!.def.render).toEqual({url: 'https://x/u.png', copy: 'board.png'});
             expect(existsSync(path.join(tmp, 'pictures'))).toBe(false);
         });
 
