@@ -846,9 +846,8 @@ behavior tested in `tests/test_process_more.c`.
 
 - [x] **57. Cut, copy and paste of a block selection across browsers** (06 §4.10; done
   2026-10-26: Cut with Ctrl+X and the block menu, one undo step; the clipboard suite passes in
-  Chromium and Firefox, `HAKKAS_ALL_BROWSERS=1`; **WebKit not yet tested**: Playwright's WebKit
-  needs ICU 72, libxml2.so.2 and libvpx 7, which Debian testing lacks — on a machine that has
-  them, or in a container, run `--project=webkit`). Copy and
+  Chromium and Firefox, `HAKKAS_ALL_BROWSERS=1`; Safari/WebKit not tested, decided with the
+  user: Chromium and Firefox are enough). Copy and
   paste already go through the system clipboard (`text/plain` plus
   `application/x-hakkas-blocks`, `frontend/src/components/floweditor/copypaste.ts`), but only
   Chromium is tested. To do: **Cut** (Ctrl+X / ⌘X and a menu item: copy, then delete the
