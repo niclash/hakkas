@@ -924,9 +924,16 @@ project), 02 §3.1/§3.7, 04 §1/§4, 06 §7.
   loading a bindings file (applied at once when it fits, else the mapping dialog; it replaces
   the process's bindings), saving one, undo. Decided: *deploying* means, for now, applying a
   bindings file to an open process on the connected engine — **revisit with task 64**.
-- [ ] **64. Upload/download of processes, backup and restore** (06 §7): to design. Revisit
-  task 63's deployment (a process uploaded together with its bindings file, mapped on the
-  target device).
+- [x] **64. Upload/download of processes, backup and restore** (06 §4.16).
+  *Done* (decided with the user 2026-10-26: no protocol change, the existing messages over a
+  second connection of the session; a process of the same id is replaced after asking; the
+  composite types a process uses go with it, a different one on the device is kept with a
+  warning; a backup is the processes, their bindings and the composite types, restored by adding
+  or replacing; an uploaded process stays stopped and is saved). One file form, `hakkas/processes`,
+  for a process and a backup; *Download* per process, *Back up* and *Upload…* in the process list;
+  the bindings checked against the uploaded process, mapped with task 63's dialog when they do
+  not fit — this is deploying. Not in the file: links between processes (no message carries them
+  yet, open question 13), users, the configuration.
 - [x] **68. Human-readable names in the environment description** (04 §1, decided with the user
   2026-10-25): an optional `name` (e.g. "Colibri Pt1000" for the type `colibri_pt1000`, from the
   module's EEPROM, or the emulator's module descriptor) for the carrier, each module and each

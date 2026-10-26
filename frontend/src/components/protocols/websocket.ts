@@ -32,6 +32,8 @@ export class Connection {
     openListeners: ((conn: Connection, event: Event) => void)[] = [];
     closeListeners: ((conn: Connection, event: CloseEvent) => void)[] = [];
     errorListeners: ((conn: Connection, event: Event) => void)[] = [];
+    // Every message received, before its protocol's listeners (06 §4.16: the transfer's own).
+    messageListeners: ((protocol: string, command: string, payload: any) => void)[] = [];
 
     constructor() {
         console.log("Creating Connection...");
@@ -95,6 +97,7 @@ export class Connection {
         // viewModel.skipsUndoManager = true;
         // graph.skipsUndoManager = true;
         try {
+            this.messageListeners.forEach(listener => listener(protocol, command, payload));
             this.proto.onMessage(protocol, command, payload);
         } catch (e) {
             console.log("Protocol command not found: ", protocol, command, e);
@@ -105,12 +108,12 @@ export class Connection {
         }
     }
 
-    // Told of every message sent, before it goes (06 §4.13: the undo history records this tab's
-    // graph commands).
-    static sendHook: ((packet: Packet) => void) | undefined;
+    // Told of every message sent, before it goes, with its connection (06 §4.13: the undo history
+    // records the editor's connection's graph commands).
+    static sendHook: ((packet: Packet, conn: Connection) => void) | undefined;
 
     send(packet: Packet): void {
-        Connection.sendHook?.(packet);
+        Connection.sendHook?.(packet, this);
         packet.secret = this.currentSecret ? this.currentSecret : "";
         console.log("<==", loggable(packet.protocol, packet.command, packet.payload));
         let data = JSON.stringify(packet);

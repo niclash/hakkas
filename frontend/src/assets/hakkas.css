@@ -1393,6 +1393,59 @@ h1, h2, h3 {
   color: var(--hk-danger);
 }
 
+/* Download, upload, backup and restore (06 §4.16). */
+.hk-panel-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.hk-transfer-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.hk-transfer-dialog h5 {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  color: var(--hk-text-muted);
+}
+
+.hk-transfer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hk-transfer-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 3px 0;
+}
+
+.hk-transfer-list label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.hk-transfer-name {
+  font-weight: 600;
+}
+
+.hk-transfer-warn,
+.hk-transfer-list > li.failed {
+  color: var(--hk-danger);
+}
+
+.hk-transfer-notes {
+  flex-basis: 100%;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+}
+
 
 /* ---- The device window (06 §4.15) ---------------------------------------------------- */
 

@@ -2,13 +2,23 @@
   <section class="hk-panel">
     <div class="hk-panel-header">
       <h2 class="hk-panel-title">Processes</h2>
-      <button v-if="can.manage" class="hk-button small" type="button" data-testid="process-new" @click="openNewProcessPopup()">New...</button>
+      <span class="hk-panel-buttons">
+        <button v-if="can.manage" class="hk-button small" type="button" data-testid="process-new" @click="openNewProcessPopup()">New...</button>
+        <button v-if="mayUpload" class="hk-button small" type="button" data-testid="process-upload"
+                title="Upload a process file or a backup" @click="uploadInput?.click()">Upload…</button>
+        <button class="hk-button small" type="button" data-testid="process-backup" :disabled="downloading"
+                title="Download every process, its bindings and the composite types" @click="download('all')">Back up</button>
+      </span>
+      <input ref="uploadInput" type="file" accept=".json,application/json" class="hk-hidden" data-testid="process-upload-file"
+             @change="pickUpload"/>
     </div>
+    <p v-if="transferMessage" class="hk-inspector-note" role="status" data-testid="transfer-message">{{ transferMessage }}</p>
     <ul class="hk-list">
       <ProcessItem v-for="[id, graph] in vueModel.graphs.value" :key="id" :id="id" :graph="graph"
                    :active="id === current" :now="now"
                    @open="$emit('onSelection', id)" @start="network()?.request_start(id); refresh(id)"
                    @stop="network()?.request_stop(id); refresh(id)" @save="save(id)" @delete="deleting = id"
+                   @download="download([id])"
                    @rename="to => rename(id, graph.name, to)"/>
       <li v-if="vueModel.graphs.value.size === 0" class="hk-empty">No processes</li>
     </ul>
@@ -39,12 +49,17 @@
     <p class="hk-dialog-error" role="alert" data-testid="save-error">{{ saveError }}</p>
   </Popup>
 
+  <TransferDialog v-if="uploading" :file="uploading.file" :fileName="uploading.name" @close="uploaded"/>
+
   <div v-if="notice !== ''" class="hk-notice" role="status" data-testid="notice">{{ notice }}</div>
 </template>
 
 <script lang="ts" setup>
-import {onMounted, onUnmounted, ref, watch} from "vue";
+import {computed, onMounted, onUnmounted, ref, watch} from "vue";
 import {can, errorClaims, vueModel} from './model';
+import TransferDialog from "@/components/TransferDialog.vue";
+import {fileName, parseTransferFile, TransferFile, transferText} from "@/components/transfer";
+import {readFile} from "@/components/transfer-run";
 import Popup from "@/components/Popup.vue";
 import ProcessItem from "@/components/ProcessItem.vue";
 import {isSaveFailure, newProcessId} from "@/components/processes";
@@ -112,6 +127,60 @@ const keydown = (event: KeyboardEvent) => {
     if (props.current !== "" && can.value.persist && vueModel.graphs.value.has(props.current))
       save(props.current);
   }
+};
+
+// ---- Download, back up, upload (06 §4.16) --------------------------------------------------
+
+const transferMessage = ref("");
+const downloading = ref(false);
+const uploadInput = ref<HTMLInputElement | null>(null);
+const uploading = ref<{ file: TransferFile, name: string } | undefined>();
+const mayUpload = computed(() => can.value.manage && can.value.edit && can.value.persist);
+
+const saveFile = (text: string, name: string) => {
+  const url = URL.createObjectURL(new Blob([text], {type: "application/json"}));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const download = async (ids: string[] | "all") => {
+  transferMessage.value = "";
+  downloading.value = true;
+  try {
+    const file = await readFile(ids);
+    const name = ids === "all"
+        ? fileName(`${String(vueModel.runtime.value?.label ?? "hakkas")} ${file.saved.substring(0, 10)}`, ".backup.json")
+        : fileName(vueModel.graphs.value.get(ids[0])?.name ?? ids[0], ".process.json");
+    saveFile(transferText(file), name);
+  } catch (e) {
+    transferMessage.value = (ids === "all" ? "Back up: " : "Download: ") + (e instanceof Error ? e.message : String(e));
+  } finally {
+    downloading.value = false;
+  }
+};
+
+const pickUpload = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (file === undefined)
+    return;
+  transferMessage.value = "";
+  const parsed = parseTransferFile(await file.text());
+  if (typeof parsed === "string") {
+    transferMessage.value = file.name + ": " + parsed;
+    return;
+  }
+  uploading.value = {file: parsed, name: file.name};
+};
+
+const uploaded = (open?: string) => {
+  uploading.value = undefined;
+  if (open !== undefined && vueModel.graphs.value.has(open))
+    emit("onSelection", open);
 };
 
 // Deleting asks first, naming the process.

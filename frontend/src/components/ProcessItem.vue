@@ -18,6 +18,8 @@
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor"
             d="M2 1h10l3 3v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm1 1v4h8V2H3zm5 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
       </button>
+      <button type="button" class="hk-icon-button" data-testid="process-download" :aria-label="'Download ' + graph.name"
+              title="Download" @click.stop="emit('download')">⤓</button>
       <button v-if="can.edit" type="button" class="hk-icon-button" data-testid="process-rename" :aria-label="'Rename ' + graph.name"
               title="Rename" @click.stop="rename">✎</button>
       <button v-if="can.manage" type="button" class="hk-icon-button" data-testid="process-delete" :aria-label="'Delete ' + graph.name"
@@ -35,11 +37,12 @@ import {computed, nextTick, ref} from "vue";
 import {can, Graph} from "@/components/model";
 import {formatUptime, uptimeNow} from "@/components/processes";
 
-// One process in the list (06 §4.6): its running mark, name, unsaved mark and actions. The name
+// One process in the list (06 §4.6): its running mark, name, unsaved mark and actions (Download:
+// 06 §4.16). The name
 // is renamed in place; what is shown changes only with the engine's events.
 const props = defineProps<{ id: string, graph: Graph, active: boolean, now: number }>();
 const emit = defineEmits<{
-  open: [], start: [], stop: [], save: [], delete: [], rename: [to: string]
+  open: [], start: [], stop: [], save: [], delete: [], download: [], rename: [to: string]
 }>();
 
 const uptime = computed(() => formatUptime(uptimeNow(props.graph.uptime, props.graph.uptimeAt, props.graph.running, props.now)));

@@ -93,7 +93,10 @@ function links(): Link[] {
 
 // ---- Recording --------------------------------------------------------------------------
 
-function record(packet: Packet) {
+function record(packet: Packet, conn: Connection) {
+    // Only the editor's connection: a transfer's (06 §4.16) is not undone.
+    if (conn !== vueModel.connection.value)
+        return;
     const payload = packet.payload as Record<string, any> | undefined;
     const protocol = ENVIRONMENT_COMMANDS.has(packet.command) ? "environment" : "graph";
     if (!recording || packet.protocol !== protocol || !UNDOABLE.has(packet.command) || payload?.graph === undefined)
