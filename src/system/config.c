@@ -85,6 +85,7 @@ static const KeyDef keys[] = {
 	    CONFIG_SECONDS_MAX),
 	KEY("auth.server_secret", K_STRING, auth.server_secret, CONFIG_SECRET_MIN, 0),
 	KEY("environment.socket", K_PATH, environment.socket, 0, 0),
+	KEY("environment.pictures", K_PATH, environment.pictures, 0, 0),
 	KEY("tls.enabled", K_BOOL, tls.enabled, 0, 0),
 	KEY("tls.cert", K_PATH, tls.cert, 0, 0),
 	KEY("tls.key", K_PATH, tls.key, 0, 0),

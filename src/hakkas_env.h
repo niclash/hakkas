@@ -99,12 +99,15 @@ typedef struct {
 } HakkasEnvPort;
 
 /* A picture of a board (04 §1, plan task 75), view only: the vendor's file
- * at url (https; NULL: no picture), with the part to show (crop, in
- * fractions 0..1 of the file's width and height; none: all of it), turned
- * clockwise by rotation degrees (0, 90, 180 or 270), so that it shows the
- * board in the carrier's orientation. Not checked. */
+ * at url (https; NULL: none), with the part to show (crop, in fractions
+ * 0..1 of the file's width and height; none: all of it), turned clockwise
+ * by rotation degrees (0, 90, 180 or 270), so that it shows the board in the
+ * carrier's orientation; and the environment's own copy (plan task 77), a
+ * file name in environment.pictures (05 §1.1), already cropped and turned
+ * (NULL: none). Neither url nor copy: no picture. Not checked. */
 typedef struct {
 	const char *url;
+	const char *copy;
 	uint32_t rotation;
 	bool has_crop;
 	double x, y, w, h; /* the crop */

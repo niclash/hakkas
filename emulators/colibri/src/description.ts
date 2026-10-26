@@ -103,12 +103,13 @@ export function describe(system: System, mcu?: McuType): Description {
     return d;
 }
 
-// A render as hakkas' `picture` (04 §1 "Pictures"), or nothing.
+// A render as hakkas' `picture` (04 §1 "Pictures"), or nothing; its copy is the name the loader
+// published it under (catalog.ts, publishCopies).
 function pictureOf(r: Render | undefined): {picture?: JsonObject} {
     if (r === undefined)
         return {};
-    return {picture: {url: r.url, ...(r.rotation !== undefined && {rotation: r.rotation}),
-        ...(r.crop !== undefined && {crop: {...r.crop}})}};
+    return {picture: {...(r.url !== undefined && {url: r.url}), ...(r.copy !== undefined && {copy: r.copy}),
+        ...(r.rotation !== undefined && {rotation: r.rotation}), ...(r.crop !== undefined && {crop: {...r.crop}})}};
 }
 
 // The carrier's places in hakkas' form (04 §1); the MCU slot's only with an MCU module in it.

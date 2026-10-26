@@ -1,8 +1,8 @@
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
-import {loadCatalog, type Catalog} from '../src/catalog.js';
+import {loadCatalog, publishCopies, type Catalog} from '../src/catalog.js';
 import {isMeasured, type Channel} from '../src/descriptors.js';
 import {createLogger} from '../src/log.js';
 import {BUILTIN_DATA} from '../src/package.js';
@@ -142,6 +142,38 @@ describe('loading plugin directories', () => {
         expect(catalog.modules.get('n')!.def.faceplate).toBe('face.svg');
         expect(lines[0]).toBe(`warn ${path.join(tmp, 'p/modules/m/module.json')}: faceplate face.svg not found, left out`);
     });
+
+    it('leaves out a render copy that is not there, and the render with it when it has no url', async () => {
+        file('p/modules/m/module.json', {type: 'm', render: {copy: 'picture.webp'}});
+        file('p/modules/n/module.json', {type: 'n', render: {url: 'https://x/n.png', copy: 'picture.webp'}});
+        const {catalog, lines} = await load([path.join(tmp, 'p')]);
+        expect(catalog.modules.get('m')!.def.render).toBeUndefined();
+        expect(catalog.modules.get('n')!.def.render).toEqual({url: 'https://x/n.png'});
+        expect(lines[0]).toBe(`warn ${path.join(tmp, 'p/modules/m/module.json')}: ` +
+            'render copy picture.webp not found, left out');
+    });
+
+    it('publishes the render copies under their types\' names, or leaves them out without a directory',
+        async () => {
+            file('p/modules/m/module.json', {type: 'm', render: {copy: 'picture.webp'}});
+            file('p/modules/m/picture.webp', 'RIFF-M');
+            file('p/mcu/u/mcu.json', {type: 'u', render: {url: 'https://x/u.png', copy: 'board.png'}});
+            file('p/mcu/u/board.png', 'PNG-U');
+            let {catalog, lines} = await load([path.join(tmp, 'p')]);
+            const dir = path.join(tmp, 'out', 'pictures');
+            await publishCopies(catalog, dir, createLogger('fine', l => lines.push(l)));
+            expect(catalog.modules.get('m')!.def.render).toEqual({copy: 'm.webp'});
+            expect(catalog.mcu.get('u')!.def.render).toEqual({url: 'https://x/u.png', copy: 'u.png'});
+            expect(readFileSync(path.join(dir, 'm.webp'), 'utf8')).toBe('RIFF-M');
+            expect(readFileSync(path.join(dir, 'u.png'), 'utf8')).toBe('PNG-U');
+            expect(lines.at(-1)).toBe(`info pictures: 2 copies in ${dir}`);
+
+            ({catalog, lines} = await load([path.join(tmp, 'p')]));
+            await publishCopies(catalog, undefined, createLogger('fine', l => lines.push(l)));
+            expect(catalog.modules.get('m')!.def.render).toBeUndefined();
+            expect(catalog.mcu.get('u')!.def.render).toEqual({url: 'https://x/u.png'});
+            expect(existsSync(path.join(tmp, 'pictures'))).toBe(false);
+        });
 
     it('checks what a carrier names against the catalog', async () => {
         file('p/modules/io/module.json', {type: 'io'});

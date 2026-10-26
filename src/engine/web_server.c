@@ -43,7 +43,8 @@ struct WebServer {
 	LoopListener *listener; /* NULL once closed */
 	WebConn *conns;
 	WebServerConfig cfg;
-	char webdir[PAL_PATH_MAX]; /* without a trailing '/' */
+	char webdir[PAL_PATH_MAX];     /* without a trailing '/' */
+	char picturedir[PAL_PATH_MAX]; /* likewise; "" for none */
 	uint8_t chunk[CHUNK];
 };
 
@@ -223,12 +224,13 @@ static bool not_found(enum pal_err err)
 	return err == PAL_ERR_NOT_FOUND || err == PAL_ERR_INVALID || err == PAL_ERR_NAME_TOO_LONG;
 }
 
-/* Opens rel under webdir, or its .gz variant when the client takes gzip. */
-static enum pal_err open_asset(WebConn *w, const char *rel, bool *gzip, uint64_t *size)
+/* Opens rel under dir, or its .gz variant when the client takes gzip. */
+static enum pal_err open_asset(WebConn *w, const char *dir, const char *rel, bool *gzip,
+			       uint64_t *size)
 {
 	char path[PAL_PATH_MAX];
 	*gzip = false;
-	int n = snprintf(path, sizeof(path), "%s/%s.gz", w->srv->webdir, rel);
+	int n = snprintf(path, sizeof(path), "%s/%s.gz", dir, rel);
 	if (n < 0 || (size_t)n >= sizeof(path))
 		return PAL_ERR_NAME_TOO_LONG;
 	if (http_request_accepts_encoding(&w->req, "gzip")) {
@@ -310,18 +312,29 @@ static void serve(WebConn *w)
 
 	bool gzip;
 	uint64_t size = 0;
-	const char *served = rel;
-	enum pal_err err = open_asset(w, served, &gzip, &size);
-	if (not_found(err) && route) {
-		served = WEB_ENTRY_DOCUMENT; /* a client-side route (SPA fallback) */
-		err = open_asset(w, served, &gzip, &size);
+	const char *served = rel, *dir = w->srv->webdir;
+	enum pal_err err;
+	static const char pictures[] = WEB_PICTURES_PATH;
+	if (strncmp(rel, pictures, sizeof(pictures) - 1) == 0) {
+		/* The environment's pictures: one file name, from picturedir. */
+		served = rel + sizeof(pictures) - 1;
+		dir = w->srv->picturedir;
+		err = dir[0] == '\0' || served[0] == '\0' || strchr(served, '/') != NULL
+			      ? PAL_ERR_NOT_FOUND
+			      : open_asset(w, dir, served, &gzip, &size);
+	} else {
+		err = open_asset(w, dir, served, &gzip, &size);
+		if (not_found(err) && route) {
+			served = WEB_ENTRY_DOCUMENT; /* a client-side route (SPA fallback) */
+			err = open_asset(w, dir, served, &gzip, &size);
+		}
 	}
 	if (not_found(err)) {
 		respond_error(w, 404, true);
 		return;
 	}
 	if (err != PAL_OK) {
-		log_warn("web: cannot open %s/%s: %s", w->srv->webdir, served, pal_err_str(err));
+		log_warn("web: cannot open %s/%s: %s", dir, served, pal_err_str(err));
 		respond_error(w, err == PAL_ERR_UNAVAILABLE ? 503 : 500, false);
 		return;
 	}
@@ -546,6 +559,15 @@ enum pal_err web_server_open(Loop *loop, const WebServerConfig *cfg, WebServer *
 	while (n > 0 && srv->webdir[n - 1] == '/')
 		srv->webdir[--n] = '\0'; /* "/" becomes "", and paths "/<rel>" */
 	srv->cfg.webdir = srv->webdir;
+	if (cfg->picturedir != NULL && strlen(cfg->picturedir) < PAL_PATH_MAX) {
+		strcpy(srv->picturedir, cfg->picturedir);
+		n = strlen(srv->picturedir);
+		while (n > 0 && srv->picturedir[n - 1] == '/')
+			srv->picturedir[--n] = '\0';
+		if (n == 0 && cfg->picturedir[0] == '/')
+			strcpy(srv->picturedir, "/."); /* the root, not "none" */
+	}
+	srv->cfg.picturedir = srv->picturedir;
 	if (!loop_add_tick(loop, tick, srv)) {
 		log_error("web: no tick hook left");
 		free(srv);
@@ -592,6 +614,7 @@ enum pal_err web_server_open_config_at(Loop *loop, const Config *cfg, uint16_t p
 {
 	WebServerConfig wc;
 	web_server_config_defaults(&wc, cfg->host, port, cfg->webdir);
+	wc.picturedir = cfg->environment.pictures;
 	return web_server_open(loop, &wc, out);
 }
 

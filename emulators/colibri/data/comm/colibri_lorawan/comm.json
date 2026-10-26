@@ -2,6 +2,9 @@
   "type": "colibri_lorawan",
   "name": "Colibri LoRaWAN",
   "vendor": "CurrentMakers",
+  "render": {
+    "copy": "picture.webp"
+  },
   "params": [
     "lorawan"
   ]

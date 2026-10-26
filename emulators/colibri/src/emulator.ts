@@ -1,5 +1,5 @@
 // The emulator's run: from startup to a stop request.
-import {loadCatalog} from './catalog.js';
+import {loadCatalog, publishCopies} from './catalog.js';
 import type {Options} from './cli.js';
 import {Core} from './core.js';
 import {Library} from './library.js';
@@ -18,6 +18,7 @@ export async function runEmulator(options: Options, log: Logger, stop: AbortSign
     const mcu = catalog.mcu.get(options.mcu)?.def;
     if (mcu === undefined)
         throw new Error(`unknown MCU module type: ${options.mcu}`);
+    await publishCopies(catalog, options.pictures, log);
     const library = new Library(options.library);
     await library.init();
     const name = await library.startup(options.environment);

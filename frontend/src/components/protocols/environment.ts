@@ -34,9 +34,12 @@ export interface EnvRect {
 }
 
 // A board's picture (plan task 75): the vendor's file (load only an https one), the part of it
-// to show (`crop`, fractions of the file), then turned clockwise by `rotation` degrees.
+// to show (`crop`, fractions of the file), then turned clockwise by `rotation` degrees; and the
+// device's own copy (plan task 77), at /environment/pictures/<copy> on hakkas' web server,
+// already cropped and turned. At least one of url and copy.
 export interface EnvPicture {
-    url: string;
+    url?: string;
+    copy?: string;
     rotation?: number;      // 0, 90, 180 or 270
     crop?: EnvRect;
 }

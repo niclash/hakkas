@@ -158,7 +158,11 @@ describe('module descriptors', () => {
         expect(moduleErrors([], {render: {url: 'http://example.com/m.webp'}}))
             .toEqual(['render.url: expected an https link']);
         expect(moduleErrors([], {render: {url: 'm.webp'}})).toEqual(['render.url: expected an https link']);
-        expect(moduleErrors([], {render: {}})).toEqual(['render.url: missing']);
+        expect(moduleErrors([], {render: {}})).toEqual(['render: expected url, copy or both']);
+        // The device's own copy (hakkas plan task 77): a picture file beside the descriptor.
+        expect(module({type: 'm', render: {copy: 'picture.webp'}}).def!.render).toEqual({copy: 'picture.webp'});
+        expect(moduleErrors([], {render: {url: 'https://x/m.png', copy: '../x.webp'}}))
+            .toEqual(['render.copy: expected a picture file name in the same directory (.svg, .png, .jpg, .webp)']);
         expect(moduleErrors([], {render: {url: 'https://x/m.png', rotation: 45}}))
             .toEqual(['render.rotation: expected 0, 90, 180 or 270']);
         expect(moduleErrors([], {render: {url: 'https://x/m.png', rotation: 360}}))

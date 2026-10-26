@@ -40,6 +40,12 @@ static bool text_ok(const char *s, size_t max)
 	return s == NULL || bounded_len(s, max) <= max;
 }
 
+/* Whether a picture's strings are at most HAKKAS_ENV_TEXT_MAX bytes. */
+static bool picture_ok(const HakkasEnvPicture *pic)
+{
+	return text_ok(pic->url, HAKKAS_ENV_TEXT_MAX) && text_ok(pic->copy, HAKKAS_ENV_TEXT_MAX);
+}
+
 /* Whether s is 1..max bytes. */
 static bool id_ok(const char *s, size_t max)
 {
@@ -118,7 +124,7 @@ static bool is_builtin_slot(const HakkasEnvCarrier *c, uint32_t slot)
  * 2026-10-25). */
 static bool carrier_ok(const HakkasEnvCarrier *c, char *msg, size_t cap)
 {
-	if (!text_ok(c->name, HAKKAS_ENV_TEXT_MAX) || !text_ok(c->picture.url, HAKKAS_ENV_TEXT_MAX))
+	if (!text_ok(c->name, HAKKAS_ENV_TEXT_MAX) || !picture_ok(&c->picture))
 		return fail(msg, cap, "carrier: name, picture: longer than %d bytes",
 			    HAKKAS_ENV_TEXT_MAX);
 	if ((c->builtin_count > 0 && c->builtin == NULL) ||
@@ -160,13 +166,13 @@ static bool carrier_ok(const HakkasEnvCarrier *c, char *msg, size_t cap)
 					    (unsigned)s);
 		}
 		if (!text_ok(c->comm[i].name, HAKKAS_ENV_TEXT_MAX) ||
-		    !text_ok(c->comm[i].picture.url, HAKKAS_ENV_TEXT_MAX))
+		    !picture_ok(&c->comm[i].picture))
 			return fail(msg, cap,
 				    "carrier: comm[%zu]: name, picture: longer than %d bytes", i,
 				    HAKKAS_ENV_TEXT_MAX);
 	}
 	if (c->mcu != NULL && (!text_ok(c->mcu->name, HAKKAS_ENV_TEXT_MAX) ||
-			       !text_ok(c->mcu->picture.url, HAKKAS_ENV_TEXT_MAX)))
+			       !picture_ok(&c->mcu->picture)))
 		return fail(msg, cap, "carrier: mcu: name, picture: longer than %d bytes",
 			    HAKKAS_ENV_TEXT_MAX);
 	return true;
@@ -243,7 +249,7 @@ bool env_description_validate(const HakkasEnvDescription *d, char *msg, size_t c
 		    !text_ok(m->revision, HAKKAS_ENV_TEXT_MAX) ||
 		    !text_ok(m->serial, HAKKAS_ENV_TEXT_MAX) ||
 		    !text_ok(m->documentation, HAKKAS_ENV_TEXT_MAX) ||
-		    !text_ok(m->picture.url, HAKKAS_ENV_TEXT_MAX))
+		    !picture_ok(&m->picture))
 			return fail(msg, cap, "modules[%zu]: text longer than %d bytes", i,
 				    HAKKAS_ENV_TEXT_MAX);
 		if (m->port_count > 0 && m->ports == NULL)
@@ -276,7 +282,7 @@ static bool str_eq(const char *a, const char *b)
 
 static bool picture_eq(const HakkasEnvPicture *a, const HakkasEnvPicture *b)
 {
-	return str_eq(a->url, b->url) && a->rotation == b->rotation &&
+	return str_eq(a->url, b->url) && str_eq(a->copy, b->copy) && a->rotation == b->rotation &&
 	       a->has_crop == b->has_crop &&
 	       (!a->has_crop || (a->x == b->x && a->y == b->y && a->w == b->w && a->h == b->h));
 }
@@ -468,6 +474,7 @@ void env_description_free(HakkasEnvDescription *d)
 		free_str(m->serial);
 		free_str(m->documentation);
 		free_str(m->picture.url);
+		free_str(m->picture.copy);
 		for (size_t k = 0; k < m->port_count; k++)
 			free_str(m->ports[k]);
 		free((void *)(uintptr_t)m->ports);
@@ -482,6 +489,7 @@ void env_description_free(HakkasEnvDescription *d)
 	free_str(o->carrier.serial);
 	free_str(o->carrier.documentation);
 	free_str(o->carrier.picture.url);
+	free_str(o->carrier.picture.copy);
 	free_str(o->mcu.type);
 	free_str(o->mcu.name);
 	free_str(o->mcu.vendor);
@@ -489,10 +497,12 @@ void env_description_free(HakkasEnvDescription *d)
 	free_str(o->mcu.serial);
 	free_str(o->mcu.documentation);
 	free_str(o->mcu.picture.url);
+	free_str(o->mcu.picture.copy);
 	for (size_t i = 0; i < o->carrier.comm_count; i++) {
 		free_str(o->comm[i].type);
 		free_str(o->comm[i].name);
 		free_str(o->comm[i].picture.url);
+		free_str(o->comm[i].picture.copy);
 		free_str(o->comm[i].ssid);
 		const HakkasEnvIp *ip = &o->params[i].ip;
 		free_str(ip->mode);
@@ -614,15 +624,19 @@ static bool view_bool(const cJSON *obj, const char *key, bool *out)
 	return true;
 }
 
-/* A picture {"url", "rotation"?, "crop"?: {"x", "y", "w", "h"}} (view only,
- * plan task 75): none without a string url; a rotation that is not an
- * integer of at least 0, or a crop missing a member, is absent. */
+/* A picture {"url"?, "copy"?, "rotation"?, "crop"?: {"x", "y", "w", "h"}}
+ * (view only, plan tasks 75, 77): none without a string url or copy; a
+ * rotation that is not an integer of at least 0, or a crop missing a member,
+ * is absent. */
 static HakkasEnvPicture view_picture(Parse *p, const cJSON *obj)
 {
 	HakkasEnvPicture pic = {0};
 	const cJSON *j = member(obj, "picture");
-	pic.url = cJSON_IsObject(j) ? view_str(p, j, "url") : NULL;
-	if (pic.url == NULL)
+	if (!cJSON_IsObject(j))
+		return pic;
+	pic.url = view_str(p, j, "url");
+	pic.copy = view_str(p, j, "copy");
+	if (pic.url == NULL && pic.copy == NULL)
 		return pic;
 	if (!view_uint(j, "rotation", &pic.rotation))
 		pic.rotation = 0;
@@ -1099,13 +1113,15 @@ static bool put_str(cJSON *obj, const char *key, const char *s)
 	return s == NULL || put(obj, key, cJSON_CreateString(s));
 }
 
-/* A picture: nothing without a url; rotation 0 and no crop left out. */
+/* A picture: nothing without a url or copy; rotation 0 and no crop left
+ * out. */
 static bool put_picture(cJSON *obj, const HakkasEnvPicture *pic)
 {
-	if (pic->url == NULL)
+	if (pic->url == NULL && pic->copy == NULL)
 		return true;
 	cJSON *j = cJSON_CreateObject();
 	if (!put(obj, "picture", j) || !put_str(j, "url", pic->url) ||
+	    !put_str(j, "copy", pic->copy) ||
 	    (pic->rotation != 0 && !put(j, "rotation", cJSON_CreateNumber(pic->rotation))))
 		return false;
 	if (!pic->has_crop)

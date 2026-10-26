@@ -79,6 +79,17 @@ static void make_webdir(void)
 	put_text("web/only.mjs.gz", "GZIP-ONLY");
 	put_text("web/.hidden", "hidden");
 	put_text("web/empty.txt", "");
+	/* The environment's pictures (plan task 77), and a decoy in webdir. */
+	char pics[PAL_PATH_MAX];
+	FMT(pics, "%s/pictures", root);
+	CHECK(mkdir(pics, 0755) == 0);
+	FMT(pics, "%s/web/environment", root);
+	CHECK(mkdir(pics, 0755) == 0);
+	FMT(pics, "%s/web/environment/pictures", root);
+	CHECK(mkdir(pics, 0755) == 0);
+	put_text("pictures/colibri_aiv.webp", "RIFF-AIV");
+	put_text("pictures/colibri_8.png.gz", "GZIP-C8");
+	put_text("web/environment/pictures/decoy.webp", "DECOY");
 	uint8_t *big = malloc(BIG_SIZE);
 	CHECK(big != NULL);
 	for (size_t i = 0; i < BIG_SIZE; i++)
@@ -523,6 +534,57 @@ static void test_gzip(void)
 	teardown();
 }
 
+/* The environment's own pictures (04 §1, plan task 77): one file name under
+ * picturedir, never webdir's, never the entry document. */
+static char picturedir[PAL_PATH_MAX];
+
+static void with_pictures(WebServerConfig *cfg)
+{
+	FMT(picturedir, "%s/pictures/", root);
+	cfg->picturedir = picturedir;
+}
+
+static void test_pictures(void)
+{
+	setup_with(with_pictures);
+	Resp r = get("/environment/pictures/colibri_aiv.webp");
+	CHECK(r.status == 200 && strcmp(r.body, "RIFF-AIV") == 0);
+	CHECK_STREQ(header(&r, "Content-Type"), "image/webp");
+	resp_free(&r);
+	r = request("GET", "/environment/pictures/colibri_8.png", "Accept-Encoding: gzip\r\n");
+	CHECK(r.status == 200 && strcmp(r.body, "GZIP-C8") == 0);
+	CHECK_STREQ(header(&r, "Content-Type"), "image/png");
+	resp_free(&r);
+	static const char *const missing[] = {
+		"/environment/pictures/decoy.webp", /* webdir's: not served */
+		"/environment/pictures/nope.webp",
+		"/environment/pictures/nope",	  /* no entry document */
+		"/environment/pictures/",
+		"/environment/pictures/a/b.webp", /* one segment only */
+		"/environment/pictures/%2e%2e",
+	};
+	for (size_t i = 0; i < sizeof(missing) / sizeof(missing[0]); i++) {
+		r = get(missing[i]);
+		CHECK(r.status == 404 || r.status == 400);
+		CHECK(r.body == NULL || strstr(r.body, "DECOY") == NULL);
+		resp_free(&r);
+	}
+	r = get("/environment/pictures/../secret.txt");
+	CHECK(r.status == 400);
+	resp_free(&r);
+	teardown();
+
+	/* Without a picturedir: 404, webdir's file neither. */
+	setup();
+	r = get("/environment/pictures/colibri_aiv.webp");
+	CHECK(r.status == 404);
+	resp_free(&r);
+	r = get("/environment/pictures/decoy.webp");
+	CHECK(r.status == 404);
+	resp_free(&r);
+	teardown();
+}
+
 static void test_methods(void)
 {
 	setup();
@@ -901,6 +963,7 @@ int main(void)
 	RUN(test_serve_files);
 	RUN(test_not_found_and_fallback);
 	RUN(test_gzip);
+	RUN(test_pictures);
 	RUN(test_methods);
 	RUN(test_traversal);
 	RUN(test_bad_requests);

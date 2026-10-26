@@ -1,10 +1,10 @@
 // The catalog: every module, carrier, communication module and MCU module type, loaded from the plugin
 // directories (spec §7): the built-in one, then each --plugins directory, in order.
-import {access, readdir, readFile} from 'node:fs/promises';
+import {access, copyFile, mkdir, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {Checker, type Json} from './check.js';
 import {readCarrier, readComm, readMcu, readModule, type CarrierType, type CommType, type McuType,
-    type ModuleType} from './descriptors.js';
+    type Metadata, type ModuleType} from './descriptors.js';
 import type {Logger} from './log.js';
 
 export interface Entry<T> {
@@ -55,6 +55,7 @@ export async function loadCatalog(dirs: string[], log: Logger): Promise<Catalog>
                 if (def === undefined)
                     continue;
                 await checkPicture(def as {faceplate?: string, picture?: string}, typeDir, file, log);
+                await checkCopy(def as Metadata, typeDir, file, log);
                 const map = maps[k]!;
                 const earlier = map.get(def.type);
                 if (earlier !== undefined)
@@ -108,6 +109,56 @@ async function checkPicture(def: {faceplate?: string, picture?: string}, dir: st
             delete def[key];
         }
     }
+}
+
+// A render's copy (hakkas plan task 77) its directory does not have is left out, with a warning;
+// so is the render, when it has no url.
+async function checkCopy(def: Metadata, dir: string, file: string, log: Logger): Promise<void> {
+    const copy = def.render?.copy;
+    if (copy === undefined)
+        return;
+    try {
+        await access(path.join(dir, copy));
+    } catch {
+        log.warn(`${file}: render copy ${copy} not found, left out`);
+        delete def.render!.copy;
+        if (def.render!.url === undefined)
+            delete def.render;
+    }
+}
+
+// The renders' copies (hakkas plan task 77): with a directory (--pictures), each is copied into
+// it as <type><extension>, the name it is described under, so types from different plugin
+// directories cannot clash; without one, they are left out of the descriptors (hakkas would
+// have nothing to serve). A copy that cannot be written is left out, with a warning.
+export async function publishCopies(catalog: Catalog, dir: string | undefined, log: Logger): Promise<void> {
+    if (dir !== undefined)
+        await mkdir(dir, {recursive: true});
+    let n = 0;
+    const maps = [catalog.modules, catalog.carriers, catalog.comm, catalog.mcu] as Map<string, Entry<Metadata>>[];
+    for (const map of maps) {
+        for (const {def, dir: from} of map.values()) {
+            const r = def.render;
+            if (r?.copy === undefined)
+                continue;
+            const name = def.type + path.extname(r.copy).toLowerCase();
+            try {
+                if (dir === undefined)
+                    throw new Error('no --pictures directory');
+                await copyFile(path.join(from, r.copy), path.join(dir, name));
+                r.copy = name;
+                n++;
+            } catch (e) {
+                if (dir !== undefined)
+                    log.warn(`pictures: ${def.type}: ${(e as Error).message}: copy left out`);
+                delete r.copy;
+                if (r.url === undefined)
+                    delete def.render;
+            }
+        }
+    }
+    if (dir !== undefined)
+        log.info(`pictures: ${n} copies in ${dir}`);
 }
 
 // What a carrier names must be in the catalog: a carrier whose built-in module type is missing

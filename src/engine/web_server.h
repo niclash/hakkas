@@ -22,6 +22,10 @@
  *    answered 200 with the entry document
  *    (index.html); one with an extension (a missing /app.js) is 404, so a
  *    script is never answered with HTML.
+ *  - The environment's pictures (04 §1, plan task 77): a path
+ *    environment/pictures/<name>, <name> one segment, is the file <name> of
+ *    picturedir, never a file of webdir and never the entry document; 404
+ *    without a picturedir. Pre-compression and headers as for an asset.
  *  - Pre-compressed assets: when Accept-Encoding allows gzip
  *    (http_request_accepts_encoding: q=0 refuses), <file>.gz is served if it
  *    exists, with Content-Encoding: gzip and the original's Content-Type;
@@ -77,6 +81,9 @@
 /* The SPA's entry document, served for "/" and for unmatched routes. */
 #define WEB_ENTRY_DOCUMENT "index.html"
 
+/* Where the environment's pictures are served, relative to the root. */
+#define WEB_PICTURES_PATH "environment/pictures/"
+
 /* The smallest out_cap: a response head must fit. */
 #define WEB_OUT_CAP_MIN 1024
 
@@ -86,6 +93,7 @@ typedef struct {
 	const char *host;   /* numeric address */
 	uint16_t port;	    /* 0: an ephemeral port (web_server_port) */
 	const char *webdir; /* at most PAL_PATH_MAX - 1 bytes */
+	const char *picturedir; /* the environment's pictures; NULL or "": none */
 	uint32_t max_conns;
 	size_t out_cap;	 /* >= WEB_OUT_CAP_MIN */
 	size_t head_max; /* > 0 */
@@ -101,7 +109,8 @@ void web_server_config_defaults(WebServerConfig *cfg, const char *host, uint16_t
  * a bad cfg, PAL_ERR_UNAVAILABLE when out of memory or tick hooks. */
 enum pal_err web_server_open(Loop *loop, const WebServerConfig *cfg, WebServer **out);
 
-/* Opens it from the configuration (05 §1.1: host, port, webdir; the rest the
+/* Opens it from the configuration (05 §1.1: host, port, webdir,
+ * environment.pictures; the rest the
  * defaults): startup step 8 (05 §1.4, plan task 19); a failure refuses
  * startup. */
 enum pal_err web_server_open_config(Loop *loop, const Config *cfg, WebServer **out);

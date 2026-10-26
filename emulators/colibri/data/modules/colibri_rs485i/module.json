@@ -4,5 +4,8 @@
   "vendor": "CurrentMakers",
   "description": "RS-485 (not emulated)",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "render": {
+    "copy": "picture.webp"
+  },
   "channels": []
 }

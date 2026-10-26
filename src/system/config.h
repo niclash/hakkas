@@ -29,7 +29,8 @@
  *    once) and then CONFIG_ERR_INVALID is returned; the engine refuses to
  *    start;
  *  - a relative path in the file (webdir, datadir, auth.users_file,
- *    environment.socket, tls.cert, tls.key) is relative to confdir, the
+ *    environment.socket, environment.pictures, tls.cert, tls.key) is
+ *    relative to confdir, the
  *    file's own directory; a path given
  *    as a command-line option is used as given (relative to the working
  *    directory).
@@ -157,6 +158,10 @@ typedef struct {
 		/* POSIX: the Unix socket of the external environment program
 		 * (04 §0.1); "": no environment. */
 		char socket[PAL_PATH_MAX];
+		/* The directory of the environment's own copies of its
+		 * pictures, served at /environment/pictures/ (04 §1, 05 §3,
+		 * plan task 77); "": none. */
+		char pictures[PAL_PATH_MAX];
 	} environment;
 	struct {
 		bool enabled;

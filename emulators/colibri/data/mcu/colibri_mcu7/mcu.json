@@ -5,6 +5,7 @@
   "description": "RP2350",
   "render": {
     "url": "https://currentmakers.com/data/products/colibri/renders/colibri_mcu7-rev_A_top_render.png",
+    "copy": "picture.webp",
     "rotation": 90,
     "crop": {
       "x": 0.2243,

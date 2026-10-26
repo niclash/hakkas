@@ -477,6 +477,10 @@ static void test_description_validate(void)
 	mcu.picture.url = NULL;
 	mods[1].picture.url = long_name;
 	invalid_desc(d, "modules[1]: text longer than 1024 bytes");
+	mods[1].picture.url = NULL;
+	mods[1].picture.copy = long_name;
+	invalid_desc(d, "modules[1]: text longer than 1024 bytes");
+	mods[1].picture.copy = NULL;
 	mods[1].picture.url = "https://example.com/carrier.webp";
 	static HakkasEnvPosition positions[HAKKAS_ENV_POSITIONS_MAX + 1];
 	positions[0] = (HakkasEnvPosition){.port = "nope", .index = 9, .x = 7, .y = -1};
@@ -847,14 +851,17 @@ static void test_pictures_json(void)
 		" \"picture\": {\"url\": \"https://x/e.webp\", \"rotation\": -90,"
 		" \"crop\": {\"x\": 0.1}}}],"
 		" \"mcu\": {\"type\": \"colibri_mcu6\", \"picture\": \"https://x/m.webp\"}},"
+		" \"inPorts\": [{\"id\": \"slot4-dq\", \"type\": \"bool\"}],"
 		" \"outPorts\": [{\"id\": \"slot3-ai\", \"type\": \"number\","
 		" \"addressable\": true, \"count\": 2},"
 		" {\"id\": \"slot0-di\", \"type\": \"bool\"}],"
 		" \"modules\": [{\"slot\": 0, \"builtin\": true, \"type\": \"carrier\","
 		" \"ports\": [\"slot0-di\"], \"positions\": [{\"port\": \"slot0-di\", \"x\": 0.74,"
 		" \"y\": 0.65}]},"
+		" {\"slot\": 4, \"type\": \"colibri_ssr\", \"picture\": {\"copy\": \"ssr.webp\","
+		" \"rotation\": 90}, \"ports\": [\"slot4-dq\"]},"
 		" {\"slot\": 3, \"type\": \"colibri_aiv\","
-		" \"picture\": {\"url\": \"https://x/aiv.webp\","
+		" \"picture\": {\"url\": \"https://x/aiv.webp\", \"copy\": \"aiv.webp\","
 		" \"rotation\": 90, \"crop\": {\"x\": 0.2, \"y\": 0.1, \"w\": 0.6, \"h\": 0.8}},"
 		" \"ports\": [\"slot3-ai\"], \"positions\": [{\"port\": \"slot3-ai\", \"index\": 1,"
 		" \"x\": 0.27, \"y\": 0.43}, {\"port\": \"slot3-ai\", \"index\": 2, \"x\": 0.72},"
@@ -874,14 +881,21 @@ static void test_pictures_json(void)
 		CHECK_STREQ(c->comm[0].picture.url, "https://x/e.webp");
 		CHECK(c->comm[0].picture.rotation == 0 && !c->comm[0].picture.has_crop);
 		CHECK(c->mcu != NULL && c->mcu->picture.url == NULL);
+		CHECK(c->picture.copy == NULL);
 		/* Entries missing a member, or with one of another type, are left out. */
 		CHECK(c->io_place_count == 2 && c->io_places[1].slot == 3);
 		CHECK(c->io_places[0].x == 0.37 && c->io_places[0].h == 0.165);
 		CHECK(c->comm_place_count == 0);
 		CHECK(c->mcu_place != NULL && c->mcu_place->x == 0.32);
 		CHECK(d->modules[0].picture.url == NULL && d->modules[0].position_count == 1);
+		/* The environment's own copy (plan task 77), with or without a url. */
+		CHECK(d->modules[0].picture.copy == NULL);
 		CHECK(d->modules[0].positions[0].index == 0); /* not addressable */
-		const HakkasEnvModule *aiv = &d->modules[1];
+		const HakkasEnvModule *ssr = &d->modules[1];
+		CHECK(ssr->picture.url == NULL && ssr->picture.rotation == 90);
+		CHECK_STREQ(ssr->picture.copy, "ssr.webp");
+		const HakkasEnvModule *aiv = &d->modules[2];
+		CHECK_STREQ(aiv->picture.copy, "aiv.webp");
 		CHECK_STREQ(aiv->picture.url, "https://x/aiv.webp");
 		CHECK(aiv->picture.rotation == 90 && aiv->picture.has_crop);
 		CHECK(aiv->picture.x == 0.2 && aiv->picture.y == 0.1 && aiv->picture.w == 0.6 &&
@@ -900,9 +914,11 @@ static void test_pictures_json(void)
 		CHECK(e != NULL && env_description_equal(d, e));
 		CHECK(e != NULL && e->carrier->io_place_count == 2);
 		CHECK(e != NULL && e->carrier->mcu_place != NULL);
-		CHECK(e != NULL && e->modules[1].position_count == 2);
-		CHECK(e != NULL && e->modules[1].picture.rotation == 90 &&
-		      e->modules[1].picture.h == 0.8);
+		CHECK(e != NULL && e->modules[2].position_count == 2);
+		CHECK(e != NULL && e->modules[2].picture.rotation == 90 &&
+		      e->modules[2].picture.h == 0.8);
+		CHECK(e != NULL && e->modules[1].picture.url == NULL);
+		CHECK(e != NULL && e->modules[1].picture.copy != NULL);
 		CHECK(cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetArrayItem(
 						  cJSON_GetObjectItem(back, "modules"), 0),
 						  "positions"), 0), "index") == NULL);
@@ -912,7 +928,7 @@ static void test_pictures_json(void)
 		/* Pictures, positions and places are static: a change is another
 		 * environment. */
 		cJSON *carrier = cJSON_GetObjectItem(json, "carrier");
-		cJSON *aiv_json = cJSON_GetArrayItem(cJSON_GetObjectItem(json, "modules"), 1);
+		cJSON *aiv_json = cJSON_GetArrayItem(cJSON_GetObjectItem(json, "modules"), 2);
 		cJSON *pos = cJSON_GetArrayItem(cJSON_GetObjectItem(aiv_json, "positions"), 0);
 		cJSON *place = cJSON_GetObjectItem(cJSON_GetObjectItem(carrier, "places"), "mcu");
 		cJSON *comm0 = cJSON_GetArrayItem(cJSON_GetObjectItem(carrier, "comm"), 0);
@@ -931,6 +947,8 @@ static void test_pictures_json(void)
 			{aiv_pic, "url", cJSON_CreateString("https://x/aiv2.webp"),
 			 cJSON_CreateString("https://x/aiv.webp")},
 			{aiv_pic, "rotation", cJSON_CreateNumber(270), cJSON_CreateNumber(90)},
+			{aiv_pic, "copy", cJSON_CreateString("aiv2.webp"),
+			 cJSON_CreateString("aiv.webp")},
 			{aiv_crop, "w", cJSON_CreateNumber(0.5), cJSON_CreateNumber(0.6)},
 			{pos, "x", cJSON_CreateNumber(0.28), cJSON_CreateNumber(0.27)},
 			{pos, "index", cJSON_CreateNumber(2), cJSON_CreateNumber(1)},

@@ -70,7 +70,8 @@ group('the environment description', () => {
             picture: def.render,
             slots: 7, builtin: [{slot: 0}],
             power: {voltage: {min: 7, max: 30}, ac: true, dc: true, current: 2.0},
-            comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet', ip}],
+            comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet',
+                picture: catalog.comm.get('colibri_ethernet')!.def.render, ip}],
             places: {slots: def.places!.slots, comm: def.places!.comm},
         });
         expect(described({}).carrier.comm).toEqual([]);
@@ -89,7 +90,7 @@ group('the environment description', () => {
 
     it('gives each module its picture link and its channels\' positions, under their port ids', () => {
         const d = described({modules: [{slot: 2, type: 'colibri_aiv'}, {slot: 3, type: 'colibri_dp1'},
-            {slot: 4, type: 'colibri_rs485i'}]});
+            {slot: 4, type: 'colibri_dp2'}]});
         const aiv = catalog.modules.get('colibri_aiv')!.def;
         expect(d.modules[1]!.picture).toEqual(aiv.render);
         expect(d.modules[1]!.picture).toHaveProperty('crop');
@@ -97,7 +98,7 @@ group('the environment description', () => {
             x: p.x, y: p.y})));
         // A group of one channel: no index.
         expect(d.modules[2]!.positions![0]).toEqual({port: 'slot3-ai', x: expect.any(Number), y: expect.any(Number)});
-        // No picture (RS485I has no published render), no positions: neither member.
+        // No picture (DP2 has no render at all), no positions: neither member.
         expect(d.modules[3]).not.toHaveProperty('picture');
         expect(d.modules[3]).not.toHaveProperty('positions');
     });

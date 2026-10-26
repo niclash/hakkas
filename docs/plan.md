@@ -1037,8 +1037,12 @@ to the user first, one at a time.
   each change; an actuator's value is the last one written (none: not driven); lossy with a
   catch-up pass under back-pressure; capability `network:data`. The frontend's protocol module
   has the requests and the listener; the window that uses them is task 78.
-- [ ] **77. The device's own copy of a picture**: an `environment` message fetching it through
-  hakkas, for networks without internet.
+- [x] **77. The device's own copy of a picture** (done 2026-10-26; 04 §1 "Pictures", 05 §1.1,
+  §3): a picture's `copy`, a file name served without login at
+  `/environment/pictures/<copy>` from `environment.pictures` (Zephyr: `/carrier/pictures`,
+  filled by the firmware from the EEPROMs at boot). HTTP, not an `environment` message: a
+  picture does not fit an MCU's WebSocket buffer. The emulator's `--pictures <dir>` publishes
+  its WebP copies (one per type with a render) there.
 - [ ] **78. The device window** in hakkas' frontend: a window that can be popped out, drawing
   the carrier with its modules in their slots, every channel's state on them, and Help links.
   The Colibri emulator's E14 shrinks to what the emulator still needs (its own plan).

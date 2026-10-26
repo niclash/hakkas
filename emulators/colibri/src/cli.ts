@@ -14,6 +14,7 @@ export const USAGE = `usage: colibri-emulator [options] [<environment>]
   --control-socket <path>  the control channel's socket (default …/control.sock)
   --http <port>            the UI's HTTP port on localhost, 0 for any free one (default 8090)
   --mcu <type>             the MCU module in the carrier's MCU slot (default colibri_mcu6)
+  --pictures <dir>         puts the boards' own picture copies there, hakkas' environment.pictures
   --seed <n>               seeds the noise, for a reproducible run (0 to 4294967295)
   --log-level <level>      fine, info, warn or error (default info)
   -h, --help               this text
@@ -33,6 +34,7 @@ export interface Options {
     controlSocket: string;
     httpPort: number;
     mcu: string;              // an MCU module type, checked against the catalog at startup
+    pictures: string | undefined; // where the picture copies go; undefined: none described
     seed: number | undefined; // undefined: a random seed
     logLevel: Level;
     environment: string | undefined;
@@ -65,6 +67,7 @@ export function parseCommandLine(argv: string[], host: Host): Command {
                 'control-socket': {type: 'string'},
                 'http': {type: 'string'},
                 'mcu': {type: 'string'},
+                'pictures': {type: 'string'},
                 'seed': {type: 'string'},
                 'log-level': {type: 'string'},
                 'help': {type: 'boolean', short: 'h'},
@@ -90,7 +93,7 @@ export function parseCommandLine(argv: string[], host: Host): Command {
     if (library === undefined)
         return {kind: 'error', message: 'no library directory: neither XDG_DATA_HOME nor HOME is set; use --library'};
 
-    for (const dir of [library, ...(v.plugins ?? [])])
+    for (const dir of [library, ...(v.plugins ?? []), ...(v.pictures !== undefined ? [v.pictures] : [])])
         if (dir === '')
             return {kind: 'error', message: 'empty directory name'};
 
@@ -124,7 +127,8 @@ export function parseCommandLine(argv: string[], host: Host): Command {
 
     return {
         kind: 'run',
-        options: {library, plugins: v.plugins ?? [], socket, controlSocket, httpPort, mcu, seed, logLevel, environment},
+        options: {library, plugins: v.plugins ?? [], socket, controlSocket, httpPort, mcu,
+            pictures: v.pictures, seed, logLevel, environment},
     };
 }
 

@@ -6,6 +6,7 @@
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
   "render": {
     "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pid1_top_render.png",
+    "copy": "picture.webp",
     "crop": {
       "x": 0.2415,
       "y": 0.2243,

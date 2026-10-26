@@ -82,17 +82,22 @@ async function freePortPair(): Promise<number> {
     }
 }
 
-async function startHakkas(): Promise<void> {
+let hakkasPort = 0;
+
+// pictures: hakkas' environment.pictures (hakkas plan task 77).
+async function startHakkas(pictures?: string): Promise<void> {
     const conf = path.join(tmp, 'conf'), data = path.join(tmp, 'data');
     mkdirSync(conf);
     mkdirSync(path.join(data, 'graphs'), {recursive: true});
     mkdirSync(path.join(data, 'bindings'));
     writeFileSync(path.join(conf, 'hakkas.json'), JSON.stringify({
-        auth: {server_secret: randomBytes(32).toString('base64')}, environment: {socket: socketPath},
+        auth: {server_secret: randomBytes(32).toString('base64')},
+        environment: {socket: socketPath, ...(pictures !== undefined && {pictures})},
     }));
     writeFileSync(path.join(data, 'graphs', 'threshold.json'), JSON.stringify(GRAPH));
     writeFileSync(path.join(data, 'bindings', 'threshold.json'), JSON.stringify(BINDINGS));
     const port = await freePortPair();
+    hakkasPort = port;
     const proc = spawn(HAKKAS, ['--info', '--confdir', conf, '--basedir', data, 'run',
         '--host', '127.0.0.1', '--port', String(port), '--webdir', tmp], {stdio: ['ignore', 'pipe', 'pipe']});
     hakkas = proc;
@@ -219,11 +224,18 @@ describe.skipIf(!existsSync(HAKKAS))('the emulator with hakkas', () => {
             modules: [{slot: 1, type: 'colibri_aiv'}, {slot: 3, type: 'colibri_ssr'}]}));
         const controlSocket = path.join(os.tmpdir(), `cc-${randomBytes(6).toString('hex')}.sock`);
         const stop = new AbortController();
+        const pictures = path.join(tmp, 'pictures');
         const running = runEmulator({library: library.dir, plugins: [], socket: socketPath, controlSocket, httpPort: 0,
-            mcu: 'colibri_mcu6', seed: 1, logLevel: 'fine', environment: 'lab'}, createLogger('fine', l => emulatorLog.push(l)), stop.signal);
+            mcu: 'colibri_mcu6', pictures, seed: 1, logLevel: 'fine', environment: 'lab'},
+        createLogger('fine', l => emulatorLog.push(l)), stop.signal);
         try {
             await until(() => emulatorLog.some(l => l.startsWith('info http: listening')), 'the emulator to start');
-            await startHakkas();
+            await startHakkas(pictures);
+            // The boards' own pictures, served by hakkas (hakkas plan task 77).
+            const picture = await fetch(`http://127.0.0.1:${hakkasPort}/environment/pictures/colibri_aiv.webp`);
+            expect(picture.status).toBe(200);
+            expect(picture.headers.get('content-type')).toBe('image/webp');
+            expect(Buffer.from(await picture.arrayBuffer()).subarray(0, 4).toString()).toBe('RIFF');
             const socket = net.connect(controlSocket);
             const state: JsonObject = {};
             let buffer = '';

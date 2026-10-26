@@ -2,6 +2,9 @@
   "type": "colibri_ethernet",
   "name": "Colibri Ethernet",
   "vendor": "CurrentMakers",
+  "render": {
+    "copy": "picture.webp"
+  },
   "params": [
     "ip"
   ]

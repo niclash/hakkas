@@ -20,7 +20,7 @@
  * when its slot is built-in; without one no module is builtin; no two
  * modules share a slot. The carrier's view-only values (its strings, power,
  * the communication parameters, the MCU module) are not checked (decided
- * with the user 2026-10-25). Pictures (plan task 75): picture links of at
+ * with the user 2026-10-25). Pictures (plan tasks 75, 77): picture links and copies of at
  * most HAKKAS_ENV_TEXT_MAX bytes; at most HAKKAS_ENV_POSITIONS_MAX channel
  * positions, all modules together; at most as many slot places as the
  * limits on slots. What a position or place says is not checked.
@@ -41,11 +41,11 @@
  * {"appEui"?, "devEui"?, "appKeySet"?}}], "mcu"?: {"type"?, "name"?,
  * "vendor"?, "revision"?, "serial"?, "documentation"?, "picture"?},
  * "places"?: {"slots"?: [place], "comm"?: [place], "mcu"?: {"x", "y", "w",
- * "h"}}}, a place {"slot", "x", "y", "w", "h"}, a picture {"url",
- * "rotation"?, "crop"?: {"x", "y", "w", "h"}}. A view-only member of
+ * "h"}}}, a place {"slot", "x", "y", "w", "h"}, a picture {"url"?,
+ * "copy"?, "rotation"?, "crop"?: {"x", "y", "w", "h"}}. A view-only member of
  * another type is absent, not an error; so is a position or place missing
- * a member or with one of another type; a picture without a string url is
- * none. A member that is null is absent; unknown members
+ * a member or with one of another type; a picture without a string url or
+ * copy is none. A member that is null is absent; unknown members
  * are ignored (forward compatibility).
  *
  * Threading: none of its own; a description is read-only once made.

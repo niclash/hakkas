@@ -29,9 +29,12 @@ export interface Metadata {
 
 // The vendor's picture of a board (04 §1 "Pictures"): its https link, the part of the file to
 // show (`crop`, fractions of the file) and the clockwise turn after it (0, 90, 180 or 270) that
-// shows the board in the carrier's orientation.
+// shows the board in the carrier's orientation; and the device's own copy (hakkas plan task
+// 77): a picture file in the descriptor's directory, already cropped and turned, served by
+// hakkas from --pictures under the name the loader gives it. At least one of url and copy.
 export interface Render {
-    url: string;
+    url?: string;
+    copy?: string;
     rotation?: 90 | 180 | 270;
     crop?: Rect;
 }
@@ -179,11 +182,16 @@ function readRender(c: Checker, v: Json): Render | undefined {
     const o = c.object(v, 'render');
     if (o === undefined)
         return undefined;
-    c.members(o, ['url', 'rotation', 'crop'], 'render');
+    c.members(o, ['url', 'copy', 'rotation', 'crop'], 'render');
     const errors = c.errors.length;
-    const url = c.string(o, 'url', 'render', true);
+    const url = c.string(o, 'url', 'render');
     if (url !== undefined && !/^https:\/\/\S+$/.test(url))
         c.error('render.url', 'expected an https link');
+    const copy = c.string(o, 'copy', 'render');
+    if (copy !== undefined && !ASSET_NAME.test(copy))
+        c.error('render.copy', 'expected a picture file name in the same directory (.svg, .png, .jpg, .webp)');
+    if (url === undefined && copy === undefined && o.url === undefined && o.copy === undefined)
+        c.error('render', 'expected url, copy or both');
     const rotation = o.rotation === undefined ? 0 : c.integer(o, 'rotation', 'render', 0, 270);
     if (rotation !== undefined && rotation % 90 !== 0)
         c.error('render.rotation', 'expected 0, 90, 180 or 270');
@@ -191,7 +199,8 @@ function readRender(c: Checker, v: Json): Render | undefined {
     const r = crop !== undefined ? rect(c, crop, 'render.crop') : undefined;
     if (c.errors.length !== errors)
         return undefined;
-    return {url: url!, ...(rotation ? {rotation: rotation as 90 | 180 | 270} : {}), ...(r && {crop: r})};
+    return {...(url !== undefined && {url}), ...(copy !== undefined && {copy}),
+        ...(rotation ? {rotation: rotation as 90 | 180 | 270} : {}), ...(r && {crop: r})};
 }
 
 // A fraction of a picture's width or height.

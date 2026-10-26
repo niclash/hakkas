@@ -5,6 +5,7 @@
   "description": "STM32H562RG",
   "render": {
     "url": "https://currentmakers.com/data/products/colibri/renders/colibri_mcu2-rev_C_top_render.png",
+    "copy": "picture.webp",
     "rotation": 90,
     "crop": {
       "x": 0.2243,

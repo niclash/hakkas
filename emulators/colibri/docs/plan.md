@@ -312,8 +312,10 @@ Follow-ups, decided the same day:
   published with a crop and rotation: I/O modules upright already (board at 257–807 × 427–1477
   of 1064×1904), MCU modules turned 90° clockwise (board at 427–1476 × 257–807 of 1904×1064),
   the carrier uncropped. Positions and places refer to the picture as shown. Types without a
-  published render have none (RS485I/U, the communication modules, DP2, DP3, Fallback). The
-  render PNGs in the descriptors' directories are no longer needed for hakkas.
+  published render have no url (RS485I/U, the communication modules, DP2, DP3, Fallback).
+  Hakkas task 77 added a `copy` per render, `picture.webp` (half size, cropped and turned, made
+  from the published renders and, for RS485I/U, Ethernet and LoRaWAN, from the user's local
+  renders), published with `--pictures`. The render PNGs themselves are not needed.
 
 ## Phase 4 — Copying an environment from a device
 
