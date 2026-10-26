@@ -18,16 +18,18 @@ describe("menuFor", () => {
     });
 
     it("a block, alone or in a selection", () => {
-        expect(actions({kind: "block", id: "a", selected: 0}))
-            .toEqual(["rename", "edit-inputs", "watch-inputs", "copy", "duplicate", "create-composite", "delete-block"]);
-        expect(actions({kind: "block", id: "a", selected: 1, watched: true}))
-            .toEqual(["rename", "edit-inputs", "unwatch-inputs", "copy", "duplicate", "create-composite", "delete-block"]);
+        expect(actions({kind: "block", id: "a", selected: 0})).toEqual(
+            ["rename", "edit-inputs", "watch-inputs", "cut", "copy", "duplicate", "create-composite", "delete-block"]);
+        expect(actions({kind: "block", id: "a", selected: 1, watched: true})).toEqual(
+            ["rename", "edit-inputs", "unwatch-inputs", "cut", "copy", "duplicate", "create-composite", "delete-block"]);
         const many = menuFor({kind: "block", id: "a", selected: 3});
-        expect(many.map(i => i.action))
-            .toEqual(["rename", "edit-inputs", "watch-inputs", "copy", "duplicate", "create-composite", "delete-selection"]);
-        expect(many[3].label).toBe("Copy 3 blocks");
-        expect(many[5].label).toBe("Create composite type from 3 blocks…");
-        expect(many[6].label).toBe("Delete 3 blocks");
+        expect(many.map(i => i.action)).toEqual(
+            ["rename", "edit-inputs", "watch-inputs", "cut", "copy", "duplicate", "create-composite", "delete-selection"]);
+        expect(many[3].label).toBe("Cut 3 blocks");
+        expect(many[3].shortcut).toBe("Ctrl+X");
+        expect(many[4].label).toBe("Copy 3 blocks");
+        expect(many[6].label).toBe("Create composite type from 3 blocks…");
+        expect(many[7].label).toBe("Delete 3 blocks");
     });
 
     it("an input, by what feeds it", () => {

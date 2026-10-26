@@ -25,7 +25,7 @@ import CompositeDialog from "./CompositeDialog.vue";
 import BindDialog from "./BindDialog.vue";
 import {bindingLabel, bindingsAt, environment} from "@/components/environment";
 import {parseChannel} from "@/components/bindings";
-import {blockArrived, copySelection, duplicateSelection, hasClip, pasteClipAt, setupCopyPaste} from "./copypaste";
+import {blockArrived, copySelection, cutSelection, duplicateSelection, hasClip, pasteClipAt, setupCopyPaste} from "./copypaste";
 import {eventApplied, setupHistory} from "./history";
 import {Link, ProcessPort, SelBlock} from "@/components/composite";
 import {BLOCK_TYPE_MIME} from "@/components/palette";
@@ -676,12 +676,15 @@ const act = async (action: MenuAction, arg?: string) => {
       if (m.target.kind === "port")
         graph()?.request_removeport(m.target.direction, m.target.name);
       break;
+    case "cut":
     case "copy":
     case "duplicate":
       // The selection, if the block is in it; else the block alone.
       if (block !== undefined && !editor.blockSelection?.selection.has(block.id))
         editor.blockSelection?.selection.set([block.id]);
-      if (action === "copy")
+      if (action === "cut")
+        cutSelection(editor);
+      else if (action === "copy")
         copySelection(editor);
       else
         duplicateSelection(editor);

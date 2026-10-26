@@ -23,7 +23,7 @@ export type MenuAction =
     | "delete-connection"
     | "watch" | "unwatch" | "watch-inputs" | "unwatch-inputs" | "watch-all" | "unwatch-all"
     | "expose-input" | "expose-output" | "rename-port" | "remove-port"
-    | "create-composite" | "copy" | "duplicate" | "paste"
+    | "create-composite" | "cut" | "copy" | "duplicate" | "paste"
     | "bind" | "unbind";
 
 export interface MenuItem {
@@ -67,6 +67,7 @@ export function menuFor(target: MenuTarget): MenuItem[] {
                 target.watched
                     ? {action: "unwatch-inputs", label: "Stop watching inputs"}
                     : {action: "watch-inputs", label: "Watch inputs"},
+                {action: "cut", label: target.selected > 1 ? `Cut ${target.selected} blocks` : "Cut", shortcut: "Ctrl+X"},
                 {action: "copy", label: target.selected > 1 ? `Copy ${target.selected} blocks` : "Copy", shortcut: "Ctrl+C"},
                 {action: "duplicate", label: "Duplicate", shortcut: "Ctrl+D"},
                 compositeItem(target.selected),

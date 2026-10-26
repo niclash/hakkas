@@ -80,7 +80,8 @@ test("a block's menu: rename, edit inputs, delete it or the selection", async ({
     await other.connectGraph(G);
 
     await title(page, "block7").click({button: "right"});
-    expect(await actions(page)).toEqual(["rename", "edit-inputs", "watch-inputs", "copy", "duplicate", "create-composite", "delete-block"]);
+    expect(await actions(page)).toEqual(
+        ["rename", "edit-inputs", "watch-inputs", "cut", "copy", "duplicate", "create-composite", "delete-block"]);
     await item(page, "edit-inputs").click();
     expect(await selectedIds(page)).toEqual(["block7"]);
     // The first input that takes a value (in1 and in2 are connected).

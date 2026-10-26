@@ -33,7 +33,7 @@ export function roleLabel(p: Permissions): string {
 const needs: Partial<Record<MenuAction, (p: Permissions) => boolean>> = {
     "add-block": p => p.edit, "paste": p => p.edit, "arrange": p => p.edit,
     "rename": p => p.edit, "edit-inputs": p => p.edit, "delete-block": p => p.edit,
-    "delete-selection": p => p.edit, "duplicate": p => p.edit,
+    "delete-selection": p => p.edit, "duplicate": p => p.edit, "cut": p => p.edit,
     "create-composite": p => p.edit && p.persist,
     "set-value": p => p.edit, "change-value": p => p.edit, "clear-value": p => p.edit,
     "disconnect": p => p.edit, "delete-connection": p => p.edit,

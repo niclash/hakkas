@@ -1,5 +1,5 @@
 import type {Page} from "@playwright/test";
-import {expect, test} from "./fixtures";
+import {expect, test, VIEWER} from "./fixtures";
 import {EXAMPLE_GRAPH} from "./paths";
 import {block, blockIds, blockPosition, blocks, connections, inputLabels, loggedIn, openProcess, selectedIds} from "./ui";
 
@@ -41,6 +41,70 @@ test("Ctrl+C and Ctrl+V paste the selection beside it, again a step further", as
     await expect(blocks(page)).toHaveCount(12);
     const c2 = await blockPosition(page, "block1_2");
     expect([c2.x - p1.x, c2.y - p1.y]).toEqual([80, 80]);
+});
+
+test("Ctrl+X cuts the selection, which pastes back; the cut is one undo step", async ({page, engine}) => {
+    await openExample(page, engine.url);
+    await title(page, "block1").click();
+    await title(page, "block3").click({modifiers: ["Shift"]});
+    await page.keyboard.press("Control+x");
+    await expect(blocks(page)).toHaveCount(6);
+    await expect(block(page, "block1")).toHaveCount(0);
+    // Pasted: the same ids again (they are free), with their connection.
+    await page.keyboard.press("Control+v");
+    await expect(blocks(page)).toHaveCount(8);
+    await expect(block(page, "block1")).toHaveCount(1);
+    await expect(block(page, "block3")).toHaveCount(1);
+    await expect.poll(() => selectedIds(page)).toEqual(["block1", "block3"]);
+    // Undo: the paste, then the cut as one step (both blocks and their connections back).
+    await page.keyboard.press("Control+z");
+    await expect(blocks(page)).toHaveCount(6);
+    await page.keyboard.press("Control+z");
+    await expect(blocks(page)).toHaveCount(8);
+    await expect(connections(page)).toHaveCount(6);
+
+    // The menu's Cut: the block alone when it is not in the selection.
+    await page.keyboard.press("Escape");
+    await title(page, "block7").click({button: "right"});
+    await item(page, "cut").click();
+    await expect(block(page, "block7")).toHaveCount(0);
+    await title(page, "block8").click({button: "right"});
+    await expect(item(page, "cut")).toHaveText(/Cut/);
+});
+
+// A clip copied in another browser reaches this one through the system clipboard as plain text
+// (JSON, 06 §4.10): what any browser's paste event then carries.
+test("a clip copied elsewhere, as text on the clipboard, pastes", async ({page, engine}) => {
+    await openExample(page, engine.url);
+    const clip = {format: "hakkas/blocks", version: 1, links: [],
+        blocks: [{id: "elsewhere", component: "math/Add2", x: 100, y: 100, initials: {in2: "5"}}]};
+    // Onto the system clipboard as text, as another browser's copy leaves it: from a field.
+    await page.evaluate(text => {
+        const field = document.createElement("textarea");
+        field.id = "elsewhere";
+        field.value = text;
+        document.body.append(field);
+        field.select();
+    }, JSON.stringify(clip));
+    await page.keyboard.press("Control+c");
+    await page.evaluate(() => document.getElementById("elsewhere")?.remove());
+    await page.keyboard.press("Control+v");
+    await expect(block(page, "elsewhere")).toHaveCount(1);
+    await expect.poll(() => inputLabels(page, "elsewhere")).toEqual(["in1", "in2 = 5"]);
+});
+
+test.describe("as a viewer", () => {
+    test("Ctrl+X does not cut, and the menu has no Cut", async ({page, engine}) => {
+        await loggedIn(page, engine.url, VIEWER);
+        await openProcess(page, "Simple Example");
+        await expect(blocks(page)).toHaveCount(8);
+        await title(page, "block1").click();
+        await page.keyboard.press("Control+x");
+        await title(page, "block2").click({button: "right"});
+        await expect(item(page, "copy")).toHaveCount(1);
+        await expect(item(page, "cut")).toHaveCount(0);
+        await expect(blocks(page)).toHaveCount(8);
+    });
 });
 
 test("fixed values come along; Ctrl+D and the menu duplicate", async ({page, engine}) => {

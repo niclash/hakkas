@@ -1,5 +1,5 @@
-// Copy, paste and duplicate in the editor (06 §4.10). Ctrl+C and Ctrl+V go through the
-// browser's copy and paste events, so the clip reaches the system clipboard and comes from it
+// Cut, copy, paste and duplicate in the editor (06 §4.10). Ctrl+X, Ctrl+C and Ctrl+V go through
+// the browser's cut, copy and paste events, so the clip reaches the system clipboard and comes from it
 // also on a plain-http page (navigator.clipboard needs a secure context); the page keeps the
 // last clip too, for the context menu's Paste. Pasting sends commands; the pasted blocks become
 // the selection as their events arrive.
@@ -79,6 +79,17 @@ export function pasteClipAt(editor: FlowEditor, at: { x: number, y: number }) {
     paste(editor, clip, at.x - origin.x, at.y - origin.y);
 }
 
+// The selection copied, then removed: the removals are sent together, so they are one undo step
+// (06 §4.13). Only who may edit.
+export function cutSelection(editor: FlowEditor): Clip | undefined {
+    if (!can.value.edit)
+        return undefined;
+    const c = copySelection(editor);
+    if (c !== undefined)
+        editor.blockSelection?.removeSelected();
+    return c;
+}
+
 // The selection pasted beside itself, the clipboard untouched.
 export function duplicateSelection(editor: FlowEditor) {
     const c = selectionClip(editor);
@@ -100,16 +111,22 @@ function typing(event: Event): boolean {
 
 export function setupCopyPaste(editor: FlowEditor) {
     const active = (event: Event) => editor.area.container.isConnected && !typing(event);
-    const onCopy = (event: ClipboardEvent) => {
-        if (!active(event))
-            return;
-        const c = copySelection(editor);
+    // The clip into the event's clipboard data, which the browser puts on the system clipboard.
+    const put = (event: ClipboardEvent, c: Clip | undefined) => {
         if (c === undefined || event.clipboardData === null)
             return;
         event.preventDefault();
         const text = JSON.stringify(c);
         event.clipboardData.setData("text/plain", text);
         event.clipboardData.setData("application/x-" + CLIP_FORMAT.replace("/", "-"), text);
+    };
+    const onCopy = (event: ClipboardEvent) => {
+        if (active(event))
+            put(event, copySelection(editor));
+    };
+    const onCut = (event: ClipboardEvent) => {
+        if (active(event))
+            put(event, cutSelection(editor));
     };
     const onPaste = (event: ClipboardEvent) => {
         if (!active(event))
@@ -133,10 +150,12 @@ export function setupCopyPaste(editor: FlowEditor) {
         duplicateSelection(editor);
     };
     document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", onCut);
     document.addEventListener("paste", onPaste);
     document.addEventListener("keydown", onKey);
     return () => {
         document.removeEventListener("copy", onCopy);
+        document.removeEventListener("cut", onCut);
         document.removeEventListener("paste", onPaste);
         document.removeEventListener("keydown", onKey);
     };
