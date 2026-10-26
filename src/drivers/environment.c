@@ -19,10 +19,37 @@ void environment_init(Environment *env, environment_clock_fn clock)
 	env->clock = clock;
 }
 
-/* The slot of a channel of out_ports[port] (env_port_has_channel holds). */
+/* The channel of out_ports[port] (env_port_has_channel holds). */
 static uint32_t sensor_slot(const Environment *env, uint32_t port, uint32_t index)
 {
 	return env->sensor_base[port] + (index > 0 ? index - 1 : 0);
+}
+
+static uint32_t actuator_slot(const Environment *env, uint32_t port, uint32_t index)
+{
+	return env->actuator_base[port] + (index > 0 ? index - 1 : 0);
+}
+
+/* v becomes channel slot's current value if it changed by the change
+ * threshold (the first value always does), with the next change number,
+ * and the watcher hears of it; false if it did not change. */
+static bool record(Environment *env, uint32_t slot, const Linkable *v)
+{
+	if (env->known[slot] &&
+	    !block_value_changed(&env->last[slot], v, runtime_change_threshold(env->rt)))
+		return false;
+	env->known[slot] = true;
+	env->last[slot] = *v; /* a scalar: owns nothing */
+	if (++env->seq == 0)
+		env->seq = 1; /* 0 stands for "no change" */
+	env->changed[slot] = env->seq;
+	return true;
+}
+
+static void report(Environment *env, uint32_t slot)
+{
+	if (env->on_change != NULL)
+		env->on_change(env->change_ctx, slot);
 }
 
 /* v as a value of type: an f64 for number, a bool for bool. */
@@ -90,12 +117,10 @@ static void on_sensor(void *ctx, uint32_t port, uint32_t index, Linkable value)
 	Linkable v = typed(d->out_ports[port].type, &value);
 	linkable_clear(&value);
 	uint32_t slot = sensor_slot(env, port, index);
-	if (env->sensor_known[slot] &&
-	    !block_value_changed(&env->sensor_last[slot], &v, runtime_change_threshold(env->rt)))
+	if (!record(env, slot, &v))
 		return;
-	env->sensor_known[slot] = true;
-	env->sensor_last[slot] = v; /* a scalar: owns nothing */
 	runtime_env_deliver(env->rt, port, index, &v);
+	report(env, slot);
 }
 
 /* A push of a bound block output (04 §0 rule 3). */
@@ -103,10 +128,14 @@ static void on_write(void *ctx, uint32_t port, uint32_t index, const Linkable *v
 {
 	Environment *env = ctx;
 	const HakkasEnvDescription *d = env->desc;
-	if (d == NULL || port >= d->in_port_count)
+	if (d == NULL || port >= d->in_port_count ||
+	    !env_port_has_channel(&d->in_ports[port], index))
 		return;
 	Linkable v = typed(d->in_ports[port].type, value);
 	env->spi.write(env->spi.ctx, (int)port, (int)index, &v);
+	uint32_t slot = actuator_slot(env, port, index);
+	if (record(env, slot, &v))
+		report(env, slot);
 }
 
 /* ---- Open and close ------------------------------------------------------------------ */
@@ -114,11 +143,15 @@ static void on_write(void *ctx, uint32_t port, uint32_t index, const Linkable *v
 static void free_channels(Environment *env)
 {
 	free(env->sensor_base);
-	free(env->sensor_last); /* scalars: nothing to clear */
-	free(env->sensor_known);
+	free(env->actuator_base);
+	free(env->last); /* scalars: nothing to clear */
+	free(env->known);
+	free(env->changed);
 	env->sensor_base = NULL;
-	env->sensor_last = NULL;
-	env->sensor_known = NULL;
+	env->actuator_base = NULL;
+	env->last = NULL;
+	env->known = NULL;
+	env->changed = NULL;
 	env->sensor_channels = 0;
 	env->actuator_channels = 0;
 }
@@ -135,11 +168,19 @@ static bool alloc_channels(Environment *env, const HakkasEnvDescription *d)
 	}
 	env->sensor_base[d->out_port_count] = n;
 	env->sensor_channels = n;
-	for (size_t i = 0; i < d->in_port_count; i++)
-		env->actuator_channels += env_port_channels(&d->in_ports[i]);
-	env->sensor_last = calloc(n + 1, sizeof(*env->sensor_last));
-	env->sensor_known = calloc(n + 1, sizeof(*env->sensor_known));
-	return env->sensor_last != NULL && env->sensor_known != NULL;
+	env->actuator_base = calloc(d->in_port_count + 1, sizeof(*env->actuator_base));
+	if (env->actuator_base == NULL)
+		return false;
+	for (size_t i = 0; i < d->in_port_count; i++) {
+		env->actuator_base[i] = n;
+		n += env_port_channels(&d->in_ports[i]);
+	}
+	env->actuator_base[d->in_port_count] = n;
+	env->actuator_channels = n - env->sensor_channels;
+	env->last = calloc(n + 1, sizeof(*env->last));
+	env->known = calloc(n + 1, sizeof(*env->known));
+	env->changed = calloc(n + 1, sizeof(*env->changed));
+	return env->last != NULL && env->known != NULL && env->changed != NULL;
 }
 
 bool environment_open(Environment *env, Runtime *rt, const HakkasEnvironment *spi,
@@ -222,7 +263,45 @@ const Linkable *environment_sensor_value(const Environment *env, uint32_t port, 
 	    !env_port_has_channel(&d->out_ports[port], index))
 		return NULL;
 	uint32_t slot = sensor_slot(env, port, index);
-	return env->sensor_known[slot] ? &env->sensor_last[slot] : NULL;
+	return env->known[slot] ? &env->last[slot] : NULL;
+}
+
+void environment_watch(Environment *env, environment_change_fn fn, void *ctx)
+{
+	env->on_change = fn;
+	env->change_ctx = ctx;
+}
+
+/* The port of channel ch among ports with their first channels base (n + 1
+ * entries, ascending): the last whose first channel is at most ch. */
+static uint32_t port_of(const uint32_t *base, size_t n, uint32_t ch)
+{
+	size_t lo = 0, hi = n; /* base[lo] <= ch < base[hi] */
+	while (hi - lo > 1) {
+		size_t mid = lo + (hi - lo) / 2;
+		if (base[mid] <= ch)
+			lo = mid;
+		else
+			hi = mid;
+	}
+	return (uint32_t)lo;
+}
+
+bool environment_channel(const Environment *env, uint32_t ch, const char **id, uint32_t *index,
+			 const Linkable **value)
+{
+	const HakkasEnvDescription *d = env->desc;
+	if (ch >= environment_channel_count(env) || !env->known[ch])
+		return false;
+	bool actuator = ch >= env->sensor_channels;
+	const uint32_t *base = actuator ? env->actuator_base : env->sensor_base;
+	size_t n = actuator ? d->in_port_count : d->out_port_count;
+	uint32_t port = port_of(base, n, ch);
+	const HakkasEnvPort *p = actuator ? &d->in_ports[port] : &d->out_ports[port];
+	*id = p->id;
+	*index = p->addressable ? ch - base[port] + 1 : 0;
+	*value = &env->last[ch];
+	return true;
 }
 
 /* ---- Bindings (04 §4) --------------------------------------------------------------- */

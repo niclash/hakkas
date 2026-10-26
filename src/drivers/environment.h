@@ -19,7 +19,12 @@
  *    input (runtime_env_deliver). A value of a channel no binding uses is
  *    still the channel's current value, which a later binding delivers;
  *  - actuator writes: every push of a bound block output, converted to the
- *    actuator port's type, through the SPI's write (04 §0 rule 3);
+ *    actuator port's type, through the SPI's write (04 §0 rule 3); the value
+ *    is kept as the channel's current value (filtered like a sensor's);
+ *  - every channel's current value for the frontend (02 §3.7
+ *    environment:watch, plan task 76): channels are numbered sensors first
+ *    (out_ports order), then actuators; each change of a channel's current
+ *    value takes the next change number and is reported to the watcher;
  *  - the wall clock (04 §1): the environment's wall_ms, or the platform's
  *    clock (pal_wall_ms, given by the engine) without one;
  *  - applying bindings (04 §4) with the refusals and skips of a bindings
@@ -51,6 +56,9 @@ typedef int64_t (*environment_clock_fn)(void);
 
 typedef struct Environment Environment;
 
+/* A channel's current value changed (environment_watch). */
+typedef void (*environment_change_fn)(void *ctx, uint32_t channel);
+
 struct HakkasEnvSink {
 	Environment *env;
 };
@@ -61,13 +69,21 @@ struct Environment {
 	Runtime *rt;
 	environment_push_fn push;
 	environment_clock_fn clock;
-	/* Per sensor port (out_ports), the first of its channels' slots; the
-	 * slots hold each channel's last propagated value (01 §3.3). */
+	/* Per sensor port (out_ports) and per actuator port (in_ports), the
+	 * first of its channels; sensors are channels 0..sensor_channels - 1,
+	 * actuators follow. A channel holds its last propagated value (01
+	 * §3.3), sensor or written, and the change number of its last change
+	 * (0: none). */
 	uint32_t *sensor_base;
+	uint32_t *actuator_base;
 	uint32_t sensor_channels;
 	uint32_t actuator_channels;
-	Linkable *sensor_last;
-	bool *sensor_known;
+	Linkable *last;
+	bool *known;
+	uint32_t *changed;
+	uint32_t seq; /* the last change number given, never 0 once one is */
+	environment_change_fn on_change;
+	void *change_ctx;
 	HakkasEnvSink sink;
 	bool opening; /* inside the SPI's start: hakkas_env_sink_current */
 	bool started;
@@ -100,6 +116,39 @@ int64_t environment_wall_ms(const Environment *env);
 /* The current (last propagated) value of sensor channel index of
  * out_ports[port], NULL if none has been delivered. */
 const Linkable *environment_sensor_value(const Environment *env, uint32_t port, uint32_t index);
+
+/* Report every change of a channel's current value to fn (NULL: none), on
+ * the engine thread, after the bound inputs have it. One watcher; it stays
+ * across open and close. */
+void environment_watch(Environment *env, environment_change_fn fn, void *ctx);
+
+/* The number of channels: sensors, then actuators (0 without an
+ * environment). */
+static inline uint32_t environment_channel_count(const Environment *env)
+{
+	return env->desc != NULL ? env->sensor_channels + env->actuator_channels : 0;
+}
+
+/* Channel ch: its port's id and its index (0 for a port that is not
+ * addressable), and its current value; false (and nothing set) if it has
+ * none yet or there is no such channel. An actuator's is the last value
+ * written to it. */
+bool environment_channel(const Environment *env, uint32_t ch, const char **id, uint32_t *index,
+			 const Linkable **value);
+
+/* The last change number given (0: none yet). */
+static inline uint32_t environment_seq(const Environment *env)
+{
+	return env->seq;
+}
+
+/* Whether channel ch changed after change number seq. Change numbers wrap:
+ * one more than 2^31 changes old may count as newer, which only sends a
+ * current value once more. */
+static inline bool environment_changed_after(const Environment *env, uint32_t ch, uint32_t seq)
+{
+	return env->changed[ch] != 0 && (int32_t)(env->changed[ch] - seq) > 0;
+}
 
 /* A binding as a bindings file or the C API names it (04 §4): a block port
  * and an environment port id with its channel index (0: none). */

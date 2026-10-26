@@ -553,6 +553,30 @@ static void test_wire(void)
 	       "{'graph':'p','port':'a.in1','env':'ain','index':2}");
 	EXPECT(&other, "environment", "unbind",
 	       "{'graph':'p','port':'a.in1','env':'ain','index':2}");
+
+	/* watch (plan task 76): every channel with a value, then each change,
+	 * sensors and actuators, to the watcher only; a viewer may watch. */
+	drain(&ed);
+	drain(&other);
+	drain(&viewer);
+	e2e_send(&viewer, "environment", "watch", "{}");
+	EXPECT(&viewer, "environment", "watch", "{}");
+	EXPECT(&viewer, "environment", "values", "{'values':[{'env':'temp','value':21.5}]}");
+	CHECK(hakkas_process_start(h, "p", NULL) == HAKKAS_OK); /* writes relay[1] */
+	drain(&ed);
+	EXPECT(&viewer, "environment", "values",
+	       "{'values':[{'env':'relay','index':1,'value':false}]}");
+	EXPECT(&viewer, "network", "started", NULL);
+	HakkasValue v = linkable_from_f64(3.25);
+	CHECK(hakkas_env_sink_push(fake.sink, 0, 3, &v));
+	EXPECT(&viewer, "environment", "values",
+	       "{'values':[{'env':'ain','index':3,'value':3.25}]}");
+	QUIET(&ed);
+	e2e_send(&viewer, "environment", "unwatch", "{}");
+	EXPECT(&viewer, "environment", "unwatch", "{}");
+	v = linkable_from_f64(4.5);
+	CHECK(hakkas_env_sink_push(fake.sink, 0, 3, &v));
+	QUIET(&viewer);
 	e2e_close(&ed);
 	e2e_close(&other);
 	e2e_close(&viewer);
@@ -569,6 +593,8 @@ static void test_wire(void)
 	EXPECT_ERROR(&ed, "No environment", "p");
 	e2e_send(&ed, "environment", "getbindings", "{}");
 	EXPECT(&ed, "environment", "bindings", "{'bindings':[]}");
+	e2e_send(&ed, "environment", "watch", "{}");
+	EXPECT_ERROR(&ed, "No environment", NULL);
 	e2e_close(&ed);
 	e2e_stop();
 }

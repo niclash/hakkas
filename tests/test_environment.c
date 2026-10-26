@@ -1293,6 +1293,85 @@ static void test_actuator_writes(void)
 	teardown();
 }
 
+/* Every channel's current value (plan task 76): sensors first, then
+ * actuators (the last value written), with change numbers, reported to the
+ * watcher after the bound inputs have them. */
+static char changes[256];
+
+static void on_change(void *ctx, uint32_t ch)
+{
+	Environment *e = ctx;
+	const char *id;
+	uint32_t index;
+	const Linkable *v;
+	CHECK(environment_channel(e, ch, &id, &index, &v));
+	append(changes, sizeof(changes), "%u:%s[%u]=%g@%u;", (unsigned)ch, id, (unsigned)index,
+	       linkable_to_f64(v), (unsigned)environment_seq(e));
+}
+
+static void test_channel_values(void)
+{
+	build(true); /* ain[1] = 1.5 and din[2] = true, in start */
+	changes[0] = '\0';
+	environment_watch(&env, on_change, &env);
+	/* ain 0-3, din 4-5, temp 6; aout 7-8, relay 9-11, lamp 12. */
+	CHECK(environment_channel_count(&env) == 13);
+	CHECK(environment_seq(&env) == 2);
+	const char *id;
+	uint32_t index;
+	const Linkable *v;
+	CHECK(environment_channel(&env, 0, &id, &index, &v));
+	CHECK_STREQ(id, "ain");
+	CHECK(index == 1 && linkable_to_f64(v) == 1.5);
+	CHECK(environment_channel(&env, 5, &id, &index, &v));
+	CHECK_STREQ(id, "din");
+	CHECK(index == 2 && v->type == LINKABLE_BOOL);
+	CHECK(!environment_channel(&env, 1, &id, &index, &v)); /* no value yet */
+	CHECK(!environment_channel(&env, 13, &id, &index, &v));
+	CHECK(environment_changed_after(&env, 5, 1) && !environment_changed_after(&env, 0, 1));
+	CHECK(!environment_changed_after(&env, 1, 0)); /* never changed */
+
+	/* A sensor's change, after the bound inputs have it; none below the
+	 * threshold. */
+	CHECK(bind("P", "a.in1", "ain", 1) == ENVIRONMENT_OK);
+	sense(2, 0, linkable_from_f64(20));
+	sense(0, 1, linkable_from_f64(1.52));
+	drain();
+	CHECK_STREQ(changes, "6:temp[0]=20@3;");
+	changes[0] = '\0';
+
+	/* An actuator's: what is written, filtered like a sensor's. */
+	init("P", "a", "in2", 1); /* a.out = ain[1] + 1 = 2.5 */
+	CHECK(bind("P", "a.out", "aout", 2) == ENVIRONMENT_OK);
+	CHECK(bind("P", "b.out", "lamp", 0) == ENVIRONMENT_OK);
+	CHECK(!environment_channel(&env, 8, &id, &index, &v)); /* not written yet */
+	start("P");
+	CHECK_STREQ(changes, "8:aout[2]=2.5@4;12:lamp[0]=0@5;");
+	changes[0] = '\0';
+	CHECK(environment_channel(&env, 8, &id, &index, &v));
+	CHECK_STREQ(id, "aout");
+	CHECK(index == 2 && linkable_to_f64(v) == 2.5);
+	stop("P");
+	start("P"); /* written again, unchanged: no change */
+	CHECK_STREQ(changes, "");
+	init("P", "a", "in2", 3);
+	CHECK_STREQ(changes, "8:aout[2]=4.5@6;");
+	/* Unbound, it keeps its last value. */
+	CHECK(unbind("P", "a.out", "aout", 2) == ENVIRONMENT_OK);
+	CHECK(environment_channel(&env, 8, &id, &index, &v) && linkable_to_f64(v) == 4.5);
+
+	/* Change numbers wrap past 0, which stands for none. */
+	env.seq = UINT32_MAX;
+	changes[0] = '\0';
+	sense(2, 0, linkable_from_f64(30));
+	drain();
+	CHECK_STREQ(changes, "6:temp[0]=30@1;");
+	CHECK(environment_changed_after(&env, 6, UINT32_MAX));
+	environment_watch(&env, NULL, NULL);
+	teardown();
+	CHECK(environment_channel_count(&env) == 0);
+}
+
 /* ---- Bindings files (04 §4) --------------------------------------------------------- */
 
 static enum environment_status apply(const char *graph, const EnvBindingRequest *reqs, size_t n,
@@ -1548,6 +1627,7 @@ int main(void)
 	RUN(test_sensor_values);
 	RUN(test_fan_in);
 	RUN(test_actuator_writes);
+	RUN(test_channel_values);
 	RUN(test_bindings_apply);
 	RUN(test_bind_refusals);
 	RUN(test_bindings_end);

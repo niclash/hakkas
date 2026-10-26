@@ -66,6 +66,9 @@ static const CommandDef environment_commands[] = {
 	{"getbindings", true, READ_CAPS},
 	{"bind", true, AUTH_CAP_PROTOCOL_GRAPH},
 	{"unbind", true, AUTH_CAP_PROTOCOL_GRAPH},
+	/* Every channel's live value (plan task 76): live values. */
+	{"watch", true, AUTH_CAP_NETWORK_DATA},
+	{"unwatch", true, AUTH_CAP_NETWORK_DATA},
 	{NULL, false, 0},
 };
 

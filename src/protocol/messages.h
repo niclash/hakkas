@@ -149,6 +149,20 @@ char *proto_msg_env_description(const HakkasEnvDescription *d);
  * every binding of rt, in creation order. */
 char *proto_msg_bindings(const Runtime *rt);
 
+/* One entry of environment:values (02 §3.7, plan task 76), as JSON text:
+ * {"env","index"?,"value"} — index only when not 0, the value a JSON number
+ * (NaN: null) or true/false. */
+char *proto_msg_env_value(const char *env, uint32_t index, const Linkable *v);
+
+/* The bytes environment:values adds around its entries. */
+#define PROTO_ENV_VALUES_OVERHEAD (sizeof(PROTO_ENV_VALUES_HEAD) - 1 + 3)
+#define PROTO_ENV_VALUES_HEAD                                                                    \
+	"{\"protocol\":\"environment\",\"command\":\"values\",\"payload\":{\"values\":["
+
+/* environment:values {"values":[entries]}: entries (len bytes) are entries
+ * of proto_msg_env_value joined by commas. */
+char *proto_msg_env_values(const char *entries, size_t len);
+
 /* The wire message of ev (see "Event mapping" above), or NULL. */
 char *proto_msg_event(const GraphEvent *ev);
 

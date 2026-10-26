@@ -103,8 +103,16 @@ export interface Binding {
     index?: number;
 }
 
+// A channel's live value in environment:values (plan task 76): a sensor's value, or the last
+// value written to an actuator; `index` for an addressable port's channel.
+export interface EnvValue {
+    env: string;
+    index?: number;
+    value: number | boolean | null;
+}
+
 // The environment group of specifications/02-wire-protocol.md §3.7: the description, the
-// bindings, and binding and unbinding a process port.
+// bindings, binding and unbinding a process port, and watching every channel's live value.
 export class EnvironmentProtocol {
     private connection: Connection;
     listeners: {
@@ -112,11 +120,12 @@ export class EnvironmentProtocol {
         onBindings: Function[],
         onBind: Function[],
         onUnbind: Function[],
+        onValues: Function[],   // {values: EnvValue[]}
     };
 
     constructor(connection: Connection) {
         this.connection = connection;
-        this.listeners = {onDescription: [], onBindings: [], onBind: [], onUnbind: []};
+        this.listeners = {onDescription: [], onBindings: [], onBind: [], onUnbind: [], onValues: []};
     }
 
     addListener(method: keyof EnvironmentProtocol['listeners'], listener: Function): void {
@@ -130,6 +139,7 @@ export class EnvironmentProtocol {
             case "bindings": fire(this.listeners.onBindings); break;
             case "bind": fire(this.listeners.onBind); break;
             case "unbind": fire(this.listeners.onUnbind); break;
+            case "values": fire(this.listeners.onValues); break;
         }
     }
 
@@ -147,6 +157,15 @@ export class EnvironmentProtocol {
 
     request_unbind(b: Binding) {
         this.request_raw("unbind", b);
+    }
+
+    // Every channel's live value: the values with a value, then each change (environment:values).
+    request_watch() {
+        this.connection.send({protocol: "environment", command: "watch", payload: {}});
+    }
+
+    request_unwatch() {
+        this.connection.send({protocol: "environment", command: "unwatch", payload: {}});
     }
 
     // bind or unbind with its payload as it is (the undo history's commands, 06 §4.13).

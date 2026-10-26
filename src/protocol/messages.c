@@ -521,6 +521,30 @@ char *proto_msg_env_description(const HakkasEnvDescription *d)
 	return proto_msg_build("environment", "description", env_description_to_json(d));
 }
 
+char *proto_msg_env_value(const char *env, uint32_t index, const Linkable *v)
+{
+	cJSON *e = object();
+	bool ok = e != NULL && add_str(e, "env", env) &&
+		  (index == 0 || add_num(e, "index", index)) &&
+		  add(e, "value", v->type == LINKABLE_BOOL ? cJSON_CreateBool(v->as.b)
+							   : graph_json_number(linkable_to_f64(v)));
+	char *text = ok ? graph_json_print(e) : NULL;
+	cJSON_Delete(e);
+	return text;
+}
+
+char *proto_msg_env_values(const char *entries, size_t len)
+{
+	static const char head[] = PROTO_ENV_VALUES_HEAD, tail[] = "]}}";
+	char *m = malloc(sizeof(head) - 1 + len + sizeof(tail));
+	if (m == NULL)
+		return NULL;
+	memcpy(m, head, sizeof(head) - 1);
+	memcpy(m + sizeof(head) - 1, entries, len);
+	memcpy(m + sizeof(head) - 1 + len, tail, sizeof(tail));
+	return m;
+}
+
 /* {"graph","block","port","env","index"?} of b: index only for an
  * addressable port's channel. */
 static cJSON *binding_json(const EnvBinding *b)

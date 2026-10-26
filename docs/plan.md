@@ -1030,8 +1030,11 @@ to the user first, one at a time.
   host for one who cannot). The emulator's descriptors have `pictureUrl`, `positions` and
   `places` (provisional links; measurements in its plan, E15). The frontend has the types only;
   drawing is task 78.
-- [ ] **76. Every channel's live value for the frontend**: an `environment` message giving the
-  values of all channels, not only those bound to a process port.
+- [x] **76. Every channel's live value for the frontend** (done 2026-10-26; 02 §3.7):
+  `environment:watch`/`unwatch` and `environment:values` — every channel with a value, then
+  each change; an actuator's value is the last one written (none: not driven); lossy with a
+  catch-up pass under back-pressure; capability `network:data`. The frontend's protocol module
+  has the requests and the listener; the window that uses them is task 78.
 - [ ] **77. The device's own copy of a picture**: an `environment` message fetching it through
   hakkas, for networks without internet.
 - [ ] **78. The device window** in hakkas' frontend: a window that can be popped out, drawing

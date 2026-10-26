@@ -21,6 +21,7 @@ enum {
 	PENDING_COMPONENTS = 1u << 1, /* component:list */
 	PENDING_CONNECT = 1u << 2,    /* the graph:connect snapshot of connect_id */
 	PENDING_DATA = 1u << 3,	      /* network:data of a dirty link-value watch */
+	PENDING_ENV = 1u << 4,	      /* environment:values of a catch-up pass */
 };
 
 /* The deferred bursts, which take precedence over lossy messages. */
@@ -55,6 +56,17 @@ struct ProtoConn {
 	EdgeWatch *watches;
 	size_t watch_count;
 	char *watch_graph;
+	/* environment:watch (02 §3.7, plan task 76): every change up to
+	 * env_sent has been sent. A catch-up pass (env_pass) sends the
+	 * channels changed after env_sent, or all with a value (env_all), from
+	 * env_cursor on; when it ends, everything up to env_pass_seq is sent. */
+	bool env_watch;
+	bool env_pass;
+	bool env_all;
+	bool env_flushed; /* the pass has sent a message */
+	uint32_t env_sent;
+	uint32_t env_pass_seq;
+	uint32_t env_cursor;
 	ProtoConn *prev, *next;
 };
 
@@ -126,6 +138,23 @@ static bool lossy_fits(const ProtoConn *c, size_t len)
 	size_t reserve = c->t->send_capacity(c->conn) / PROTO_DATA_RESERVE_DIV;
 	size_t space = c->t->send_space(c->conn);
 	return space >= reserve && len <= space - reserve;
+}
+
+/* The bytes a lossy message may take now (lossy_fits). */
+static size_t lossy_room(const ProtoConn *c)
+{
+	if (c->pending & PENDING_BURSTS)
+		return 0;
+	size_t reserve = c->t->send_capacity(c->conn) / PROTO_DATA_RESERVE_DIV;
+	size_t space = c->t->send_space(c->conn);
+	return space >= reserve ? space - reserve : 0;
+}
+
+/* Whether an on_drained will come: the buffer holds data, or a burst waits
+ * for one. */
+static bool drain_follows(const ProtoConn *c)
+{
+	return c->t->send_pending(c->conn) > 0 || (c->pending & PENDING_BURSTS);
 }
 
 static void close_conn(ProtoConn *c, uint16_t code, const char *reason)
@@ -410,13 +439,15 @@ static void invalid_field(ProtoConn *c, const char *name, const char *graph)
 }
 
 static void edges_clear(ProtoConn *c);
+static void env_unwatch(ProtoConn *c);
 
 /* The session ended (logout, expiry): no more events, no link values
- * (02 §4.2), no deferred snapshot. */
+ * (02 §4.2, §3.7), no deferred snapshot. */
 static void end_delivery(ProtoConn *c)
 {
 	unsubscribe(c);
 	edges_clear(c);
+	env_unwatch(c);
 	c->pending &= ~PENDING_CONNECT;
 }
 
@@ -699,6 +730,205 @@ static void cmd_bind(ProtoConn *c, const Envelope *env)
 static void cmd_unbind(ProtoConn *c, const Envelope *env)
 {
 	bind_command(c, env, false);
+}
+
+/* ---- environment:watch, every channel's live value (02 §3.7, plan task 76) ---------- */
+
+/* Entries of environment:values being joined. */
+typedef struct {
+	char *text;
+	size_t len, cap;
+} Entries;
+
+static bool entries_add(Entries *e, const char *entry)
+{
+	size_t n = strlen(entry), need = e->len + (e->len > 0) + n;
+	if (need > e->cap) {
+		size_t cap = e->cap == 0 ? 256 : e->cap;
+		while (cap < need)
+			cap *= 2;
+		char *t = realloc(e->text, cap);
+		if (t == NULL)
+			return false;
+		e->text = t;
+		e->cap = cap;
+	}
+	if (e->len > 0)
+		e->text[e->len++] = ',';
+	memcpy(e->text + e->len, entry, n);
+	e->len += n;
+	return true;
+}
+
+/* Sends the entries as one environment:values (they fit the room above the
+ * reserve) and empties them; false if memory runs out. */
+static bool entries_flush(ProtoConn *c, Entries *e)
+{
+	char *m = proto_msg_env_values(e->text != NULL ? e->text : "", e->len);
+	if (m == NULL)
+		return false;
+	send_raw(c, m, strlen(m));
+	free(m);
+	e->len = 0;
+	c->env_flushed = true;
+	return true;
+}
+
+static void env_pass_begin(ProtoConn *c, bool all)
+{
+	c->env_pass = true;
+	c->env_all = all;
+	c->env_flushed = false;
+	c->env_pass_seq = environment_seq(c->p->env);
+	c->env_cursor = 0;
+}
+
+/* Runs c's catch-up pass from its cursor, in as many environment:values as
+ * the room above the reserve takes, each filled up to it. When the room is
+ * used up, it waits for on_drained (PENDING_ENV) and goes on from there.
+ * When it ends, a channel that changed while it waited, before its cursor,
+ * is sent by a further pass (which may send a channel the pass sent after
+ * waiting once more). A pass that has sent nothing yet starts from the
+ * current change number. The first pass after watch sends a message even
+ * without any value. */
+static void env_pass_run(ProtoConn *c)
+{
+	Environment *env = c->p->env;
+	Entries e = {0};
+	if (c->env_cursor == 0)
+		c->env_pass_seq = environment_seq(env);
+	while (c->env_pass && !c->closing) {
+		uint32_t n = environment_channel_count(env);
+		size_t room = lossy_room(c);
+		while (c->env_cursor < n) {
+			uint32_t ch = c->env_cursor;
+			const char *id;
+			uint32_t index;
+			const Linkable *v;
+			if (!environment_channel(env, ch, &id, &index, &v) ||
+			    (!c->env_all && !environment_changed_after(env, ch, c->env_sent))) {
+				c->env_cursor++;
+				continue;
+			}
+			char *entry = proto_msg_env_value(id, index, v);
+			if (entry == NULL)
+				goto no_memory;
+			size_t need =
+				PROTO_ENV_VALUES_OVERHEAD + e.len + (e.len > 0) + strlen(entry);
+			if (need > room && e.len > 0) {
+				free(entry);
+				if (!entries_flush(c, &e))
+					goto no_memory;
+				room = lossy_room(c);
+				continue; /* this channel again, in the next message */
+			}
+			if (need > room) {
+				free(entry);
+				if (drain_follows(c)) {
+					c->pending |= PENDING_ENV;
+					free(e.text);
+					return;
+				}
+				c->env_cursor++; /* too large for any buffer: dropped */
+				continue;
+			}
+			bool ok = entries_add(&e, entry);
+			free(entry);
+			if (!ok)
+				goto no_memory;
+			c->env_cursor++;
+		}
+		bool first = c->env_all && !c->env_flushed;
+		if ((e.len > 0 || first) && !entries_flush(c, &e))
+			goto no_memory;
+		c->env_sent = c->env_pass_seq;
+		c->env_pass = false;
+		c->env_all = false;
+		if (environment_seq(env) != c->env_sent)
+			env_pass_begin(c, false);
+	}
+	free(e.text);
+	return;
+no_memory:
+	free(e.text);
+	reply(c, NULL);
+}
+
+/* A channel's current value changed: one environment:values to every
+ * watching connection that is up to date (any other sends it in its pass);
+ * one whose message does not fit the room above the reserve starts a pass
+ * at the next on_drained instead. */
+static void on_env_change(void *ctx, uint32_t ch)
+{
+	Protocol *p = ctx;
+	uint32_t seq = environment_seq(p->env);
+	char *msg = NULL;
+	size_t len = 0;
+	for (ProtoConn *c = p->conns; c != NULL; c = c->next) {
+		if (!c->env_watch || c->env_pass || c->closing)
+			continue;
+		if (msg == NULL) {
+			const char *id;
+			uint32_t index;
+			const Linkable *v;
+			if (!environment_channel(p->env, ch, &id, &index, &v))
+				return;
+			char *entry = proto_msg_env_value(id, index, v);
+			msg = entry != NULL ? proto_msg_env_values(entry, strlen(entry)) : NULL;
+			free(entry);
+			if (msg == NULL) {
+				log_error("protocol: out of memory, a live value not sent");
+				return;
+			}
+			len = strlen(msg);
+		}
+		if (lossy_fits(c, len)) {
+			send_raw(c, msg, len);
+			c->env_sent = seq;
+		} else if (drain_follows(c)) {
+			env_pass_begin(c, false);
+			c->pending |= PENDING_ENV;
+		} else {
+			c->env_sent = seq; /* too large for any buffer: dropped */
+		}
+	}
+	free(msg);
+}
+
+static void env_unwatch(ProtoConn *c)
+{
+	c->env_watch = false;
+	c->env_pass = false;
+	c->pending &= ~PENDING_ENV;
+}
+
+/* watch {}: the echo, then every channel with a value (a pass sending all);
+ * changes follow. Watching again starts over. */
+static void cmd_env_watch(ProtoConn *c, const Envelope *env)
+{
+	(void)env;
+	if (c->p->env == NULL || environment_description(c->p->env) == NULL) {
+		reply_error(c, "No environment", NULL);
+		return;
+	}
+	env_unwatch(c);
+	reply(c, proto_msg_build("environment", "watch", cJSON_CreateObject()));
+	if (c->closing)
+		return;
+	c->env_watch = true;
+	env_pass_begin(c, true);
+	env_pass_run(c);
+}
+
+static void cmd_env_unwatch(ProtoConn *c, const Envelope *env)
+{
+	(void)env;
+	if (c->p->env == NULL || environment_description(c->p->env) == NULL) {
+		reply_error(c, "No environment", NULL);
+		return;
+	}
+	env_unwatch(c);
+	reply(c, proto_msg_build("environment", "unwatch", cJSON_CreateObject()));
 }
 
 /* An edge endpoint {"node":String,"port":String}. */
@@ -1528,6 +1758,8 @@ static const ProtoCommand commands[] = {
 	{"environment", "getbindings", cmd_getbindings},
 	{"environment", "bind", cmd_bind},
 	{"environment", "unbind", cmd_unbind},
+	{"environment", "watch", cmd_env_watch},
+	{"environment", "unwatch", cmd_env_unwatch},
 	{"component", "list", cmd_component_list},
 	{"component", "getsource", cmd_getsource},
 	{"trace", "start", cmd_trace},
@@ -1661,6 +1893,8 @@ void protocol_conn_drained(ProtoConn *c)
 		send_snapshot(c, c->connect_id);
 	if (pending & PENDING_DATA)
 		send_dirty(c);
+	if ((pending & PENDING_ENV) && c->env_watch && !c->closing)
+		env_pass_run(c);
 	drop_event_cache(c->p);
 }
 
@@ -1701,6 +1935,7 @@ void protocol_conn_close(ProtoConn *c)
 		c->next->prev = c->prev;
 	unsubscribe(c);
 	edges_clear(c);
+	env_unwatch(c);
 	p->auth.ops->close(p->auth.self, c->ac);
 	free(c);
 }
@@ -1724,6 +1959,8 @@ bool protocol_create(const ProtocolConfig *cfg, Protocol **out)
 	p->files = cfg->files;
 	p->env = cfg->environment;
 	p->auth = cfg->auth;
+	if (p->env != NULL)
+		environment_watch(p->env, on_env_change, p);
 	snprintf(p->engine_id, sizeof(p->engine_id), "%s", cfg->cfg->engine_id);
 	snprintf(p->label, sizeof(p->label), "%s", cfg->cfg->label);
 	if (cfg->cfg->log.mirror) {
@@ -1744,6 +1981,8 @@ void protocol_destroy(Protocol *p)
 		return;
 	if (p->mirror)
 		log_remove_sink(mirror_sink, p);
+	if (p->env != NULL)
+		environment_watch(p->env, NULL, NULL);
 	while (p->conns != NULL)
 		protocol_conn_close(p->conns);
 	drop_event_cache(p);

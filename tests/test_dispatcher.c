@@ -91,6 +91,7 @@ typedef struct {
 	bool closed;
 	uint16_t close_code;
 	bool log_on_send; /* log a line from inside send_text (recursion test) */
+	bool consume;	  /* each message takes its bytes from space */
 	ProtoConn *pc;
 } FakeConn;
 
@@ -116,6 +117,8 @@ static bool f_send_text(void *conn, const char *text, size_t len)
 	}
 	if (f->log_on_send)
 		log_warn("sending a message");
+	if (f->consume)
+		f->space -= len;
 	return true;
 }
 
@@ -317,6 +320,64 @@ static AuthConn *last_auth_conn(void)
 static AuthOps tracked_ops;
 static int fixture;
 
+/* The environment of setup_env (plan task 76): sensors ai (number, 1..2) and
+ * di (bool), the actuator dq (bool). */
+static const HakkasEnvPort env_out_ports[] = {
+	{.id = "ai", .type = HAKKAS_ENV_NUMBER, .addressable = true, .count = 2},
+	{.id = "di", .type = HAKKAS_ENV_BOOL},
+};
+static const HakkasEnvPort env_in_ports[] = {{.id = "dq", .type = HAKKAS_ENV_BOOL}};
+static const HakkasEnvDescription env_desc = {
+	.name = "fake", .out_ports = env_out_ports, .out_port_count = 2,
+	.in_ports = env_in_ports, .in_port_count = 1};
+static Environment env;
+static Environment *with_env; /* setup_with opens it when set */
+static HakkasEnvSink *env_sink;
+
+static const HakkasEnvDescription *fe_describe(void *ctx)
+{
+	(void)ctx;
+	return &env_desc;
+}
+
+static int fe_start(void *ctx, HakkasEnvSink *sink)
+{
+	(void)ctx;
+	env_sink = sink;
+	return 0;
+}
+
+static void fe_stop(void *ctx)
+{
+	(void)ctx;
+}
+
+static void fe_write(void *ctx, int port, int index, const HakkasValue *v)
+{
+	(void)ctx;
+	(void)port;
+	(void)index;
+	(void)v;
+}
+
+static enum pal_err push_direct(WorkEntry *e)
+{
+	work_queue_push_entry(&rt.queue, e);
+	return PAL_OK;
+}
+
+static int64_t fe_clock(void)
+{
+	return 0;
+}
+
+/* A sensor value, drained at once. */
+static void sense(int port, int index, HakkasValue v)
+{
+	CHECK(hakkas_env_sink_push(env_sink, port, index, &v));
+	runtime_drain(&rt, SIZE_MAX);
+}
+
 static void setup_with(Authorizer az, bool mirror)
 {
 	runtime_init(&rt);
@@ -330,7 +391,12 @@ static void setup_with(Authorizer az, bool mirror)
 	snprintf(cfg.engine_id, sizeof(cfg.engine_id), "engine-1");
 	snprintf(cfg.label, sizeof(cfg.label), "Test Hakkas");
 	cfg.log.mirror = mirror;
-	ProtocolConfig pc = {&gs, &gf, &cfg, az, NULL};
+	if (with_env != NULL) {
+		environment_init(with_env, fe_clock);
+		HakkasEnvironment spi = {fe_describe, fe_start, fe_stop, fe_write, NULL, NULL};
+		CHECK(environment_open(with_env, &rt, &spi, push_direct));
+	}
+	ProtocolConfig pc = {&gs, &gf, &cfg, az, with_env};
 	CHECK(protocol_create(&pc, &proto));
 	memset(&fake, 0, sizeof(fake));
 	fake.challenge_result = AUTH_OK;
@@ -356,6 +422,9 @@ static void teardown(void)
 {
 	protocol_destroy(proto);
 	proto = NULL;
+	if (with_env != NULL)
+		environment_close(with_env);
+	with_env = NULL;
 	graphs_deinit(&gs);
 	runtime_deinit(&rt);
 }
@@ -2584,6 +2653,131 @@ static void test_data_reserve(void)
 	teardown();
 }
 
+/* environment:values with entries (JSON with ' for "). */
+static const char *values_json(const char *entries)
+{
+	static char buf[4][1024];
+	static int next;
+	char *p = buf[next++ % 4];
+	snprintf(p, 1024, "{'protocol':'environment','command':'values','payload':{'values':[%s]}}",
+		 entries);
+	return p;
+}
+
+/* environment:watch and unwatch (02 §3.7, plan task 76): the echo, every
+ * channel with a value, then each change; under back-pressure a catch-up
+ * pass with the current values, in messages that fit; a further pass for a
+ * channel that changed while the pass waited, before its cursor. */
+static void test_env_watch(void)
+{
+	/* Without an environment. */
+	setup();
+	FakeConn f;
+	conn_open(&f);
+	const char *s = login_as(&f, USER_ROLE_VIEWER);
+	command(&f, "environment", "watch", "{}", s);
+	expect_error(&f, "No environment");
+	command(&f, "environment", "unwatch", "{}", s);
+	expect_error(&f, "No environment");
+	conn_close(&f);
+	teardown();
+
+	with_env = &env;
+	setup();
+	conn_open(&f);
+	s = login_as(&f, USER_ROLE_VIEWER); /* live values: a viewer may watch */
+	/* Nothing has a value yet: an empty list. */
+	command(&f, "environment", "watch", "{}", s);
+	CHECK(f.count == 2);
+	CHECK(json_equal(msg(&f, 0), "{'protocol':'environment','command':'watch','payload':{}}"));
+	CHECK(json_equal(msg(&f, 1), values_json("")));
+	clear(&f);
+	/* Each change, one message; the index only for an addressable port. */
+	sense(0, 2, linkable_from_f64(1.5));
+	expect_one(&f, values_json("{'env':'ai','index':2,'value':1.5}"));
+	sense(1, 0, linkable_from_bool(true));
+	expect_one(&f, values_json("{'env':'di','value':true}"));
+	/* Watching again starts over: everything with a value. */
+	command(&f, "environment", "watch", "{}", s);
+	CHECK(f.count == 2);
+	CHECK(json_equal(msg(&f, 1), values_json("{'env':'ai','index':2,'value':1.5},"
+						 "{'env':'di','value':true}")));
+	clear(&f);
+	/* The longest message of one entry below, and the echo. */
+	size_t one = strlen(jq(values_json("{'env':'ai','index':1,'value':6}")));
+	size_t echo = strlen(jq("{'protocol':'environment','command':'watch','payload':{}}"));
+
+	/* Back-pressure: nothing while the room above the reserve is too small;
+	 * at the drain the current values, together. */
+	f.capacity = 4000;
+	size_t reserve = 4000 / PROTO_DATA_RESERVE_DIV;
+	f.pending = 100;
+	f.space = reserve + 10;
+	sense(0, 1, linkable_from_f64(7));
+	sense(0, 2, linkable_from_f64(8));
+	sense(0, 2, linkable_from_f64(9));
+	CHECK(f.count == 0 && !f.closed);
+	f.space = 4000;
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	expect_one(&f, values_json("{'env':'ai','index':1,'value':7},"
+				   "{'env':'ai','index':2,'value':9}"));
+	sense(0, 1, linkable_from_f64(6)); /* at once again */
+	expect_one(&f, values_json("{'env':'ai','index':1,'value':6}"));
+
+	/* A pass fills each message up to the room: here one entry each. */
+	f.space = reserve + one;
+	command(&f, "environment", "watch", "{}", s);
+	CHECK(f.count == 4);
+	CHECK(json_equal(msg(&f, 1), values_json("{'env':'ai','index':1,'value':6}")));
+	CHECK(json_equal(msg(&f, 2), values_json("{'env':'ai','index':2,'value':9}")));
+	CHECK(json_equal(msg(&f, 3), values_json("{'env':'di','value':true}")));
+	clear(&f);
+
+	/* The room runs out within a pass: it goes on at the drain, and a
+	 * channel that changed meanwhile before its cursor follows. */
+	f.space = 4000;
+	sense(1, 0, linkable_from_bool(false));
+	clear(&f);
+	f.consume = true;
+	f.pending = 100;
+	f.space = reserve + echo + one; /* the echo and one message of one entry */
+	command(&f, "environment", "watch", "{}", s);
+	CHECK(f.count == 2); /* the echo and ai[1] */
+	CHECK(json_equal(msg(&f, 1), values_json("{'env':'ai','index':1,'value':6}")));
+	clear(&f);
+	sense(0, 1, linkable_from_f64(5)); /* before the cursor */
+	CHECK(f.count == 0);
+	f.consume = false;
+	f.space = 4000;
+	f.pending = 0;
+	protocol_conn_drained(f.pc);
+	CHECK(f.count == 2);
+	CHECK(json_equal(msg(&f, 0), values_json("{'env':'ai','index':2,'value':9},"
+						 "{'env':'di','value':false}")));
+	CHECK(json_equal(msg(&f, 1), values_json("{'env':'ai','index':1,'value':5}")));
+	clear(&f);
+
+	/* Two watchers each get a change; unwatch and logout end it. */
+	FakeConn g;
+	conn_open(&g);
+	const char *t = login_as(&g, USER_ROLE_EDITOR);
+	command(&g, "environment", "watch", "{}", t);
+	clear(&g);
+	sense(0, 1, linkable_from_f64(4));
+	expect_one(&f, values_json("{'env':'ai','index':1,'value':4}"));
+	expect_one(&g, values_json("{'env':'ai','index':1,'value':4}"));
+	command(&f, "environment", "unwatch", "{}", s);
+	expect_one(&f, "{'protocol':'environment','command':'unwatch','payload':{}}");
+	command(&g, "auth", "logout", "{}", t);
+	clear(&g);
+	sense(0, 1, linkable_from_f64(3));
+	CHECK(f.count == 0 && g.count == 0);
+	conn_close(&g);
+	conn_close(&f);
+	teardown();
+}
+
 /* Composite types over the dispatcher (plan task 21): component:list with
  * subgraph true, getsource with the authoring JSON as a string (02 §3.5),
  * the snapshot showing an instance as one node, network:edges on an exposed
@@ -3265,6 +3459,7 @@ int main(void)
 	RUN(test_network_commands);
 	RUN(test_network_edges);
 	RUN(test_data_reserve);
+	RUN(test_env_watch);
 	RUN(test_users_reload);
 	RUN(test_composite);
 	RUN(test_groups);
