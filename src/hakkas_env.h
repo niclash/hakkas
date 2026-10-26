@@ -78,6 +78,7 @@ typedef Linkable HakkasValue;
 #define HAKKAS_ENV_IO_SLOTS_MAX 31  /* a carrier's I/O slots, built-in ones included */
 #define HAKKAS_ENV_COMM_SLOTS_MAX 4 /* a carrier's communication slots */
 #define HAKKAS_ENV_TEXT_MAX 1024    /* any other string (bytes) */
+#define HAKKAS_ENV_POSITIONS_MAX 1024 /* channel positions, all modules together */
 
 /* A port's value type (04 §1): "number" or "bool". */
 enum hakkas_env_type {
@@ -97,6 +98,24 @@ typedef struct {
 	uint32_t count; /* addressable: 1..HAKKAS_ENV_COUNT_MAX channels; else 0 */
 } HakkasEnvPort;
 
+/* Where a channel is on its module's picture (04 §1, plan task 75), view
+ * only: x and y are fractions (0..1) of the picture's width and height, from
+ * its top left corner; a built-in module's, which has no picture, of the
+ * carrier's. Not checked: the frontend skips a position it cannot use. */
+typedef struct {
+	const char *port; /* a port id */
+	uint32_t index;	  /* the channel, 1..count; 0 for a port that is not addressable */
+	double x, y;
+} HakkasEnvPosition;
+
+/* Where a slot is on the carrier's picture (04 §1, plan task 75), view only:
+ * a rectangle in fractions (0..1) of the picture's width and height, into
+ * which the module's picture is drawn. */
+typedef struct {
+	uint32_t slot; /* the I/O or communication slot; not used for the MCU slot */
+	double x, y, w, h;
+} HakkasEnvPlace;
+
 /* A module of a modular environment (04 §1): UI metadata, and the ids of the
  * ports it contributes. Every string may be NULL. */
 typedef struct {
@@ -109,8 +128,11 @@ typedef struct {
 	const char *revision;
 	const char *serial;
 	const char *documentation; /* a link */
+	const char *picture;	   /* a link (https) */
 	const char *const *ports;  /* port ids of this description */
 	size_t port_count;
+	const HakkasEnvPosition *positions; /* where its channels are on its picture */
+	size_t position_count;
 } HakkasEnvModule;
 
 /* The carrier board's power specification (04 §1), view only. */
@@ -159,6 +181,7 @@ typedef struct {
 	uint32_t slot;	  /* 1..HAKKAS_ENV_COMM_SLOTS_MAX */
 	const char *type; /* e.g. "colibri_ethernet" */
 	const char *name; /* human-readable, e.g. "Colibri Ethernet"; may be NULL */
+	const char *picture; /* a link (https); may be NULL */
 	const HakkasEnvIp *ip;
 	const char *ssid; /* WiFi */
 	const HakkasEnvRs485 *rs485;
@@ -173,6 +196,7 @@ typedef struct {
 	const char *revision;
 	const char *serial;
 	const char *documentation; /* a link */
+	const char *picture;	   /* a link (https) */
 } HakkasEnvMcu;
 
 /* The carrier board of a modular environment (04 §1). Its I/O slots are
@@ -186,6 +210,7 @@ typedef struct {
 	const char *revision;
 	const char *serial;
 	const char *documentation; /* a link */
+	const char *picture;	   /* a link (https) */
 	uint32_t slots;		   /* the changeable I/O slots */
 	const uint32_t *builtin;   /* the built-in slots' numbers */
 	size_t builtin_count;
@@ -193,6 +218,14 @@ typedef struct {
 	const HakkasEnvComm *comm;   /* the communication slots in use */
 	size_t comm_count;	     /* 0..HAKKAS_ENV_COMM_SLOTS_MAX */
 	const HakkasEnvMcu *mcu;     /* NULL: not given */
+	/* Where the slots are on its picture: I/O slots (at most
+	 * HAKKAS_ENV_IO_SLOTS_MAX), communication slots (at most
+	 * HAKKAS_ENV_COMM_SLOTS_MAX) and the MCU slot (NULL: not given). */
+	const HakkasEnvPlace *io_places;
+	size_t io_place_count;
+	const HakkasEnvPlace *comm_places;
+	size_t comm_place_count;
+	const HakkasEnvPlace *mcu_place;
 } HakkasEnvCarrier;
 
 /* The environment's description (04 §1). */

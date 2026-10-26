@@ -63,20 +63,41 @@ group('the environment description', () => {
     it('describes the carrier with its power and communication slots, parameters as given', () => {
         const ip = {mode: 'dhcp', address: '192.168.1.40', prefix: 24};
         const d = described({modules, comm: [{slot: 1, type: 'colibri_ethernet', ip}]});
+        const def = catalog.carriers.get('colibri_8')!.def;
         expect(d.carrier).toEqual({
             type: 'colibri_8', name: 'Colibri 8', vendor: 'CurrentMakers',
             documentation: 'https://currentmakers.com/products/colibri/colibri_8/',
+            picture: def.pictureUrl,
             slots: 7, builtin: [{slot: 0}],
             power: {voltage: {min: 7, max: 30}, ac: true, dc: true, current: 2.0},
-            comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet', ip}],
+            comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet',
+                picture: catalog.comm.get('colibri_ethernet')!.def.pictureUrl, ip}],
+            places: {slots: def.places!.slots, comm: def.places!.comm},
         });
         expect(described({}).carrier.comm).toEqual([]);
     });
 
     it('names the MCU module, if one is given', () => {
-        expect(described({}, 'lab', 'colibri_mcu6').carrier.mcu)
-            .toEqual({type: 'colibri_mcu6', name: 'Colibri MCU6', vendor: 'CurrentMakers'});
+        const d = described({}, 'lab', 'colibri_mcu6');
+        expect(d.carrier.mcu).toEqual({type: 'colibri_mcu6', name: 'Colibri MCU6', vendor: 'CurrentMakers'});
+        // Its slot's place only with a module in it.
+        expect((d.carrier.places as JsonObject).mcu).toEqual(catalog.carriers.get('colibri_8')!.def.places!.mcu);
         expect(described({}).carrier).not.toHaveProperty('mcu');
+        expect(described({}).carrier.places).not.toHaveProperty('mcu');
+    });
+
+    it('gives each module its picture link and its channels\' positions, under their port ids', () => {
+        const d = described({modules: [{slot: 2, type: 'colibri_aiv'}, {slot: 3, type: 'colibri_dp1'},
+            {slot: 4, type: 'colibri_dii'}]});
+        const aiv = catalog.modules.get('colibri_aiv')!.def;
+        expect(d.modules[1]!.picture).toBe(aiv.pictureUrl);
+        expect(d.modules[1]!.positions).toEqual(aiv.positions.map(p => ({port: 'slot2-ai', index: p.index,
+            x: p.x, y: p.y})));
+        // A group of one channel: no index.
+        expect(d.modules[2]!.positions![0]).toEqual({port: 'slot3-ai', x: expect.any(Number), y: expect.any(Number)});
+        // No picture, no positions: neither member.
+        expect(d.modules[3]).not.toHaveProperty('picture');
+        expect(d.modules[3]).not.toHaveProperty('positions');
     });
 
     it('passes hakkas\' checks with every module type in the catalog', () => {
@@ -110,6 +131,11 @@ group('hakkas\' checks of a description (04 §0)', () => {
             .toEqual(['q: min greater than max']);
         expect(checkDescription({...ok, inPorts: [{...port('q'), unit: 'u'.repeat(1025)}]}))
             .toEqual(['q: text longer than 1024 bytes']);
+        const placed = (n: number) => ({slot: 1, type: 't', ports: [],
+            positions: Array.from({length: n}, () => ({port: 'p', x: 0, y: 0}))});
+        expect(checkDescription({...ok, modules: [placed(1024)]})).toEqual([]);
+        expect(checkDescription({...ok, modules: [placed(1000), {...placed(25), slot: 2}]}))
+            .toEqual(['1025 positions, more than 1024']);
         expect(checkDescription({...ok, modules: Array.from({length: 65}, (_, i) => ({slot: i, type: 't', ports: []}))}))
             .toEqual(['65 modules, more than 64']);
         expect(checkDescription({...ok, modules: [{slot: 1, type: 't', serial: 's'.repeat(1025), ports: []}]}))

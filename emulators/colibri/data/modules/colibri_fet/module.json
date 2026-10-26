@@ -4,6 +4,7 @@
   "vendor": "CurrentMakers",
   "description": "4 × MOSFET outputs, 1 A, 60 V",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_fet.png",
   "channels": [
     {
       "id": "dq",
@@ -12,6 +13,32 @@
       "count": 4,
       "indicator": "lamp",
       "description": "MOSFET output"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "dq",
+      "index": 1,
+      "x": 0.22,
+      "y": 0.35
+    },
+    {
+      "channel": "dq",
+      "index": 2,
+      "x": 0.4,
+      "y": 0.35
+    },
+    {
+      "channel": "dq",
+      "index": 3,
+      "x": 0.58,
+      "y": 0.35
+    },
+    {
+      "channel": "dq",
+      "index": 4,
+      "x": 0.76,
+      "y": 0.35
     }
   ]
 }

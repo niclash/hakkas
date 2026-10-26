@@ -4,6 +4,7 @@
   "vendor": "CurrentMakers",
   "description": "0-500 Pa differential pressure",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_dp1.png",
   "channels": [
     {
       "id": "ai",
@@ -18,6 +19,13 @@
       "noise": 0.5,
       "control": "slider",
       "description": "Differential pressure"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "ai",
+      "x": 0.49,
+      "y": 0.41
     }
   ]
 }

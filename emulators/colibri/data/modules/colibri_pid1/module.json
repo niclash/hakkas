@@ -4,6 +4,7 @@
   "vendor": "CurrentMakers",
   "description": "PID regulator: Pt1000 input, 0-10 V output",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_pid1.png",
   "channels": [
     {
       "id": "ai",
@@ -143,6 +144,18 @@
       "unit": "ms",
       "indicator": "number",
       "description": "Sample period"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "ai",
+      "x": 0.31,
+      "y": 0.76
+    },
+    {
+      "channel": "output",
+      "x": 0.66,
+      "y": 0.8
     }
   ]
 }

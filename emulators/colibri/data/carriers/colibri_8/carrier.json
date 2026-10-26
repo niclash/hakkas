@@ -3,6 +3,7 @@
   "name": "Colibri 8",
   "vendor": "CurrentMakers",
   "documentation": "https://currentmakers.com/products/colibri/colibri_8/",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_8.png",
   "slots": 7,
   "builtin": [
     {
@@ -36,5 +37,73 @@
       "colibri_mcu6",
       "colibri_mcu7"
     ]
+  },
+  "places": {
+    "slots": [
+      {
+        "slot": 1,
+        "x": 0.3703,
+        "y": 0.4352,
+        "w": 0.0483,
+        "h": 0.1654
+      },
+      {
+        "slot": 2,
+        "x": 0.4212,
+        "y": 0.4352,
+        "w": 0.0483,
+        "h": 0.1654
+      },
+      {
+        "slot": 3,
+        "x": 0.4722,
+        "y": 0.4352,
+        "w": 0.0483,
+        "h": 0.1654
+      },
+      {
+        "slot": 4,
+        "x": 0.5231,
+        "y": 0.4352,
+        "w": 0.0483,
+        "h": 0.1654
+      },
+      {
+        "slot": 5,
+        "x": 0.5741,
+        "y": 0.4352,
+        "w": 0.0483,
+        "h": 0.1654
+      },
+      {
+        "slot": 6,
+        "x": 0.625,
+        "y": 0.4352,
+        "w": 0.0483,
+        "h": 0.1654
+      },
+      {
+        "slot": 7,
+        "x": 0.6759,
+        "y": 0.4352,
+        "w": 0.0483,
+        "h": 0.1654
+      }
+    ],
+    "comm": [
+      {
+        "slot": 1,
+        "x": 0.2579,
+        "y": 0.4352,
+        "w": 0.0483,
+        "h": 0.1654
+      }
+    ],
+    "mcu": {
+      "x": 0.3193,
+      "y": 0.4352,
+      "w": 0.0483,
+      "h": 0.1654
+    }
   }
 }

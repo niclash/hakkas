@@ -20,22 +20,30 @@
  * when its slot is built-in; without one no module is builtin; no two
  * modules share a slot. The carrier's view-only values (its strings, power,
  * the communication parameters, the MCU module) are not checked (decided
- * with the user 2026-10-25).
+ * with the user 2026-10-25). Pictures (plan task 75): picture links of at
+ * most HAKKAS_ENV_TEXT_MAX bytes; at most HAKKAS_ENV_POSITIONS_MAX channel
+ * positions, all modules together; at most as many slot places as the
+ * limits on slots. What a position or place says is not checked.
  *
  * The JSON form (04 §1): {"name", "description"?, "icon"?, "inPorts"?: [port],
  * "outPorts"?: [port], "modules"?: [module]}, a port {"id", "type":
  * "number"|"bool", "description"?, "unit"?, "min"?, "max"?, "addressable"?,
  * "count"?} ("count" only with "addressable": true), a module {"slot"?:
  * integer, "builtin"?: bool, "type"?, "vendor"?, "revision"?, "serial"?,
- * "documentation"?, "ports"?: [port id]}, and "carrier"?: {"type"?,
- * "vendor"?, "revision"?, "serial"?, "documentation"?, "slots": integer,
+ * "documentation"?, "picture"?, "ports"?: [port id], "positions"?: [{"port",
+ * "index"?, "x", "y"}]}, and "carrier"?: {"type"?, "vendor"?, "revision"?,
+ * "serial"?, "documentation"?, "picture"?, "slots": integer,
  * "builtin"?: [{"slot": integer}], "power"?: {"voltage"?: {"min"?, "max"?},
- * "ac"?, "dc"?, "current"?}, "comm"?: [{"slot": integer, "type"?, "ip"?:
+ * "ac"?, "dc"?, "current"?}, "comm"?: [{"slot": integer, "type"?,
+ * "picture"?, "ip"?:
  * {"mode"?, "address"?, "prefix"?, "gateway"?, "dns"?: [string], "mac"?},
  * "wifi"?: {"ssid"?}, "rs485"?: {"bitrate"?, "parity"?}, "lorawan"?:
  * {"appEui"?, "devEui"?, "appKeySet"?}}], "mcu"?: {"type"?, "name"?,
- * "vendor"?, "revision"?, "serial"?, "documentation"?}}. A view-only member of another type
- * is absent, not an error. A member that is null is absent; unknown members
+ * "vendor"?, "revision"?, "serial"?, "documentation"?, "picture"?},
+ * "places"?: {"slots"?: [place], "comm"?: [place], "mcu"?: {"x", "y", "w",
+ * "h"}}}, a place {"slot", "x", "y", "w", "h"}. A view-only member of
+ * another type is absent, not an error; so is a position or place missing
+ * a member or with one of another type. A member that is null is absent; unknown members
  * are ignored (forward compatibility).
  *
  * Threading: none of its own; a description is read-only once made.
@@ -76,7 +84,8 @@ static inline bool env_port_has_channel(const HakkasEnvPort *p, uint32_t index)
 
 /* Whether a and b describe the same environment, member by member (NULL and
  * a string are different; module and port order matter). The communication
- * slots' parameters are not compared, only their slots and types: they are
+ * slots' parameters are not compared, only their slots, types, names and
+ * pictures: the parameters are
  * live, view-only values (a DHCP lease). */
 bool env_description_equal(const HakkasEnvDescription *a, const HakkasEnvDescription *b);
 

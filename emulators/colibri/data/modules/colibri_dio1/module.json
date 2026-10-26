@@ -4,6 +4,7 @@
   "vendor": "CurrentMakers",
   "description": "4 × IEC 61131-2 digital inputs or outputs",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_dio1.png",
   "channels": [
     {
       "id": "dir",
@@ -36,6 +37,56 @@
       "count": 4,
       "control": "toggle",
       "description": "Any fault of the channel or the module"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "dq",
+      "index": 1,
+      "x": 0.22,
+      "y": 0.5
+    },
+    {
+      "channel": "dq",
+      "index": 2,
+      "x": 0.4,
+      "y": 0.43
+    },
+    {
+      "channel": "dq",
+      "index": 3,
+      "x": 0.58,
+      "y": 0.5
+    },
+    {
+      "channel": "dq",
+      "index": 4,
+      "x": 0.77,
+      "y": 0.43
+    },
+    {
+      "channel": "di",
+      "index": 1,
+      "x": 0.22,
+      "y": 0.5
+    },
+    {
+      "channel": "di",
+      "index": 2,
+      "x": 0.4,
+      "y": 0.43
+    },
+    {
+      "channel": "di",
+      "index": 3,
+      "x": 0.58,
+      "y": 0.5
+    },
+    {
+      "channel": "di",
+      "index": 4,
+      "x": 0.77,
+      "y": 0.43
     }
   ]
 }

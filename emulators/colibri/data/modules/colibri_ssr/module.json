@@ -4,6 +4,7 @@
   "vendor": "CurrentMakers",
   "description": "2 × solid-state relays, 80 mA, 60 V DC",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_ssr.png",
   "channels": [
     {
       "id": "dq",
@@ -12,6 +13,20 @@
       "count": 2,
       "indicator": "lamp",
       "description": "Solid-state relay"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "dq",
+      "index": 1,
+      "x": 0.31,
+      "y": 0.34
+    },
+    {
+      "channel": "dq",
+      "index": 2,
+      "x": 0.67,
+      "y": 0.34
     }
   ]
 }

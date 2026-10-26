@@ -4,6 +4,7 @@
   "vendor": "CurrentMakers",
   "description": "2 × Pt1000 temperature inputs",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_pt1000.png",
   "channels": [
     {
       "id": "ai",
@@ -26,6 +27,32 @@
       "count": 2,
       "control": "toggle",
       "description": "Sensor open or shorted"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "ai",
+      "index": 1,
+      "x": 0.31,
+      "y": 0.76
+    },
+    {
+      "channel": "ai",
+      "index": 2,
+      "x": 0.68,
+      "y": 0.76
+    },
+    {
+      "channel": "fault",
+      "index": 1,
+      "x": 0.31,
+      "y": 0.76
+    },
+    {
+      "channel": "fault",
+      "index": 2,
+      "x": 0.68,
+      "y": 0.76
     }
   ]
 }

@@ -452,19 +452,62 @@ static void test_description_validate(void)
 	static char long_name[HAKKAS_ENV_TEXT_MAX + 2];
 	memset(long_name, 'n', HAKKAS_ENV_TEXT_MAX + 1);
 	c.name = long_name;
-	invalid_desc(d, "carrier: name: longer than 1024 bytes");
+	invalid_desc(d, "carrier: name, picture: longer than 1024 bytes");
 	c.name = "Colibri 8";
 	comm[0].name = long_name;
-	invalid_desc(d, "carrier: comm[0]: name: longer than 1024 bytes");
+	invalid_desc(d, "carrier: comm[0]: name, picture: longer than 1024 bytes");
 	comm[0].name = "Colibri Ethernet";
 	HakkasEnvMcu mcu = {.type = "colibri_mcu6", .name = long_name};
 	c.mcu = &mcu;
-	invalid_desc(d, "carrier: mcu: name: longer than 1024 bytes");
+	invalid_desc(d, "carrier: mcu: name, picture: longer than 1024 bytes");
 	mcu.name = "Colibri MCU6";
 	CHECK(env_description_validate(&d, why, sizeof(why)));
 	mods[1].name = long_name;
 	invalid_desc(d, "modules[1]: text longer than 1024 bytes");
+	mods[1].name = NULL;
+
+	/* Pictures (plan task 75): links of at most HAKKAS_ENV_TEXT_MAX bytes, at
+	 * most HAKKAS_ENV_POSITIONS_MAX positions in all, at most as many places
+	 * as slots; what a position or place says is not checked. */
+	c.picture = long_name;
+	invalid_desc(d, "carrier: name, picture: longer than 1024 bytes");
+	c.picture = NULL;
+	mcu.picture = long_name;
+	invalid_desc(d, "carrier: mcu: name, picture: longer than 1024 bytes");
+	mcu.picture = NULL;
+	mods[1].picture = long_name;
+	invalid_desc(d, "modules[1]: text longer than 1024 bytes");
+	mods[1].picture = "https://example.com/carrier.webp";
+	static HakkasEnvPosition positions[HAKKAS_ENV_POSITIONS_MAX + 1];
+	positions[0] = (HakkasEnvPosition){.port = "nope", .index = 9, .x = 7, .y = -1};
+	mods[0].positions = positions;
+	mods[0].position_count = 1;
+	CHECK(env_description_validate(&d, why, sizeof(why)));
+	mods[0].position_count = HAKKAS_ENV_POSITIONS_MAX;
+	mods[1].positions = positions;
+	mods[1].position_count = 1;
+	invalid_desc(d, "more than 1024 positions");
+	mods[1].position_count = 0;
+	CHECK(env_description_validate(&d, why, sizeof(why)));
+	mods[0].positions = NULL;
+	invalid_desc(d, "modules[0]: positions: a count but no entries");
+	mods[0].position_count = 0;
+	static HakkasEnvPlace places[HAKKAS_ENV_IO_SLOTS_MAX + 1];
+	c.io_places = places;
+	c.io_place_count = HAKKAS_ENV_IO_SLOTS_MAX + 1;
+	invalid_desc(d, "carrier: places: slots: more than 31 places");
+	c.io_place_count = HAKKAS_ENV_IO_SLOTS_MAX;
+	c.comm_places = places;
+	c.comm_place_count = HAKKAS_ENV_COMM_SLOTS_MAX + 1;
+	invalid_desc(d, "carrier: places: comm: more than 4 places");
+	c.comm_place_count = HAKKAS_ENV_COMM_SLOTS_MAX;
+	c.mcu_place = &places[0];
+	CHECK(env_description_validate(&d, why, sizeof(why)));
+	c.comm_places = NULL;
+	invalid_desc(d, "carrier: a list with a count but no entries");
+	c.comm_places = places;
 	long_name[HAKKAS_ENV_TEXT_MAX] = '\0';
+	c.picture = comm[0].picture = mcu.picture = long_name;
 	CHECK(env_description_validate(&d, why, sizeof(why)));
 }
 
@@ -783,6 +826,157 @@ static void test_carrier_json(void)
 	CHECK(d != NULL);
 	env_description_free(d);
 	cJSON_Delete(json);
+}
+
+/* Pictures (04 §1, plan task 75): view only, an unusable position or place
+ * left out; compared by the identical-description check. */
+static void test_pictures_json(void)
+{
+	const char *text =
+		"{\"name\": \"colibri\","
+		" \"carrier\": {\"type\": \"colibri_8\", \"picture\": \"https://x/c8.webp\","
+		" \"slots\": 7, \"builtin\": [{\"slot\": 0}],"
+		" \"places\": {\"slots\": [{\"slot\": 1, \"x\": 0.37, \"y\": 0.435, \"w\": 0.048,"
+		" \"h\": 0.165}, {\"slot\": 2, \"x\": 0.42}, 5,"
+		" {\"slot\": 3, \"x\": 0.47, \"y\": 0.435, \"w\": 0.048, \"h\": 0.165}],"
+		" \"comm\": [{\"slot\": 1, \"x\": 0.26, \"y\": 0.435, \"w\": 0.048,"
+		" \"h\": \"tall\"}],"
+		" \"mcu\": {\"x\": 0.32, \"y\": 0.435, \"w\": 0.048, \"h\": 0.165}},"
+		" \"comm\": [{\"slot\": 1, \"type\": \"colibri_ethernet\","
+		" \"picture\": \"https://x/e.webp\"}],"
+		" \"mcu\": {\"type\": \"colibri_mcu6\", \"picture\": 6}},"
+		" \"outPorts\": [{\"id\": \"slot3-ai\", \"type\": \"number\","
+		" \"addressable\": true, \"count\": 2},"
+		" {\"id\": \"slot0-di\", \"type\": \"bool\"}],"
+		" \"modules\": [{\"slot\": 0, \"builtin\": true, \"type\": \"carrier\","
+		" \"ports\": [\"slot0-di\"], \"positions\": [{\"port\": \"slot0-di\", \"x\": 0.74,"
+		" \"y\": 0.65}]},"
+		" {\"slot\": 3, \"type\": \"colibri_aiv\", \"picture\": \"https://x/aiv.webp\","
+		" \"ports\": [\"slot3-ai\"], \"positions\": [{\"port\": \"slot3-ai\", \"index\": 1,"
+		" \"x\": 0.27, \"y\": 0.43}, {\"port\": \"slot3-ai\", \"index\": 2, \"x\": 0.72},"
+		" {\"port\": 4, \"x\": 0, \"y\": 0}, {\"port\": \"elsewhere\", \"index\": 9,"
+		" \"x\": 1.5, \"y\": 0.43}]}]}";
+	cJSON *json = cJSON_Parse(text);
+	char why[ENV_DESCRIPTION_MESSAGE_MAX] = "";
+	HakkasEnvDescription *d = env_description_from_json(json, why, sizeof(why));
+	CHECK_STREQ(why, "");
+	CHECK(d != NULL && d->carrier != NULL);
+	if (d != NULL && d->carrier != NULL) {
+		const HakkasEnvCarrier *c = d->carrier;
+		CHECK_STREQ(c->picture, "https://x/c8.webp");
+		CHECK_STREQ(c->comm[0].picture, "https://x/e.webp");
+		CHECK(c->mcu != NULL && c->mcu->picture == NULL); /* wrongly typed: absent */
+		/* Entries missing a member, or with one of another type, are left out. */
+		CHECK(c->io_place_count == 2 && c->io_places[1].slot == 3);
+		CHECK(c->io_places[0].x == 0.37 && c->io_places[0].h == 0.165);
+		CHECK(c->comm_place_count == 0);
+		CHECK(c->mcu_place != NULL && c->mcu_place->x == 0.32);
+		CHECK(d->modules[0].picture == NULL && d->modules[0].position_count == 1);
+		CHECK(d->modules[0].positions[0].index == 0); /* not addressable */
+		const HakkasEnvModule *aiv = &d->modules[1];
+		CHECK_STREQ(aiv->picture, "https://x/aiv.webp");
+		/* What a position says is not checked: an unknown port and an x
+		 * beyond the picture are kept, for the frontend to skip. */
+		CHECK(aiv->position_count == 2);
+		CHECK_STREQ(aiv->positions[0].port, "slot3-ai");
+		CHECK(aiv->positions[0].index == 1 && aiv->positions[0].y == 0.43);
+		CHECK_STREQ(aiv->positions[1].port, "elsewhere");
+		CHECK(aiv->positions[1].index == 9 && aiv->positions[1].x == 1.5);
+
+		/* Its JSON form reads back as the same description. */
+		cJSON *back = env_description_to_json(d);
+		HakkasEnvDescription *e = env_description_from_json(back, why, sizeof(why));
+		CHECK(e != NULL && env_description_equal(d, e));
+		CHECK(e != NULL && e->carrier->io_place_count == 2);
+		CHECK(e != NULL && e->carrier->mcu_place != NULL);
+		CHECK(e != NULL && e->modules[1].position_count == 2);
+		CHECK(cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetArrayItem(
+						  cJSON_GetObjectItem(back, "modules"), 0),
+						  "positions"), 0), "index") == NULL);
+		env_description_free(e);
+		cJSON_Delete(back);
+
+		/* Pictures, positions and places are static: a change is another
+		 * environment. */
+		cJSON *carrier = cJSON_GetObjectItem(json, "carrier");
+		cJSON *aiv_json = cJSON_GetArrayItem(cJSON_GetObjectItem(json, "modules"), 1);
+		cJSON *pos = cJSON_GetArrayItem(cJSON_GetObjectItem(aiv_json, "positions"), 0);
+		cJSON *place = cJSON_GetObjectItem(cJSON_GetObjectItem(carrier, "places"), "mcu");
+		cJSON *comm0 = cJSON_GetArrayItem(cJSON_GetObjectItem(carrier, "comm"), 0);
+		struct {
+			cJSON *obj;
+			const char *key;
+			cJSON *changed, *original;
+		} changes[] = {
+			{carrier, "picture", cJSON_CreateString("https://x/c8b.webp"),
+			 cJSON_CreateString("https://x/c8.webp")},
+			{comm0, "picture", cJSON_CreateString("https://x/e2.webp"),
+			 cJSON_CreateString("https://x/e.webp")},
+			{aiv_json, "picture", cJSON_CreateString("https://x/aiv2.webp"),
+			 cJSON_CreateString("https://x/aiv.webp")},
+			{pos, "x", cJSON_CreateNumber(0.28), cJSON_CreateNumber(0.27)},
+			{pos, "index", cJSON_CreateNumber(2), cJSON_CreateNumber(1)},
+			{place, "w", cJSON_CreateNumber(0.05), cJSON_CreateNumber(0.048)},
+		};
+		for (size_t i = 0; i < sizeof(changes) / sizeof(changes[0]); i++) {
+			cJSON *obj = changes[i].obj;
+			cJSON_ReplaceItemInObject(obj, changes[i].key, changes[i].changed);
+			e = env_description_from_json(json, why, sizeof(why));
+			CHECK(e != NULL && !env_description_equal(d, e));
+			env_description_free(e);
+			cJSON_ReplaceItemInObject(obj, changes[i].key, changes[i].original);
+			e = env_description_from_json(json, why, sizeof(why));
+			CHECK(e != NULL && env_description_equal(d, e));
+			env_description_free(e);
+		}
+	}
+	env_description_free(d);
+	cJSON_Delete(json);
+
+	/* More positions or places than the limits refuse the description. */
+	static const struct {
+		const char *json, *why;
+	} bad[] = {
+		{"{\"name\": \"e\", \"carrier\": {\"slots\": 2,"
+		 " \"places\": {\"comm\": [{}, {}, {}, {}, {}]}}}",
+		 "carrier: places: comm: more than 4 places"},
+	};
+	for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+		json = cJSON_Parse(bad[i].json);
+		CHECK(json != NULL);
+		d = env_description_from_json(json, why, sizeof(why));
+		CHECK(d == NULL);
+		CHECK_STREQ(why, bad[i].why);
+		cJSON_Delete(json);
+	}
+	cJSON *many = cJSON_CreateObject();
+	cJSON_AddStringToObject(many, "name", "e");
+	cJSON *mods = cJSON_AddArrayToObject(many, "modules");
+	cJSON *carrier = cJSON_AddObjectToObject(many, "carrier");
+	cJSON *slots = cJSON_AddArrayToObject(cJSON_AddObjectToObject(carrier, "places"), "slots");
+	cJSON_AddNumberToObject(carrier, "slots", 31);
+	for (int i = 0; i < 32; i++)
+		cJSON_AddItemToArray(slots, cJSON_CreateObject());
+	d = env_description_from_json(many, why, sizeof(why));
+	CHECK(d == NULL);
+	CHECK_STREQ(why, "carrier: places: slots: more than 31 places");
+	cJSON_DeleteItemFromObject(many, "carrier");
+	for (int k = 0; k < 2; k++) {
+		cJSON *m = cJSON_CreateObject();
+		cJSON *list = cJSON_AddArrayToObject(m, "positions");
+		for (int i = 0; i < 600; i++) {
+			cJSON *p = cJSON_CreateObject();
+			cJSON_AddStringToObject(p, "port", "x");
+			cJSON_AddNumberToObject(p, "x", 0.5);
+			cJSON_AddNumberToObject(p, "y", 0.5);
+			cJSON_AddItemToArray(list, p);
+		}
+		cJSON_AddItemToArray(mods, m);
+	}
+	d = env_description_from_json(many, why, sizeof(why));
+	CHECK(d == NULL);
+	CHECK_STREQ(why, "more than 1024 positions");
+	cJSON_Delete(many);
 }
 
 /* ---- The bindings file (04 §4) ------------------------------------------------------ */
@@ -1348,6 +1542,7 @@ int main(void)
 	RUN(test_description_validate);
 	RUN(test_description_json);
 	RUN(test_carrier_json);
+	RUN(test_pictures_json);
 	RUN(test_bindings_file);
 	RUN(test_open);
 	RUN(test_sensor_values);

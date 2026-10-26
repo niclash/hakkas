@@ -4,6 +4,7 @@
   "vendor": "CurrentMakers",
   "description": "2 × 0-10 V analog outputs",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_aqv.png",
   "channels": [
     {
       "id": "aq",
@@ -15,6 +16,20 @@
       "max": 10,
       "indicator": "bar",
       "description": "0-10 V output"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "aq",
+      "index": 1,
+      "x": 0.28,
+      "y": 0.61
+    },
+    {
+      "channel": "aq",
+      "index": 2,
+      "x": 0.73,
+      "y": 0.61
     }
   ]
 }

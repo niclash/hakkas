@@ -4,6 +4,7 @@
   "vendor": "CurrentMakers",
   "description": "4 digital inputs, not isolated",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_diu.png",
   "signals": [
     {
       "id": "in",
@@ -67,6 +68,32 @@
         "quantity": "count"
       },
       "description": "Pulse count, 32 bits, rolling over"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "di",
+      "index": 1,
+      "x": 0.19,
+      "y": 0.35
+    },
+    {
+      "channel": "di",
+      "index": 2,
+      "x": 0.39,
+      "y": 0.35
+    },
+    {
+      "channel": "di",
+      "index": 3,
+      "x": 0.6,
+      "y": 0.35
+    },
+    {
+      "channel": "di",
+      "index": 4,
+      "x": 0.8,
+      "y": 0.35
     }
   ]
 }

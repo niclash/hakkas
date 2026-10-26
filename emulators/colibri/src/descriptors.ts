@@ -24,6 +24,7 @@ export interface Metadata {
     revision?: string;
     description?: string;
     documentation?: string;
+    pictureUrl?: string;    // the picture hakkas' frontend shows (https), hakkas' `picture`
 }
 
 export type Quantity = 'state' | 'frequency' | 'duty' | 'count';
@@ -84,12 +85,36 @@ export interface Signal {
     default: Source;
 }
 
+// Where a channel is on its module's picture (spec §7.1, 04 §1): fractions of its width and
+// height, from its top left corner; `index` for a channel of a group of several.
+export interface Position {
+    channel: string;
+    index?: number;
+    x: number;
+    y: number;
+}
+
+// A rectangle on the carrier's picture, in fractions of its width and height (spec §5.4).
+export interface Rect {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
+export interface Places {
+    slots: (Rect & {slot: number})[];
+    comm: (Rect & {slot: number})[];
+    mcu?: Rect;
+}
+
 // A binding or control on a picture (control protocol §6), with its key relative to the module.
 export type PictureItem = JsonObject & {element: string, key: string};
 
 export interface ModuleType extends Metadata {
     channels: Channel[];
     signals: Signal[];
+    positions: Position[];
     faceplate?: string;
     bindings: PictureItem[];
     controls: PictureItem[];
@@ -102,6 +127,7 @@ export interface CarrierType extends Metadata {
     comm: {slot: number, types: string[]}[];
     mcu?: {types: string[]};                    // the MCU module types it takes
     picture?: string;
+    places?: Places;                            // where the slots are on pictureUrl's picture
 }
 
 export const COMM_PARAMS = ['ip', 'wifi', 'rs485', 'lorawan'] as const;
@@ -118,7 +144,7 @@ export type McuType = Metadata;
 export const IO_SLOTS_MAX = 31;
 export const COMM_SLOTS_MAX = 4;
 
-const METADATA = ['type', 'name', 'vendor', 'revision', 'description', 'documentation'];
+const METADATA = ['type', 'name', 'vendor', 'revision', 'description', 'documentation', 'pictureUrl'];
 
 function metadata(c: Checker, o: JsonObject, dirName: string): Metadata {
     const type = c.string(o, 'type', '', true);
@@ -132,7 +158,29 @@ function metadata(c: Checker, o: JsonObject, dirName: string): Metadata {
         if (v !== undefined)
             m[key] = v;
     }
+    const url = c.string(o, 'pictureUrl', '');
+    if (url !== undefined && !/^https:\/\/\S+$/.test(url))
+        c.error('pictureUrl', 'expected an https link');
+    else if (url !== undefined)
+        m.pictureUrl = url;
     return m;
+}
+
+// A fraction of a picture's width or height.
+function fraction(c: Checker, o: JsonObject, key: string, path: string): number | undefined {
+    const v = c.number(o, key, path, true);
+    if (v !== undefined && (v < 0 || v > 1))
+        return c.error(join(path, key), 'expected a number from 0 to 1');
+    return v;
+}
+
+function rect(c: Checker, o: JsonObject, path: string): Rect | undefined {
+    const [x, y, w, h] = (['x', 'y', 'w', 'h'] as const).map(k => fraction(c, o, k, path));
+    if (x === undefined || y === undefined || w === undefined || h === undefined)
+        return undefined;
+    if (x + w > 1 || y + h > 1)
+        return c.error(path, 'reaches outside the picture');
+    return {x, y, w, h};
 }
 
 function asset(c: Checker, o: JsonObject, key: string): string | undefined {
@@ -147,8 +195,9 @@ export function readModule(c: Checker, v: Json, dirName: string): ModuleType | u
     const o = c.object(v, '');
     if (o === undefined)
         return undefined;
-    c.members(o, [...METADATA, 'signals', 'channels', 'faceplate', 'ui'], '');
-    const m: ModuleType = {...metadata(c, o, dirName), channels: [], signals: [], bindings: [], controls: []};
+    c.members(o, [...METADATA, 'signals', 'channels', 'positions', 'faceplate', 'ui'], '');
+    const m: ModuleType = {...metadata(c, o, dirName), channels: [], signals: [], positions: [], bindings: [],
+        controls: []};
     const ids = new Set<string>();
     const unique = (id: string | undefined, path: string) => {
         if (id === undefined)
@@ -173,6 +222,7 @@ export function readModule(c: Checker, v: Json, dirName: string): ModuleType | u
             m.channels.push(channel);
     });
 
+    m.positions = readPositions(c, o, m);
     const faceplate = asset(c, o, 'faceplate');
     if (faceplate !== undefined)
         m.faceplate = faceplate;
@@ -185,6 +235,37 @@ export function readModule(c: Checker, v: Json, dirName: string): ModuleType | u
         }
     }
     return c.ok ? m : undefined;
+}
+
+// Where the module's channels are on its picture: each a channel it has, with its index when its
+// group has several, at most once.
+function readPositions(c: Checker, o: JsonObject, m: ModuleType): Position[] {
+    if (o.positions === undefined)
+        return [];
+    const out: Position[] = [];
+    (c.array(o.positions, 'positions') ?? []).forEach((v, i) => {
+        const p = join('positions', i);
+        const e = c.object(v, p);
+        if (e === undefined)
+            return;
+        c.members(e, ['channel', 'index', 'x', 'y'], p);
+        const errors = c.errors.length;
+        const channel = c.string(e, 'channel', p, true);
+        const group = m.channels.find(ch => ch.id === channel);
+        if (channel !== undefined && group === undefined)
+            c.error(join(p, 'channel'), `no channel ${channel} in this module`);
+        const index = group !== undefined && group.count > 1
+            ? c.integer(e, 'index', p, 1, group.count, true)
+            : undefined;
+        if (group !== undefined && group.count === 1 && e.index !== undefined)
+            c.error(join(p, 'index'), `channel ${channel} is not a group`);
+        const x = fraction(c, e, 'x', p), y = fraction(c, e, 'y', p);
+        if (out.some(q => q.channel === channel && q.index === index))
+            c.error(p, `${channel}${index === undefined ? '' : `.${index}`} is placed twice`);
+        if (c.errors.length === errors)
+            out.push({channel: channel!, ...(index !== undefined && {index}), x: x!, y: y!});
+    });
+    return out;
 }
 
 function readSignal(c: Checker, v: Json, path: string): Signal | undefined {
@@ -374,7 +455,7 @@ export function readCarrier(c: Checker, v: Json, dirName: string): CarrierType |
     const o = c.object(v, '');
     if (o === undefined)
         return undefined;
-    c.members(o, [...METADATA, 'slots', 'builtin', 'power', 'comm', 'mcu', 'picture'], '');
+    c.members(o, [...METADATA, 'slots', 'builtin', 'power', 'comm', 'mcu', 'picture', 'places'], '');
     const slots = c.integer(o, 'slots', '', 0, IO_SLOTS_MAX, true) ?? 0;
     const carrier: CarrierType = {...metadata(c, o, dirName), slots, builtin: [], comm: []};
 
@@ -460,7 +541,52 @@ export function readCarrier(c: Checker, v: Json, dirName: string): CarrierType |
     const picture = asset(c, o, 'picture');
     if (picture !== undefined)
         carrier.picture = picture;
+    if (o.places !== undefined)
+        carrier.places = readPlaces(c, o.places, carrier, total);
     return c.ok ? carrier : undefined;
+}
+
+// Where the carrier's slots are on its picture (spec §5.4): I/O slots (0 to total - 1) and
+// communication slots it has, each at most once, and the MCU slot if it takes MCU modules.
+function readPlaces(c: Checker, v: Json, carrier: CarrierType, total: number): Places | undefined {
+    const o = c.object(v, 'places');
+    if (o === undefined)
+        return undefined;
+    c.members(o, ['slots', 'comm', 'mcu'], 'places');
+    const places: Places = {slots: [], comm: []};
+    for (const key of ['slots', 'comm'] as const) {
+        const path = join('places', key);
+        const list = o[key] === undefined ? [] : c.array(o[key], path) ?? [];
+        list.forEach((x, i) => {
+            const p = join(path, i);
+            const e = c.object(x, p);
+            if (e === undefined)
+                return;
+            c.members(e, ['slot', 'x', 'y', 'w', 'h'], p);
+            const slot = key === 'slots'
+                ? c.integer(e, 'slot', p, 0, Math.max(0, total - 1), true)
+                : c.integer(e, 'slot', p, 1, COMM_SLOTS_MAX, true);
+            if (key === 'comm' && slot !== undefined && !carrier.comm.some(s => s.slot === slot))
+                c.error(join(p, 'slot'), `the carrier has no communication slot ${slot}`);
+            if (slot !== undefined && places[key].some(s => s.slot === slot))
+                c.error(join(p, 'slot'), `slot ${slot} is placed twice`);
+            const r = rect(c, e, p);
+            if (slot !== undefined && r !== undefined)
+                places[key].push({slot, ...r});
+        });
+    }
+    if (o.mcu !== undefined) {
+        const e = c.object(o.mcu, 'places.mcu');
+        if (e !== undefined) {
+            c.members(e, ['x', 'y', 'w', 'h'], 'places.mcu');
+            if (carrier.mcu === undefined)
+                c.error('places.mcu', 'the carrier takes no MCU module');
+            const r = rect(c, e, 'places.mcu');
+            if (r !== undefined)
+                places.mcu = r;
+        }
+    }
+    return places;
 }
 
 // An MCU module type's descriptor, `mcu.json` (spec §5.4): its metadata.

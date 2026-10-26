@@ -13,6 +13,24 @@ export interface EnvPort {
     count?: number;
 }
 
+// Where a channel is on its module's picture (plan task 75): fractions (0..1) of the picture's
+// width and height from its top left corner; a built-in module's, without a picture, of the
+// carrier's. Not checked by hakkas: one naming no channel, or outside 0..1, is to be skipped.
+export interface EnvPosition {
+    port: string;
+    index?: number;         // the channel of an addressable port
+    x: number;
+    y: number;
+}
+
+// Where a slot is on the carrier's picture: a rectangle in fractions of its width and height.
+export interface EnvRect {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+
 export interface EnvModule {
     slot?: number;
     builtin?: boolean;
@@ -22,13 +40,16 @@ export interface EnvModule {
     revision?: string;
     serial?: string;
     documentation?: string;
+    picture?: string;       // a link; only an https one is to be loaded
     ports: string[];
+    positions?: EnvPosition[];
 }
 
 export interface EnvComm {
     slot: number;
     type?: string;
     name?: string;
+    picture?: string;
     ip?: { mode?: string, address?: string, prefix?: number, gateway?: string, dns?: string[], mac?: string };
     wifi?: { ssid?: string };
     rs485?: { bitrate?: number, parity?: string };
@@ -43,6 +64,7 @@ export interface EnvMcu {
     revision?: string;
     serial?: string;
     documentation?: string;
+    picture?: string;
 }
 
 export interface EnvCarrier {
@@ -52,11 +74,13 @@ export interface EnvCarrier {
     revision?: string;
     serial?: string;
     documentation?: string;
+    picture?: string;
     slots: number;
     builtin: { slot: number }[];
     power?: { voltage?: { min?: number, max?: number }, ac?: boolean, dc?: boolean, current?: number };
     comm: EnvComm[];
     mcu?: EnvMcu;
+    places?: { slots?: (EnvRect & { slot: number })[], comm?: (EnvRect & { slot: number })[], mcu?: EnvRect };
 }
 
 export interface EnvDescription {

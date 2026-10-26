@@ -307,6 +307,12 @@ Follow-ups, decided the same day:
 - [ ] **E15. Artwork** (decision 5): the Colibri 8 board and the modules' faceplates as SVGs.
   Changed 2026-10-26: the vendor's renders (PNG, in the descriptors' directories) are the
   pictures, converted to WebP; I/O modules turned 90° clockwise to match the carrier.
+  Hakkas task 75 (2026-10-26) put `pictureUrl`, `positions` and `places` in the descriptors,
+  measured from the renders with the I/O modules turned clockwise and cropped to the board
+  (board at 427–1475 × 257–806 of the 1904×1064 render; communication modules 675–1228 ×
+  3–1060; the carrier uncropped): the hosted pictures must be prepared exactly so, or the
+  numbers measured again. The links follow the user's pattern
+  `https://currentmakers.com/data/colibri/render-top_<type>.png` and are provisional.
 
 ## Phase 4 — Copying an environment from a device
 

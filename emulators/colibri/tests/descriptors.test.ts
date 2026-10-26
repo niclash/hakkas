@@ -29,7 +29,8 @@ describe('module descriptors', () => {
         expect(r.errors).toEqual([]);
         expect(r.warnings).toEqual([]);
         expect(r.def).toEqual({
-            type: 'colibri_x', name: 'Colibri X', vendor: 'V', revision: '1', signals: [], bindings: [], controls: [],
+            type: 'colibri_x', name: 'Colibri X', vendor: 'V', revision: '1', signals: [], positions: [], bindings: [],
+            controls: [],
             channels: [
                 {...ai, default: {kind: 'constant', value: 0}, noise: 0, control: 'slider',
                     sources: ['constant', 'sine', 'square', 'ramp', 'sequence']},
@@ -52,7 +53,7 @@ describe('module descriptors', () => {
         expect(module({type: 'Colibri/AIV'}, 'x').errors[0]).toMatch(/^type: expected 1 to 64 lower-case/);
         expect(module({}, 'x').errors).toEqual(['type: missing']);
         expect(module({type: 'carrier', channels: []}).def).toEqual(
-            {type: 'carrier', channels: [], signals: [], bindings: [], controls: []});
+            {type: 'carrier', channels: [], signals: [], positions: [], bindings: [], controls: []});
     });
 
     it('refuse bad channels', () => {
@@ -142,6 +143,30 @@ describe('module descriptors', () => {
         expect(moduleErrors([], {faceplate: 'x.exe'})[0]).toMatch(/^faceplate: expected a picture file name/);
     });
 
+    it('read the picture link and where the channels are on the picture', () => {
+        const dq = {id: 'dq', direction: 'output', type: 'bool'};
+        const ok = module({type: 'm', pictureUrl: 'https://example.com/m.webp', channels: [ai, dq],
+            positions: [{channel: 'ai', index: 2, x: 0.7, y: 0.4}, {channel: 'dq', x: 0, y: 1}]});
+        expect(ok.errors).toEqual([]);
+        expect(ok.def!.pictureUrl).toBe('https://example.com/m.webp');
+        expect(ok.def!.positions).toEqual([{channel: 'ai', index: 2, x: 0.7, y: 0.4}, {channel: 'dq', x: 0, y: 1}]);
+
+        // Only https.
+        expect(moduleErrors([], {pictureUrl: 'http://example.com/m.webp'}))
+            .toEqual(['pictureUrl: expected an https link']);
+        expect(moduleErrors([], {pictureUrl: 'm.webp'})).toEqual(['pictureUrl: expected an https link']);
+        const bad = (positions: Json[]) => moduleErrors([ai, dq], {positions});
+        expect(bad([{channel: 'xx', x: 0, y: 0}])).toEqual(['positions[0].channel: no channel xx in this module']);
+        expect(bad([{channel: 'ai', x: 0, y: 0}])).toEqual(['positions[0].index: missing']);
+        expect(bad([{channel: 'ai', index: 3, x: 0, y: 0}]))
+            .toEqual(['positions[0].index: expected an integer from 1 to 2']);
+        expect(bad([{channel: 'dq', index: 1, x: 0, y: 0}])).toEqual(['positions[0].index: channel dq is not a group']);
+        expect(bad([{channel: 'dq', x: 1.2, y: 0}])).toEqual(['positions[0].x: expected a number from 0 to 1']);
+        expect(bad([{channel: 'dq', x: 0}])).toEqual(['positions[0].y: missing']);
+        expect(bad([{channel: 'dq', x: 0, y: 0}, {channel: 'dq', x: 1, y: 1}]))
+            .toEqual(['positions[1]: dq is placed twice']);
+    });
+
     it('warn about unknown members', () => {
         const r = module({type: 'm', colour: 'red', channels: [{...ai, tolerance: 1}]});
         expect(r.errors).toEqual([]);
@@ -190,6 +215,30 @@ describe('carrier descriptors', () => {
         expect(carrier({slots: 1, power: {current: '2 A'}}).errors).toEqual(['power.current: expected a number']);
         expect(carrier({slots: 1, mcu: {types: []}}).errors).toEqual(['mcu.types: expected at least one MCU module type']);
         expect(carrier({slots: 1, mcu: {types: ['MCU6']}}).errors).toEqual(['mcu.types[0]: expected a type name']);
+    });
+
+    it('read where the slots are on the picture', () => {
+        const rect = {x: 0.1, y: 0.4, w: 0.05, h: 0.2};
+        const base = {slots: 7, builtin: [{slot: 0, type: 'carrier'}], comm: [{slot: 1, types: ['t']}],
+            mcu: {types: ['m']}, pictureUrl: 'https://example.com/c.webp'};
+        const r = carrier({...base, places: {slots: [{slot: 1, ...rect}, {slot: 7, ...rect}],
+            comm: [{slot: 1, ...rect}], mcu: rect}});
+        expect(r.errors).toEqual([]);
+        expect(r.def!.pictureUrl).toBe('https://example.com/c.webp');
+        expect(r.def!.places).toEqual({slots: [{slot: 1, ...rect}, {slot: 7, ...rect}], comm: [{slot: 1, ...rect}],
+            mcu: rect});
+
+        const bad = (places: JsonObject) => carrier({...base, places}).errors;
+        expect(bad({slots: [{slot: 8, ...rect}]})).toEqual(['places.slots[0].slot: expected an integer from 0 to 7']);
+        expect(bad({slots: [{slot: 1, ...rect}, {slot: 1, ...rect}]}))
+            .toEqual(['places.slots[1].slot: slot 1 is placed twice']);
+        expect(bad({comm: [{slot: 2, ...rect}]}))
+            .toEqual(['places.comm[0].slot: the carrier has no communication slot 2']);
+        expect(bad({slots: [{slot: 1, ...rect, x: 0.97}]})).toEqual(['places.slots[0]: reaches outside the picture']);
+        expect(bad({slots: [{slot: 1, ...rect, h: -0.1}]}))
+            .toEqual(['places.slots[0].h: expected a number from 0 to 1']);
+        const {mcu: _, ...noMcu} = base;
+        expect(carrier({...noMcu, places: {mcu: rect}}).errors).toEqual(['places.mcu: the carrier takes no MCU module']);
     });
 });
 

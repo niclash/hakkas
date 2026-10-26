@@ -1017,15 +1017,19 @@ user 2026-10-25). The emulator keeps choosing the hardware, the field-side contr
 counters. Decided so far (2026-10-25/26): pictures come from an **https URL** in the description
 (only https), with the **device's own copy** (from the module's EEPROM, the carrier's flash) as
 the fallback for networks without internet; pictures are **WebP**; the frontend **caches** them
-in browser storage (IndexedDB), keyed by type and revision; documentation opens in a **new
+in browser storage (IndexedDB), keyed by its link (changed from type and revision in task 75); documentation opens in a **new
 tab**, from the existing `documentation` links; I/O module renders are turned 90° clockwise to
 match the carrier's orientation (connector down). Each wire or description change below is put
 to the user first, one at a time.
 
-- [ ] **75. Pictures in the description**: per carrier, module, communication module and MCU
-  module an optional picture URL (https) and the positions of its channels on the picture.
-  Caching a vendor's picture needs its server to allow CORS (`Access-Control-Allow-Origin`);
-  without it the picture is shown but not cached.
+- [x] **75. Pictures in the description** (done 2026-10-26; 04 §1 "Pictures"): a `picture`
+  link for the carrier, each module, communication module and MCU module; a module's channel
+  `positions` and the carrier's slot `places`, in fractions of the picture; view only, at most
+  1024 positions; compared by the identical-description check. Caching a vendor's picture needs
+  its host to send `Access-Control-Allow-Origin`: a requirement on vendors (CurrentMakers can
+  host for one who cannot). The emulator's descriptors have `pictureUrl`, `positions` and
+  `places` (provisional links; measurements in its plan, E15). The frontend has the types only;
+  drawing is task 78.
 - [ ] **76. Every channel's live value for the frontend**: an `environment` message giving the
   values of all channels, not only those bound to a process port.
 - [ ] **77. The device's own copy of a picture**: an `environment` message fetching it through
