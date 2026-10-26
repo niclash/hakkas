@@ -118,7 +118,7 @@ static bool is_builtin_slot(const HakkasEnvCarrier *c, uint32_t slot)
  * 2026-10-25). */
 static bool carrier_ok(const HakkasEnvCarrier *c, char *msg, size_t cap)
 {
-	if (!text_ok(c->name, HAKKAS_ENV_TEXT_MAX) || !text_ok(c->picture, HAKKAS_ENV_TEXT_MAX))
+	if (!text_ok(c->name, HAKKAS_ENV_TEXT_MAX) || !text_ok(c->picture.url, HAKKAS_ENV_TEXT_MAX))
 		return fail(msg, cap, "carrier: name, picture: longer than %d bytes",
 			    HAKKAS_ENV_TEXT_MAX);
 	if ((c->builtin_count > 0 && c->builtin == NULL) ||
@@ -160,13 +160,13 @@ static bool carrier_ok(const HakkasEnvCarrier *c, char *msg, size_t cap)
 					    (unsigned)s);
 		}
 		if (!text_ok(c->comm[i].name, HAKKAS_ENV_TEXT_MAX) ||
-		    !text_ok(c->comm[i].picture, HAKKAS_ENV_TEXT_MAX))
+		    !text_ok(c->comm[i].picture.url, HAKKAS_ENV_TEXT_MAX))
 			return fail(msg, cap,
 				    "carrier: comm[%zu]: name, picture: longer than %d bytes", i,
 				    HAKKAS_ENV_TEXT_MAX);
 	}
 	if (c->mcu != NULL && (!text_ok(c->mcu->name, HAKKAS_ENV_TEXT_MAX) ||
-			       !text_ok(c->mcu->picture, HAKKAS_ENV_TEXT_MAX)))
+			       !text_ok(c->mcu->picture.url, HAKKAS_ENV_TEXT_MAX)))
 		return fail(msg, cap, "carrier: mcu: name, picture: longer than %d bytes",
 			    HAKKAS_ENV_TEXT_MAX);
 	return true;
@@ -243,7 +243,7 @@ bool env_description_validate(const HakkasEnvDescription *d, char *msg, size_t c
 		    !text_ok(m->revision, HAKKAS_ENV_TEXT_MAX) ||
 		    !text_ok(m->serial, HAKKAS_ENV_TEXT_MAX) ||
 		    !text_ok(m->documentation, HAKKAS_ENV_TEXT_MAX) ||
-		    !text_ok(m->picture, HAKKAS_ENV_TEXT_MAX))
+		    !text_ok(m->picture.url, HAKKAS_ENV_TEXT_MAX))
 			return fail(msg, cap, "modules[%zu]: text longer than %d bytes", i,
 				    HAKKAS_ENV_TEXT_MAX);
 		if (m->port_count > 0 && m->ports == NULL)
@@ -272,6 +272,13 @@ static bool str_eq(const char *a, const char *b)
 	if (a == NULL || b == NULL)
 		return a == b;
 	return strcmp(a, b) == 0;
+}
+
+static bool picture_eq(const HakkasEnvPicture *a, const HakkasEnvPicture *b)
+{
+	return str_eq(a->url, b->url) && a->rotation == b->rotation &&
+	       a->has_crop == b->has_crop &&
+	       (!a->has_crop || (a->x == b->x && a->y == b->y && a->w == b->w && a->h == b->h));
 }
 
 static bool port_eq(const HakkasEnvPort *a, const HakkasEnvPort *b)
@@ -305,7 +312,7 @@ static bool module_eq(const HakkasEnvModule *a, const HakkasEnvModule *b)
 	    a->builtin != b->builtin || !str_eq(a->type, b->type) || !str_eq(a->name, b->name) ||
 	    !str_eq(a->vendor, b->vendor) || !str_eq(a->revision, b->revision) ||
 	    !str_eq(a->serial, b->serial) || !str_eq(a->documentation, b->documentation) ||
-	    !str_eq(a->picture, b->picture) || a->port_count != b->port_count ||
+	    !picture_eq(&a->picture, &b->picture) || a->port_count != b->port_count ||
 	    a->position_count != b->position_count)
 		return false;
 	for (size_t k = 0; k < a->port_count; k++) {
@@ -338,7 +345,7 @@ static bool mcu_eq(const HakkasEnvMcu *a, const HakkasEnvMcu *b)
 	return str_eq(a->type, b->type) && str_eq(a->name, b->name) &&
 	       str_eq(a->vendor, b->vendor) && str_eq(a->revision, b->revision) &&
 	       str_eq(a->serial, b->serial) && str_eq(a->documentation, b->documentation) &&
-	       str_eq(a->picture, b->picture);
+	       picture_eq(&a->picture, &b->picture);
 }
 
 static bool place_eq(const HakkasEnvPlace *a, const HakkasEnvPlace *b)
@@ -367,7 +374,7 @@ static bool carrier_eq(const HakkasEnvCarrier *a, const HakkasEnvCarrier *b)
 	if (!str_eq(a->type, b->type) || !str_eq(a->name, b->name) ||
 	    !str_eq(a->vendor, b->vendor) || !str_eq(a->revision, b->revision) ||
 	    !str_eq(a->serial, b->serial) || !str_eq(a->documentation, b->documentation) ||
-	    !str_eq(a->picture, b->picture) || a->slots != b->slots ||
+	    !picture_eq(&a->picture, &b->picture) || a->slots != b->slots ||
 	    a->builtin_count != b->builtin_count || !power_eq(a->power, b->power) ||
 	    a->comm_count != b->comm_count || !mcu_eq(a->mcu, b->mcu) ||
 	    !places_eq(a->io_places, a->io_place_count, b->io_places, b->io_place_count) ||
@@ -382,7 +389,7 @@ static bool carrier_eq(const HakkasEnvCarrier *a, const HakkasEnvCarrier *b)
 	for (size_t i = 0; i < a->comm_count; i++) {
 		const HakkasEnvComm *x = &a->comm[i], *y = &b->comm[i];
 		if (x->slot != y->slot || !str_eq(x->type, y->type) || !str_eq(x->name, y->name) ||
-		    !str_eq(x->picture, y->picture))
+		    !picture_eq(&x->picture, &y->picture))
 			return false;
 	}
 	return true;
@@ -460,7 +467,7 @@ void env_description_free(HakkasEnvDescription *d)
 		free_str(m->revision);
 		free_str(m->serial);
 		free_str(m->documentation);
-		free_str(m->picture);
+		free_str(m->picture.url);
 		for (size_t k = 0; k < m->port_count; k++)
 			free_str(m->ports[k]);
 		free((void *)(uintptr_t)m->ports);
@@ -474,18 +481,18 @@ void env_description_free(HakkasEnvDescription *d)
 	free_str(o->carrier.revision);
 	free_str(o->carrier.serial);
 	free_str(o->carrier.documentation);
-	free_str(o->carrier.picture);
+	free_str(o->carrier.picture.url);
 	free_str(o->mcu.type);
 	free_str(o->mcu.name);
 	free_str(o->mcu.vendor);
 	free_str(o->mcu.revision);
 	free_str(o->mcu.serial);
 	free_str(o->mcu.documentation);
-	free_str(o->mcu.picture);
+	free_str(o->mcu.picture.url);
 	for (size_t i = 0; i < o->carrier.comm_count; i++) {
 		free_str(o->comm[i].type);
 		free_str(o->comm[i].name);
-		free_str(o->comm[i].picture);
+		free_str(o->comm[i].picture.url);
 		free_str(o->comm[i].ssid);
 		const HakkasEnvIp *ip = &o->params[i].ip;
 		free_str(ip->mode);
@@ -605,6 +612,25 @@ static bool view_bool(const cJSON *obj, const char *key, bool *out)
 		return false;
 	*out = cJSON_IsTrue(m);
 	return true;
+}
+
+/* A picture {"url", "rotation"?, "crop"?: {"x", "y", "w", "h"}} (view only,
+ * plan task 75): none without a string url; a rotation that is not an
+ * integer of at least 0, or a crop missing a member, is absent. */
+static HakkasEnvPicture view_picture(Parse *p, const cJSON *obj)
+{
+	HakkasEnvPicture pic = {0};
+	const cJSON *j = member(obj, "picture");
+	pic.url = cJSON_IsObject(j) ? view_str(p, j, "url") : NULL;
+	if (pic.url == NULL)
+		return pic;
+	if (!view_uint(j, "rotation", &pic.rotation))
+		pic.rotation = 0;
+	const cJSON *crop = member(j, "crop");
+	pic.has_crop = cJSON_IsObject(crop) && view_num(crop, "x", &pic.x) &&
+		       view_num(crop, "y", &pic.y) && view_num(crop, "w", &pic.w) &&
+		       view_num(crop, "h", &pic.h);
+	return pic;
 }
 
 /* A structural integer member, 0..UINT32_MAX: false if absent; an error if
@@ -730,7 +756,7 @@ static void parse_module(Parse *p, const cJSON *j, int i, HakkasEnvModule *out)
 	out->revision = opt_str(p, j, "revision", where);
 	out->serial = opt_str(p, j, "serial", where);
 	out->documentation = opt_str(p, j, "documentation", where);
-	out->picture = view_str(p, j, "picture");
+	out->picture = view_picture(p, j);
 	parse_positions(p, j, where, out);
 	const cJSON *ports = member(j, "ports");
 	if (ports == NULL)
@@ -834,7 +860,7 @@ static void parse_comm(Parse *p, Owned *o, const cJSON *j, int i)
 		error(p, "%sslot: expected an integer of at least 0", where);
 	c->type = view_str(p, j, "type");
 	c->name = view_str(p, j, "name");
-	c->picture = view_str(p, j, "picture");
+	c->picture = view_picture(p, j);
 	const cJSON *ip = member(j, "ip");
 	if (cJSON_IsObject(ip)) {
 		parse_ip(p, ip, &o->params[i].ip);
@@ -924,7 +950,7 @@ static void parse_carrier(Parse *p, Owned *o, const cJSON *j)
 	c->revision = view_str(p, j, "revision");
 	c->serial = view_str(p, j, "serial");
 	c->documentation = view_str(p, j, "documentation");
-	c->picture = view_str(p, j, "picture");
+	c->picture = view_picture(p, j);
 	parse_places(p, o, member(j, "places"));
 	if (!opt_uint(p, j, "slots", "carrier: ", &c->slots))
 		error(p, "carrier: slots: expected an integer of at least 0");
@@ -948,7 +974,7 @@ static void parse_carrier(Parse *p, Owned *o, const cJSON *j)
 		m->revision = view_str(p, mcu, "revision");
 		m->serial = view_str(p, mcu, "serial");
 		m->documentation = view_str(p, mcu, "documentation");
-		m->picture = view_str(p, mcu, "picture");
+		m->picture = view_picture(p, mcu);
 		c->mcu = m;
 	}
 	const cJSON *list = member(j, "builtin");
@@ -1073,6 +1099,23 @@ static bool put_str(cJSON *obj, const char *key, const char *s)
 	return s == NULL || put(obj, key, cJSON_CreateString(s));
 }
 
+/* A picture: nothing without a url; rotation 0 and no crop left out. */
+static bool put_picture(cJSON *obj, const HakkasEnvPicture *pic)
+{
+	if (pic->url == NULL)
+		return true;
+	cJSON *j = cJSON_CreateObject();
+	if (!put(obj, "picture", j) || !put_str(j, "url", pic->url) ||
+	    (pic->rotation != 0 && !put(j, "rotation", cJSON_CreateNumber(pic->rotation))))
+		return false;
+	if (!pic->has_crop)
+		return true;
+	cJSON *c = cJSON_CreateObject();
+	return put(j, "crop", c) && put(c, "x", cJSON_CreateNumber(pic->x)) &&
+	       put(c, "y", cJSON_CreateNumber(pic->y)) && put(c, "w", cJSON_CreateNumber(pic->w)) &&
+	       put(c, "h", cJSON_CreateNumber(pic->h));
+}
+
 static bool push(cJSON *arr, cJSON *item)
 {
 	if (item == NULL)
@@ -1151,7 +1194,7 @@ static cJSON *module_json(const HakkasEnvModule *m)
 		  put_str(j, "vendor", m->vendor) &&
 		  put_str(j, "revision", m->revision) && put_str(j, "serial", m->serial) &&
 		  put_str(j, "documentation", m->documentation) &&
-		  put_str(j, "picture", m->picture) &&
+		  put_picture(j, &m->picture) &&
 		  put(j, "ports", strings_json(m->ports, m->port_count)) &&
 		  (m->position_count == 0 ||
 		   put(j, "positions", positions_json(m->positions, m->position_count)));
@@ -1214,7 +1257,7 @@ static cJSON *comm_json(const HakkasEnvComm *c)
 	cJSON *j = cJSON_CreateObject();
 	bool ok = j != NULL && put(j, "slot", cJSON_CreateNumber(c->slot)) &&
 		  put_str(j, "type", c->type) && put_str(j, "name", c->name) &&
-		  put_str(j, "picture", c->picture) &&
+		  put_picture(j, &c->picture) &&
 		  (c->ip == NULL || put(j, "ip", ip_json(c->ip))) &&
 		  (c->ssid == NULL || put(j, "wifi", one_str("ssid", c->ssid)));
 	if (ok && c->rs485 != NULL) {
@@ -1244,7 +1287,7 @@ static cJSON *mcu_json(const HakkasEnvMcu *m)
 	bool ok = j != NULL && put_str(j, "type", m->type) && put_str(j, "name", m->name) &&
 		  put_str(j, "vendor", m->vendor) && put_str(j, "revision", m->revision) &&
 		  put_str(j, "serial", m->serial) &&
-		  put_str(j, "documentation", m->documentation) && put_str(j, "picture", m->picture);
+		  put_str(j, "documentation", m->documentation) && put_picture(j, &m->picture);
 	if (!ok) {
 		cJSON_Delete(j);
 		return NULL;
@@ -1308,7 +1351,7 @@ static cJSON *carrier_json(const HakkasEnvCarrier *c)
 	ok = ok && put_str(j, "type", c->type) && put_str(j, "name", c->name) &&
 	     put_str(j, "vendor", c->vendor) &&
 	     put_str(j, "revision", c->revision) && put_str(j, "serial", c->serial) &&
-	     put_str(j, "documentation", c->documentation) && put_str(j, "picture", c->picture) &&
+	     put_str(j, "documentation", c->documentation) && put_picture(j, &c->picture) &&
 	     put(j, "slots", cJSON_CreateNumber(c->slots));
 	if (ok) {
 		ok = put(j, "builtin", builtin);

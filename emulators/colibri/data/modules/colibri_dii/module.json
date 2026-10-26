@@ -4,6 +4,15 @@
   "vendor": "CurrentMakers",
   "description": "2 isolated digital inputs",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+  "render": {
+    "url": "https://currentmakers.com/data/products/colibri/renders/colibri_dii_top_render.png",
+    "crop": {
+      "x": 0.2415,
+      "y": 0.2243,
+      "w": 0.5169,
+      "h": 0.5515
+    }
+  },
   "signals": [
     {
       "id": "in",
@@ -67,6 +76,20 @@
         "quantity": "count"
       },
       "description": "Pulse count, 32 bits, rolling over"
+    }
+  ],
+  "positions": [
+    {
+      "channel": "di",
+      "index": 1,
+      "x": 0.3,
+      "y": 0.35
+    },
+    {
+      "channel": "di",
+      "index": 2,
+      "x": 0.7,
+      "y": 0.35
     }
   ]
 }

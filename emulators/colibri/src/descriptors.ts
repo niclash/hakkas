@@ -24,7 +24,16 @@ export interface Metadata {
     revision?: string;
     description?: string;
     documentation?: string;
-    pictureUrl?: string;    // the picture hakkas' frontend shows (https), hakkas' `picture`
+    render?: Render;        // the picture hakkas' frontend shows, hakkas' `picture`
+}
+
+// The vendor's picture of a board (04 §1 "Pictures"): its https link, the part of the file to
+// show (`crop`, fractions of the file) and the clockwise turn after it (0, 90, 180 or 270) that
+// shows the board in the carrier's orientation.
+export interface Render {
+    url: string;
+    rotation?: 90 | 180 | 270;
+    crop?: Rect;
 }
 
 export type Quantity = 'state' | 'frequency' | 'duty' | 'count';
@@ -127,7 +136,7 @@ export interface CarrierType extends Metadata {
     comm: {slot: number, types: string[]}[];
     mcu?: {types: string[]};                    // the MCU module types it takes
     picture?: string;
-    places?: Places;                            // where the slots are on pictureUrl's picture
+    places?: Places;                            // where the slots are on its render, as shown
 }
 
 export const COMM_PARAMS = ['ip', 'wifi', 'rs485', 'lorawan'] as const;
@@ -144,7 +153,7 @@ export type McuType = Metadata;
 export const IO_SLOTS_MAX = 31;
 export const COMM_SLOTS_MAX = 4;
 
-const METADATA = ['type', 'name', 'vendor', 'revision', 'description', 'documentation', 'pictureUrl'];
+const METADATA = ['type', 'name', 'vendor', 'revision', 'description', 'documentation', 'render'];
 
 function metadata(c: Checker, o: JsonObject, dirName: string): Metadata {
     const type = c.string(o, 'type', '', true);
@@ -158,12 +167,31 @@ function metadata(c: Checker, o: JsonObject, dirName: string): Metadata {
         if (v !== undefined)
             m[key] = v;
     }
-    const url = c.string(o, 'pictureUrl', '');
-    if (url !== undefined && !/^https:\/\/\S+$/.test(url))
-        c.error('pictureUrl', 'expected an https link');
-    else if (url !== undefined)
-        m.pictureUrl = url;
+    if (o.render !== undefined) {
+        const render = readRender(c, o.render);
+        if (render !== undefined)
+            m.render = render;
+    }
     return m;
+}
+
+function readRender(c: Checker, v: Json): Render | undefined {
+    const o = c.object(v, 'render');
+    if (o === undefined)
+        return undefined;
+    c.members(o, ['url', 'rotation', 'crop'], 'render');
+    const errors = c.errors.length;
+    const url = c.string(o, 'url', 'render', true);
+    if (url !== undefined && !/^https:\/\/\S+$/.test(url))
+        c.error('render.url', 'expected an https link');
+    const rotation = o.rotation === undefined ? 0 : c.integer(o, 'rotation', 'render', 0, 270);
+    if (rotation !== undefined && rotation % 90 !== 0)
+        c.error('render.rotation', 'expected 0, 90, 180 or 270');
+    const crop = o.crop === undefined ? undefined : c.object(o.crop, 'render.crop');
+    const r = crop !== undefined ? rect(c, crop, 'render.crop') : undefined;
+    if (c.errors.length !== errors)
+        return undefined;
+    return {url: url!, ...(rotation ? {rotation: rotation as 90 | 180 | 270} : {}), ...(r && {crop: r})};
 }
 
 // A fraction of a picture's width or height.

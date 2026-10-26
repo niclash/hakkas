@@ -2,5 +2,15 @@
   "type": "colibri_mcu7",
   "name": "Colibri MCU7",
   "vendor": "CurrentMakers",
-  "description": "RP2350"
+  "description": "RP2350",
+  "render": {
+    "url": "https://currentmakers.com/data/products/colibri/renders/colibri_mcu7-rev_A_top_render.png",
+    "rotation": 90,
+    "crop": {
+      "x": 0.2243,
+      "y": 0.2415,
+      "w": 0.5509,
+      "h": 0.5169
+    }
+  }
 }

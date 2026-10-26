@@ -98,10 +98,23 @@ typedef struct {
 	uint32_t count; /* addressable: 1..HAKKAS_ENV_COUNT_MAX channels; else 0 */
 } HakkasEnvPort;
 
+/* A picture of a board (04 §1, plan task 75), view only: the vendor's file
+ * at url (https; NULL: no picture), with the part to show (crop, in
+ * fractions 0..1 of the file's width and height; none: all of it), turned
+ * clockwise by rotation degrees (0, 90, 180 or 270), so that it shows the
+ * board in the carrier's orientation. Not checked. */
+typedef struct {
+	const char *url;
+	uint32_t rotation;
+	bool has_crop;
+	double x, y, w, h; /* the crop */
+} HakkasEnvPicture;
+
 /* Where a channel is on its module's picture (04 §1, plan task 75), view
- * only: x and y are fractions (0..1) of the picture's width and height, from
- * its top left corner; a built-in module's, which has no picture, of the
- * carrier's. Not checked: the frontend skips a position it cannot use. */
+ * only: x and y are fractions (0..1) of the picture's width and height as
+ * shown (cropped and turned), from its top left corner; a built-in
+ * module's, which has no picture, of the carrier's. Not checked: the
+ * frontend skips a position it cannot use. */
 typedef struct {
 	const char *port; /* a port id */
 	uint32_t index;	  /* the channel, 1..count; 0 for a port that is not addressable */
@@ -109,8 +122,8 @@ typedef struct {
 } HakkasEnvPosition;
 
 /* Where a slot is on the carrier's picture (04 §1, plan task 75), view only:
- * a rectangle in fractions (0..1) of the picture's width and height, into
- * which the module's picture is drawn. */
+ * a rectangle in fractions (0..1) of the picture's width and height as
+ * shown, into which the module's picture (as shown) is drawn. */
 typedef struct {
 	uint32_t slot; /* the I/O or communication slot; not used for the MCU slot */
 	double x, y, w, h;
@@ -128,7 +141,7 @@ typedef struct {
 	const char *revision;
 	const char *serial;
 	const char *documentation; /* a link */
-	const char *picture;	   /* a link (https) */
+	HakkasEnvPicture picture;
 	const char *const *ports;  /* port ids of this description */
 	size_t port_count;
 	const HakkasEnvPosition *positions; /* where its channels are on its picture */
@@ -181,7 +194,7 @@ typedef struct {
 	uint32_t slot;	  /* 1..HAKKAS_ENV_COMM_SLOTS_MAX */
 	const char *type; /* e.g. "colibri_ethernet" */
 	const char *name; /* human-readable, e.g. "Colibri Ethernet"; may be NULL */
-	const char *picture; /* a link (https); may be NULL */
+	HakkasEnvPicture picture;
 	const HakkasEnvIp *ip;
 	const char *ssid; /* WiFi */
 	const HakkasEnvRs485 *rs485;
@@ -196,7 +209,7 @@ typedef struct {
 	const char *revision;
 	const char *serial;
 	const char *documentation; /* a link */
-	const char *picture;	   /* a link (https) */
+	HakkasEnvPicture picture;
 } HakkasEnvMcu;
 
 /* The carrier board of a modular environment (04 §1). Its I/O slots are
@@ -210,7 +223,7 @@ typedef struct {
 	const char *revision;
 	const char *serial;
 	const char *documentation; /* a link */
-	const char *picture;	   /* a link (https) */
+	HakkasEnvPicture picture;
 	uint32_t slots;		   /* the changeable I/O slots */
 	const uint32_t *builtin;   /* the built-in slots' numbers */
 	size_t builtin_count;

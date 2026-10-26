@@ -2,5 +2,15 @@
   "type": "colibri_mcu6",
   "name": "Colibri MCU6",
   "vendor": "CurrentMakers",
-  "description": "STM32H735RG"
+  "description": "STM32H735RG",
+  "render": {
+    "url": "https://currentmakers.com/data/products/colibri/renders/colibri_mcu6-rev_A_top_render.png",
+    "rotation": 90,
+    "crop": {
+      "x": 0.2243,
+      "y": 0.2415,
+      "w": 0.5509,
+      "h": 0.5169
+    }
+  }
 }

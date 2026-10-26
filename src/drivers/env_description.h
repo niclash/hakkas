@@ -41,9 +41,11 @@
  * {"appEui"?, "devEui"?, "appKeySet"?}}], "mcu"?: {"type"?, "name"?,
  * "vendor"?, "revision"?, "serial"?, "documentation"?, "picture"?},
  * "places"?: {"slots"?: [place], "comm"?: [place], "mcu"?: {"x", "y", "w",
- * "h"}}}, a place {"slot", "x", "y", "w", "h"}. A view-only member of
+ * "h"}}}, a place {"slot", "x", "y", "w", "h"}, a picture {"url",
+ * "rotation"?, "crop"?: {"x", "y", "w", "h"}}. A view-only member of
  * another type is absent, not an error; so is a position or place missing
- * a member or with one of another type. A member that is null is absent; unknown members
+ * a member or with one of another type; a picture without a string url is
+ * none. A member that is null is absent; unknown members
  * are ignored (forward compatibility).
  *
  * Threading: none of its own; a description is read-only once made.

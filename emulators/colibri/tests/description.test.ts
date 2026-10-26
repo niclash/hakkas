@@ -67,11 +67,10 @@ group('the environment description', () => {
         expect(d.carrier).toEqual({
             type: 'colibri_8', name: 'Colibri 8', vendor: 'CurrentMakers',
             documentation: 'https://currentmakers.com/products/colibri/colibri_8/',
-            picture: def.pictureUrl,
+            picture: def.render,
             slots: 7, builtin: [{slot: 0}],
             power: {voltage: {min: 7, max: 30}, ac: true, dc: true, current: 2.0},
-            comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet',
-                picture: catalog.comm.get('colibri_ethernet')!.def.pictureUrl, ip}],
+            comm: [{slot: 1, type: 'colibri_ethernet', name: 'Colibri Ethernet', ip}],
             places: {slots: def.places!.slots, comm: def.places!.comm},
         });
         expect(described({}).carrier.comm).toEqual([]);
@@ -79,7 +78,9 @@ group('the environment description', () => {
 
     it('names the MCU module, if one is given', () => {
         const d = described({}, 'lab', 'colibri_mcu6');
-        expect(d.carrier.mcu).toEqual({type: 'colibri_mcu6', name: 'Colibri MCU6', vendor: 'CurrentMakers'});
+        expect(d.carrier.mcu).toEqual({type: 'colibri_mcu6', name: 'Colibri MCU6', vendor: 'CurrentMakers',
+            picture: catalog.mcu.get('colibri_mcu6')!.def.render});
+        expect((d.carrier.mcu as JsonObject).picture).toMatchObject({rotation: 90});
         // Its slot's place only with a module in it.
         expect((d.carrier.places as JsonObject).mcu).toEqual(catalog.carriers.get('colibri_8')!.def.places!.mcu);
         expect(described({}).carrier).not.toHaveProperty('mcu');
@@ -88,14 +89,15 @@ group('the environment description', () => {
 
     it('gives each module its picture link and its channels\' positions, under their port ids', () => {
         const d = described({modules: [{slot: 2, type: 'colibri_aiv'}, {slot: 3, type: 'colibri_dp1'},
-            {slot: 4, type: 'colibri_dii'}]});
+            {slot: 4, type: 'colibri_rs485i'}]});
         const aiv = catalog.modules.get('colibri_aiv')!.def;
-        expect(d.modules[1]!.picture).toBe(aiv.pictureUrl);
+        expect(d.modules[1]!.picture).toEqual(aiv.render);
+        expect(d.modules[1]!.picture).toHaveProperty('crop');
         expect(d.modules[1]!.positions).toEqual(aiv.positions.map(p => ({port: 'slot2-ai', index: p.index,
             x: p.x, y: p.y})));
         // A group of one channel: no index.
         expect(d.modules[2]!.positions![0]).toEqual({port: 'slot3-ai', x: expect.any(Number), y: expect.any(Number)});
-        // No picture, no positions: neither member.
+        // No picture (RS485I has no published render), no positions: neither member.
         expect(d.modules[3]).not.toHaveProperty('picture');
         expect(d.modules[3]).not.toHaveProperty('positions');
     });

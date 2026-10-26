@@ -2,7 +2,7 @@
 // the modules and the carrier, built from the emulated system; and the checks hakkas makes of
 // it (04 §0, "Validation"), so a description it would refuse is found here first.
 import type {Json, JsonObject} from './check.js';
-import type {Channel, McuType, Places} from './descriptors.js';
+import type {Channel, McuType, Places, Render} from './descriptors.js';
 import type {System} from './system.js';
 
 // hakkas' limits (src/hakkas_env.h).
@@ -32,7 +32,7 @@ export interface ModuleDescription {
     revision?: string;
     serial?: string;
     documentation?: string;
-    picture?: string;
+    picture?: JsonObject;
     ports: string[];
     positions?: {port: string, index?: number, x: number, y: number}[];
 }
@@ -76,29 +76,39 @@ export function describe(system: System, mcu?: McuType): Description {
             ...(slot.builtin && {builtin: true}),
             type: module.type,
             ...optional({name: module.name, vendor: module.vendor, revision: module.revision,
-                serial: slot.serial, documentation: module.documentation, picture: module.pictureUrl}),
+                serial: slot.serial, documentation: module.documentation}),
+            ...pictureOf(module.render),
             ports,
             ...(positions.length > 0 && {positions}),
         });
     }
     d.carrier = {
         type: c.type,
-        ...optional({name: c.name, vendor: c.vendor, revision: c.revision, documentation: c.documentation,
-            picture: c.pictureUrl}),
+        ...optional({name: c.name, vendor: c.vendor, revision: c.revision, documentation: c.documentation}),
+        ...pictureOf(c.render),
         slots: c.slots,
         builtin: c.builtin.map(b => ({slot: b.slot})),
         ...(c.power !== undefined && {power: c.power}),
         comm: system.comm.map(s => ({
             slot: s.slot,
             type: s.def.type,
-            ...optional({name: s.def.name, picture: s.def.pictureUrl}),
+            ...optional({name: s.def.name}),
+            ...pictureOf(s.def.render),
             ...(s.params as JsonObject),
         })),
         ...(mcu !== undefined && {mcu: {type: mcu.type, ...optional({name: mcu.name, vendor: mcu.vendor,
-            revision: mcu.revision, documentation: mcu.documentation, picture: mcu.pictureUrl})}}),
+            revision: mcu.revision, documentation: mcu.documentation}), ...pictureOf(mcu.render)}}),
         ...(c.places !== undefined && {places: placesOf(c.places, mcu !== undefined)}),
     };
     return d;
+}
+
+// A render as hakkas' `picture` (04 §1 "Pictures"), or nothing.
+function pictureOf(r: Render | undefined): {picture?: JsonObject} {
+    if (r === undefined)
+        return {};
+    return {picture: {url: r.url, ...(r.rotation !== undefined && {rotation: r.rotation}),
+        ...(r.crop !== undefined && {crop: {...r.crop}})}};
 }
 
 // The carrier's places in hakkas' form (04 §1); the MCU slot's only with an MCU module in it.
@@ -158,7 +168,8 @@ export function checkDescription(d: Description): string[] {
     if (positions > POSITIONS_MAX)
         problems.push(`${positions} positions, more than ${POSITIONS_MAX}`);
     for (const m of d.modules)
-        for (const s of [m.type, m.name, m.vendor, m.revision, m.serial, m.documentation, m.picture])
+        for (const s of [m.type, m.name, m.vendor, m.revision, m.serial, m.documentation,
+            m.picture?.url as string | undefined])
             if (!text(s))
                 problems.push(`slot ${m.slot}: text longer than ${TEXT_MAX} bytes`);
     return problems;

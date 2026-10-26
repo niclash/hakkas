@@ -4,7 +4,15 @@
   "vendor": "CurrentMakers",
   "description": "2 × Pt1000 temperature inputs",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
-  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_pt1000.png",
+  "render": {
+    "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
+    "crop": {
+      "x": 0.2415,
+      "y": 0.2243,
+      "w": 0.5169,
+      "h": 0.5515
+    }
+  },
   "channels": [
     {
       "id": "ai",

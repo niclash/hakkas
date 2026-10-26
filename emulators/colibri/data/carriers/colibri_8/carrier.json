@@ -3,7 +3,9 @@
   "name": "Colibri 8",
   "vendor": "CurrentMakers",
   "documentation": "https://currentmakers.com/products/colibri/colibri_8/",
-  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_8.png",
+  "render": {
+    "url": "https://currentmakers.com/data/products/colibri/renders/colibri_8-rev_B_top_render.png"
+  },
   "slots": 7,
   "builtin": [
     {

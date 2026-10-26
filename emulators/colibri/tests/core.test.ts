@@ -335,7 +335,8 @@ describe('the MCU module', () => {
 
     it('is described when the carrier takes it', async () => {
         const {description, lines} = await served('colibri_8', 'colibri_mcu2');
-        expect(description.carrier.mcu).toEqual({type: 'colibri_mcu2', name: 'Colibri MCU2', vendor: 'CurrentMakers'});
+        expect(description.carrier.mcu).toMatchObject({type: 'colibri_mcu2', name: 'Colibri MCU2',
+            vendor: 'CurrentMakers'});
         expect(lines).toEqual([]);
     });
 

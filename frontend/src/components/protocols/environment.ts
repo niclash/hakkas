@@ -14,8 +14,9 @@ export interface EnvPort {
 }
 
 // Where a channel is on its module's picture (plan task 75): fractions (0..1) of the picture's
-// width and height from its top left corner; a built-in module's, without a picture, of the
-// carrier's. Not checked by hakkas: one naming no channel, or outside 0..1, is to be skipped.
+// width and height as shown (cropped and turned) from its top left corner; a built-in module's,
+// without a picture, of the carrier's. Not checked by hakkas: one naming no channel, or outside
+// 0..1, is to be skipped.
 export interface EnvPosition {
     port: string;
     index?: number;         // the channel of an addressable port
@@ -23,12 +24,21 @@ export interface EnvPosition {
     y: number;
 }
 
-// Where a slot is on the carrier's picture: a rectangle in fractions of its width and height.
+// Where a slot is on the carrier's picture as shown, or the part of a picture's file to show: a
+// rectangle in fractions of its width and height.
 export interface EnvRect {
     x: number;
     y: number;
     w: number;
     h: number;
+}
+
+// A board's picture (plan task 75): the vendor's file (load only an https one), the part of it
+// to show (`crop`, fractions of the file), then turned clockwise by `rotation` degrees.
+export interface EnvPicture {
+    url: string;
+    rotation?: number;      // 0, 90, 180 or 270
+    crop?: EnvRect;
 }
 
 export interface EnvModule {
@@ -40,7 +50,7 @@ export interface EnvModule {
     revision?: string;
     serial?: string;
     documentation?: string;
-    picture?: string;       // a link; only an https one is to be loaded
+    picture?: EnvPicture;
     ports: string[];
     positions?: EnvPosition[];
 }
@@ -49,7 +59,7 @@ export interface EnvComm {
     slot: number;
     type?: string;
     name?: string;
-    picture?: string;
+    picture?: EnvPicture;
     ip?: { mode?: string, address?: string, prefix?: number, gateway?: string, dns?: string[], mac?: string };
     wifi?: { ssid?: string };
     rs485?: { bitrate?: number, parity?: string };
@@ -64,7 +74,7 @@ export interface EnvMcu {
     revision?: string;
     serial?: string;
     documentation?: string;
-    picture?: string;
+    picture?: EnvPicture;
 }
 
 export interface EnvCarrier {
@@ -74,7 +84,7 @@ export interface EnvCarrier {
     revision?: string;
     serial?: string;
     documentation?: string;
-    picture?: string;
+    picture?: EnvPicture;
     slots: number;
     builtin: { slot: number }[];
     power?: { voltage?: { min?: number, max?: number }, ac?: boolean, dc?: boolean, current?: number };

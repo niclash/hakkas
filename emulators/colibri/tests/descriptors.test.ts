@@ -145,16 +145,26 @@ describe('module descriptors', () => {
 
     it('read the picture link and where the channels are on the picture', () => {
         const dq = {id: 'dq', direction: 'output', type: 'bool'};
-        const ok = module({type: 'm', pictureUrl: 'https://example.com/m.webp', channels: [ai, dq],
+        const render = {url: 'https://example.com/m.png', rotation: 90, crop: {x: 0.2, y: 0.25, w: 0.55, h: 0.5}};
+        const ok = module({type: 'm', render, channels: [ai, dq],
             positions: [{channel: 'ai', index: 2, x: 0.7, y: 0.4}, {channel: 'dq', x: 0, y: 1}]});
         expect(ok.errors).toEqual([]);
-        expect(ok.def!.pictureUrl).toBe('https://example.com/m.webp');
+        expect(ok.def!.render).toEqual(render);
+        expect(module({type: 'm', render: {url: 'https://x/m.png', rotation: 0}}).def!.render)
+            .toEqual({url: 'https://x/m.png'});
         expect(ok.def!.positions).toEqual([{channel: 'ai', index: 2, x: 0.7, y: 0.4}, {channel: 'dq', x: 0, y: 1}]);
 
-        // Only https.
-        expect(moduleErrors([], {pictureUrl: 'http://example.com/m.webp'}))
-            .toEqual(['pictureUrl: expected an https link']);
-        expect(moduleErrors([], {pictureUrl: 'm.webp'})).toEqual(['pictureUrl: expected an https link']);
+        // Only https; a quarter turn; a crop inside the file.
+        expect(moduleErrors([], {render: {url: 'http://example.com/m.webp'}}))
+            .toEqual(['render.url: expected an https link']);
+        expect(moduleErrors([], {render: {url: 'm.webp'}})).toEqual(['render.url: expected an https link']);
+        expect(moduleErrors([], {render: {}})).toEqual(['render.url: missing']);
+        expect(moduleErrors([], {render: {url: 'https://x/m.png', rotation: 45}}))
+            .toEqual(['render.rotation: expected 0, 90, 180 or 270']);
+        expect(moduleErrors([], {render: {url: 'https://x/m.png', rotation: 360}}))
+            .toEqual(['render.rotation: expected an integer from 0 to 270']);
+        expect(moduleErrors([], {render: {url: 'https://x/m.png', crop: {x: 0.5, y: 0, w: 0.6, h: 1}}}))
+            .toEqual(['render.crop: reaches outside the picture']);
         const bad = (positions: Json[]) => moduleErrors([ai, dq], {positions});
         expect(bad([{channel: 'xx', x: 0, y: 0}])).toEqual(['positions[0].channel: no channel xx in this module']);
         expect(bad([{channel: 'ai', x: 0, y: 0}])).toEqual(['positions[0].index: missing']);
@@ -220,11 +230,11 @@ describe('carrier descriptors', () => {
     it('read where the slots are on the picture', () => {
         const rect = {x: 0.1, y: 0.4, w: 0.05, h: 0.2};
         const base = {slots: 7, builtin: [{slot: 0, type: 'carrier'}], comm: [{slot: 1, types: ['t']}],
-            mcu: {types: ['m']}, pictureUrl: 'https://example.com/c.webp'};
+            mcu: {types: ['m']}, render: {url: 'https://example.com/c.webp'}};
         const r = carrier({...base, places: {slots: [{slot: 1, ...rect}, {slot: 7, ...rect}],
             comm: [{slot: 1, ...rect}], mcu: rect}});
         expect(r.errors).toEqual([]);
-        expect(r.def!.pictureUrl).toBe('https://example.com/c.webp');
+        expect(r.def!.render).toEqual({url: 'https://example.com/c.webp'});
         expect(r.def!.places).toEqual({slots: [{slot: 1, ...rect}, {slot: 7, ...rect}], comm: [{slot: 1, ...rect}],
             mcu: rect});
 

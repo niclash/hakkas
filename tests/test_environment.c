@@ -469,15 +469,15 @@ static void test_description_validate(void)
 	/* Pictures (plan task 75): links of at most HAKKAS_ENV_TEXT_MAX bytes, at
 	 * most HAKKAS_ENV_POSITIONS_MAX positions in all, at most as many places
 	 * as slots; what a position or place says is not checked. */
-	c.picture = long_name;
+	c.picture.url = long_name;
 	invalid_desc(d, "carrier: name, picture: longer than 1024 bytes");
-	c.picture = NULL;
-	mcu.picture = long_name;
+	c.picture.url = NULL;
+	mcu.picture.url = long_name;
 	invalid_desc(d, "carrier: mcu: name, picture: longer than 1024 bytes");
-	mcu.picture = NULL;
-	mods[1].picture = long_name;
+	mcu.picture.url = NULL;
+	mods[1].picture.url = long_name;
 	invalid_desc(d, "modules[1]: text longer than 1024 bytes");
-	mods[1].picture = "https://example.com/carrier.webp";
+	mods[1].picture.url = "https://example.com/carrier.webp";
 	static HakkasEnvPosition positions[HAKKAS_ENV_POSITIONS_MAX + 1];
 	positions[0] = (HakkasEnvPosition){.port = "nope", .index = 9, .x = 7, .y = -1};
 	mods[0].positions = positions;
@@ -507,7 +507,7 @@ static void test_description_validate(void)
 	invalid_desc(d, "carrier: a list with a count but no entries");
 	c.comm_places = places;
 	long_name[HAKKAS_ENV_TEXT_MAX] = '\0';
-	c.picture = comm[0].picture = mcu.picture = long_name;
+	c.picture.url = comm[0].picture.url = mcu.picture.url = long_name;
 	CHECK(env_description_validate(&d, why, sizeof(why)));
 }
 
@@ -834,7 +834,8 @@ static void test_pictures_json(void)
 {
 	const char *text =
 		"{\"name\": \"colibri\","
-		" \"carrier\": {\"type\": \"colibri_8\", \"picture\": \"https://x/c8.webp\","
+		" \"carrier\": {\"type\": \"colibri_8\","
+		" \"picture\": {\"url\": \"https://x/c8.webp\"},"
 		" \"slots\": 7, \"builtin\": [{\"slot\": 0}],"
 		" \"places\": {\"slots\": [{\"slot\": 1, \"x\": 0.37, \"y\": 0.435, \"w\": 0.048,"
 		" \"h\": 0.165}, {\"slot\": 2, \"x\": 0.42}, 5,"
@@ -843,15 +844,18 @@ static void test_pictures_json(void)
 		" \"h\": \"tall\"}],"
 		" \"mcu\": {\"x\": 0.32, \"y\": 0.435, \"w\": 0.048, \"h\": 0.165}},"
 		" \"comm\": [{\"slot\": 1, \"type\": \"colibri_ethernet\","
-		" \"picture\": \"https://x/e.webp\"}],"
-		" \"mcu\": {\"type\": \"colibri_mcu6\", \"picture\": 6}},"
+		" \"picture\": {\"url\": \"https://x/e.webp\", \"rotation\": -90,"
+		" \"crop\": {\"x\": 0.1}}}],"
+		" \"mcu\": {\"type\": \"colibri_mcu6\", \"picture\": \"https://x/m.webp\"}},"
 		" \"outPorts\": [{\"id\": \"slot3-ai\", \"type\": \"number\","
 		" \"addressable\": true, \"count\": 2},"
 		" {\"id\": \"slot0-di\", \"type\": \"bool\"}],"
 		" \"modules\": [{\"slot\": 0, \"builtin\": true, \"type\": \"carrier\","
 		" \"ports\": [\"slot0-di\"], \"positions\": [{\"port\": \"slot0-di\", \"x\": 0.74,"
 		" \"y\": 0.65}]},"
-		" {\"slot\": 3, \"type\": \"colibri_aiv\", \"picture\": \"https://x/aiv.webp\","
+		" {\"slot\": 3, \"type\": \"colibri_aiv\","
+		" \"picture\": {\"url\": \"https://x/aiv.webp\","
+		" \"rotation\": 90, \"crop\": {\"x\": 0.2, \"y\": 0.1, \"w\": 0.6, \"h\": 0.8}},"
 		" \"ports\": [\"slot3-ai\"], \"positions\": [{\"port\": \"slot3-ai\", \"index\": 1,"
 		" \"x\": 0.27, \"y\": 0.43}, {\"port\": \"slot3-ai\", \"index\": 2, \"x\": 0.72},"
 		" {\"port\": 4, \"x\": 0, \"y\": 0}, {\"port\": \"elsewhere\", \"index\": 9,"
@@ -863,18 +867,25 @@ static void test_pictures_json(void)
 	CHECK(d != NULL && d->carrier != NULL);
 	if (d != NULL && d->carrier != NULL) {
 		const HakkasEnvCarrier *c = d->carrier;
-		CHECK_STREQ(c->picture, "https://x/c8.webp");
-		CHECK_STREQ(c->comm[0].picture, "https://x/e.webp");
-		CHECK(c->mcu != NULL && c->mcu->picture == NULL); /* wrongly typed: absent */
+		CHECK_STREQ(c->picture.url, "https://x/c8.webp");
+		CHECK(c->picture.rotation == 0 && !c->picture.has_crop);
+		/* A rotation or crop of the wrong form is absent; a picture that is
+		 * no object with a url is none. */
+		CHECK_STREQ(c->comm[0].picture.url, "https://x/e.webp");
+		CHECK(c->comm[0].picture.rotation == 0 && !c->comm[0].picture.has_crop);
+		CHECK(c->mcu != NULL && c->mcu->picture.url == NULL);
 		/* Entries missing a member, or with one of another type, are left out. */
 		CHECK(c->io_place_count == 2 && c->io_places[1].slot == 3);
 		CHECK(c->io_places[0].x == 0.37 && c->io_places[0].h == 0.165);
 		CHECK(c->comm_place_count == 0);
 		CHECK(c->mcu_place != NULL && c->mcu_place->x == 0.32);
-		CHECK(d->modules[0].picture == NULL && d->modules[0].position_count == 1);
+		CHECK(d->modules[0].picture.url == NULL && d->modules[0].position_count == 1);
 		CHECK(d->modules[0].positions[0].index == 0); /* not addressable */
 		const HakkasEnvModule *aiv = &d->modules[1];
-		CHECK_STREQ(aiv->picture, "https://x/aiv.webp");
+		CHECK_STREQ(aiv->picture.url, "https://x/aiv.webp");
+		CHECK(aiv->picture.rotation == 90 && aiv->picture.has_crop);
+		CHECK(aiv->picture.x == 0.2 && aiv->picture.y == 0.1 && aiv->picture.w == 0.6 &&
+		      aiv->picture.h == 0.8);
 		/* What a position says is not checked: an unknown port and an x
 		 * beyond the picture are kept, for the frontend to skip. */
 		CHECK(aiv->position_count == 2);
@@ -890,6 +901,8 @@ static void test_pictures_json(void)
 		CHECK(e != NULL && e->carrier->io_place_count == 2);
 		CHECK(e != NULL && e->carrier->mcu_place != NULL);
 		CHECK(e != NULL && e->modules[1].position_count == 2);
+		CHECK(e != NULL && e->modules[1].picture.rotation == 90 &&
+		      e->modules[1].picture.h == 0.8);
 		CHECK(cJSON_GetObjectItem(cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetArrayItem(
 						  cJSON_GetObjectItem(back, "modules"), 0),
 						  "positions"), 0), "index") == NULL);
@@ -903,17 +916,22 @@ static void test_pictures_json(void)
 		cJSON *pos = cJSON_GetArrayItem(cJSON_GetObjectItem(aiv_json, "positions"), 0);
 		cJSON *place = cJSON_GetObjectItem(cJSON_GetObjectItem(carrier, "places"), "mcu");
 		cJSON *comm0 = cJSON_GetArrayItem(cJSON_GetObjectItem(carrier, "comm"), 0);
+		cJSON *aiv_pic = cJSON_GetObjectItem(aiv_json, "picture");
+		cJSON *aiv_crop = cJSON_GetObjectItem(aiv_pic, "crop");
 		struct {
 			cJSON *obj;
 			const char *key;
 			cJSON *changed, *original;
 		} changes[] = {
-			{carrier, "picture", cJSON_CreateString("https://x/c8b.webp"),
+			{cJSON_GetObjectItem(carrier, "picture"), "url",
+			 cJSON_CreateString("https://x/c8b.webp"),
 			 cJSON_CreateString("https://x/c8.webp")},
-			{comm0, "picture", cJSON_CreateString("https://x/e2.webp"),
-			 cJSON_CreateString("https://x/e.webp")},
-			{aiv_json, "picture", cJSON_CreateString("https://x/aiv2.webp"),
+			{cJSON_GetObjectItem(comm0, "picture"), "url",
+			 cJSON_CreateString("https://x/e2.webp"), cJSON_CreateString("https://x/e.webp")},
+			{aiv_pic, "url", cJSON_CreateString("https://x/aiv2.webp"),
 			 cJSON_CreateString("https://x/aiv.webp")},
+			{aiv_pic, "rotation", cJSON_CreateNumber(270), cJSON_CreateNumber(90)},
+			{aiv_crop, "w", cJSON_CreateNumber(0.5), cJSON_CreateNumber(0.6)},
 			{pos, "x", cJSON_CreateNumber(0.28), cJSON_CreateNumber(0.27)},
 			{pos, "index", cJSON_CreateNumber(2), cJSON_CreateNumber(1)},
 			{place, "w", cJSON_CreateNumber(0.05), cJSON_CreateNumber(0.048)},

@@ -2,7 +2,6 @@
   "type": "colibri_lorawan",
   "name": "Colibri LoRaWAN",
   "vendor": "CurrentMakers",
-  "pictureUrl": "https://currentmakers.com/data/colibri/render-top_colibri_lorawan.png",
   "params": [
     "lorawan"
   ]

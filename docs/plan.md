@@ -1027,9 +1027,11 @@ to the user first, one at a time.
   `positions` and the carrier's slot `places`, in fractions of the picture; view only, at most
   1024 positions; compared by the identical-description check. Caching a vendor's picture needs
   its host to send `Access-Control-Allow-Origin`: a requirement on vendors (CurrentMakers can
-  host for one who cannot). The emulator's descriptors have `pictureUrl`, `positions` and
-  `places` (provisional links; measurements in its plan, E15). The frontend has the types only;
-  drawing is task 78.
+  host for one who cannot); CurrentMakers' server does not send it yet (checked 2026-10-26).
+  Changed the same day: a picture is `{url, rotation?, crop?}`, so the vendor's published
+  render is used as it is. The emulator's descriptors have `render`, `positions` and `places`,
+  from CurrentMakers' products.json (its plan, E15). The frontend has the types only; drawing
+  is task 78.
 - [x] **76. Every channel's live value for the frontend** (done 2026-10-26; 02 §3.7):
   `environment:watch`/`unwatch` and `environment:values` — every channel with a value, then
   each change; an actuator's value is the last one written (none: not driven); lossy with a
