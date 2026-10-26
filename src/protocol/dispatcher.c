@@ -611,6 +611,28 @@ static void cmd_getsource(ProtoConn *c, const Envelope *env)
 	free(code);
 }
 
+/* A type file sent as source (02 §3.5): registered as startup registers it. */
+static void cmd_source(ProtoConn *c, const Envelope *env)
+{
+	const cJSON *pl = env->payload;
+	const char *name = str_field(pl, "name"), *language = str_field(pl, "language");
+	const char *code = str_field(pl, "code"), *library;
+	if (name == NULL || language == NULL || strcmp(language, "json") != 0 || code == NULL ||
+	    !opt_str_field(pl, "library", &library)) {
+		invalid_field(c,
+			      name == NULL				      ? "name"
+			      : language == NULL || strcmp(language, "json") != 0 ? "language"
+			      : code == NULL				      ? "code"
+									      : "library",
+			      NULL);
+		return;
+	}
+	GraphsMessage msg;
+	if (type_files_add_source(c->p->files, name, library, code, strlen(code), &msg) !=
+	    GRAPH_FILES_OK)
+		reply_error(c, msg.text, NULL);
+}
+
 /* ---- trace (02 §3.6): no-ops ------------------------------------------------------- */
 
 static void cmd_trace(ProtoConn *c, const Envelope *env)
@@ -1762,6 +1784,7 @@ static const ProtoCommand commands[] = {
 	{"environment", "unwatch", cmd_env_unwatch},
 	{"component", "list", cmd_component_list},
 	{"component", "getsource", cmd_getsource},
+	{"component", "source", cmd_source},
 	{"trace", "start", cmd_trace},
 	{"trace", "stop", cmd_trace},
 	{"trace", "clear", cmd_trace},

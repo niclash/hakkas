@@ -182,6 +182,33 @@ export class TransferConnection {
         return g;
     }
 
+    // A composite type's source, its type file's JSON (02 §3.5 getsource).
+    async source(name: string): Promise<string> {
+        const got = this.waitFor((protocol, command, payload) => {
+            if (protocol === "component" && command === "source" && payload?.name === name)
+                return String(payload.code ?? "");
+            if (protocol === "network" && command === "error" && payload?.graph === undefined)
+                return "";
+            return undefined;
+        });
+        this.send("component", "getsource", {name});
+        return got;
+    }
+
+    // Registers a type file (02 §3.5 component:source): "" when the engine announced the type,
+    // else its refusal.
+    addSource(name: string, code: string): Promise<string> {
+        const got = this.waitFor((protocol, command, payload) => {
+            if (protocol === "component" && command === "component" && payload?.name === name)
+                return "";
+            if (protocol === "network" && command === "error" && payload?.graph === undefined)
+                return String(payload.message);
+            return undefined;
+        });
+        this.send("component", "source", {name, language: "json", library: "", code});
+        return got;
+    }
+
     // Every process's bindings, or undefined for an engine without an environment.
     async bindings(): Promise<Binding[] | undefined> {
         const got = this.waitFor((protocol, command, payload) => {

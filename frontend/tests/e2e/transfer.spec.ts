@@ -2,6 +2,7 @@ import type {Page} from "@playwright/test";
 import {existsSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {expect, test} from "./fixtures";
+import {LIBRARY_DIR} from "./paths";
 import {blocks, loggedIn, openProcess, processItem} from "./ui";
 
 // 06 §4.16: a process downloaded with its bindings and the composite types it uses, uploaded
@@ -135,6 +136,39 @@ test("back up, then restore a deleted process; a block type the engine lacks is 
     await expect(processItem(page, "Simple Example")).toHaveClass(/active/);
     await expect(blocks(page)).toHaveCount(8);
     await expect(processItem(page, "Simple Example").getByTestId("process-unsaved")).toHaveCount(0);
+});
+
+test("a type library uploaded as type files: their port descriptions kept; again, they are already there",
+    async ({page, engine}) => {
+    const dir = join(LIBRARY_DIR, "schedules");
+    const names = ["DaySchedule", "WeekSchedule", "MonthSchedule", "YearSchedule"];
+    const files = names.map(n => ({name: n + ".json", mimeType: "application/json", buffer: readFileSync(join(dir, n + ".json"))}));
+    await loggedIn(page, engine.url);
+    await page.getByTestId("process-upload-file").setInputFiles(files);
+    await expect(page.getByTestId("transfer-upload")).toBeEnabled();
+    await expect(page.locator("#hk-transfer-title")).toHaveText("Upload 4 files");
+    await expect(page.getByTestId("transfer-type")).toHaveCount(4);
+    await expect(page.getByTestId("transfer-type-action")).toHaveText(["added", "added", "added", "added"]);
+    await page.getByTestId("transfer-upload").click();
+    for (const n of names)
+        await expect(report(page, "schedule/" + n)).toContainText("done");
+    await page.getByTestId("transfer-close").click();
+
+    const other = await engine.client();
+    other.send("component", "getsource", {name: "schedule/DaySchedule"});
+    const source = await other.next(m => m.command === "source");
+    expect(JSON.parse(source.payload.code).inports[0].description).toContain("wraps past midnight");
+
+    // Again: the same types are there; a changed one keeps the engine's.
+    const changed = JSON.parse(files[0].buffer.toString());
+    changed.description = "Changed";
+    await page.getByTestId("process-upload-file").setInputFiles([files[1],
+        {...files[0], buffer: Buffer.from(JSON.stringify(changed))}]);
+    await expect(page.getByTestId("transfer-type")).toHaveText([/WeekSchedule/, /DaySchedule/]);
+    await expect(page.getByTestId("transfer-type-action")).toHaveText(["already on this engine",
+        "on this engine and different: this engine's is kept"]);
+    await expect(page.getByTestId("transfer-upload")).toBeDisabled();
+    await page.getByTestId("transfer-cancel").click();
 });
 
 test("a file that is none is said; a viewer may download but not upload", async ({page, engine}) => {

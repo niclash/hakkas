@@ -564,7 +564,7 @@ static void test_capabilities(void)
 {
 	const char *names[] = {"protocol:runtime", "protocol:graph",  "protocol:component",
 			       "graph:readonly",   "network:status",  "network:persist",
-			       "network:data",	   "network:control"};
+			       "network:data",	   "network:control", "component:setsource"};
 	for (unsigned i = 0; i < AUTH_CAP_COUNT; i++)
 		CHECK_STREQ(auth_capability_name(i), names[i]);
 	CHECK(auth_capability_name(AUTH_CAP_COUNT) == NULL);
@@ -573,7 +573,7 @@ static void test_capabilities(void)
 			  AUTH_CAP_NETWORK_DATA | AUTH_CAP_GRAPH_READONLY;
 	uint32_t oper = viewer | AUTH_CAP_NETWORK_CONTROL;
 	uint32_t editor = oper | AUTH_CAP_PROTOCOL_GRAPH | AUTH_CAP_PROTOCOL_RUNTIME |
-			  AUTH_CAP_NETWORK_PERSIST;
+			  AUTH_CAP_NETWORK_PERSIST | AUTH_CAP_COMPONENT_SETSOURCE;
 	CHECK(auth_role_capabilities(USER_ROLE_VIEWER) == viewer);
 	CHECK(auth_role_capabilities(USER_ROLE_OPERATOR) == oper);
 	CHECK(auth_role_capabilities(USER_ROLE_EDITOR) == editor);
@@ -612,6 +612,7 @@ static void test_command_rules(void)
 		{"graph", "list", true, 0},
 		{"component", "list", true, 0},
 		{"component", "getsource", true, 0},
+		{"component", "source", true, AUTH_CAP_COMPONENT_SETSOURCE},
 		{"trace", "start", true, 0},
 		{"trace", "stop", true, 0},
 		{"trace", "clear", true, 0},
@@ -646,7 +647,7 @@ static void test_command_rules(void)
 			       strcmp(e->protocol, "component") == 0 ||
 			       strcmp(e->protocol, "trace") == 0 ||
 			       strcmp(e->protocol, "environment") == 0;
-		if (reading)
+		if (reading && want <= 1)
 			want = want == 1 ? g : rd;
 		AuthCommandRule r = auth_command_rule(e->protocol, e->command);
 		if (!r.known || r.gated != e->gated || r.caps_any != want)
@@ -659,7 +660,7 @@ static void test_command_rules(void)
 	CHECK(!r.known && !r.gated && r.caps_any == 0);
 	const char *unknown[][2] = {{"environment", "login"}, {"environment", "challenge"},
 				    {"graph", "merge"},	    {"runtime", "packet"},
-				    {"network", "data"},    {"component", "source"},
+				    {"network", "data"},    {"component", "setsource"},
 				    {"trace", "begin"},	    {"bogus", "list"},
 				    {"Graph", "addnode"},   {NULL, "list"},
 				    {"graph", NULL}};
@@ -690,6 +691,7 @@ static void test_command_rules(void)
 		{"graph", "rename", false, false, false, true},
 		{"runtime", "new_graph", false, false, false, true},
 		{"runtime", "delete_graph", false, false, false, true},
+		{"component", "source", false, false, false, true},
 	};
 	for (size_t i = 0; i < sizeof(who) / sizeof(who[0]); i++) {
 		r = auth_command_rule(who[i].protocol, who[i].command);

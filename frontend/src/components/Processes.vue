@@ -5,11 +5,11 @@
       <span class="hk-panel-buttons">
         <button v-if="can.manage" class="hk-button small" type="button" data-testid="process-new" @click="openNewProcessPopup()">New...</button>
         <button v-if="mayUpload" class="hk-button small" type="button" data-testid="process-upload"
-                title="Upload a process file or a backup" @click="uploadInput?.click()">Upload…</button>
+                title="Upload process files, a backup or type files" @click="uploadInput?.click()">Upload…</button>
         <button class="hk-button small" type="button" data-testid="process-backup" :disabled="downloading"
                 title="Download every process, its bindings and the composite types" @click="download('all')">Back up</button>
       </span>
-      <input ref="uploadInput" type="file" accept=".json,application/json" class="hk-hidden" data-testid="process-upload-file"
+      <input ref="uploadInput" type="file" accept=".json,application/json" multiple class="hk-hidden" data-testid="process-upload-file"
              @change="pickUpload"/>
     </div>
     <p v-if="transferMessage" class="hk-inspector-note" role="status" data-testid="transfer-message">{{ transferMessage }}</p>
@@ -49,7 +49,8 @@
     <p class="hk-dialog-error" role="alert" data-testid="save-error">{{ saveError }}</p>
   </Popup>
 
-  <TransferDialog v-if="uploading" :file="uploading.file" :fileName="uploading.name" @close="uploaded"/>
+  <TransferDialog v-if="uploading" :file="uploading.set.file" :sources="uploading.set.sources" :fileName="uploading.name"
+                  @close="uploaded"/>
 
   <div v-if="notice !== ''" class="hk-notice" role="status" data-testid="notice">{{ notice }}</div>
 </template>
@@ -58,7 +59,7 @@
 import {computed, onMounted, onUnmounted, ref, watch} from "vue";
 import {can, errorClaims, vueModel} from './model';
 import TransferDialog from "@/components/TransferDialog.vue";
-import {fileName, parseTransferFile, TransferFile, transferText} from "@/components/transfer";
+import {fileName, parseUpload, transferText, UploadSet} from "@/components/transfer";
 import {readFile} from "@/components/transfer-run";
 import Popup from "@/components/Popup.vue";
 import ProcessItem from "@/components/ProcessItem.vue";
@@ -134,7 +135,7 @@ const keydown = (event: KeyboardEvent) => {
 const transferMessage = ref("");
 const downloading = ref(false);
 const uploadInput = ref<HTMLInputElement | null>(null);
-const uploading = ref<{ file: TransferFile, name: string } | undefined>();
+const uploading = ref<{ set: UploadSet, name: string } | undefined>();
 const mayUpload = computed(() => can.value.manage && can.value.edit && can.value.persist);
 
 const saveFile = (text: string, name: string) => {
@@ -164,17 +165,17 @@ const download = async (ids: string[] | "all") => {
 
 const pickUpload = async (event: Event) => {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = [...(input.files ?? [])];
   input.value = "";
-  if (file === undefined)
+  if (files.length === 0)
     return;
   transferMessage.value = "";
-  const parsed = parseTransferFile(await file.text());
+  const parsed = parseUpload(await Promise.all(files.map(async f => ({name: f.name, text: await f.text()}))));
   if (typeof parsed === "string") {
-    transferMessage.value = file.name + ": " + parsed;
+    transferMessage.value = parsed;
     return;
   }
-  uploading.value = {file: parsed, name: file.name};
+  uploading.value = {set: parsed, name: files.length === 1 ? files[0].name : `${files.length} files`};
 };
 
 const uploaded = (open?: string) => {

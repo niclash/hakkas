@@ -437,6 +437,65 @@ enum graph_files_status type_files_change_group(GraphFiles *gf, const char *grap
 	return GRAPH_FILES_OK;
 }
 
+/* ---- component:source (02 §3.5) --------------------------------------------------- */
+
+/* Whether the request's name (with its library, if any) names the type full. */
+static bool source_name_matches(const char *name, const char *library, const char *full)
+{
+	if (strcmp(name, full) == 0)
+		return true;
+	size_t n = library != NULL ? strlen(library) : 0;
+	return n > 0 && strncmp(full, library, n) == 0 && full[n] == '/' &&
+	       strcmp(full + n + 1, name) == 0;
+}
+
+enum graph_files_status type_files_add_source(GraphFiles *gf, const char *name,
+					      const char *library, const char *code, size_t len,
+					      GraphsMessage *msg)
+{
+	const char *end = NULL;
+	cJSON *doc = cJSON_ParseWithLengthOpts(code, len, &end, false);
+	while (doc != NULL && end < code + len &&
+	       (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r'))
+		end++;
+	if (doc == NULL || !cJSON_IsObject(doc) || end != code + len) {
+		cJSON_Delete(doc);
+		set_message(msg, "Invalid JSON");
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	const char *full = doc_name(doc);
+	if (full == NULL || !source_name_matches(name, library, full)) {
+		cJSON_Delete(doc);
+		set_message(msg, "Invalid field: name");
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	const Graph *g = graphs_find(gf->gs, full);
+	if (g != NULL && !g->component) {
+		if (msg != NULL)
+			snprintf(msg->text, sizeof(msg->text), "Graph exists: %.64s", full);
+		cJSON_Delete(doc);
+		return GRAPH_FILES_ERR_INVALID;
+	}
+	CompositeMessage cm;
+	const BlockTypeDef *def;
+	enum composite_status st = composite_types_register(doc, &cm, &def);
+	cJSON_Delete(doc);
+	if (st != COMPOSITE_OK)
+		return refused(msg, st, &cm);
+	enum graph_files_status fs = type_files_save(gf, def);
+	if (fs != GRAPH_FILES_OK) {
+		char kept[GRAPH_ID_MAX + 1];
+		snprintf(kept, sizeof(kept), "%s", def->name);
+		/* Just registered, so not in use: this cannot fail. */
+		(void)composite_types_unregister(gf->gs, kept, NULL);
+		return unsaved(msg, fs, kept);
+	}
+	sync_component_graph(gf, def->name, def);
+	graphs_notify_component(gf->gs, def);
+	set_message(msg, "");
+	return GRAPH_FILES_OK;
+}
+
 /* ---- Component graphs (02 §3.4.3) ------------------------------------------------- */
 
 /* "Block.port" split on the last '.' into node and port (buf holds both). */

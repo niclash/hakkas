@@ -116,6 +116,22 @@ enum graph_files_status type_files_change_group(GraphFiles *gf, const char *grap
 						const char *icon, GraphsMessage *msg);
 
 /*
+ * component:source (02 §3.5; decided with the user 2026-10-26, plan task 58):
+ * register the composite type of a type file's text (03 §5.1, len bytes) as
+ * startup does, save its file, build its component graph (quietly, replacing
+ * one of that name without a type) and report COMPONENT. name is the
+ * request's name: the document's name, or that name without its library
+ * (library "/" name). Refused, changing nothing: "Invalid JSON" (not one JSON
+ * object), "Invalid field: name" (the document has no name, or name is
+ * neither form of it), "Graph exists: <name>" (a process has that id), every
+ * refusal of the registration (03 §5.1, "Component exists: <name>" first),
+ * "Unable to save component: <name>" (the type is unregistered again).
+ */
+enum graph_files_status type_files_add_source(GraphFiles *gf, const char *name,
+					      const char *library, const char *code, size_t len,
+					      GraphsMessage *msg);
+
+/*
  * ---- Component graphs (02 §3.4.3; decided with the user 2026-10-14, plan
  * task 36) ----
  *

@@ -9,3 +9,4 @@ export const HAKKAS_BIN = process.env.HAKKAS_BIN ?? resolve(frontend, "../build/
 // HAKKAS_DIST, e.g. frontend/dist-device (`npm run build:device`: every file gzip only, 06 §5).
 export const DIST_DIR = process.env.HAKKAS_DIST ?? resolve(frontend, "dist");
 export const EXAMPLE_GRAPH = resolve(frontend, "../examples/example.json");
+export const LIBRARY_DIR = resolve(frontend, "../library");

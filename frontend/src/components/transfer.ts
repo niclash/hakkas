@@ -1,7 +1,9 @@
 // Download, upload, backup and restore of processes (06 §4.16): the file — processes in the
 // graph file form (05 §2.1) with their bindings files (04 §4), and the composite types they use as
 // component graphs (02 §3.4.3) —, a graph read from its snapshot, the commands that make one
-// again, and what an upload would do on a device. Kept free of Vue so that it can be unit tested.
+// again, and what an upload would do on a device. An upload also takes type files (03 §5.1, e.g. a
+// library's), sent as their source (02 §3.5 component:source). Kept free of Vue so that it can be
+// unit tested.
 
 import {BindingsFile, parseBindingsFile} from "@/components/bindings";
 
@@ -221,6 +223,107 @@ export function parseTransferFile(text: string): TransferFile | string {
         runtime: isObject(v.runtime) ? v.runtime : undefined, processes, types};
 }
 
+// ---- Type files (03 §5.1) ------------------------------------------------------------------------
+
+// A composite type's file, as types/ and a library hold it: sent to the engine as its source.
+export interface SourceType {
+    name: string;
+    code: string;                   // the file's JSON, compact
+    uses: string[];                 // its blocks' types
+    doc: Record<string, any>;
+}
+
+// Whether v looks like a type file rather than a graph or process file: a name and blocks, an
+// array (a graph file's blocks are an object).
+export function isTypeSource(v: unknown): v is Record<string, any> {
+    return isObject(v) && v.format === undefined && v.id === undefined && isString(v.name) && Array.isArray(v.blocks);
+}
+
+export function sourceType(v: Record<string, any>): SourceType {
+    const uses = (v.blocks as unknown[]).map(b => isObject(b) && isString(b.type) ? b.type : "").filter(t => t !== "");
+    return {name: v.name, code: JSON.stringify(v), uses: [...new Set(uses)], doc: v};
+}
+
+// A type file in a comparable form: what the engine's canonical form keeps (03 §5.1), the
+// former "edges" as connections, initial values as text.
+function sourceKey(v: Record<string, any>): string {
+    const list = (x: unknown) => Array.isArray(x) ? x : [];
+    const port = (p: any, ref: string) => ({name: p?.name, [ref]: p?.[ref], type: p?.type, description: p?.description,
+        addressable: p?.addressable});
+    return JSON.stringify({
+        name: v.name, icon: v.icon ?? "", description: v.description ?? "",
+        blocks: list(v.blocks).map((b: any) => [b?.name, b?.type]),
+        connections: list(v.connections ?? v.edges).map((c: any) => [c?.src, c?.tgt]),
+        initials: list(v.initials).map((i: any) => [String(i?.src), i?.tgt]),
+        inports: list(v.inports).map((p: any) => port(p, "tgt")),
+        outports: list(v.outports).map((p: any) => port(p, "src")),
+    });
+}
+
+// Whether the type file and the device's source of that type (component:getsource) are the same.
+export function sameSource(a: SourceType, deviceCode: string): boolean {
+    try {
+        const b = JSON.parse(deviceCode);
+        return isObject(b) && sourceKey(a.doc) === sourceKey(b);
+    } catch {
+        return false;
+    }
+}
+
+// What an upload of one or more files holds: their processes and component graphs (several
+// process files together, one file's process replacing an earlier one's of that id), and their
+// type files.
+export interface UploadSet {
+    file: TransferFile;
+    sources: SourceType[];
+}
+
+export function parseUpload(files: { name: string, text: string }[]): UploadSet | string {
+    const processes = new Map<string, ProcessEntry>();
+    const types = new Map<string, TypeFile>();
+    const sources = new Map<string, SourceType>();
+    let runtime: TransferFile["runtime"], saved = "";
+    for (const f of files) {
+        let v: unknown;
+        try {
+            v = JSON.parse(f.text);
+        } catch {
+            return f.name + ": not JSON";
+        }
+        if (isTypeSource(v)) {
+            sources.set(v.name, sourceType(v));
+            continue;
+        }
+        const t = parseTransferFile(f.text);
+        if (typeof t === "string")
+            return f.name + ": " + t;
+        t.processes.forEach(p => processes.set(p.graph.id, p));
+        t.types.forEach(x => types.has(x.id) || types.set(x.id, x));
+        runtime = runtime ?? t.runtime;
+        saved = saved || t.saved;
+    }
+    return {file: {format: TRANSFER_FORMAT, version: 1, saved, runtime, processes: [...processes.values()],
+        types: [...types.values()]}, sources: [...sources.values()]};
+}
+
+// The type files in an order where each comes after those (of the list) it uses.
+export function sourceOrder(sources: SourceType[]): SourceType[] {
+    const byName = new Map(sources.map(t => [t.name, t]));
+    const done = new Set<string>(), visiting = new Set<string>();
+    const out: SourceType[] = [];
+    const visit = (t: SourceType) => {
+        if (done.has(t.name) || visiting.has(t.name))
+            return;
+        visiting.add(t.name);
+        t.uses.forEach(u => byName.has(u) && visit(byName.get(u)!));
+        visiting.delete(t.name);
+        done.add(t.name);
+        out.push(t);
+    };
+    sources.forEach(visit);
+    return out;
+}
+
 // ---- Types ---------------------------------------------------------------------------------------
 
 export function componentsOf(g: GraphFile): Set<string> {
@@ -319,6 +422,9 @@ export interface DeviceState {
     // The device's block types: a composite one with its component graph (read when needed),
     // a built-in one as null.
     types: Map<string, TypeFile | null>;
+    // The sources (component:getsource) of the device's composite types an upload's type files
+    // name.
+    sources?: Map<string, string>;
     environment?: string;   // the environment's name; undefined without one
 }
 
@@ -338,19 +444,32 @@ export interface ProcessPlan {
     bindings: "none" | "apply" | "no-environment";
 }
 
+export interface SourcePlan {
+    source: SourceType;
+    action: TypeAction;
+}
+
 export interface UploadPlan {
+    sources: SourcePlan[];      // the type files, made first, in this order
     types: TypePlan[];          // in the order they are made
     processes: ProcessPlan[];
 }
 
-export function uploadPlan(file: TransferFile, device: DeviceState): UploadPlan {
+export function uploadPlan(file: TransferFile, device: DeviceState, sourceFiles: SourceType[] = []): UploadPlan {
+    const sources = sourceOrder(sourceFiles).map((source): SourcePlan => {
+        const there = device.types.get(source.name);
+        const code = device.sources?.get(source.name);
+        const action: TypeAction = there === undefined ? "add" : there === null ? "builtin"
+            : code !== undefined && sameSource(source, code) ? "same" : "different";
+        return {source, action};
+    });
     const types = typeOrder(file.types).map((type): TypePlan => {
         const there = device.types.get(type.id);
         const action: TypeAction = there === undefined ? "add" : there === null ? "builtin"
             : sameInside(there, type) ? "same" : "different";
         return {type, action};
     });
-    const inFile = new Set(file.types.map(t => t.id));
+    const inFile = new Set([...file.types.map(t => t.id), ...sourceFiles.map(t => t.name)]);
     const processes = file.processes.map((entry): ProcessPlan => {
         const there = device.processes.get(entry.graph.id);
         const missing = [...componentsOf(entry.graph)].filter(c => !device.types.has(c) && !inFile.has(c)).sort();
@@ -358,7 +477,7 @@ export function uploadPlan(file: TransferFile, device: DeviceState): UploadPlan 
             : device.environment === undefined ? "no-environment" : "apply";
         return {entry, include: true, missing, bindings, ...(there !== undefined ? {replaces: there} : {})};
     });
-    return {types, processes};
+    return {sources, types, processes};
 }
 
 // What the bindings checks (bindings.ts) need of a process, from its graph as read back.

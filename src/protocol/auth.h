@@ -138,9 +138,10 @@ enum auth_capability {
 	AUTH_CAP_NETWORK_PERSIST = 1u << 5,
 	AUTH_CAP_NETWORK_DATA = 1u << 6,
 	AUTH_CAP_NETWORK_CONTROL = 1u << 7,
+	AUTH_CAP_COMPONENT_SETSOURCE = 1u << 8,
 };
 
-#define AUTH_CAP_COUNT 8
+#define AUTH_CAP_COUNT 9
 #define AUTH_CAPS_ALL ((1u << AUTH_CAP_COUNT) - 1u)
 
 /* The name of capability bit i (0 to AUTH_CAP_COUNT - 1; bit 1u << i), e.g.
@@ -176,8 +177,9 @@ typedef struct {
  *  - runtime:getruntime: not gated, no capability; runtime:new_graph,
  *    delete_graph: protocol:runtime;
  *  - graph:connect, graph:list (the read-only graph commands), every
- *    component:* (list, getsource) and trace:* (start, stop, clear, dump):
- *    graph:readonly or protocol:graph;
+ *    component:list, getsource and trace:* (start, stop, clear, dump):
+ *    graph:readonly or protocol:graph; component:source:
+ *    component:setsource (plan task 58);
  *  - every other graph command of 02 §3.4 (rename, addnode, removenode,
  *    renamenode, changenode, addedge, removeedge, changeedge, addinitial,
  *    removeinitial, addinport, removeinport, renameinport, addoutport,

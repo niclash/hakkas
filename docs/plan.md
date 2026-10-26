@@ -854,7 +854,11 @@ behavior tested in `tests/test_process_more.c`.
   selection as one undo step, 06 §4.13), and copy/paste verified between different browsers
   (Chromium, Firefox, Safari/WebKit; e.g. Playwright's `firefox` and `webkit` projects for the
   clipboard suite), fixing what differs.
-- [ ] **58. Uploading a block type library over HTTP, not the WebSocket**: one or more composite
+- [x] **58. Uploading a block type library over HTTP, not the WebSocket**: *Done 2026-10-26,
+  decided with the user otherwise: over the WebSocket, as upstream's `component:source` command
+  (capability `component:setsource`, editors), no HTTP upload and so no web-server login; in the
+  process list's *Upload…*, which now takes several files, type files among them; a different
+  type already on the device is kept (02 §3.5, 06 §4.16).* The original plan: one or more composite
   type files (03 §5.1, e.g. `library/schedules/`, today installed by copying them into
   `<datadir>/types/`, 05 §2.3) sent as an ordinary file upload to the web server, then
   registered as if loaded at startup, so every client gets `component:component`. The web

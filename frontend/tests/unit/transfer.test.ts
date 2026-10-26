@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
-    DeviceState, fileName, GraphFile, graphFromSnapshot, insideCommands, parseTransferFile, portsOf, sameInside,
-    transferFile, transferText, TypeFile, typeOrder, typesUsed, uploadPlan
+    DeviceState, fileName, GraphFile, graphFromSnapshot, insideCommands, parseTransferFile, parseUpload, portsOf,
+    sameInside, sameSource, sourceType, transferFile, transferText, TypeFile, typeOrder, typesUsed, uploadPlan
 } from "@/components/transfer";
 
 // 06 §4.16: the process file, a graph from its snapshot, the commands that make it again, and what
@@ -159,6 +159,58 @@ describe("uploadPlan", () => {
         expect(plan.types.map(t => [t.type.id, t.action])).toEqual([
             ["user/Twice", "same"], ["math/Add2", "builtin"], ["user/Other", "different"]]);
         expect(plan.processes[0].bindings).toBe("no-environment");
+    });
+});
+
+describe("type files (03 §5.1)", () => {
+    const day = {name: "schedule/DaySchedule", icon: "schedule", description: "Day",
+        blocks: [{name: "Time", type: "timing/MinuteRange"}], connections: [], initials: [{src: 5, tgt: "Time.x"}],
+        inports: [{name: "range", tgt: "Time.range", description: "Time of day"}], outports: [{name: "out", src: "Time.out"}]};
+    const week = {name: "schedule/WeekSchedule", blocks: [{name: "D", type: "schedule/DaySchedule"},
+        {name: "E", type: "schedule/DaySchedule"}]};
+    const text = (v: unknown) => JSON.stringify(v, null, 2);
+
+    it("are told from process files; several files are one upload", () => {
+        const twoFiles = parseUpload([
+            {name: "a.process.json", text: transferText(transferFile([{graph: pump}], [twice], undefined))},
+            {name: "Week.json", text: text(week)},
+            {name: "b.json", text: JSON.stringify({...pump, name: "Newer"})},
+            {name: "Day.json", text: text(day)},
+        ]);
+        if (typeof twoFiles === "string")
+            throw new Error(twoFiles);
+        expect(twoFiles.file.processes.map(p => p.graph.name)).toEqual(["Newer"]);
+        expect(twoFiles.file.types.map(t => t.id)).toEqual(["user/Twice"]);
+        expect(twoFiles.sources.map(t => [t.name, t.uses])).toEqual([
+            ["schedule/WeekSchedule", ["schedule/DaySchedule"]], ["schedule/DaySchedule", ["timing/MinuteRange"]]]);
+        expect(twoFiles.sources[1].code).toBe(JSON.stringify(day));
+        expect(parseUpload([{name: "x.json", text: "{"}])).toBe("x.json: not JSON");
+        expect(parseUpload([{name: "y.json", text: "[1]"}])).toBe("y.json: Not a process file: expected an object");
+    });
+
+    it("compare as the engine's canonical form keeps them", () => {
+        const s = sourceType(day);
+        const canonical = {...day, initials: [{src: 5, tgt: "Time.x"}]};
+        expect(sameSource(s, JSON.stringify(canonical))).toBe(true);
+        expect(sameSource(sourceType({...day, connections: undefined, edges: []}), JSON.stringify(canonical))).toBe(true);
+        expect(sameSource(sourceType({...day, initials: [{src: "5", tgt: "Time.x"}]}), JSON.stringify(canonical))).toBe(true);
+        expect(sameSource(s, JSON.stringify({...canonical, inports: [{name: "range", tgt: "Time.range"}]}))).toBe(false);
+        expect(sameSource(s, "not json")).toBe(false);
+    });
+
+    it("are planned first, each after the ones it uses", () => {
+        const file = transferFile([{graph: {...pump, blocks: {w: {component: "schedule/WeekSchedule", metadata: {}}}}}], [], undefined);
+        const plan = uploadPlan(file, {
+            processes: new Map(), environment: undefined,
+            types: new Map<string, TypeFile | null>([["schedule/DaySchedule", twice], ["math/Add2", null]]),
+            sources: new Map([["schedule/DaySchedule", JSON.stringify(day)]]),
+        }, [sourceType(week), sourceType(day), sourceType({...day, name: "math/Add2"}), sourceType({...day, name: "x/Odd"})]);
+        expect(plan.sources.map(p => [p.source.name, p.action])).toEqual([
+            ["schedule/DaySchedule", "same"], ["schedule/WeekSchedule", "add"], ["math/Add2", "builtin"], ["x/Odd", "add"]]);
+        expect(plan.processes[0].missing).toEqual([]);
+        const other = uploadPlan(file, {processes: new Map(), types: new Map([["schedule/DaySchedule", twice]]),
+            sources: new Map([["schedule/DaySchedule", JSON.stringify({...day, description: "Other"})]])}, [sourceType(day)]);
+        expect(other.sources[0].action).toBe("different");
     });
 });
 

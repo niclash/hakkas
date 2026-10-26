@@ -29,7 +29,8 @@
 
 #define EDITOR_CAPS                                                                                \
 	"['protocol:runtime','protocol:graph','protocol:component','graph:readonly',"             \
-	"'network:status','network:persist','network:data','network:control']"
+	"'network:status','network:persist','network:data','network:control',"                   \
+	"'component:setsource']"
 #define OPERATOR_CAPS                                                                              \
 	"['protocol:component','graph:readonly','network:status','network:data','network:control']"
 #define VIEWER_CAPS "['protocol:component','graph:readonly','network:status','network:data']"

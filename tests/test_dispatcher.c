@@ -727,7 +727,7 @@ static void test_capabilities(void)
 		{"graph", "renameoutport", 0xC},  {"graph", "addgroup", 0xC},
 		{"network", "getstatus", 0xF},	  {"network", "edges", 0xF},
 		{"network", "start", 0xE},	  {"network", "stop", 0xE},
-		{"network", "persist", 0xC},
+		{"network", "persist", 0xC},	  {"component", "source", 0xC},
 	};
 	static const enum user_role roles[] = {USER_ROLE_VIEWER, USER_ROLE_OPERATOR,
 					       USER_ROLE_EDITOR, USER_ROLE_ADMIN};
@@ -914,7 +914,8 @@ static void runtime_json(char *buf, size_t size, const char *caps)
 		 "\"engine-1\",\"label\":\"Test Hakkas\",\"version\":\"%s\",\"allCapabilities\":"
 		 "[\"protocol:runtime\",\"protocol:graph\",\"protocol:component\","
 		 "\"graph:readonly\",\"network:status\",\"network:persist\",\"network:data\","
-		 "\"network:control\"],\"capabilities\":[%s],\"type\":\"hakkas\",\"namespace\":"
+		 "\"network:control\",\"component:setsource\"],\"capabilities\":[%s],"
+		 "\"type\":\"hakkas\",\"namespace\":"
 		 "\"hakkas\",\"repository\":\"\",\"repositoryVersion\":\"\"}}",
 		 hakkas_version(), caps);
 }
@@ -1393,7 +1394,7 @@ static const char *client_login(FakeConn *f, const char *user, const char *passw
 		CHECK(strstr(msg(f, 0), "\"capabilities\":[\"protocol:runtime\",\"protocol:graph\","
 					"\"protocol:component\",\"graph:readonly\","
 					"\"network:status\",\"network:persist\",\"network:data\","
-					"\"network:control\"]") != NULL);
+					"\"network:control\",\"component:setsource\"]") != NULL);
 		CHECK(strlen(secret) == AUTH_SECRET_LEN);
 	}
 	clear(f);
@@ -3295,6 +3296,98 @@ static void test_group_storage(void)
 	groups_teardown(&k, &o);
 }
 
+/* component:source (02 §3.5; plan task 58): a type file registered as at
+ * startup, its port descriptions kept, its file and component graph made,
+ * component:component to every authenticated connection. */
+static void test_component_source(void)
+{
+	Clients k;
+	FakeConn o;
+	const char *so;
+	groups_setup(&k, &o, &so);
+	static const char src[] =
+		"{'name':'t/Src','language':'json','library':'t','code':'{\\'name\\':\\'t/Src\\',"
+		"\\'description\\':\\'Doubled\\',\\'blocks\\':[{\\'name\\':\\'A\\',\\'type\\':"
+		"\\'math/Add2\\'}],\\'inports\\':[{\\'name\\':\\'x\\',\\'tgt\\':\\'A.in1\\',"
+		"\\'description\\':\\'Mine\\'}],\\'outports\\':[{\\'name\\':\\'y\\',\\'src\\':"
+		"\\'A.out\\'}]}'}";
+	command(&k.a, "component", "source", src, k.sa);
+	static const char comp[] =
+		"{'protocol':'component','command':'component','payload':{'name':'t/Src',"
+		"'description':'Doubled','subgraph':true,'icon':'','inPorts':[{'id':'x',"
+		"'description':'Mine','type':'number','addressable':false}],'outPorts':[{'id':"
+		"'y','description':'Result','type':'number','addressable':false}]}}";
+	FakeConn *all[] = {&k.a, &k.b, &k.v, &o};
+	for (size_t i = 0; i < 4; i++) {
+		CHECK(all[i]->count == 1);
+		CHECK(json_equal(msg(all[i], 0), comp));
+		clear(all[i]);
+	}
+	CHECK(k.anon.count == 0);
+	expect_type_file("t/Src");
+	const Graph *cg = graphs_find(&gs, "t/Src");
+	CHECK(cg != NULL && cg->component && cg->block_count == 1);
+
+	/* The name without its library is the upstream form. */
+	command(&k.a, "component", "source",
+		"{'name':'Two','language':'json','library':'t','code':'{\\'name\\':\\'t/Two\\',"
+		"\\'blocks\\':[{\\'name\\':\\'S\\',\\'type\\':\\'t/Src\\'}]}'}",
+		k.sa);
+	CHECK(k.a.count == 1 && block_types_get("t/Two") != NULL);
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	clear(&o);
+
+	/* Refusals, to the sender only. */
+	refused_cmd(&k, "component", "source", "{'language':'json','code':'{}'}",
+		    "Invalid field: name", NULL);
+	refused_cmd(&k, "component", "source", "{'name':'t/X','language':'c','code':'{}'}",
+		    "Invalid field: language", NULL);
+	refused_cmd(&k, "component", "source", "{'name':'t/X','language':'json'}",
+		    "Invalid field: code", NULL);
+	refused_cmd(&k, "component", "source",
+		    "{'name':'t/X','language':'json','code':'{}','library':5}",
+		    "Invalid field: library", NULL);
+	refused_cmd(&k, "component", "source", "{'name':'t/X','language':'json','code':'[1]'}",
+		    "Invalid JSON", NULL);
+	refused_cmd(&k, "component", "source", "{'name':'t/X','language':'json','code':'{} x'}",
+		    "Invalid JSON", NULL);
+	refused_cmd(&k, "component", "source",
+		    "{'name':'t/X','language':'json','code':'{\\'name\\':\\'t/Y\\',"
+		    "\\'blocks\\':[]}'}",
+		    "Invalid field: name", NULL);
+	refused_cmd(&k, "component", "source", src, "Component exists: t/Src", NULL);
+	refused_cmd(&k, "component", "source",
+		    "{'name':'g1','language':'json','code':'{\\'name\\':\\'g1\\',\\'blocks\\':[]}'}",
+		    "Graph exists: g1", NULL);
+	refused_cmd(&k, "component", "source",
+		    "{'name':'t/U','language':'json','code':'{\\'name\\':\\'t/U\\',\\'blocks\\':[{"
+		    "\\'name\\':\\'A\\',\\'type\\':\\'no/Such\\'}]}'}",
+		    "Unknown component: no/Such", NULL);
+	CHECK(o.count == 0);
+	command(&k.v, "component", "source", src, k.sv);
+	expect_error(&k.v, "Not permitted: component:source");
+	clear(&k.v);
+
+	/* The file cannot be written: the type is unregistered again. */
+	char types[PAL_PATH_MAX];
+	CHECK(graph_files_dir(&gf, GRAPH_FILES_TYPES_DIR, types, sizeof(types)) ==
+	      GRAPH_FILES_OK);
+	CHECK(pal_storage_remove(type_path("t/Src")) == PAL_OK);
+	CHECK(pal_storage_remove(type_path("t/Two")) == PAL_OK);
+	CHECK(rmdir(types) == 0);
+	CHECK(pal_storage_write(types, "x", 1) == PAL_OK);
+	refused_cmd(&k, "component", "source",
+		    "{'name':'t/V','language':'json','code':'{\\'name\\':\\'t/V\\',\\'blocks\\':[{"
+		    "\\'name\\':\\'A\\',\\'type\\':\\'math/Add2\\'}]}'}",
+		    "Unable to save component: t/V", NULL);
+	CHECK(block_types_get("t/V") == NULL && graphs_find(&gs, "t/V") == NULL);
+	CHECK(pal_storage_remove(types) == PAL_OK);
+	CHECK(o.count == 0);
+	groups_teardown(&k, &o);
+}
+
 /* ---- The users file re-read at every challenge (02 §2.2; plan task 18) ------------- */
 
 static struct {
@@ -3465,6 +3558,7 @@ int main(void)
 	RUN(test_groups);
 	RUN(test_group_refusals);
 	RUN(test_group_storage);
+	RUN(test_component_source);
 
 	block_types_reset();
 	if (nftw(root, remove_entry, 16, FTW_DEPTH | FTW_PHYS) != 0)

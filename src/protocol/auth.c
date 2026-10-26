@@ -15,6 +15,7 @@
 static const char *const cap_names[AUTH_CAP_COUNT] = {
 	"protocol:runtime", "protocol:graph", "protocol:component", "graph:readonly",
 	"network:status",   "network:persist", "network:data",	     "network:control",
+	"component:setsource",
 };
 
 const char *auth_capability_name(unsigned i)
@@ -28,7 +29,7 @@ const char *auth_capability_name(unsigned i)
 #define CAPS_OPERATOR (CAPS_VIEWER | AUTH_CAP_NETWORK_CONTROL)
 #define CAPS_EDITOR                                                                                \
 	(CAPS_OPERATOR | AUTH_CAP_PROTOCOL_GRAPH | AUTH_CAP_PROTOCOL_RUNTIME |                     \
-	 AUTH_CAP_NETWORK_PERSIST)
+	 AUTH_CAP_NETWORK_PERSIST | AUTH_CAP_COMPONENT_SETSOURCE)
 
 uint32_t auth_role_capabilities(enum user_role role)
 {
@@ -117,6 +118,7 @@ static const CommandDef graph_commands[] = {
 static const CommandDef component_commands[] = {
 	{"list", true, READ_CAPS},
 	{"getsource", true, READ_CAPS},
+	{"source", true, AUTH_CAP_COMPONENT_SETSOURCE}, /* a type file, 02 §3.5 */
 	{NULL, false, 0},
 };
 

@@ -1,6 +1,6 @@
 <template>
-  <!-- Uploading a process file or a backup (06 §4.16): what it would do, asked first; then its
-       progress, the mapping dialog where a process's bindings do not fit, and the report. -->
+  <!-- Uploading process files, a backup or type files (06 §4.16): what it would do, asked first;
+       then its progress, the mapping dialog where a process's bindings do not fit, and the report. -->
   <div class="hk-overlay">
     <div class="hk-dialog hk-transfer-dialog" role="dialog" aria-modal="true" aria-labelledby="hk-transfer-title"
          data-testid="transfer-dialog" @keydown.escape="phase !== 'running' && close()">
@@ -9,7 +9,7 @@
       <p v-if="error" class="hk-dialog-error" role="alert" data-testid="transfer-error">{{ error }}</p>
 
       <template v-if="phase === 'plan' && plan">
-        <p class="hk-dialog-note">Uploaded processes stay stopped; each is saved.</p>
+        <p v-if="plan.processes.length > 0" class="hk-dialog-note">Uploaded processes stay stopped; each is saved.</p>
         <h5 v-if="plan.processes.length > 0">Processes</h5>
         <ul class="hk-transfer-list">
           <li v-for="p in plan.processes" :key="p.entry.graph.id" data-testid="transfer-process" :data-id="p.entry.graph.id">
@@ -27,8 +27,13 @@
               Bindings not applied: this engine has no environment</span>
           </li>
         </ul>
-        <h5 v-if="plan.types.length > 0">Composite types</h5>
+        <h5 v-if="plan.sources.length + plan.types.length > 0">Composite types</h5>
         <ul class="hk-transfer-list">
+          <li v-for="t in plan.sources" :key="t.source.name" data-testid="transfer-type" :data-id="t.source.name">
+            <span class="hk-transfer-name">{{ t.source.name }}</span>
+            <span :class="{'hk-transfer-warn': t.action === 'different' || t.action === 'builtin'}" data-testid="transfer-type-action">
+              {{ typeText[t.action] }}</span>
+          </li>
           <li v-for="t in plan.types" :key="t.type.id" data-testid="transfer-type" :data-id="t.type.id">
             <span class="hk-transfer-name">{{ t.type.id }}</span>
             <span :class="{'hk-transfer-warn': t.action === 'different' || t.action === 'builtin'}" data-testid="transfer-type-action">
@@ -55,7 +60,7 @@
         <button v-if="phase !== 'done'" type="button" class="hk-button" data-testid="transfer-cancel"
                 :disabled="phase === 'running'" @click="close">Cancel</button>
         <button v-if="phase === 'plan'" type="button" class="hk-button primary" :class="{danger: replacing}"
-                data-testid="transfer-upload" :disabled="!plan || !plan.processes.some(p => p.include) && !plan.types.some(t => t.action === 'add')"
+                data-testid="transfer-upload" :disabled="!plan || !plan.processes.some(p => p.include) && ![...plan.sources, ...plan.types].some(t => t.action === 'add')"
                 @click="upload">{{ replacing ? "Replace and upload" : "Upload" }}</button>
         <button v-if="phase === 'done'" type="button" class="hk-button primary" data-testid="transfer-close"
                 @click="close">Close</button>
@@ -68,13 +73,13 @@
 
 <script lang="ts" setup>
 import {computed, onMounted, onUnmounted, ref} from "vue";
-import type {TransferFile, TypeAction, UploadPlan} from "@/components/transfer";
+import type {SourceType, TransferFile, TypeAction, UploadPlan} from "@/components/transfer";
 import {TransferConnection} from "@/components/transfer-connection";
 import {planUpload, ReportLine, runUpload} from "@/components/transfer-run";
 import type {CheckContext, Entry, MappingRow} from "@/components/bindings";
 import MappingDialog from "@/components/floweditor/MappingDialog.vue";
 
-const props = defineProps<{ file: TransferFile, fileName: string }>();
+const props = defineProps<{ file: TransferFile, sources: SourceType[], fileName: string }>();
 // `open`: the process to open afterwards (the last one uploaded), if any.
 const emit = defineEmits<{ close: [open?: string] }>();
 
@@ -99,7 +104,7 @@ const replacing = computed(() => plan.value?.processes.some(p => p.include && p.
 onMounted(async () => {
   try {
     transfer = await TransferConnection.open();
-    plan.value = await planUpload(transfer, props.file);
+    plan.value = await planUpload(transfer, props.file, props.sources);
     phase.value = "plan";
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);

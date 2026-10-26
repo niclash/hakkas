@@ -7,8 +7,8 @@ import type {Binding, EnvDescription} from "@/components/protocols/environment";
 import {CheckContext, checkEntries, Entry, initialRows, MappingRow} from "@/components/bindings";
 import {TransferConnection, TransferError} from "@/components/transfer-connection";
 import {
-    componentsOf, DeviceState, GraphFile, insideCommands, portsOf, ProcessEntry, ProcessPlan, TransferFile,
-    transferFile, TypeFile, TypePlan, uploadPlan, UploadPlan
+    componentsOf, DeviceState, GraphFile, insideCommands, portsOf, ProcessEntry, ProcessPlan, SourcePlan, SourceType,
+    TransferFile, transferFile, TypeFile, TypePlan, uploadPlan, UploadPlan
 } from "@/components/transfer";
 
 const composites = () => new Set(vueModel.components.value.filter(c => c.subgraph).map(c => c.name));
@@ -62,11 +62,15 @@ export async function readFile(ids: string[] | "all"): Promise<TransferFile> {
     }
 }
 
-// What an upload of the file would do here, read over a transfer connection kept for the upload.
-export async function planUpload(t: TransferConnection, file: TransferFile): Promise<UploadPlan> {
+// What an upload of the files would do here, read over a transfer connection kept for the upload.
+export async function planUpload(t: TransferConnection, file: TransferFile, sourceFiles: SourceType[] = []): Promise<UploadPlan> {
     const types = new Map<string, TypeFile | null>();
+    const sources = new Map<string, string>();
     const known = composites();
     const inFile = new Set(file.types.map(x => x.id));
+    for (const s of sourceFiles)
+        if (known.has(s.name))
+            sources.set(s.name, await t.source(s.name));
     // A composite type the file has too is read, to compare; a built-in one is null.
     for (const c of vueModel.components.value) {
         if (!known.has(c.name))
@@ -77,9 +81,10 @@ export async function planUpload(t: TransferConnection, file: TransferFile): Pro
     const device: DeviceState = {
         processes: new Map([...vueModel.graphs.value.entries()].map(([id, g]) => [id, {name: g.name, running: g.running}])),
         types,
+        sources,
         environment: environment.description?.name,
     };
-    return uploadPlan(file, device);
+    return uploadPlan(file, device, sourceFiles);
 }
 
 // A composite type of the device not compared (the file has none of that name).
@@ -101,14 +106,27 @@ export interface UploadHooks {
     mapping: (process: string, rows: MappingRow[], context: CheckContext, mismatch?: string) => Promise<Entry[] | undefined>;
 }
 
+const keptNote = (action: TypePlan["action"]) => action === "builtin" ? "a built-in type of this name is on the device: kept"
+    : "on the device and different: the device's is kept";
+
+// A type file, registered as the engine registers one at startup (02 §3.5 component:source).
+async function makeSource(t: TransferConnection, p: SourcePlan): Promise<ReportLine> {
+    const line: ReportLine = {kind: "type", id: p.source.name, name: p.source.name, ok: true, notes: []};
+    if (p.action === "same")
+        return {...line, notes: ["already on the device"]};
+    if (p.action !== "add")
+        return {...line, ok: false, notes: [keptNote(p.action)]};
+    const refused = await t.addSource(p.source.name, p.source.code);
+    return refused === "" ? line : {...line, ok: false, notes: [refused]};
+}
+
 async function makeType(t: TransferConnection, p: TypePlan): Promise<ReportLine> {
     const type = p.type;
     const line: ReportLine = {kind: "type", id: type.id, name: type.id, ok: true, notes: []};
     if (p.action === "same")
         return {...line, notes: ["already on the device"]};
     if (p.action !== "add")
-        return {...line, ok: false, notes: [p.action === "builtin" ? "a built-in type of this name is on the device: kept"
-                : "on the device and different: the device's is kept"]};
+        return {...line, ok: false, notes: [keptNote(p.action)]};
     t.refusals(type.id);
     const made = t.seen((protocol, command, payload) => protocol === "component" && command === "component" && payload?.name === type.id);
     const label = type.id.substring(type.id.lastIndexOf("/") + 1);
@@ -196,11 +214,15 @@ async function makeProcess(t: TransferConnection, p: ProcessPlan, description: E
     return line;
 }
 
-// Makes the plan's types and its included processes; each process stays stopped. A lost
-// connection ends it, what was made staying.
+// Makes the plan's type files, its types and its included processes; each process stays
+// stopped. A lost connection ends it, what was made staying.
 export async function runUpload(t: TransferConnection, plan: UploadPlan, hooks: UploadHooks): Promise<ReportLine[]> {
     const report: ReportLine[] = [];
     try {
+        for (const p of plan.sources) {
+            hooks.progress(`Type ${p.source.name}…`);
+            report.push(await makeSource(t, p));
+        }
         for (const p of plan.types) {
             hooks.progress(`Type ${p.type.id}…`);
             report.push(await makeType(t, p));
