@@ -33,7 +33,8 @@
         </g>
       </svg>
       <div v-if="editing" class="popover" data-testid="board-popover"
-           :style="{left: `${100 * editing.x / W}%`, top: `${100 * editing.y / H}%`}" @keydown.escape="editing = undefined">
+           :style="{left: `${100 * editing.x / W}%`, top: `${100 * editing.y / H}%`}"
+           @keydown.escape="editing = undefined">
         <div class="head">
           <span class="mono">{{ editing.row.label }}</span>
           <button type="button" class="close" title="Close" aria-label="Close" @click="editing = undefined">×</button>

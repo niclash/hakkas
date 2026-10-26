@@ -304,7 +304,9 @@ file name and the runtime's environment name). Refusals: `Invalid name`,
 ### 4.5 Emulator-specific requests
 
 An emulator may add requests and lists them in `hello`'s `features`: Colibri's `copy`
-(`../colibri/specifications/00-README.md` §5.3).
+(`../colibri/specifications/00-README.md` §5.3). Such a request may wait on something outside the emulator (a
+copy waits on a device for up to 15 s); it may then be answered after requests sent later, which
+do not wait for it, so a client matches the answers by `id`.
 
 ### 4.6 `resetstats`
 

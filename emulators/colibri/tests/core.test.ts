@@ -76,7 +76,7 @@ describe('a client', () => {
         const {a} = await start();
         expect(a.messages.map(m => Object.keys(m)[0])).toEqual(
             ['hello', 'library', 'settings', 'scene', 'state', 'stats', 'link']);
-        expect(a.of('hello')[0]).toEqual({protocol: 1, emulator: 'colibri', version: VERSION, features: []});
+        expect(a.of('hello')[0]).toEqual({protocol: 1, emulator: 'colibri', version: VERSION, features: ['copy']});
         expect(a.of('library')[0]).toEqual({environments: [{name: 'lab'}], running: 'lab', unsaved: false});
         expect(a.of('link')[0]).toEqual({state: 'waiting'});
         const scene = a.of('scene')[0]!;
@@ -128,7 +128,9 @@ describe('a client', () => {
         expect(await ask(a, '{"a": {}, "b": {}}')).toEqual({error: {message: 'Invalid message'}});
         expect(await ask(a, {set: 5})).toEqual({error: {request: 'set', message: 'Invalid message'}});
         expect(await ask(a, {fly: {id: 'x'}})).toEqual({error: {id: 'x', request: 'fly', message: 'Unknown request: fly'}});
-        expect(await ask(a, {copy: {id: 1}})).toEqual({error: {id: 1, request: 'copy', message: 'Unknown request: copy'}});
+        // copy is a feature (spec §5.3): its fields are checked first.
+        expect(await ask(a, {copy: {id: 1}}))
+            .toEqual({error: {id: 1, request: 'copy', message: 'Invalid field: address'}});
     });
 });
 

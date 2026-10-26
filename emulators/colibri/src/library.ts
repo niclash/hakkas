@@ -89,6 +89,12 @@ export class Library {
         await this.exclusive(name, () => writeFileAtomic(this.file(name), text, true));
     }
 
+    // A new environment of its own (a copy from a device, spec §5.3); never replaces one.
+    async add(name: string, env: Environment): Promise<void> {
+        checkName(name);
+        await this.exclusive(name, () => writeFileAtomic(this.file(name), writeEnvironment(env), true));
+    }
+
     async rename(name: string, to: string): Promise<void> {
         checkName(name);
         checkName(to);

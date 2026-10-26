@@ -5,6 +5,10 @@
       <button type="button" data-testid="env-new" title="A new environment with the emulator's defaults"
               @click="open({kind: 'create'})">New…</button>
     </div>
+    <div v-if="canCopy" class="more">
+      <button type="button" data-testid="env-copy" title="A new environment: the twin of a device running hakkas"
+              @click="open({kind: 'copy'})">Copy from device…</button>
+    </div>
     <ul>
       <li v-for="e in environments" :key="e.name" class="env" :class="{running: e.name === running}"
           data-testid="env-item" :data-name="e.name">
@@ -23,7 +27,27 @@
       </li>
     </ul>
 
-    <ModalDialog v-if="dialog && dialog.kind !== 'delete' && dialog.kind !== 'unsaved'" :title="titles[dialog.kind]"
+    <ModalDialog v-if="dialog?.kind === 'copy'" title="Copy from a device" ok-label="Copy" :error="error" :busy="busy"
+                 @ok="submit" @cancel="close">
+      <p class="note">Logs in to the device's hakkas, reads its environment and saves it here under a new name. The
+        password is used for the login only.</p>
+      <label class="field">Device address
+        <input ref="addressField" v-model="copy.address" type="url" spellcheck="false" autocomplete="url"
+               placeholder="http://192.168.1.40/" data-testid="copy-address">
+      </label>
+      <label class="field">User
+        <input v-model="copy.user" type="text" spellcheck="false" autocomplete="username" data-testid="copy-user">
+      </label>
+      <label class="field">Password
+        <input v-model="copy.password" type="password" autocomplete="current-password" data-testid="copy-password">
+      </label>
+      <label class="field">Name
+        <input v-model="name" type="text" spellcheck="false" autocomplete="off" data-testid="env-name-field">
+      </label>
+      <p v-if="busy" class="note" role="status" data-testid="copy-busy">Copying… (up to 15 s)</p>
+    </ModalDialog>
+    <ModalDialog v-if="dialog && dialog.kind !== 'delete' && dialog.kind !== 'unsaved' && dialog.kind !== 'copy'"
+                 :title="titles[dialog.kind]"
                  :ok-label="okLabels[dialog.kind]" :error="error" :busy="busy" @ok="submit" @cancel="close">
       <label class="field">Name
         <input ref="nameField" v-model="name" type="text" spellcheck="false" autocomplete="off" data-testid="env-name-field">
@@ -58,28 +82,40 @@ const environments = computed(() => library.value?.environments ?? []);
 const running = computed(() => library.value?.running ?? null);
 const unsaved = computed(() => library.value?.unsaved === true);
 
-type Dialog = {kind: 'create'} | {kind: 'duplicate' | 'rename' | 'delete' | 'unsaved', from: string};
+type Dialog = {kind: 'create' | 'copy'} | {kind: 'duplicate' | 'rename' | 'delete' | 'unsaved', from: string};
 const dialog = ref<Dialog | undefined>();
 const name = ref('');
 const error = ref('');
 const busy = ref(false);
 const nameField = ref<HTMLInputElement | null>(null);
+const addressField = ref<HTMLInputElement | null>(null);
 
-const titles = {create: 'New environment', duplicate: 'Duplicate environment', rename: 'Rename environment'};
-const okLabels = {create: 'Create', duplicate: 'Duplicate', rename: 'Rename'};
+// Copying from a device (Colibri spec §5.3): only an emulator with the feature. The address and
+// user are kept for the next copy in this page; the password is cleared after each.
+const canCopy = computed(() => props.client.mirror.hello?.features.includes('copy') === true);
+const copy = ref({address: '', user: '', password: ''});
+
+const titles = {create: 'New environment', duplicate: 'Duplicate environment', rename: 'Rename environment', copy: ''};
+const okLabels = {create: 'Create', duplicate: 'Duplicate', rename: 'Rename', copy: 'Copy'};
 
 async function open(d: Dialog): Promise<void> {
   dialog.value = d;
   error.value = '';
   busy.value = false;
-  name.value = d.kind === 'create' ? '' : d.kind === 'duplicate' ? `${d.from}-copy` : d.from;
+  name.value = !('from' in d) ? '' : d.kind === 'duplicate' ? `${d.from}-copy` : d.from;
+  copy.value.password = '';
   await nextTick();
+  if (d.kind === 'copy') {
+    addressField.value?.focus();
+    return;
+  }
   nameField.value?.focus();
   nameField.value?.select();
 }
 
 function close(): void {
   dialog.value = undefined;
+  copy.value.password = '';
 }
 
 // Sends a request; done closes the dialog, a refusal is shown in it.
@@ -87,7 +123,9 @@ async function run(name: string, payload: Record<string, string | boolean>): Pro
   busy.value = true;
   error.value = '';
   try {
-    await props.client.request(name, payload);
+    const answer = await props.client.request(name, payload);
+    if (name === 'copy')
+      copied(answer);
     return true;
   } catch (e) {
     error.value = (e as Error).message;
@@ -97,11 +135,21 @@ async function run(name: string, payload: Record<string, string | boolean>): Pro
   }
 }
 
+// A copy's answer: the new environment, and what the emulator could not copy.
+function copied(answer: Record<string, unknown>): void {
+  const warnings = Array.isArray(answer.warnings) ? answer.warnings as string[] : [];
+  const more = warnings.length === 0 ? '' : `, with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`;
+  props.client.notify({level: warnings.length > 0 ? 'warning' : 'info', message: `Copied into ${String(answer.name)}${more}`});
+  for (const w of warnings)
+    props.client.notify({level: 'warning', message: w});
+}
+
 async function submit(): Promise<void> {
   const d = dialog.value;
   if (d === undefined || busy.value)
     return;
-  const ok = d.kind === 'create' ? await run('create', {name: name.value})
+  const ok = d.kind === 'copy' ? await run('copy', {...copy.value, name: name.value})
+      : d.kind === 'create' ? await run('create', {name: name.value})
       : d.kind === 'duplicate' ? await run('create', {name: name.value, from: d.from})
       : d.kind === 'rename' ? await run('rename', {name: d.from, to: name.value})
       : d.kind === 'delete' ? await run('delete', {name: d.from})
@@ -149,6 +197,11 @@ async function switchTo(persist: boolean): Promise<void> {
   display: flex;
   align-items: center;
   padding: 0 12px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.more {
+  padding: 6px 12px;
   border-bottom: 1px solid var(--line);
 }
 

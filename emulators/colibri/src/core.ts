@@ -6,6 +6,7 @@
 import type {Catalog} from './catalog.js';
 import {isObject, type Json, type JsonObject} from './check.js';
 import {checkDescription, describe, type Description} from './description.js';
+import {CopyError, environmentFrom, fetchDescription} from './device.js';
 import type {McuType} from './descriptors.js';
 import {carrierOf, checkEnvironment, type Environment} from './environment.js';
 import {LibraryError, type Library} from './library.js';
@@ -82,7 +83,7 @@ export class Core {
     // A new client gets the whole state (§3).
     connect(client: Client): void {
         this.clients.add(client);
-        client.send({hello: {protocol: PROTOCOL, emulator: 'colibri', version: VERSION, features: []}});
+        client.send({hello: {protocol: PROTOCOL, emulator: 'colibri', version: VERSION, features: ['copy']}});
         client.send(this.libraryMessage());
         client.send(this.settingsMessage());
         client.send({scene: this.run === undefined ? EMPTY_SCENE : this.scene(this.run.system)});
@@ -117,6 +118,11 @@ export class Core {
         const id = typeof p.id === 'number' || typeof p.id === 'string' ? {id: p.id} : {};
         if (!isObject(body))
             return client.send({error: {...id, request, message: 'Invalid message'}});
+        // A copy waits on a device for up to 15 s: the other requests do not wait for it.
+        if (request === 'copy') {
+            void this.copy(client, id, p);
+            return;
+        }
         try {
             const result = await this.apply(request, p);
             this.flushState();
@@ -163,6 +169,35 @@ export class Core {
             return {};
         default:
             throw new RequestError(`Unknown request: ${request}`);
+        }
+    }
+
+    // copy (spec §5.3): the device's description, then a new environment of it, written in the
+    // queue of requests like any other change of the library. The password goes to the login
+    // proof only.
+    private async copy(client: Client, id: {id?: string | number}, p: Payload): Promise<void> {
+        try {
+            const address = name(p, 'address'), user = name(p, 'user'), password = name(p, 'password');
+            const n = name(p, 'name');
+            if ((await this.library.list()).includes(n))
+                throw new LibraryError(`Environment exists: ${n}`);
+            this.log.info(`copy: from ${address} as ${user}, into ${n}`);
+            const description = await fetchDescription(address, user, password);
+            const {env, warnings} = environmentFrom(description, this.catalog, this.mcu);
+            await (this.queue = this.queue.then(async () => {
+                await this.library.add(n, env);
+                await this.libraryChanged();
+            }));
+            for (const w of warnings)
+                this.log.warn(`copy into ${n}: ${w}`);
+            this.log.info(`copy: ${n} written, ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`);
+            client.send({ok: {...id, name: n, warnings}});
+        } catch (e) {
+            if (!(e instanceof CopyError || e instanceof RequestError || e instanceof LibraryError))
+                this.log.error(`control: copy: ${(e as Error).message}`);
+            else
+                this.log.info(`copy: ${(e as Error).message}`);
+            client.send({error: {...id, request: 'copy', message: (e as Error).message}});
         }
     }
 

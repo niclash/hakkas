@@ -3,7 +3,7 @@
 // travel both ways through the scan cycle. Skipped when hakkas is not built (HAKKAS_BIN, else
 // the debug preset's build/debug/hakkas).
 import {type ChildProcess, spawn} from 'node:child_process';
-import {randomBytes} from 'node:crypto';
+import {createHash, createHmac, pbkdf2Sync, randomBytes} from 'node:crypto';
 import {existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -14,6 +14,7 @@ import {Checker, type JsonObject} from '../src/check.js';
 import {describe as describeSystem} from '../src/description.js';
 import {runEmulator} from '../src/emulator.js';
 import {readEnvironment} from '../src/environment.js';
+import {Core} from '../src/core.js';
 import {Library} from '../src/library.js';
 import {LinkServer, type Served} from '../src/link.js';
 import {createLogger} from '../src/log.js';
@@ -49,9 +50,9 @@ let turns: Turn[];
 const scanners: Scanner[] = [];
 
 // The emulator's side, as runEmulator builds it, with every turn recorded.
-function serve(modules: JsonObject[]): Served {
+function serve(modules: JsonObject[], more: JsonObject = {}): Served {
     const c = new Checker();
-    const env = readEnvironment(c, {carrier: 'colibri_8', modules})!;
+    const env = readEnvironment(c, {carrier: 'colibri_8', modules, ...more})!;
     expect(c.errors).toEqual([]);
     const {system} = System.build('lab', env, catalog, clock, Math.random);
     const scanner = new Scanner(system, env, clock, createLogger('error', () => {}), t => {
@@ -84,6 +85,17 @@ async function freePortPair(): Promise<number> {
 
 let hakkasPort = 0;
 
+// A users.json record (02 §2.2), for the copy from a device; few iterations keep it fast.
+const PASSWORD = 'twin-secret';
+function user(name: string, password: string, role = 'viewer'): JsonObject {
+    const hmac = (key: Buffer, text: string) => createHmac('sha256', key).update(text, 'utf8').digest();
+    const salt = randomBytes(16), iterations = 1024;
+    const salted = pbkdf2Sync(Buffer.from(password, 'utf8'), salt, iterations, 32, 'sha256');
+    return {user: name, role, salt: salt.toString('base64'), iterations,
+        stored_key: createHash('sha256').update(hmac(salted, 'Client Key')).digest().toString('base64'),
+        server_key: hmac(salted, 'Server Key').toString('base64')};
+}
+
 // pictures: hakkas' environment.pictures (hakkas plan task 77).
 async function startHakkas(pictures?: string): Promise<void> {
     const conf = path.join(tmp, 'conf'), data = path.join(tmp, 'data');
@@ -94,6 +106,7 @@ async function startHakkas(pictures?: string): Promise<void> {
         auth: {server_secret: randomBytes(32).toString('base64')},
         environment: {socket: socketPath, ...(pictures !== undefined && {pictures})},
     }));
+    writeFileSync(path.join(conf, 'users.json'), JSON.stringify([user('vera', PASSWORD)]));
     writeFileSync(path.join(data, 'graphs', 'threshold.json'), JSON.stringify(GRAPH));
     writeFileSync(path.join(data, 'bindings', 'threshold.json'), JSON.stringify(BINDINGS));
     const port = await freePortPair();
@@ -266,6 +279,45 @@ describe.skipIf(!existsSync(HAKKAS))('the emulator with hakkas', () => {
             await startLink();     // for afterEach
         }
     }, 20_000);
+
+    it('copies the device it runs against into an identical twin (spec §5.3)', async () => {
+        const original = serve([{slot: 1, type: 'colibri_aiv', serial: 'AIV-7'}, {slot: 3, type: 'colibri_ssr'},
+            {slot: 5, type: 'colibri_dio1', serial: 'D-2'}],
+        {comm: [{slot: 1, type: 'colibri_ethernet', ip: {mode: 'static', address: '10.0.0.7', prefix: 24}}]});
+        await startHakkas();
+        await until(() => link.state === 'connected', 'hakkas to connect');
+        const library = new Library(path.join(tmp, 'twins'));
+        await library.init();
+        const quiet = createLogger('error', () => {});
+        const core = new Core(catalog, library, new LinkServer(path.join(tmp, 'unused.sock'), quiet), clock,
+            Math.random, quiet);
+        const answers: JsonObject[] = [];
+        const client = {send: (m: object) => answers.push(m as JsonObject)};
+        const copy = async (p: JsonObject) => {
+            const n = answers.length;
+            await core.receive(client, JSON.stringify({copy: {id: 1, user: 'vera', password: PASSWORD, ...p}}));
+            await until(() => answers.length > n, 'the answer', 16_000);
+            return answers.at(-1)!;
+        };
+        const address = `http://127.0.0.1:${hakkasPort}/`;
+        expect(await copy({address, name: 'twin'})).toEqual({ok: {id: 1, name: 'twin', warnings: []}});
+        const {env} = await library.read('twin');
+        const twin = System.build('twin', env!, catalog, clock, Math.random).system;
+        expect({...describeSystem(twin), name: 'lab'}).toEqual(original.description);
+
+        expect(await copy({address, name: 'twin'}))
+            .toEqual({error: {id: 1, request: 'copy', message: 'Environment exists: twin'}});
+        expect(await copy({address, name: 'other', password: 'wrong'}))
+            .toMatchObject({error: {message: 'Login failed'}});
+        expect(await copy({address: 'http://127.0.0.1:1/', name: 'other'}))
+            .toMatchObject({error: {message: 'Cannot connect: http://127.0.0.1:1/'}});
+        expect(await copy({address: 'nowhere', name: 'other'}))
+            .toMatchObject({error: {message: 'Invalid address: nowhere'}});
+        expect(await library.list()).toEqual(['twin']);
+        // The password is in no log line.
+        expect([...hakkasLog, ...emulatorLog].some(l => l.includes(PASSWORD))).toBe(false);
+        expect(await stopHakkas()).toBe(0);
+    }, 30_000);
 
     it('after a power cycle with another description, hakkas stops its IO until restarted', async () => {
         serve([{slot: 1, type: 'colibri_aiv'}, {slot: 3, type: 'colibri_ssr'}]);

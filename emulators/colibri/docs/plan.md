@@ -330,7 +330,7 @@ Follow-ups, decided the same day:
 
 ## Phase 4 — Copying an environment from a device
 
-- [ ] **E16. Copy from a device** (§5.3, decision 7): a device client (hakkas' `auth` and
+- [x] **E16. Copy from a device** (§5.3, decision 7; done 2026-10-26): a device client (hakkas' `auth` and
   `environment:describe`), converting the description into an environment file under a name
   the user gives, with warnings for module and carrier types that have no plugin or
   definition; the UI dialog. Tested against hakkas on the desktop running against a second
