@@ -53,7 +53,7 @@ Collected 2026-10-23 from the CurrentMakers catalogue (https://currentmakers.com
 | `colibri_fet` | Colibri FET | 4 × N-channel MOSFET sink, 1 A, 60 V, PCA9536, I2C |
 | `colibri_ssr` | Colibri SSR | 2 × solid-state relay, 80 mA, 60 V DC, PCA9536 |
 | `colibri_triac1` | Colibri TRIAC1 | 4 × triac, 500 mA AC, zero-cross detection, PCA9536 |
-| `colibri_fallback` | Colibri Fallback | 1 × SPDT relay (wiki only) |
+| `colibri_relay` | Colibri Relay | 1 × SPDT relay (formerly Colibri Fallback, renamed by the vendor; not for sale yet) |
 | `colibri_pid1` | Colibri PID1 | 1 × Pt1000 in (MAX31865), 1 × 0–10 V out (MCP4725 12-bit), STM32F030 running a full PID regulator |
 | `colibri_rs485i`, `colibri_rs485u` | Colibri RS485I, Colibri RS485U | RS-485 — not defined yet; outside the scope of the emulator and of hakkas (*decided*, 2026-10-23) |
 
@@ -82,7 +82,7 @@ The catalogue also lists MCU modules (MCU1 STM32WLE5, MCU2 STM32H562RG, MCU3 STM
 | FET | `dq` | out | bool | 4 | | | | false | | lamp |
 | SSR | `dq` | out | bool | 2 | | | | false | | lamp |
 | TRIAC1 | `dq` | out | bool | 4 | | | | false | | lamp |
-| Fallback | `dq` | out | bool | 1 | | | | false | | lamp |
+| Relay | `dq` | out | bool | 1 | | | | false | | lamp |
 | PID1 | `ai` | in | number | 1 | °C | −50–150 | 0.01 | 21 | 0.05 | slider |
 | | `output` | in | number | 1 | V | 0–10 | 0.001 | 0 | 0 | slider |
 | | `saturated` | in | bool | 1 | | | | false | | toggle |
@@ -240,9 +240,9 @@ The answer is `ok` with `{"name", "warnings": […]}`, or an error: `Cannot conn
  "picture": "board.svg",
  "render": {"url": "https://currentmakers.com/data/products/colibri/renders/colibri_8-rev_B_top_render.png",
             "copy": "picture.webp", "crop": {"x": 0.2253, "y": 0.3036, "w": 0.5494, "h": 0.4051}},
- "places": {"slots": [{"slot": 1, "x": 0.2639, "y": 0.3249, "w": 0.0879, "h": 0.4083}, …],
-            "comm": [{"slot": 1, "x": 0.0593, "y": 0.3249, "w": 0.0879, "h": 0.4083}],
-            "mcu": {"x": 0.1711, "y": 0.3249, "w": 0.0879, "h": 0.4083}}}
+ "places": {"slots": [{"slot": 1, "x": 0.2639, "y": 0.3249, "w": 0.0879, "h": 0.3695}, …],
+            "comm": [{"slot": 1, "x": 0.0593, "y": 0.3249, "w": 0.0879, "h": 0.3695}],
+            "mcu": {"x": 0.1711, "y": 0.3249, "w": 0.0879, "h": 0.3695}}}
 ```
 
 - **Type and name**: machine-readable and human-readable (§2.1).
@@ -251,7 +251,7 @@ The answer is `ok` with `{"name", "warnings": […]}`, or an error: `Cannot conn
 - **Power specification**: supply voltage range, AC and/or DC, supply current (for the Colibri 8: 7–30 V, AC or DC, 2 A recommended) — described, not emulated.
 - **Communication slots**: the module types each accepts — the Colibri 8 has one slot, taking Ethernet, WiFi, RS-485 (Modbus/RTU) or LoRaWAN. The environment chooses one per slot with its **parameters, which differ per type** and are **view only** (*decided*, 2026-10-24): Ethernet and WiFi DHCP or a static address (with WiFi's SSID), RS-485 bitrate and parity, LoRaWAN (OTAA only) App EUI, Dev EUI and whether an App Key is set (never the key) — the sets of `04-drivers.md` §1. Communication modules are not emulated (§1); they are described to hakkas and copied from a device, and the emulator's UI lets the user enter them for an environment made from scratch. No secret (a WiFi passphrase) is kept in an environment or described.
 
-- **Pictures for hakkas' frontend** (*decided* with the user 2026-10-26, hakkas plan task 75): `render`, `{"url"?, "copy"?, "rotation"?, "crop"?}` — the vendor's file (an https link), the part showing the board (`crop`, fractions of the file, inside it) and the clockwise quarter turns after it (`rotation`: 0, 90, 180 or 270), and the board's own copy (`copy`, hakkas plan task 77: a picture file beside the descriptor, already cropped and turned, published with `--pictures`, §3.1; a copy that is not there is left out with a warning, with the render when it has no url) — at least one of url and copy — described as the carrier's `picture` (`04-drivers.md` §1 "Pictures"); `mcu.json` and `comm.json` may have one too. `places`: where the slots are on that picture as shown — `slots` (I/O slots 0 to n − 1) and `comm` (communication slots the carrier has), each `{"slot", "x", "y", "w", "h"}` at most once, and `mcu` (only for a carrier that takes MCU modules) — rectangles in fractions (0 to 1) of the picture's width and height, inside the picture; described as given, the MCU slot's only with an MCU module in it. They are not the emulator's own `picture` (the board for its own UI, §7.4). The built-in descriptors' renders are CurrentMakers' published top renders (`https://currentmakers.com/data/products/products.json`, the Colibri family; decided with the user 2026-10-26): the carrier's cropped to the board (plan task 78: uncropped, its margins took half the window), the I/O modules' cropped to the board (already upright), the MCU modules' cropped and turned 90° clockwise (connector down); a type without a published render (RS485I, RS485U, the communication modules, DP2, DP3, Fallback) has no url. Every type with a render — published, or one of the user's local renders (RS485I, RS485U, Ethernet, LoRaWAN) — has a copy `picture.webp`: half size, WebP quality 80, cropped and turned (11–31 KB). The Colibri 8's places were measured on its render.
+- **Pictures for hakkas' frontend** (*decided* with the user 2026-10-26, hakkas plan task 75): `render`, `{"url"?, "copy"?, "rotation"?, "crop"?}` — the vendor's file (an https link), the part showing the board (`crop`, fractions of the file, inside it) and the clockwise quarter turns after it (`rotation`: 0, 90, 180 or 270), and the board's own copy (`copy`, hakkas plan task 77: a picture file beside the descriptor, already cropped and turned, published with `--pictures`, §3.1; a copy that is not there is left out with a warning, with the render when it has no url) — at least one of url and copy — described as the carrier's `picture` (`04-drivers.md` §1 "Pictures"); `mcu.json` and `comm.json` may have one too. `places`: where the slots are on that picture as shown — `slots` (I/O slots 0 to n − 1) and `comm` (communication slots the carrier has), each `{"slot", "x", "y", "w", "h"}` at most once, and `mcu` (only for a carrier that takes MCU modules) — rectangles in fractions (0 to 1) of the picture's width and height, inside the picture; described as given, the MCU slot's only with an MCU module in it. They are not the emulator's own `picture` (the board for its own UI, §7.4). The built-in descriptors' renders are CurrentMakers' published top renders (`https://currentmakers.com/data/products/products.json`, the Colibri family; decided with the user 2026-10-26): the carrier's cropped to the board (plan task 78: uncropped, its margins took half the window), the I/O modules' cropped to the board (already upright), the MCU modules' cropped and turned 90° clockwise (connector down) — every module without its M.2 edge connector, which is inside the carrier's socket (the bottom 9.5 % of the board, from its shoulders; decided with the user 2026-10-26), its slot's place as much shorter; a type without a published render (RS485I, RS485U, the communication modules, DP2, DP3, Relay — the last three not for sale yet) has no url. Every type with a render — published, or one of the user's local renders (RS485I, RS485U, Ethernet, LoRaWAN) — has a copy `picture.webp`: half size, WebP quality 80, cropped and turned (11–31 KB). The Colibri 8's places were measured on its render.
 - **MCU slot** (*decided* with the user 2026-10-26, hakkas plan task 73): the MCU module types it takes (`mcu.types`). The MCU module is not emulated (§1), only named: the one given by `--mcu` (§3.1) is described to hakkas as the carrier's `mcu` (`04-drivers.md` §1) when the carrier takes it. An **MCU module type** is a directory with `mcu.json`, its metadata only: `{"type": "colibri_mcu6", "name": "Colibri MCU6", "vendor": "CurrentMakers", "description": "STM32H735RG"}`; the built-in catalog has `colibri_mcu2` (STM32H562RG), `colibri_mcu6` (STM32H735RG) and `colibri_mcu7` (RP2350). A type a carrier names that the catalog lacks is left out of its list, with a warning.
 
 A **communication module type** is data too, a directory with `comm.json` (*decided*, 2026-10-25), so new types are added by adding a file:
@@ -303,8 +303,8 @@ modules/colibri_pt1000/
     "control": "toggle", "description": "Sensor open or shorted"}
  ],
  "render": {"url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
-            "crop": {"x": 0.2415, "y": 0.2243, "w": 0.5169, "h": 0.5515}},
- "positions": [{"channel": "ai", "index": 1, "x": 0.31, "y": 0.76}, …],
+            "crop": {"x": 0.2415, "y": 0.2243, "w": 0.5169, "h": 0.4991}},
+ "positions": [{"channel": "ai", "index": 1, "x": 0.31, "y": 0.8398}, …],
  "faceplate": "faceplate.svg",
  "ui": {"bindings": […], "controls": […]}}
 ```

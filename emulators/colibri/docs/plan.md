@@ -118,7 +118,7 @@ Follow-ups, decided the same day:
   built-in directory (`data/`) and `--plugins` directories (`modules/`, `carriers/`, `comm/`,
   a later definition replacing an earlier one), with clear errors per file; the built-in
   plugins for every catalogue module (§2.1: AIV, AIC, AQV, Pt1000, DP1–DP3, DII, DIU, DIO1,
-  FET, SSR, TRIAC1, Fallback, PID1, RS485I/U without channels, slot 0's `carrier` without
+  FET, SSR, TRIAC1, Fallback (now Relay), PID1, RS485I/U without channels, slot 0's `carrier` without
   channels), the four communication module types and the `colibri_8` carrier (decision 4).
   *Done*: `src/check.ts` (reading JSON with a path per problem, every problem reported in one
   pass), `src/sources.ts` (the source forms of control protocol §5, and which a row accepts),
@@ -310,7 +310,8 @@ Follow-ups, decided the same day:
   (2026-10-26): the descriptors carry the renders, copies, positions and places, and hakkas'
   device window shows the picture with every channel's value. Decided with the user 2026-10-26:
   the emulator's UI shows the picture too, with its field-side controls on it.
-- [ ] **E15. Artwork** (decision 5): the Colibri 8 board and the modules' faceplates as SVGs.
+- [x] **E15. Artwork** (decision 5; done 2026-10-26 by the vendor's renders, not drawn SVGs,
+  decided with the user): the Colibri 8 board and the modules' faceplates as SVGs.
   Changed 2026-10-26: the vendor's renders (PNG, in the descriptors' directories) are the
   pictures, converted to WebP; I/O modules turned 90° clockwise to match the carrier.
   Hakkas task 75 (2026-10-26) put `render`, `positions` and `places` in the descriptors. The
@@ -318,10 +319,14 @@ Follow-ups, decided the same day:
   published with a crop and rotation: I/O modules upright already (board at 257–807 × 427–1477
   of 1064×1904), MCU modules turned 90° clockwise (board at 427–1476 × 257–807 of 1904×1064),
   the carrier uncropped. Positions and places refer to the picture as shown. Types without a
-  published render have no url (RS485I/U, the communication modules, DP2, DP3, Fallback).
+  published render have no url (RS485I/U, the communication modules, DP2, DP3, Relay).
   Hakkas task 77 added a `copy` per render, `picture.webp` (half size, cropped and turned, made
   from the published renders and, for RS485I/U, Ethernet and LoRaWAN, from the user's local
-  renders), published with `--pictures`. The render PNGs themselves are not needed.
+  renders), published with `--pictures`. The render PNGs themselves are not needed. Each
+  module's picture leaves out its M.2 edge connector (the bottom 9.5 %, from the board's
+  shoulders), hidden in the carrier's socket; the places are as much shorter and the positions
+  measured again (decided with the user 2026-10-26: the positions are right as they are). DP2,
+  DP3 and Relay (formerly Fallback, renamed by the vendor) get pictures when they are for sale.
 
 ## Phase 4 — Copying an environment from a device
 

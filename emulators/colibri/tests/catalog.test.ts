@@ -26,7 +26,7 @@ describe('the built-in catalog', () => {
             'MCU module types 3']);
         expect([...catalog.modules.keys()].sort()).toEqual(['carrier', 'colibri_aic', 'colibri_aiv', 'colibri_aqv',
             'colibri_dii', 'colibri_dio1', 'colibri_diu', 'colibri_dp1', 'colibri_dp2', 'colibri_dp3',
-            'colibri_fallback', 'colibri_fet', 'colibri_pid1', 'colibri_pt1000', 'colibri_rs485i', 'colibri_rs485u',
+            'colibri_fet', 'colibri_pid1', 'colibri_pt1000', 'colibri_relay', 'colibri_rs485i', 'colibri_rs485u',
             'colibri_ssr', 'colibri_triac1']);
         expect([...catalog.comm.keys()].sort())
             .toEqual(['colibri_ethernet', 'colibri_lorawan', 'colibri_rs485', 'colibri_wifi']);
@@ -71,7 +71,7 @@ describe('the built-in catalog', () => {
         expect(channels('colibri_fet')).toEqual(['dq output bool 4']);
         expect(channels('colibri_ssr')).toEqual(['dq output bool 2']);
         expect(channels('colibri_triac1')).toEqual(['dq output bool 4']);
-        expect(channels('colibri_fallback')).toEqual(['dq output bool 1']);
+        expect(channels('colibri_relay')).toEqual(['dq output bool 1']);
         expect(channels('colibri_pid1')).toEqual(['ai input number 1 °C', 'output input number 1 V',
             'saturated input bool 1', 'setpoint output number 1 °C', 'kp output number 1', 'ki output number 1 1/s',
             'kd output number 1 s', 'max_dgain output number 1', 'min output number 1 V', 'max output number 1 V',

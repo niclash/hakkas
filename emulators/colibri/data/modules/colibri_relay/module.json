@@ -1,6 +1,6 @@
 {
-  "type": "colibri_fallback",
-  "name": "Colibri Fallback",
+  "type": "colibri_relay",
+  "name": "Colibri Relay",
   "vendor": "CurrentMakers",
   "description": "1 × SPDT relay",
   "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
