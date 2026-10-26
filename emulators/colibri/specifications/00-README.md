@@ -21,7 +21,7 @@ It is a **separate project** in `emulators/colibri/`, with its own build and tes
 A Colibri system is, conceptually:
 
 - one **carrier board**: power supply, the I2C and SPI infrastructure (I2C multiplexed per slot, one SPI chip select per slot, plus two more for a module with several SPI devices; each slot powered and addressed individually), **one I/O slot built into the board**, and the slots below;
-- **1…n I/O module slots** (M.2 connectors) — Colibri 8 has 7, Colibri-16pi 15;
+- **1…n I/O module slots** (M.2 connectors) — Colibri 8 has 7 (the Colibri-16pi, with 15, is cancelled);
 - one **Comm module slot** (not emulated);
 - one **MCU module slot** (not emulated: hakkas runs on the desktop; the MCU module is only named, §5.4).
 
@@ -406,7 +406,8 @@ The Colibri emulator serves the UI's built files and the assets over HTTP (§3.1
 - **Simulated time** through the link's `clock` message: setting the wall clock (e.g. to test a schedule on Monday at 06:59). Running faster than real time would also need hakkas to run on simulated time (its timers, PID and Interval use its monotonic clock) — a change to hakkas.
 - **Fault injection**: a broken wire, a dead sensor, an out-of-range value — once it is decided what the firmware reports for them (`04-drivers.md` §0 rule 2: every channel reports a value even when its sensor is dead); DIO1's separate fault flags (§2.1).
 - **"Deploy on desktop"** (*decided* as a later step, 2026-10-25): launching hakkas and the emulator as a pair.
-- The MCU and Comm modules; the RS-485 modules' channels; the Colibri-16pi carrier (15 + 1 slots) once its values are known.
+
+Dropped (decided with the user 2026-10-26): emulating the MCU and communication modules and the RS-485 modules' channels — not expected to be needed — and the Colibri-16pi carrier, which is cancelled.
 
 ## 10. Open questions
 

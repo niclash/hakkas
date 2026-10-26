@@ -342,4 +342,6 @@ Follow-ups, decided the same day:
   change to hakkas.
 - Fault injection, once the firmware's fault reporting is defined (decisions 1 and 3).
 - "Deploy on desktop": launching hakkas and the emulator as a pair (decision 8).
-- MCU and Comm modules; RS-485 channels.
+
+Dropped 2026-10-26 (decided with the user): emulating the MCU and Comm modules and the RS-485
+channels (not expected to be needed); the Colibri-16pi carrier is cancelled.
