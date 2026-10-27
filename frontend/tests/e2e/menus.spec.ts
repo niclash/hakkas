@@ -60,7 +60,7 @@ test("Add block… searches the types and adds one where the menu was opened", a
     await page.mouse.click(at.x, at.y, {button: "right"});
     await item(page, "add-block").click();
     await expect(page.getByTestId("block-search")).toBeFocused();
-    await page.keyboard.type("mult");
+    await page.keyboard.type("mult2");
     await expect(page.getByTestId("block-result")).toHaveText(["math/Mult2"]);
     await page.keyboard.type("zz");
     await expect(page.getByTestId("block-none")).toBeVisible();
