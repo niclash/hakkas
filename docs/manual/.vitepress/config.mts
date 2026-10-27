@@ -1,11 +1,16 @@
 import {defineConfig} from 'vitepress';
 
+// The path the site is served under: HAKKAS_MANUAL_BASE when building, else /hakkas/user-manual/
+// (decided with the user 2026-10-27); always with a leading and a trailing slash.
+const base = ('/' + (process.env.HAKKAS_MANUAL_BASE ?? '/hakkas/user-manual/') + '/').replace(/\/+/g, '/');
+
 // The hakkas User's Manual (plan Section U): the outline decided with the user on 2026-10-27,
 // one page per chapter, grouped by part.
 export default defineConfig({
     title: "Hakkas User's Manual",
     description: 'Building flow-based control programs with hakkas',
     lang: 'en',
+    base,
     cleanUrls: true,
     lastUpdated: false,
     themeConfig: {

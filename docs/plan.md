@@ -1200,7 +1200,7 @@ missing.
     - Part VI Patterns and reference: 14 Design patterns; 15 Block type reference (generated);
       16 Administration. Appendices: A IEC 61131-3 cheat sheet, B glossary, C troubleshooting,
       D the Colibri emulator.
-- [x] **U2. The manual's frame** (done 2026-10-27): `docs/manual/` with VitePress 1.6.4 (its
+- [x] **U2. The manual's frame** (done 2026-10-27; served under `/hakkas/user-manual/` by default, `HAKKAS_MANUAL_BASE` at build time for another path, the user's decision 2026-10-27): `docs/manual/` with VitePress 1.6.4 (its
   README), every chapter a page of the outline (unwritten ones say so), the screenshot scripts
   `frontend/tests/manual/*.shot.ts` (`npm run manual:screenshots`, the end-to-end fixtures,
   numbered markers, the light theme) and environments described by the emulator's own code.
