@@ -97,7 +97,7 @@ The blocks are named after what they do; the process reads from left to right.
    README, "With hakkas"), log in as an editor and upload `Air Handling Unit.process.json` with
    *Upload…*. It arrives stopped: start it.
 4. Change the temperatures in the emulator's UI (`http://localhost:8090/`) and watch the outputs;
-   *Watch all values* in the process editor shows them inside the process. Press the DIU's
+   *Watch all connections* in the editor's menu shows them inside the process. Press the DIU's
    input 1 for Extended operation, set the heating coil's water below 5 °C for frost.
 
 The calendar blocks use hakkas' `time_zone` (05 §1.1), UTC unless set: for Sweden,

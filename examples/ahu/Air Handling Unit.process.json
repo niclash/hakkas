@@ -61,378 +61,378 @@
           "workdays": {
             "component": "timing/DayOfWeek",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 40
             }
           },
           "work_hours": {
             "component": "timing/MinuteRange",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 258
             }
           },
           "schedule": {
             "component": "logic/And",
             "metadata": {
-              "x": 720,
+              "x": 800,
               "y": 40
             }
           },
           "extended": {
             "component": "process/Trigger",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 440
             }
           },
           "extended_wait": {
             "component": "process/SelectIn",
             "metadata": {
-              "x": 720,
+              "x": 800,
               "y": 580
             }
           },
           "extended_timer": {
             "component": "process/Delay",
             "metadata": {
-              "x": 1060,
+              "x": 1180,
               "y": 400
             }
           },
           "running": {
             "component": "logic/Or",
             "metadata": {
-              "x": 1060,
+              "x": 1180,
               "y": 618
             }
           },
           "heating_months": {
             "component": "timing/MonthOfYear",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 760
             }
           },
           "september": {
             "component": "timing/MonthOfYear",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 942
             }
           },
           "from_15th": {
             "component": "timing/DayOfMonth",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 1124
             }
           },
           "may": {
             "component": "timing/MonthOfYear",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 1306
             }
           },
           "to_15th": {
             "component": "timing/DayOfMonth",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 1488
             }
           },
           "late_september": {
             "component": "logic/And",
             "metadata": {
-              "x": 720,
+              "x": 800,
               "y": 880
             }
           },
           "early_may": {
             "component": "logic/And",
             "metadata": {
-              "x": 720,
+              "x": 800,
               "y": 1120
             }
           },
           "half_months": {
             "component": "logic/Or",
             "metadata": {
-              "x": 1060,
+              "x": 1180,
               "y": 1000
             }
           },
           "heating_season": {
             "component": "logic/Or",
             "metadata": {
-              "x": 1400,
+              "x": 1560,
               "y": 760
             }
           },
           "cooling_season": {
             "component": "timing/MonthOfYear",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 1670
             }
           },
           "any_season": {
             "component": "logic/Or",
             "metadata": {
-              "x": 1400,
+              "x": 1560,
               "y": 1240
             }
           },
           "neither_season": {
             "component": "logic/Not",
             "metadata": {
-              "x": 1740,
+              "x": 1940,
               "y": 1240
             }
           },
           "frost_negated": {
             "component": "process/Linear",
             "metadata": {
-              "x": 380,
+              "x": 420,
               "y": 1852
             }
           },
           "frost": {
             "component": "process/Hysteresis",
             "metadata": {
-              "x": 720,
+              "x": 800,
               "y": 1540
             }
           },
           "frost_confirmed": {
             "component": "process/Delay",
             "metadata": {
-              "x": 1060,
+              "x": 1180,
               "y": 1540
             }
           },
           "frost_cleared": {
             "component": "logic/Not",
             "metadata": {
-              "x": 720,
+              "x": 800,
               "y": 1840
             }
           },
           "frost_acknowledge": {
             "component": "logic/And",
             "metadata": {
-              "x": 1060,
+              "x": 1180,
               "y": 1840
             }
           },
           "frost_alarm": {
             "component": "process/Alarm",
             "metadata": {
-              "x": 1400,
+              "x": 1560,
               "y": 1540
             }
           },
           "frost_lock": {
             "component": "logic/Not",
             "metadata": {
-              "x": 1740,
+              "x": 1940,
               "y": 1540
             }
           },
           "frost_regulator": {
             "component": "process/PID",
             "metadata": {
-              "x": 2080,
+              "x": 2320,
               "y": 1540
             }
           },
           "power_up": {
             "component": "process/Delay",
             "metadata": {
-              "x": 1400,
+              "x": 1560,
               "y": 2154
             }
           },
           "may_run": {
             "component": "logic/And",
             "metadata": {
-              "x": 1740,
+              "x": 1940,
               "y": 1722
             }
           },
           "not_locked": {
             "component": "logic/Not",
             "metadata": {
-              "x": 2080,
+              "x": 2320,
               "y": 2154
             }
           },
           "fans": {
             "component": "logic/And",
             "metadata": {
-              "x": 2420,
+              "x": 2700,
               "y": 40
             }
           },
           "supply_curve": {
             "component": "process/Curve",
             "metadata": {
-              "x": 1400,
+              "x": 1560,
               "y": 2372
             }
           },
           "room_compensation": {
             "component": "process/PID",
             "metadata": {
-              "x": 1740,
+              "x": 1940,
               "y": 1940
             }
           },
           "supply_setpoint": {
             "component": "math/Add2",
             "metadata": {
-              "x": 2080,
+              "x": 2320,
               "y": 2336
             }
           },
           "heating_regulator_on": {
             "component": "logic/And",
             "metadata": {
-              "x": 2420,
+              "x": 2700,
               "y": 258
             }
           },
           "heating_regulator": {
             "component": "process/PID",
             "metadata": {
-              "x": 2760,
+              "x": 3080,
               "y": 40
             }
           },
           "exchanger_regulator_on": {
             "component": "logic/And",
             "metadata": {
-              "x": 2420,
+              "x": 2700,
               "y": 880
             }
           },
           "exchanger_regulator": {
             "component": "process/PID",
             "metadata": {
-              "x": 2760,
+              "x": 3080,
               "y": 760
             }
           },
           "cooling_regulator_on": {
             "component": "logic/And",
             "metadata": {
-              "x": 2420,
+              "x": 2700,
               "y": 1600
             }
           },
           "cooling_regulator": {
             "component": "process/PID",
             "metadata": {
-              "x": 2760,
+              "x": 3080,
               "y": 1480
             }
           },
           "exchanger_manual": {
             "component": "process/SelectIn",
             "metadata": {
-              "x": 2420,
+              "x": 2700,
               "y": 1818
             }
           },
           "heating_demand": {
             "component": "math/Max",
             "metadata": {
-              "x": 3100,
+              "x": 3460,
               "y": 40
             }
           },
           "heating_valve_volts": {
             "component": "process/Linear",
             "metadata": {
-              "x": 3440,
+              "x": 3840,
               "y": 40
             }
           },
           "exchanger_volts": {
             "component": "process/Linear",
             "metadata": {
-              "x": 3440,
+              "x": 3840,
               "y": 760
             }
           },
           "cooling_valve_volts": {
             "component": "process/Linear",
             "metadata": {
-              "x": 3440,
+              "x": 3840,
               "y": 1480
             }
           },
           "exercise_day": {
             "component": "timing/DayOfWeek",
             "metadata": {
-              "x": 2420,
+              "x": 2700,
               "y": 2072
             }
           },
           "exercise_time": {
             "component": "timing/MinuteRange",
             "metadata": {
-              "x": 2420,
+              "x": 2700,
               "y": 2290
             }
           },
           "exercise": {
             "component": "logic/And",
             "metadata": {
-              "x": 2760,
+              "x": 3080,
               "y": 2094
             }
           },
           "heating_needed": {
             "component": "logic/And",
             "metadata": {
-              "x": 2760,
+              "x": 3080,
               "y": 2312
             }
           },
           "heating_or_frost": {
             "component": "logic/Or",
             "metadata": {
-              "x": 3100,
+              "x": 3460,
               "y": 2200
             }
           },
           "heating_pump": {
             "component": "logic/Or",
             "metadata": {
-              "x": 3440,
+              "x": 3840,
               "y": 2200
             }
           },
           "cooling_needed": {
             "component": "logic/And",
             "metadata": {
-              "x": 2760,
+              "x": 3080,
               "y": 2530
             }
           },
           "cooling_pump": {
             "component": "logic/Or",
             "metadata": {
-              "x": 3440,
+              "x": 3840,
               "y": 2440
             }
           },
           "outputs_enabled": {
             "component": "logic/Not",
             "metadata": {
-              "x": 3440,
+              "x": 3840,
               "y": 2680
             }
           }

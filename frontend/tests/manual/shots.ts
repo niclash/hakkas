@@ -111,3 +111,31 @@ export async function shotAround(page: Page, name: string, part: Locator, margin
     await page.screenshot({path: resolve(OUT, name + ".png"), animations: "disabled", clip: {x, y,
         width: Math.min(view.width, b.x + b.width + margin.x) - x, height: Math.min(view.height, b.y + b.height + margin.y) - y}});
 }
+
+// Saves a screenshot of some blocks of the open process, with their value nodes and the process
+// port markers named, and a margin; without the minimap.
+export async function shotOfBlocks(page: Page, name: string, ids: string[], markers: string[] = [], margin = 30) {
+    const parts: Locator[] = [];
+    for (const id of ids) {
+        parts.push(page.getByTestId("node").filter({has: page.getByTestId("title").getByText(id, {exact: true})}));
+        parts.push(page.locator(`[data-testid=value-node][data-target^="${id}."]`));
+    }
+    for (const m of markers)
+        parts.push(page.locator(`[data-testid=port-node][data-name="${m}"]`));
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const part of parts) {
+        for (const one of await part.all()) {
+            const b = await one.boundingBox();
+            if (b === null)
+                continue;
+            x0 = Math.min(x0, b.x);
+            y0 = Math.min(y0, b.y);
+            x1 = Math.max(x1, b.x + b.width);
+            y1 = Math.max(y1, b.y + b.height);
+        }
+    }
+    await page.addStyleTag({content: "#hk-editor .minimap { display: none !important; }"});
+    await page.screenshot({path: resolve(OUT, name + ".png"), animations: "disabled",
+        clip: {x: x0 - margin, y: y0 - margin, width: x1 - x0 + 2 * margin, height: y1 - y0 + 2 * margin}});
+    await page.addStyleTag({content: "#hk-editor .minimap { display: block !important; }"});
+}

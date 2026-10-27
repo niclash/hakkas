@@ -134,7 +134,7 @@ A PID regulator that goes to automatic in that moment sees an error of 40 °C or
 from manual without a bump: it presets its integral so that its output continues from its manual
 value, 0 %. The preset is computed from that bogus error, and when the real temperature arrives
 a moment later, the integral is far off. The valve then stays closed for minutes, until the
-integral has worked its way back. The air handling unit (Section 13.9) met exactly this.
+integral has worked its way back. The air handling unit (Section 13.8) met exactly this.
 
 The cure is to let the regulator go to automatic only once the sensors have delivered:
 

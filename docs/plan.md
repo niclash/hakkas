@@ -1219,7 +1219,12 @@ missing.
   it is now a quiet reply (`quietReplies` in `model.ts`, 06 §4.14, a unit test).
 - [x] **U6. Part IV**, the heating circuit (done 2026-10-27: Chapter 12, a diagram
   `heating-circuit.svg`, screenshots by `frontend/tests/manual/heating.shot.ts`).
-- [ ] **U7. Part V**, the Air Handling Unit (its alarms after they are designed).
+- [x] **U7. Part V**, the Air Handling Unit (done 2026-10-27; its alarms, 13.12, after they are
+  designed): Chapter 13, part by part. `frontend/tests/manual/ahu.shot.ts` shows the whole unit
+  running, then cuts each part out as a process of its own (crossing signals as process ports)
+  for a readable picture. The AHU's columns are now 380 px apart (positions only), so value nodes
+  no longer overlap the blocks to their left. Noticed: *Arrange blocks* ignores value nodes, so
+  its layout puts them over neighbouring blocks.
 - [ ] **U8. Part VI** and the appendices: patterns, the generated block type reference,
   administration.
 
