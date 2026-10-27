@@ -1111,10 +1111,19 @@ missing.
   - **Operation**: a week schedule, or 2 hours after a press of Extended operation.
   - **Supply air temperature setpoint**: a curve over the outdoor temperature, compensated by
     a room PID whose output is limited to a few degrees either way (its `min`/`max`).
-  - **Supply air sequence** (a cascade): heating, heat recovery, cooling; the heat exchanger
-    is at 100 % in the heating and in the cooling stage and regulates in between.
-  - **Season**: heating and cooling are each allowed only within dates: no cooling outside a
-    summer period, no heating within one.
+  - **Seasons instead of a cascade** (decided 2026-10-27): three seasons by date, which do not
+    overlap (in Scandinavia): the *heating season*, the *cooling season* and *neither*. In
+    *neither*, the heat exchanger alone regulates the supply air (heating only, 0–100 %), the
+    heating and cooling valves closed. (Earlier: the heat exchanger is at 100 % in the heating
+    and in the cooling stage.)
+  - **Pumps**: the heating pump runs while it is the heating season and the unit runs
+    (schedule or Extended operation), the cooling pump likewise in the cooling season; each
+    stops when either is no longer true. A weekly exercise run for both.
+  - **Frost protection**: when the heating coil's water temperature drops below 5 °C, the fans
+    stop, an alarm is raised and the heating valve regulates the water to 20 °C. The unit does
+    not restart until the alarm is acknowledged (by a person) **after** the water has reached
+    20 °C. No pre-heating start sequence (too advanced for this example), no rotor defrost (a
+    minor detail, for later).
   - **Alarms** on the goals: to be discussed.
 - [ ] **Further examples**: to be chosen with the user.
 
