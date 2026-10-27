@@ -1090,8 +1090,32 @@ Colibri emulator, so it runs as it is. They show the block types in real use and
 material of the User's Manual (Section U); building them will show which block types are
 missing.
 
-- [ ] **X1. Air Handling Unit**: the user knows the real-world functions; the functions,
-  their split into processes and the I/O list are to be agreed with the user first.
+- [ ] **X1. Air Handling Unit** (being designed with the user, who knows the real-world
+  functions; 2026-10-27). One process for now; making composite types out of parts of it is a
+  later exercise (and material for the manual).
+  - **Equipment**: supply fan and exhaust fan, on/off (the dampers follow the fans; no
+    inverters, no flow regulation); a rotary heat exchanger (an analog signal: rotor speed, or a
+    shunt group for a run-around coil); a heating coil with its valve, an on/off pump and a
+    water temperature sensor (frost protection); a cooling coil with its valve and an on/off
+    pump; a room temperature sensor; an Extended operation button.
+  - **I/O on one Colibri 8** (all 7 slots): Pt1000 (outdoor air, supply air), Pt1000 (extract
+    air, exhaust air), Pt1000 (heating coil water, room), AQV (heating valve, cooling valve),
+    AQV (heat exchanger, 1 spare), DIO1 (supply fan, exhaust fan, heating pump, cooling pump),
+    DIU (Extended operation button, 3 spare).
+  - **Out of scope** (the user's reasons): fire and smoke (outside AHU controls by regulation);
+    filter change (service companies, on a yearly schedule); run and fault indications (they
+    catch only some faults: alarms are put on the goals instead, temperatures and efficiency;
+    flows need flow sensors, which this unit has not); a hard-wired frost thermostat (outside
+    the automation if a project requires one: the frost algorithm avoids the risk, and its
+    failure shows as a failed function).
+  - **Operation**: a week schedule, or 2 hours after a press of Extended operation.
+  - **Supply air temperature setpoint**: a curve over the outdoor temperature, compensated by
+    a room PID whose output is limited to a few degrees either way (its `min`/`max`).
+  - **Supply air sequence** (a cascade): heating, heat recovery, cooling; the heat exchanger
+    is at 100 % in the heating and in the cooling stage and regulates in between.
+  - **Season**: heating and cooling are each allowed only within dates: no cooling outside a
+    summer period, no heating within one.
+  - **Alarms** on the goals: to be discussed.
 - [ ] **Further examples**: to be chosen with the user.
 
 ## Section U — User's Manual (requested 2026-10-27, being designed)
