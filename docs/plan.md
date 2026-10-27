@@ -1157,8 +1157,11 @@ missing.
     (regulators switched to auto before the first sensor values would start far off); frost
     must last 5 s (a sensor reads 0 °C until its first value arrives); a frost reset button on
     the DIU's spare input 2; the DIO1's `dir` channels driven true.
-- [ ] **X2. Thermostat with a schedule** (decided 2026-10-27, the manual's simple example): a room
-  sensor, a Hysteresis, a week schedule, a relay; its own small emulator environment.
+- [x] **X2. Thermostat with a schedule** (decided 2026-10-27, the manual's simple example): a room
+  sensor, a Hysteresis, a week schedule, a relay; its own small emulator environment. *Done
+  2026-10-27* (`examples/thermostat/`: a Colibri 8 with a Pt1000 and a relay; 21 °C Monday–Friday
+  07:00–18:00, else 17 °C, through `process/SelectIn`; tested by
+  `emulators/colibri/tests/thermostat.test.ts`, which shares `tests/example-rig.ts` with the AHU's).
 - [ ] **X3. An intermediate example** (between the thermostat and the AHU; to be chosen with the
   user).
 
@@ -1198,7 +1201,11 @@ missing.
   numbered markers, the light theme) and environments described by the emulator's own code.
 - [x] **U3. Part I** (chapters 1–3, done 2026-10-27; diagrams `dataflow.svg`, `bindings.svg`;
   screenshots `login`, `main-screen`).
-- [ ] **U4. Part II**, the thermostat (after X2).
+- [x] **U4. Part II**, the thermostat (done 2026-10-27: Chapter 4, built step by step by
+  `frontend/tests/manual/thermostat.shot.ts`, ten screenshots; Chapter 3's tour now shows the
+  thermostat, the user's request; the device window shows the emulator's picture copies, so the
+  screenshots need no network). The process list's header buttons now wrap instead of being cut
+  off (*Back up*).
 - [ ] **U5. Part III** (chapters 5–10; 11 after task 79).
 - [ ] **U6. Part IV**, the intermediate example (after X3).
 - [ ] **U7. Part V**, the Air Handling Unit (its alarms after they are designed).

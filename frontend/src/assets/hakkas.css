@@ -72,6 +72,7 @@ h1, h2, h3 {
 .hk-button.small {
   padding: 2px 8px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .hk-input,
@@ -314,8 +315,10 @@ h1, h2, h3 {
 
 .hk-panel-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 8px;
   margin-bottom: 8px;
 }
 
@@ -1396,6 +1399,7 @@ h1, h2, h3 {
 /* Download, upload, backup and restore (06 §4.16). */
 .hk-panel-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 

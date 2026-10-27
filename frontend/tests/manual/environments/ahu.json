@@ -157,6 +157,7 @@
       "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
       "picture": {
         "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
+        "copy": "colibri_pt1000.webp",
         "crop": {
           "x": 0.2415,
           "y": 0.2243,
@@ -204,6 +205,7 @@
       "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
       "picture": {
         "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
+        "copy": "colibri_pt1000.webp",
         "crop": {
           "x": 0.2415,
           "y": 0.2243,
@@ -251,6 +253,7 @@
       "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
       "picture": {
         "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
+        "copy": "colibri_pt1000.webp",
         "crop": {
           "x": 0.2415,
           "y": 0.2243,
@@ -298,6 +301,7 @@
       "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
       "picture": {
         "url": "https://currentmakers.com/data/products/colibri/renders/colibri_aqv_top_render.png",
+        "copy": "colibri_aqv.webp",
         "crop": {
           "x": 0.2415,
           "y": 0.2243,
@@ -332,6 +336,7 @@
       "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
       "picture": {
         "url": "https://currentmakers.com/data/products/colibri/renders/colibri_aqv_top_render.png",
+        "copy": "colibri_aqv.webp",
         "crop": {
           "x": 0.2415,
           "y": 0.2243,
@@ -366,6 +371,7 @@
       "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
       "picture": {
         "url": "https://currentmakers.com/data/products/colibri/renders/colibri_dio1_top_render.png",
+        "copy": "colibri_dio1.webp",
         "crop": {
           "x": 0.2415,
           "y": 0.2243,
@@ -439,6 +445,7 @@
       "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
       "picture": {
         "url": "https://currentmakers.com/data/products/colibri/renders/colibri_diu_top_render.png",
+        "copy": "colibri_diu.webp",
         "crop": {
           "x": 0.2415,
           "y": 0.2243,
@@ -487,6 +494,7 @@
     "documentation": "https://currentmakers.com/products/colibri/colibri_8/",
     "picture": {
       "url": "https://currentmakers.com/data/products/colibri/renders/colibri_8-rev_B_top_render.png",
+      "copy": "colibri_8.webp",
       "crop": {
         "x": 0.2253,
         "y": 0.3036,

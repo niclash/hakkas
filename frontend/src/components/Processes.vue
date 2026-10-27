@@ -3,7 +3,7 @@
     <div class="hk-panel-header">
       <h2 class="hk-panel-title">Processes</h2>
       <span class="hk-panel-buttons">
-        <button v-if="can.manage" class="hk-button small" type="button" data-testid="process-new" @click="openNewProcessPopup()">New...</button>
+        <button v-if="can.manage" class="hk-button small" type="button" data-testid="process-new" @click="openNewProcessPopup()">New…</button>
         <button v-if="mayUpload" class="hk-button small" type="button" data-testid="process-upload"
                 title="Upload process files, a backup or type files" @click="uploadInput?.click()">Upload…</button>
         <button class="hk-button small" type="button" data-testid="process-backup" :disabled="downloading"

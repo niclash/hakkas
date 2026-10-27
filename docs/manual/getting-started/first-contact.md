@@ -6,7 +6,7 @@ You work with hakkas in a web browser — a current Chrome, Chromium, Edge or Fi
 serves the editor itself, so all you need is its address.
 
 - **On a device**, open the address the controller has on your network, for example
-  `http://ahu-controller/`. Your administrator tells you which.
+  `http://office-controller/`. Your administrator tells you which.
 - **On your desktop**, you can run hakkas against the **Colibri emulator**, which behaves like a
   Colibri controller with the modules you choose: you set its inputs by hand and see its outputs.
   This is how to try the examples in this manual, and how to develop a process before it goes to
@@ -42,7 +42,7 @@ controller restart — the editor says so and reconnects by itself; you do not l
 
 ![The main screen](../images/screenshots/main-screen.png)
 
-The screenshot shows the air handling unit of Part V open, with one block selected.
+The screenshot shows the thermostat of Chapter 4 running, with one block selected.
 
 **① The top bar** shows who you are logged in as and your role. *Messages* opens a panel below
 the editor with the controller's messages — for example why a change was refused; while it is
@@ -60,7 +60,7 @@ a process, and *Upload…* and *Back up* move processes between controllers and 
 *Logic*, *Process*, *Timing*, and your own composite types. Type part of a name in the search field to find
 one. Click a type to add a block of it, or drag it to where you want it.
 
-**④ The environment** describes the controller's I/O: its name (here `ahu`), the carrier board
+**④ The environment** describes the controller's I/O: its name (here `thermostat`), the carrier board
 and each slot with its module and channels. *Device* opens a picture of the controller with every
 channel's live value (Section 8.2).
 

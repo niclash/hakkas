@@ -1,0 +1,183 @@
+{
+  "format": "hakkas/processes",
+  "version": 1,
+  "saved": "2026-10-27T00:00:00.000Z",
+  "runtime": {
+    "label": "Hakkas",
+    "id": "",
+    "version": ""
+  },
+  "processes": [
+    {
+      "graph": {
+        "id": "7c1e9b52-3d4a-4f86-a0e2-5b9d8c6f1a37",
+        "name": "Thermostat",
+        "description": "An office's electric heater on a relay: 21 °C during office hours, 17 °C otherwise",
+        "icon": "",
+        "started": true,
+        "blocks": {
+          "office_hours": {
+            "component": "timing/MinuteRange",
+            "metadata": {
+              "x": 40,
+              "y": 40
+            }
+          },
+          "workdays": {
+            "component": "timing/DayOfWeek",
+            "metadata": {
+              "x": 40,
+              "y": 240
+            }
+          },
+          "occupied": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 420,
+              "y": 120
+            }
+          },
+          "setpoint": {
+            "component": "process/SelectIn",
+            "metadata": {
+              "x": 800,
+              "y": 100
+            }
+          },
+          "heating": {
+            "component": "process/Hysteresis",
+            "metadata": {
+              "x": 1180,
+              "y": 320
+            }
+          }
+        },
+        "connections": [
+          {
+            "src": {
+              "data": "07:00-18:00"
+            },
+            "tgt": {
+              "block": "office_hours",
+              "port": "range"
+            }
+          },
+          {
+            "src": {
+              "data": "1-5"
+            },
+            "tgt": {
+              "block": "workdays",
+              "port": "days"
+            }
+          },
+          {
+            "src": {
+              "block": "office_hours",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "occupied",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "workdays",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "occupied",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "occupied",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "setpoint",
+              "port": "select"
+            }
+          },
+          {
+            "src": {
+              "data": 21
+            },
+            "tgt": {
+              "block": "setpoint",
+              "port": "in_true"
+            }
+          },
+          {
+            "src": {
+              "data": 17
+            },
+            "tgt": {
+              "block": "setpoint",
+              "port": "in_false"
+            }
+          },
+          {
+            "src": {
+              "block": "setpoint",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "heating",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 0.5
+            },
+            "tgt": {
+              "block": "heating",
+              "port": "hysteresis"
+            }
+          },
+          {
+            "src": {
+              "data": true
+            },
+            "tgt": {
+              "block": "heating",
+              "port": "inverted"
+            }
+          }
+        ],
+        "inports": [
+          {
+            "name": "room_temperature",
+            "block": "heating",
+            "port": "input"
+          }
+        ],
+        "outports": [
+          {
+            "name": "heater",
+            "block": "heating",
+            "port": "output"
+          }
+        ]
+      },
+      "bindings": {
+        "environment": "thermostat",
+        "bindings": [
+          {
+            "port": "room_temperature",
+            "env": "slot1-ai",
+            "index": 1
+          },
+          {
+            "port": "heater",
+            "env": "slot2-dq"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}

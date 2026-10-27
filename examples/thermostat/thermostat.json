@@ -1,0 +1,23 @@
+{
+  "carrier": "colibri_8",
+  "cycleMs": 10,
+  "queueSize": 10,
+  "modules": [
+    {
+      "slot": 1,
+      "type": "colibri_pt1000",
+      "serial": "THERMO-0001"
+    },
+    {
+      "slot": 2,
+      "type": "colibri_relay",
+      "serial": "THERMO-0002"
+    }
+  ],
+  "inputs": {
+    "slot1.ai.1": {
+      "source": 19.5,
+      "noise": 0.05
+    }
+  }
+}
