@@ -198,13 +198,14 @@ context menu, or a bindings file loaded there) and saved with the process in
 
 ```json
 {"environment": "sim",
- "bindings": [{"block": "add", "port": "in1", "env": "ain", "index": 1},
-              {"block": "cmp", "port": "out", "env": "relay"}]}
+ "bindings": [{"port": "level", "env": "ain", "index": 1},
+              {"port": "alarm", "env": "relay"}]}
 ```
 
-A sensor (an environment output port) binds a block input, an actuator (an environment input
-port) a block output; `index` is required exactly for an addressable port. Bindings never stop
-startup (04 §4): an entry that does not fit the process or the environment (an unknown block,
+Each entry names a **process port** (plan task 70): a sensor (an environment output port) binds a
+process inport, an actuator (an environment input port) a process outport; `index` is required
+exactly for an addressable port. Bindings never stop
+startup (04 §4): an entry that does not fit the process or the environment (an unknown process
 port or channel, a wrong direction, an input that already has a source, a second driver for an
 actuator) is skipped with a warning and the rest applied, and a file written for another
 environment is applied after a warning. Without `environment.socket` there is no environment,

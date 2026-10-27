@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 220" font-family="system-ui, sans-serif" font-size="14">
+  <title>A set-reset latch from logic blocks</title>
+  <rect width="620" height="220" fill="#ffffff"/>
+  <g fill="#f7fafc" stroke="#4a5568" stroke-width="2">
+    <rect x="160" y="40" width="110" height="70" rx="6"/>
+    <rect x="340" y="40" width="110" height="70" rx="6"/>
+    <rect x="160" y="140" width="110" height="50" rx="6"/>
+  </g>
+  <g font-weight="600" text-anchor="middle">
+    <text x="215" y="62">held</text>
+    <text x="395" y="62">output</text>
+    <text x="215" y="162">not_reset</text>
+  </g>
+  <g fill="#4a5568" font-size="12" text-anchor="middle">
+    <text x="215" y="80">logic/Or</text>
+    <text x="395" y="80">logic/And</text>
+    <text x="215" y="180">logic/Not</text>
+  </g>
+  <g stroke="#2d3748" stroke-width="2" fill="none">
+    <line x1="60" y1="70" x2="160" y2="70"/>
+    <line x1="270" y1="75" x2="340" y2="75"/>
+    <polyline points="60,165 160,165"/>
+    <polyline points="270,165 310,165 310,95 340,95"/>
+    <line x1="450" y1="75" x2="570" y2="75"/>
+    <polyline points="500,75 500,20 130,20 130,95 160,95"/>
+  </g>
+  <g fill="#2d3748">
+    <circle cx="500" cy="75" r="4"/>
+    <path d="M160 70 l-8 -5 v10 z"/><path d="M160 95 l-8 -5 v10 z"/><path d="M340 75 l-8 -5 v10 z"/>
+    <path d="M340 95 l-8 -5 v10 z"/><path d="M160 165 l-8 -5 v10 z"/><path d="M570 75 l-8 -5 v10 z"/>
+  </g>
+  <g font-size="13">
+    <text x="40" y="66" text-anchor="end">set</text>
+    <text x="40" y="170" text-anchor="end">reset</text>
+    <text x="578" y="80">out</text>
+    <text x="315" y="16" fill="#c05621" text-anchor="middle">fed back</text>
+  </g>
+</svg>
