@@ -581,7 +581,9 @@ static void test_scoping(void)
 		 "g1:+node A(50,50,-);g1:rename g1>One;g1:+inport p=A.in1;%sg3:-graph(g3);",
 		 wide);
 	CHECK_STREQ(s1.log, expect);
-	snprintf(expect, sizeof(expect), "g2:started@0+0;%sg2:stopped@0+0;g3:-graph(g3);", wide);
+	/* Process port events are system-wide too (plan task 79). */
+	snprintf(expect, sizeof(expect),
+		 "g2:started@0+0;g1:+inport p=A.in1;%sg2:stopped@0+0;g3:-graph(g3);", wide);
 	CHECK_STREQ(s2.log, expect);
 
 	/* Re-scoping, and back to every graph. */

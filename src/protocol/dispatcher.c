@@ -87,6 +87,12 @@ struct Protocol {
 	/* Recursion guards of the log mirror. */
 	bool in_send;
 	bool mirroring;
+	/* The links between processes (02 §3.8, plan task 79): a message
+	 * being handled (handling) changed them (links_changed), seen by the
+	 * layer's own subscriber, so links.json is written after it. */
+	GraphsSubscriber links_sub;
+	bool handling;
+	bool links_changed;
 };
 
 /* A parsed envelope (02 §1); valid while its tree lives. */
@@ -98,7 +104,7 @@ typedef struct {
 } Envelope;
 
 static const char *const protocols[] = {
-	"auth", "environment", "runtime", "network", "graph", "component", "trace",
+	"auth", "environment", "link", "runtime", "network", "graph", "component", "trace",
 };
 
 /* ---- Authorizer shorthands ---------------------------------------------------------- */
@@ -984,6 +990,95 @@ static const cJSON *opt_member(const cJSON *payload, const char *key)
 	return cJSON_IsNull(v) ? NULL : v;
 }
 
+/* ---- link (02 §3.8, plan task 79) ------------------------------------------------------ */
+
+static void cmd_link_list(ProtoConn *c, const Envelope *env)
+{
+	(void)env;
+	reply(c, proto_msg_links(c->p->graphs));
+}
+
+typedef struct {
+	const char *graph;
+	const char *port;
+} LinkEnd;
+
+/* A required end member key {"graph","port"}, or "Invalid field: <key>". */
+static bool need_end(ProtoConn *c, const cJSON *pl, const char *key, const char *graph,
+		     LinkEnd *out)
+{
+	const cJSON *v = cJSON_GetObjectItemCaseSensitive(pl, key);
+	out->graph = cJSON_IsObject(v) ? str_field(v, "graph") : NULL;
+	out->port = cJSON_IsObject(v) ? str_field(v, "port") : NULL;
+	if (out->graph == NULL || out->port == NULL) {
+		invalid_field(c, key, graph);
+		return false;
+	}
+	return true;
+}
+
+/* The end's process: refused as "Unknown graph" or "Not a process" (a
+ * component graph, 02 §3.4.3) if it is none. */
+static bool link_process(ProtoConn *c, const LinkEnd *e, const char *graph)
+{
+	const Graph *g = graphs_find(c->p->graphs, e->graph);
+	if (g != NULL && !g->component)
+		return true;
+	GraphsMessage msg;
+	GraphRefusal r = {.graph = e->graph};
+	graph_refusal_message(g == NULL ? GRAPH_ERR_UNKNOWN_GRAPH : GRAPH_ERR_NOT_A_PROCESS, &r,
+			      msg.text, sizeof(msg.text));
+	refused(c, &msg, graph);
+	return false;
+}
+
+/* add / remove {"src":{"graph","port"},"tgt":{"graph","port"}}: checked in
+ * the order of the C API's hakkas_link_add (02 §6); the event is the
+ * reply. */
+static void link_command(ProtoConn *c, const Envelope *env, bool add)
+{
+	const cJSON *pl = env->payload;
+	const cJSON *src = cJSON_GetObjectItemCaseSensitive(pl, "src");
+	const char *graph = cJSON_IsObject(src) ? str_field(src, "graph") : NULL;
+	LinkEnd from, to;
+	if (!need_end(c, pl, "src", graph, &from) || !need_end(c, pl, "tgt", graph, &to))
+		return;
+	if (!graph_id_valid(from.graph) || !graph_id_valid(from.port) ||
+	    !graph_id_valid(to.graph) || !graph_id_valid(to.port)) {
+		refuse_graph(c, GRAPH_ERR_INVALID_ID, graph);
+		return;
+	}
+	if (!link_process(c, &from, graph) || !link_process(c, &to, graph))
+		return;
+	GraphsMessage msg;
+	enum graph_status st =
+		add ? graphs_add_link(c->p->graphs, from.graph, from.port, to.graph, to.port, &msg)
+		    : graphs_remove_link(c->p->graphs, from.graph, from.port, to.graph, to.port,
+					 &msg);
+	if (st != GRAPH_OK)
+		refused(c, &msg, graph);
+}
+
+static void cmd_link_add(ProtoConn *c, const Envelope *env)
+{
+	link_command(c, env, true);
+}
+
+static void cmd_link_remove(ProtoConn *c, const Envelope *env)
+{
+	link_command(c, env, false);
+}
+
+/* The layer's own subscriber: a link added or removed while a message is
+ * handled (also ended by a port's removal or rename, or a deletion). */
+static void on_links_event(void *ctx, const GraphEvent *ev)
+{
+	Protocol *p = ctx;
+	if (p->handling &&
+	    (ev->type == GRAPH_EVENT_LINK_ADDED || ev->type == GRAPH_EVENT_LINK_REMOVED))
+		p->links_changed = true;
+}
+
 /* ---- graph (02 §3.4) ------------------------------------------------------------------- */
 
 static void cmd_graph_list(ProtoConn *c, const Envelope *env)
@@ -1782,6 +1877,9 @@ static const ProtoCommand commands[] = {
 	{"environment", "unbind", cmd_unbind},
 	{"environment", "watch", cmd_env_watch},
 	{"environment", "unwatch", cmd_env_unwatch},
+	{"link", "list", cmd_link_list},
+	{"link", "add", cmd_link_add},
+	{"link", "remove", cmd_link_remove},
 	{"component", "list", cmd_component_list},
 	{"component", "getsource", cmd_getsource},
 	{"component", "source", cmd_source},
@@ -1889,12 +1987,19 @@ void protocol_conn_message(ProtoConn *c, const char *text, size_t len)
 		root = NULL;
 	}
 	Envelope env;
+	p->handling = true;
+	p->links_changed = false;
 	if (parse_envelope(root, &env))
 		dispatch(c, &env);
 	else
 		badly_formatted(c, text);
+	p->handling = false;
 	cJSON_Delete(root);
 	drop_event_cache(p);
+	/* Links are saved at once (02 §3.8); a failure is logged, the links
+	 * stand. */
+	if (p->links_changed)
+		(void)graph_files_save_links(p->files);
 }
 
 void protocol_conn_drained(ProtoConn *c)
@@ -1984,11 +2089,16 @@ bool protocol_create(const ProtocolConfig *cfg, Protocol **out)
 	p->auth = cfg->auth;
 	if (p->env != NULL)
 		environment_watch(p->env, on_env_change, p);
+	graphs_subscriber_init(&p->links_sub, on_links_event, p);
+	graphs_subscribe(p->graphs, &p->links_sub);
 	snprintf(p->engine_id, sizeof(p->engine_id), "%s", cfg->cfg->engine_id);
 	snprintf(p->label, sizeof(p->label), "%s", cfg->cfg->label);
 	if (cfg->cfg->log.mirror) {
 		if (!log_add_sink(mirror_sink, p)) {
 			log_error("protocol: no free log sink for log.mirror");
+			graphs_unsubscribe(p->graphs, &p->links_sub);
+			if (p->env != NULL)
+				environment_watch(p->env, NULL, NULL);
 			free(p);
 			return false;
 		}
@@ -2006,6 +2116,7 @@ void protocol_destroy(Protocol *p)
 		log_remove_sink(mirror_sink, p);
 	if (p->env != NULL)
 		environment_watch(p->env, NULL, NULL);
+	graphs_unsubscribe(p->graphs, &p->links_sub);
 	while (p->conns != NULL)
 		protocol_conn_close(p->conns);
 	drop_event_cache(p);

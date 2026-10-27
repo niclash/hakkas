@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include "app/graph_files.h"
+#include "app/links_file.h"
 #include "app/type_files.h"
 #include "blocktypes/block_types.h"
 #include "blocktypes/composite_types.h"
@@ -3518,6 +3519,122 @@ static int remove_entry(const char *path, const struct stat *sb, int flag, struc
 	return remove(path);
 }
 
+/* The links between processes on the wire (02 §3.8, plan task 79): list with
+ * every process's ports, add and remove as system-wide events, refusals,
+ * the capability, links ended by a port rename, and links.json written after
+ * each command that changed them. */
+static bool links_file(const char *expected)
+{
+	char path[PAL_PATH_MAX];
+	CHECK(graph_files_top_path(&gf, LINKS_FILE_NAME, path, sizeof(path)) == GRAPH_FILES_OK);
+	if (expected == NULL)
+		return !pal_storage_exists(path);
+	char *text = NULL;
+	size_t len = 0;
+	bool same = graph_files_read(path, 4096, &text, &len) == GRAPH_FILES_OK &&
+		    strcmp(text, expected) == 0;
+	if (!same)
+		fprintf(stderr, "links.json: %s\n", text != NULL ? text : "(none)");
+	free(text);
+	return same;
+}
+
+static void test_links(void)
+{
+	setup();
+	/* p: s, outport o = s.out; q: t, inports i = t.in1, i2 = t.in2 (with a
+	 * value), outport qo; a component graph user/C. */
+	CHECK(graphs_new_graph(&gs, "p", "P", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_new_graph(&gs, "q", "Q", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "p", "s", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_node(&gs, "q", "t", "math/Add2", NULL, NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "p", GRAPH_OUTPORT, "o", "s", "out", NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "q", GRAPH_INPORT, "i", "t", "in1", NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "q", GRAPH_INPORT, "i2", "t", "in2", NULL) == GRAPH_OK);
+	CHECK(graphs_add_port(&gs, "q", GRAPH_OUTPORT, "qo", "t", "out", NULL) == GRAPH_OK);
+	Linkable one = linkable_from_f64(1);
+	CHECK(graphs_add_initial(&gs, "q", "t", "in2", &one, NULL) == GRAPH_OK);
+	CHECK(graphs_new_component(&gs, "user/C", "user/C", NULL, NULL, NULL, NULL) == GRAPH_OK);
+	Clients k;
+	clients_open(&k, "p"); /* a, b and v scoped to p: the events are system-wide */
+
+	command(&k.v, "link", "list", "{}", k.sv);
+	expect_one(&k.v, "{'protocol':'link','command':'links','payload':{'links':[],'processes':["
+			 "{'graph':'p','inports':[],'outports':['o']},"
+			 "{'graph':'q','inports':['i','i2'],'outports':['qo']}]}}");
+
+	static const char link[] =
+		"{'src':{'graph':'p','port':'o'},'tgt':{'graph':'q','port':'i'}}";
+	char added[256], removed[256];
+	snprintf(added, sizeof(added), "{'protocol':'link','command':'add','payload':%s}", link);
+	snprintf(removed, sizeof(removed), "{'protocol':'link','command':'remove','payload':%s}",
+		 link);
+	command(&k.a, "link", "add", link, k.sa);
+	FakeConn *all[] = {&k.a, &k.b, &k.v};
+	const char *ev[] = {added};
+	expect_all(all, 3, ev, 1);
+	CHECK(links_file("{\"links\":[{\"from\":\"p.o\",\"to\":\"q.i\"}]}"));
+	command(&k.v, "link", "list", "{}", k.sv);
+	CHECK(k.v.count == 1 && strstr(msg(&k.v, 0), "\"links\":[{\"src\":{\"graph\":\"p\","
+						      "\"port\":\"o\"},\"tgt\":{\"graph\":\"q\","
+						      "\"port\":\"i\"}}]") != NULL);
+	clear(&k.v);
+
+	/* A viewer may not; refusals to the sender only, in 02 §3.8's order. */
+	command(&k.v, "link", "add", link, k.sv);
+	expect_error(&k.v, "Not permitted: link:add");
+	struct {
+		const char *payload, *message, *graph; /* graph: the error's, the source */
+	} refusals[] = {
+		{"{'tgt':{'graph':'q','port':'i'}}", "Invalid field: src", NULL},
+		{"{'src':{'graph':'p','port':'o'},'tgt':{'graph':'q'}}", "Invalid field: tgt", "p"},
+		{"{'src':{'graph':'p','port':''},'tgt':{'graph':'q','port':'i'}}", "Invalid id",
+		 "p"},
+		{"{'src':{'graph':'zz','port':'o'},'tgt':{'graph':'q','port':'i'}}",
+		 "Unknown graph: zz", "zz"},
+		{"{'src':{'graph':'p','port':'o'},'tgt':{'graph':'user/C','port':'i'}}",
+		 "Not a process: user/C", "p"},
+		{"{'src':{'graph':'p','port':'nope'},'tgt':{'graph':'q','port':'i'}}",
+		 "Unknown port: p.nope", "p"},
+		{"{'src':{'graph':'q','port':'i'},'tgt':{'graph':'q','port':'i'}}",
+		 "Invalid link direction", "q"},
+		{link, "Link exists", "p"},
+		{"{'src':{'graph':'p','port':'o'},'tgt':{'graph':'q','port':'i2'}}",
+		 "Input already connected: q.i2", "p"},
+	};
+	for (size_t i = 0; i < sizeof(refusals) / sizeof(refusals[0]); i++) {
+		command(&k.a, "link", "add", refusals[i].payload, k.sa);
+		const char *graph = refusals[i].graph;
+		expect_one(&k.a, graph != NULL ? graph_error_json(refusals[i].message, graph)
+					       : error_json(refusals[i].message));
+	}
+	command(&k.a, "link", "remove", "{'src':{'graph':'p','port':'o'},'tgt':{'graph':'q','port':"
+					"'i2'}}", k.sa);
+	expect_one(&k.a, graph_error_json("No such link", "p"));
+	CHECK(k.b.count == 0 && k.v.count == 0);
+
+	/* Ended by renaming its inport: link:remove before the rename, and
+	 * links.json written without it. */
+	command(&k.a, "graph", "renameinport", "{'graph':'q','from':'i','to':'in'}", k.sa);
+	CHECK(k.b.count == 2 && json_equal(msg(&k.b, 0), removed) &&
+	      strstr(msg(&k.b, 1), "\"renameinport\"") != NULL);
+	clear(&k.a);
+	clear(&k.b);
+	clear(&k.v);
+	CHECK(links_file(NULL));
+
+	/* Made and removed again. */
+	static const char again[] =
+		"{'src':{'graph':'p','port':'o'},'tgt':{'graph':'q','port':'in'}}";
+	command(&k.a, "link", "add", again, k.sa);
+	CHECK(links_file("{\"links\":[{\"from\":\"p.o\",\"to\":\"q.in\"}]}"));
+	command(&k.a, "link", "remove", again, k.sa);
+	CHECK(k.b.count == 2 && strstr(msg(&k.b, 1), "\"command\":\"remove\"") != NULL);
+	CHECK(links_file(NULL));
+	clients_close(&k);
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(pal_init() == PAL_OK);
@@ -3559,6 +3676,7 @@ int main(void)
 	RUN(test_group_refusals);
 	RUN(test_group_storage);
 	RUN(test_component_source);
+	RUN(test_links);
 
 	block_types_reset();
 	if (nftw(root, remove_entry, 16, FTW_DEPTH | FTW_PHYS) != 0)

@@ -395,7 +395,7 @@ enum graph_event_type {
 	GRAPH_EVENT_GROUP_CHANGED,
 	GRAPH_EVENT_COMPONENT, /* system-wide: a new or changed block type */
 	/* Links between processes (plan task 21f): system-wide; graph is the
-	 * link's source process. No wire message yet (02 §6). */
+	 * link's source process. On the wire link:add/remove (02 §3.8). */
 	GRAPH_EVENT_LINK_ADDED,
 	GRAPH_EVENT_LINK_REMOVED,
 	/* Environment bindings (plan task 22): graph-specific. No wire message

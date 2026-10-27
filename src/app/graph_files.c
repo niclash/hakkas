@@ -432,15 +432,22 @@ static enum graph_files_status save_with(const GraphFiles *gf, const Graph *g)
 	free(text);
 	if (st != GRAPH_FILES_OK)
 		return st;
+	return graph_files_save_links(gf);
+}
+
+enum graph_files_status graph_files_save_links(const GraphFiles *gf)
+{
+	char path[PAL_PATH_MAX];
 	if (graph_files_top_path(gf, LINKS_FILE_NAME, path, sizeof(path)) != GRAPH_FILES_OK)
 		return GRAPH_FILES_ERR_INVALID;
 	const Runtime *rt = gf->gs->rt;
-	text = runtime_link_count(rt) > 0 ? links_file_serialize(rt, &len) : NULL;
+	size_t len = 0;
+	char *text = runtime_link_count(rt) > 0 ? links_file_serialize(rt, &len) : NULL;
 	if (runtime_link_count(rt) > 0 && text == NULL) {
 		log_error("cannot save the links: out of memory");
 		return GRAPH_FILES_ERR_NO_MEMORY;
 	}
-	st = write_or_remove(path, text, len);
+	enum graph_files_status st = write_or_remove(path, text, len);
 	free(text);
 	return st;
 }

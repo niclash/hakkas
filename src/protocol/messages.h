@@ -34,7 +34,8 @@
  * GROUP_RENAMED -> graph:renamegroup {"graph","from","to"}, GROUP_CHANGED ->
  * graph:changegroup {"graph","name","metadata"}, and COMPONENT ->
  * component:component. The links between processes (LINK_ADDED/REMOVED,
- * plan task 21f) have no wire form yet: NULL, nothing is sent (02 §6). Plan
+ * plan task 79, 02 §3.8) -> link:add / link:remove {"src":{"graph","port"},
+ * "tgt":{"graph","port"}}. Plan
  * task 62 maps the bindings (02 §3.7): BINDING_ADDED -> environment:bind,
  * BINDING_REMOVED -> environment:unbind, each {"graph","block","port","env",
  * "index"?} ("index" only for an addressable port's channel).
@@ -52,6 +53,7 @@
 #include "cJSON.h"
 #include "graphs/block_type.h"
 #include "graphs/graph.h"
+#include "graphs/graphs.h"
 #include "hakkas_env.h"
 #include "protocol/auth.h"
 
@@ -148,6 +150,12 @@ char *proto_msg_env_description(const HakkasEnvDescription *d);
 /* environment:bindings {"bindings":[{"graph","block","port","env","index"?}]}:
  * every binding of rt, in creation order. */
 char *proto_msg_bindings(const Runtime *rt);
+
+/* link:links (02 §3.8, plan task 79): {"links":[{"src":{"graph","port"},
+ * "tgt":{"graph","port"}}, ...],"processes":[{"graph","inports":[names],
+ * "outports":[names]}, ...]}: every link in creation order, and every
+ * process (component graphs left out) with its port names. */
+char *proto_msg_links(const Graphs *gs);
 
 /* One entry of environment:values (02 §3.7, plan task 76), as JSON text:
  * {"env","index"?,"value"} — index only when not 0, the value a JSON number

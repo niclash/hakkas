@@ -227,7 +227,17 @@ static char *render(const HakkasEvent *ev)
 			cJSON_AddStringToObject(p, "graph", ev->process);
 		break;
 	case HAKKAS_EVENT_LINK_ADDED:
-	case HAKKAS_EVENT_LINK_REMOVED:
+	case HAKKAS_EVENT_LINK_REMOVED: { /* 02 §3.8, plan task 79 */
+		protocol = "link";
+		command = ev->type == HAKKAS_EVENT_LINK_ADDED ? "add" : "remove";
+		cJSON *src = cJSON_AddObjectToObject(p, "src");
+		cJSON_AddStringToObject(src, "graph", ev->process);
+		cJSON_AddStringToObject(src, "port", ev->name);
+		cJSON *tgt = cJSON_AddObjectToObject(p, "tgt");
+		cJSON_AddStringToObject(tgt, "graph", ev->to_process);
+		cJSON_AddStringToObject(tgt, "port", ev->to_port);
+		break;
+	}
 	case HAKKAS_EVENT_BINDING_ADDED:
 	case HAKKAS_EVENT_BINDING_REMOVED:
 		cJSON_Delete(p); /* no wire message (02 §6): see on_host_event */
@@ -254,7 +264,7 @@ static void clear_events(void)
 	nevents = 0;
 }
 
-/* The links between processes the host saw (they have no wire form):
+/* The links between processes the host saw, besides their events:
  * "+<from>.<outport>><to>.<inport>;" or "-...;" each. */
 static char link_log[1024];
 
@@ -267,7 +277,6 @@ static void on_host_event(void *ctx, const HakkasEvent *ev)
 			 ev->type == HAKKAS_EVENT_LINK_ADDED ? '+' : '-', ev->process, ev->name,
 			 ev->to_process, ev->to_port);
 		CHECK(ev->block == NULL && ev->value == NULL);
-		return;
 	}
 	CHECK(nevents < EVENTS_MAX);
 	if (nevents < EVENTS_MAX)
@@ -886,12 +895,13 @@ static void test_links(void)
 	OK(hakkas_initial_add(h, "q", "t", "in2", &one, &m));
 	wire_same(&wire);
 
-	/* Made: the host's event, nothing on the wire. */
+	/* Made: the host's event, and link:add on the wire (02 §3.8). */
 	link_log[0] = '\0';
 	OK(hakkas_link_add(h, "p", "o", "q", "i", &m));
 	CHECK_STREQ(m.text, "");
 	CHECK_STREQ(link_log, "+p.o>q.i;");
-	NEV(0);
+	NEV(1);
+	EV(0, "link", "add", "{'src':{'graph':'p','port':'o'},'tgt':{'graph':'q','port':'i'}}");
 	wire_same(&wire);
 	CHECK(hakkas_link_count(h) == 1);
 	HakkasLink l;
@@ -952,17 +962,21 @@ static void test_links(void)
 	QUIET(&wire);
 	clear_events();
 
-	/* Removed: the input reverts at once (its watch sees the default),
-	 * and that is all the wire sees. */
+	/* Removed: link:remove, then the input reverts at once (its watch sees
+	 * the default). */
 	OK(hakkas_link_remove(h, "p", "o", "q", "i", &m));
 	CHECK_STREQ(link_log, "-p.o>q.i;");
-	NEV(0);
+	NEV(1);
+	EXPECT(&wire, "link", "remove",
+	       "{'src':{'graph':'p','port':'o'},'tgt':{'graph':'q','port':'i'}}");
 	expect_t_in1("0");
 	QUIET(&wire);
 	CHECK(hakkas_link_count(h) == 0);
 
-	/* Made again from the stopped source: nothing until it starts. */
+	/* Made again from the stopped source: no value until it starts. */
+	clear_events();
 	OK(hakkas_link_add(h, "p", "o", "q", "i", &m));
+	EXPECT(&wire, "link", "add", NULL);
 	QUIET(&wire);
 	OK(hakkas_process_start(h, "p", &m));
 	EXPECT(&wire, "network", "started", NULL);
@@ -972,14 +986,14 @@ static void test_links(void)
 	e2e_send(&wire, "network", "edges", "{'graph':'q','edges':[]}");
 	EXPECT(&wire, "network", "edges", NULL);
 
-	/* Deleting the source: stopped, the link removed, deleted — and the
-	 * wire sees exactly what it saw before links existed. */
+	/* Deleting the source: stopped, the link removed, deleted. */
 	link_log[0] = '\0';
 	OK(hakkas_process_delete(h, "p", "P", &m));
 	CHECK_STREQ(link_log, "-p.o>q.i;");
-	NEV(2);
+	NEV(3);
 	EV(0, "network", "stopped", NULL);
-	EV(1, "runtime", "delete_graph", "{'graph':'p','name':'P'}");
+	EV(1, "link", "remove", NULL);
+	EV(2, "runtime", "delete_graph", "{'graph':'p','name':'P'}");
 	wire_same(&wire);
 	CHECK(hakkas_link_count(h) == 0);
 	OK(hakkas_process_delete(h, "q", "Q", &m));

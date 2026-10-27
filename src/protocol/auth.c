@@ -73,6 +73,15 @@ static const CommandDef environment_commands[] = {
 	{NULL, false, 0},
 };
 
+/* The links between processes (02 §3.8, plan task 79): reading them, and
+ * making or removing one, which changes processes (protocol:graph). */
+static const CommandDef link_commands[] = {
+	{"list", true, READ_CAPS},
+	{"add", true, AUTH_CAP_PROTOCOL_GRAPH},
+	{"remove", true, AUTH_CAP_PROTOCOL_GRAPH},
+	{NULL, false, 0},
+};
+
 static const CommandDef runtime_commands[] = {
 	{"getruntime", false, 0},
 	{"new_graph", true, AUTH_CAP_PROTOCOL_RUNTIME},
@@ -136,7 +145,7 @@ AuthCommandRule auth_command_rule(const char *protocol, const char *command)
 		{"auth", auth_commands},	       {"environment", environment_commands},
 		{"runtime", runtime_commands},	       {"network", network_commands},
 		{"graph", graph_commands},	       {"component", component_commands},
-		{"trace", trace_commands},
+		{"trace", trace_commands},	       {"link", link_commands},
 	};
 	AuthCommandRule rule = {false, true, 0};
 	if (protocol == NULL || command == NULL)

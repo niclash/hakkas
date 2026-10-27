@@ -18,13 +18,28 @@
 
 /* ---- Event delivery (01 §4, 02 §4.1) ----------------------------------- */
 
-/* System-wide events reach every subscriber, whatever its scope (02 §4.1). */
+/* System-wide events reach every subscriber, whatever its scope (02 §4.1):
+ * also the process port events, for the process map (plan task 79). */
 static bool system_wide(enum graph_event_type type)
 {
-	return type == GRAPH_EVENT_GRAPH_CREATED || type == GRAPH_EVENT_GRAPH_DELETED ||
-	       type == GRAPH_EVENT_GRAPH_STATUS || type == GRAPH_EVENT_ERROR ||
-	       type == GRAPH_EVENT_COMPONENT || type == GRAPH_EVENT_LINK_ADDED ||
-	       type == GRAPH_EVENT_LINK_REMOVED;
+	switch (type) {
+	case GRAPH_EVENT_GRAPH_CREATED:
+	case GRAPH_EVENT_GRAPH_DELETED:
+	case GRAPH_EVENT_GRAPH_STATUS:
+	case GRAPH_EVENT_ERROR:
+	case GRAPH_EVENT_COMPONENT:
+	case GRAPH_EVENT_LINK_ADDED:
+	case GRAPH_EVENT_LINK_REMOVED:
+	case GRAPH_EVENT_INPORT_ADDED:
+	case GRAPH_EVENT_INPORT_REMOVED:
+	case GRAPH_EVENT_INPORT_RENAMED:
+	case GRAPH_EVENT_OUTPORT_ADDED:
+	case GRAPH_EVENT_OUTPORT_REMOVED:
+	case GRAPH_EVENT_OUTPORT_RENAMED:
+		return true;
+	default:
+		return false;
+	}
 }
 
 static bool in_scope(const GraphsSubscriber *s, const GraphEvent *ev)

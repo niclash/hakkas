@@ -600,6 +600,9 @@ static void test_command_rules(void)
 		{"environment", "getbindings", true, 0},
 		{"environment", "bind", true, 1},
 		{"environment", "unbind", true, 1},
+		{"link", "list", true, 0},
+		{"link", "add", true, 1},
+		{"link", "remove", true, 1},
 		{"runtime", "getruntime", false, 0},
 		{"runtime", "new_graph", true, AUTH_CAP_PROTOCOL_RUNTIME},
 		{"runtime", "delete_graph", true, AUTH_CAP_PROTOCOL_RUNTIME},
@@ -640,13 +643,14 @@ static void test_command_rules(void)
 	};
 	for (size_t i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
 		const Expect *e = &known[i];
-		/* In the table, 0 on a gated graph/component/trace/environment
-		 * row stands for "read" and 1 for "protocol:graph". */
+		/* In the table, 0 on a gated graph/component/trace/environment/
+		 * link row stands for "read" and 1 for "protocol:graph". */
 		uint32_t want = e->caps_any;
 		bool reading = strcmp(e->protocol, "graph") == 0 ||
 			       strcmp(e->protocol, "component") == 0 ||
 			       strcmp(e->protocol, "trace") == 0 ||
-			       strcmp(e->protocol, "environment") == 0;
+			       strcmp(e->protocol, "environment") == 0 ||
+			       strcmp(e->protocol, "link") == 0;
 		if (reading && want <= 1)
 			want = want == 1 ? g : rd;
 		AuthCommandRule r = auth_command_rule(e->protocol, e->command);
@@ -662,6 +666,7 @@ static void test_command_rules(void)
 				    {"graph", "merge"},	    {"runtime", "packet"},
 				    {"network", "data"},    {"component", "setsource"},
 				    {"trace", "begin"},	    {"bogus", "list"},
+				    {"link", "change"},
 				    {"Graph", "addnode"},   {NULL, "list"},
 				    {"graph", NULL}};
 	for (size_t i = 0; i < sizeof(unknown) / sizeof(unknown[0]); i++) {

@@ -576,6 +576,73 @@ char *proto_msg_bindings(const Runtime *rt)
 	return finish("environment", "bindings", p, ok);
 }
 
+/* A link's {"src":{"graph","port"},"tgt":{"graph","port"}} (02 §3.8). */
+static cJSON *end_json(const Graph *g, const char *port)
+{
+	cJSON *o = object();
+	if (o != NULL && (!add(o, "graph", cJSON_CreateString(g->id)) ||
+			  !add(o, "port", cJSON_CreateString(port)))) {
+		cJSON_Delete(o);
+		return NULL;
+	}
+	return o;
+}
+
+static cJSON *link_json(const ProcessLink *l)
+{
+	cJSON *o = object();
+	if (o != NULL && (!add(o, "src", end_json(l->src_graph, l->src_port)) ||
+			  !add(o, "tgt", end_json(l->tgt_graph, l->tgt_port)))) {
+		cJSON_Delete(o);
+		return NULL;
+	}
+	return o;
+}
+
+/* A process's public port names of one direction, in creation order. */
+static cJSON *port_names(const Graph *g, enum graph_port_dir dir)
+{
+	cJSON *a = cJSON_CreateArray();
+	for (uint32_t i = 0; a != NULL && i < g->port_count[dir]; i++) {
+		if (!cJSON_AddItemToArray(a, cJSON_CreateString(g->ports[dir][i].name))) {
+			cJSON_Delete(a);
+			return NULL;
+		}
+	}
+	return a;
+}
+
+char *proto_msg_links(const Graphs *gs)
+{
+	const Runtime *rt = gs->rt;
+	cJSON *p = object();
+	cJSON *links = cJSON_CreateArray();
+	bool ok = p != NULL && add(p, "links", links);
+	if (p == NULL)
+		cJSON_Delete(links);
+	for (uint32_t i = 0; ok && i < runtime_link_count(rt); i++) {
+		cJSON *l = link_json(runtime_link_at(rt, i));
+		ok = l != NULL && cJSON_AddItemToArray(links, l);
+		if (!ok)
+			cJSON_Delete(l);
+	}
+	cJSON *processes = cJSON_CreateArray();
+	ok = ok && add(p, "processes", processes);
+	for (uint32_t i = 0; ok && i < graphs_count(gs); i++) {
+		const Graph *g = graphs_at(gs, i);
+		if (g->component)
+			continue;
+		cJSON *o = object();
+		ok = o != NULL && add(o, "graph", cJSON_CreateString(g->id)) &&
+		     add(o, "inports", port_names(g, GRAPH_INPORT)) &&
+		     add(o, "outports", port_names(g, GRAPH_OUTPORT)) &&
+		     cJSON_AddItemToArray(processes, o);
+		if (!ok)
+			cJSON_Delete(o);
+	}
+	return finish("link", "links", p, ok);
+}
+
 char *proto_msg_event(const GraphEvent *ev)
 {
 	switch (ev->type) {
@@ -635,8 +702,11 @@ char *proto_msg_event(const GraphEvent *ev)
 	case GRAPH_EVENT_COMPONENT:
 		return proto_msg_component(ev->block_type);
 	case GRAPH_EVENT_LINK_ADDED:
-	case GRAPH_EVENT_LINK_REMOVED:
-		return NULL; /* no wire form yet (decided, plan task 21f; 02 §6) */
+	case GRAPH_EVENT_LINK_REMOVED: { /* 02 §3.8, plan task 79 */
+		const char *cmd = ev->type == GRAPH_EVENT_LINK_ADDED ? "add" : "remove";
+		cJSON *l = link_json(ev->link);
+		return l != NULL ? proto_msg_build("link", cmd, l) : NULL;
+	}
 	case GRAPH_EVENT_BINDING_ADDED:
 		return proto_msg_build("environment", "bind", binding_json(ev->binding));
 	case GRAPH_EVENT_BINDING_REMOVED:

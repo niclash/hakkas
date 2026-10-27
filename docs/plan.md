@@ -1068,25 +1068,22 @@ to the user first, one at a time.
 ## Phase 12 — Links between processes in the UI (requested 2026-10-27, being designed)
 
 - [ ] **79. The process map** (requested 2026-10-27; 00-README open question 13): a view of
-  the links between processes, opened by a button next to *New…* in the process list. Same
-  Rete editor as the process editor, but each node is a process (its process inports and
-  outports as sockets) and each connection a link (`01-architecture-overview.md` §2.2);
-  double-clicking a process opens it in the process editor. To decide before implementing:
-  - **Wire messages** (a protocol addition, put to the user first): commands to add and remove
-    a link and a way to list them, events broadcast to every authenticated connection, the
-    capability; and whether a link change makes something unsaved (today it does not: any save
-    writes `links.json`).
-  - **What the map shows**: running state, the process's description, live values on links;
-    processes without ports; what the view and the button are called.
-  - **Where the map's positions live** (a process has no position today): in `links.json`, in
-    each graph file's metadata, or only in the browser.
-  - **Editing on the map**: drag to link, delete, undo (06 §4.13), roles (06 §4.11); links in
-    the download, backup and restore files (06 §4.16, left out until now for lack of messages).
-
-## Phase 13 — Selecting block types (requested 2026-10-27 for X1, being specified)
-
-Specified in 03 first (each its own section), then one commit per type as in Phase 6.
-
+  the links between processes, opened by a button next to *New…* in the process list, in Rete,
+  each node a process and each connection a link; double-clicking a process opens it.
+  **Decided with the user 2026-10-27** (all recommendations accepted):
+  - **Wire messages**: a new group `link` (02 §3.8): `list`, `add`, `remove`
+    `{"src":{"graph","port"},"tgt":{"graph","port"}}`; the events are system-wide; read for
+    `list`, `protocol:graph` for the others. Added after the first proposal (the user's choice
+    of two options): `link:list` also carries every process's inport and outport names, and the
+    process port events become system-wide, so the map runs on the editor's own connection.
+  - **Saving**: a link change marks nothing unsaved; the engine writes `links.json` at once
+    after every wire command that added or removed a link.
+  - **Layout**: automatic every time (no stored positions).
+  - **What it shows**: every process (also without ports, smaller), its running state, its
+    ports with their channels; no live values yet.
+  - **Undo** of link steps; **backups** hold the links and a restore makes them; a single
+    process's download holds none.
+  - **Names**: the button *Map*, the view "Process map", the group `link`.
 - [x] **80. `math/Min` and `math/Max`**, 4 inputs each (decided with the user 2026-10-27;
   done 2026-10-27, 03 §3.10): an input fed by nothing is ignored (decided: the runtime tells a
   type which inputs have a source, `BlockCtx.sourced` for types with `reads_sources`,

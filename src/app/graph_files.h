@@ -136,6 +136,12 @@ enum graph_files_status graph_files_save(const GraphFiles *gf, const Graph *g);
 char *graph_files_serialize_bindings(const GraphFiles *gf, const Graph *g, size_t *len,
 				     size_t *count);
 
+/* Write every link between processes to <datadir>/links.json (removed when
+ * there is none), atomically: with every save, and after every wire command
+ * that changed the links (02 §3.8, plan task 79). GRAPH_FILES_ERR_INVALID,
+ * _NO_MEMORY, _STORAGE (logged). */
+enum graph_files_status graph_files_save_links(const GraphFiles *gf);
+
 /* network:persist (02 §3.3): save the graph with this id — its graph file,
  * its bindings file (removed when it has no bindings) and the links file
  * with every link between processes (removed when there is none; plan task

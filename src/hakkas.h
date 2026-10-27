@@ -208,7 +208,7 @@ enum hakkas_event_type {
 	HAKKAS_EVENT_GROUP_CHANGED,	 /* graph:changegroup */
 	HAKKAS_EVENT_COMPONENT,		 /* component:component: a new or changed block type */
 	HAKKAS_EVENT_ERROR,		 /* network:error, e.g. a failed persist (02 §3.3) */
-	/* Links between processes (plan task 21f): no wire message yet. */
+	/* Links between processes (plan task 21f): link:add/remove (02 §3.8). */
 	HAKKAS_EVENT_LINK_ADDED,
 	HAKKAS_EVENT_LINK_REMOVED,
 	/* Environment bindings (plan tasks 22, 70): environment:bind and
