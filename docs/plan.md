@@ -1083,6 +1083,19 @@ to the user first, one at a time.
   - **Editing on the map**: drag to link, delete, undo (06 §4.13), roles (06 §4.11); links in
     the download, backup and restore files (06 §4.16, left out until now for lack of messages).
 
+## Phase 13 — Selecting block types (requested 2026-10-27 for X1, being specified)
+
+Specified in 03 first (each its own section), then one commit per type as in Phase 6.
+
+- [ ] **80. `math/Min` and `math/Max`**, 4 inputs each (decided with the user 2026-10-27). To
+  decide: what an input fed by nothing counts as (it rests at 0, which would win a Max of
+  negative values).
+- [ ] **81. The selectors** (names decided with the user 2026-10-27): `process/SelectIn` (a
+  bool chooses which of two inputs goes to the output), `process/SelectOut` (a bool chooses
+  which of two outputs the input goes to), `process/MultiplexIn` and `process/MultiplexOut`
+  (the same with a number choosing among 8). To decide: the value type(s), what the outputs not
+  chosen hold, and a number selector out of range.
+
 ## Section X — Examples (requested 2026-10-27, being designed)
 
 Worked examples in `examples/`, each a set of process files (06 §4.16) with its bindings for the
@@ -1114,8 +1127,11 @@ missing.
   - **Seasons instead of a cascade** (decided 2026-10-27): three seasons by date, which do not
     overlap (in Scandinavia): the *heating season*, the *cooling season* and *neither*. In
     *neither*, the heat exchanger alone regulates the supply air (heating only, 0–100 %), the
-    heating and cooling valves closed. (Earlier: the heat exchanger is at 100 % in the heating
-    and in the cooling stage.)
+    heating and cooling valves closed; in the heating and the cooling season the heat exchanger
+    is at 100 % and the season's valve regulates. Dates: heating season 15 September – 15 May,
+    cooling season 1 June – 31 August; both at once raises an alarm (a configuration error).
+  - **Needs new block types** (Phase 13, tasks 80–81, before X1): `math/Min`, `math/Max` (the
+    heating valve as the larger of the supply air and the frost regulator) and the selectors.
   - **Pumps**: the heating pump runs while it is the heating season and the unit runs
     (schedule or Extended operation), the cooling pump likewise in the cooling season; each
     stops when either is no longer true. A weekly exercise run for both.
