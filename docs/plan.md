@@ -817,7 +817,7 @@ Decisions (made with the user 2026-10-14; recorded in 06 §7, 02 §2.3.1 and §3
 
 ### 5d. Waiting for other decisions
 
-- **Links between processes in the UI**: needs the wire messages of 00-README open question 13.
+- **Links between processes in the UI**: became plan task 79 (Phase 12, 2026-10-27).
 - **Environment ports and bindings in the UI**: shown and bound since tasks 62–63 (06 §4.14);
   still open: letting users hide and organize environment ports (03 §4).
 - **Connection routes**: Rete's reroute pins kept in the connection's metadata (`changeedge`,
@@ -1064,6 +1064,43 @@ to the user first, one at a time.
   Pictures from the cache, the vendor's https url, then the device's copy. The Colibri 8's
   render is now cropped to its board (places measured again). The Colibri emulator's E14
   shrinks to what the emulator still needs (its own plan).
+
+## Phase 12 — Links between processes in the UI (requested 2026-10-27, being designed)
+
+- [ ] **79. The process map** (requested 2026-10-27; 00-README open question 13): a view of
+  the links between processes, opened by a button next to *New…* in the process list. Same
+  Rete editor as the process editor, but each node is a process (its process inports and
+  outports as sockets) and each connection a link (`01-architecture-overview.md` §2.2);
+  double-clicking a process opens it in the process editor. To decide before implementing:
+  - **Wire messages** (a protocol addition, put to the user first): commands to add and remove
+    a link and a way to list them, events broadcast to every authenticated connection, the
+    capability; and whether a link change makes something unsaved (today it does not: any save
+    writes `links.json`).
+  - **What the map shows**: running state, the process's description, live values on links;
+    processes without ports; what the view and the button are called.
+  - **Where the map's positions live** (a process has no position today): in `links.json`, in
+    each graph file's metadata, or only in the browser.
+  - **Editing on the map**: drag to link, delete, undo (06 §4.13), roles (06 §4.11); links in
+    the download, backup and restore files (06 §4.16, left out until now for lack of messages).
+
+## Section X — Examples (requested 2026-10-27, being designed)
+
+Worked examples in `examples/`, each a set of process files (06 §4.16) with its bindings for the
+Colibri emulator, so it runs as it is. They show the block types in real use and are the
+material of the User's Manual (Section U); building them will show which block types are
+missing.
+
+- [ ] **X1. Air Handling Unit**: the user knows the real-world functions; the functions,
+  their split into processes and the I/O list are to be agreed with the user first.
+- [ ] **Further examples**: to be chosen with the user.
+
+## Section U — User's Manual (requested 2026-10-27, being designed)
+
+- [ ] **U1. A pedagogic User's Manual**, with a reasonable amount of illustrations and
+  screenshots, centered on two examples: a very simple one and a more complex one (the Air
+  Handling Unit, X1). To decide first: the audience and what it may assume, the format and
+  where it is published (the repository, served by the device, a PDF), how screenshots are
+  made and kept current, and its outline.
 
 ## Known issues (noted 2026-10-25, to evaluate later; not critical)
 
