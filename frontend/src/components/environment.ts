@@ -4,7 +4,7 @@
 import {reactive} from "vue";
 import type {Binding, EnvDescription} from "@/components/protocols/environment";
 import {Connection} from "@/components/protocols/websocket";
-import {errorClaims} from "@/components/model";
+import {quietReplies} from "@/components/model";
 import {channelLabel, isSensor} from "@/components/bindings";
 import {attachDevice, device, watchDevice} from "@/components/device";
 
@@ -77,7 +77,7 @@ export function describeEnvironment(conn: Connection) {
         watchDevice(conn, true);
 }
 
-errorClaims.push((message: string) => {
+quietReplies.push((message: string) => {
     if (!describing || message !== "No environment")
         return false;
     describing = false;

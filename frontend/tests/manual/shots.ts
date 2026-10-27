@@ -98,3 +98,13 @@ export async function shotOfProcess(page: Page, name: string, margin = 24) {
     await page.screenshot({path: resolve(OUT, name + ".png"), animations: "disabled",
         clip: {x: left, y: top, width: right - left, height: bottom - top}});
 }
+
+// Saves a screenshot of a part of the page with some of its surroundings, e.g. a context menu
+// with the block it was opened on.
+export async function shotAround(page: Page, name: string, part: Locator, margin: { x: number, y: number }) {
+    const b = (await part.first().boundingBox())!;
+    const view = page.viewportSize()!;
+    const x = Math.max(0, b.x - margin.x), y = Math.max(0, b.y - margin.y);
+    await page.screenshot({path: resolve(OUT, name + ".png"), animations: "disabled", clip: {x, y,
+        width: Math.min(view.width, b.x + b.width + margin.x) - x, height: Math.min(view.height, b.y + b.height + margin.y) - y}});
+}

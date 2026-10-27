@@ -1,5 +1,6 @@
 import {beforeEach, describe, expect, it} from "vitest";
-import {attachModel, componentTemplates, vueModel} from "@/components/model";
+import {attachModel, componentTemplates, messageLog, vueModel} from "@/components/model";
+import {describeEnvironment} from "@/components/environment";
 import {testConnection, TestConnection} from "./harness";
 
 // The client model changes only from events (02 §1.1).
@@ -62,6 +63,19 @@ describe("model", () => {
         t.receive("graph", "clear", {id: "g1", name: "One", main: true, description: "", icon: ""});
         expect(vueModel.currentGraphId.value).toBe("g1");
         expect(t.conn.currentGraph).toBe("g1");
+    });
+
+    it("an engine without an environment is no error, nor a message (06 §4.14)", () => {
+        messageLog.clear();
+        vueModel.errors.value = [];
+        describeEnvironment(t.conn);
+        t.receive("network", "error", {stack: "", message: "No environment"});
+        expect(vueModel.errors.value).toEqual([]);
+        expect(messageLog.items).toEqual([]);
+        // Not as the reply to environment:describe: a refusal like any other.
+        t.receive("network", "error", {stack: "", message: "No environment"});
+        expect(vueModel.errors.value).toEqual(["No environment"]);
+        expect(messageLog.items.map(m => m.refused)).toEqual([true]);
     });
 
     it("lists errors, the latest five", () => {

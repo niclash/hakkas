@@ -25,6 +25,7 @@
     "src/components/bindings.ts",
     "src/components/pictures.ts",
     "src/components/device.ts",
+    "src/components/environment.ts",
     "src/components/transfer.ts",
     "tests/**/*",
     "vitest.config.*",

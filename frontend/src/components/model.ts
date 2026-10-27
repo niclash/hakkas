@@ -248,6 +248,10 @@ export const vueModel: {
 // Parts of the UI that show some refusals themselves, at the field the command came from:
 // each one tells whether it took the message.
 export const errorClaims: ((message: string, graph?: string) => boolean)[] = [];
+// Errors that answer the frontend's own question rather than refuse a user's command (e.g. "No
+// environment" to environment:describe, 06 §4.14): neither shown nor kept in the messages
+// panel. Each returns whether it takes the message.
+export const quietReplies: ((message: string) => boolean)[] = [];
 
 // The messages panel's log (06 §4.12): kept across connections.
 export const messageLog = reactive(new MessageLog());
@@ -311,6 +315,8 @@ export function attachModel(conn: WsConnection) {
             messageLog.add({level: line.level, text: line.text, source: line.source});
             return;
         }
+        if (quietReplies.some(quiet => quiet(e.message)))
+            return;
         const name = e.graph ? vueModel.graphs.value.get(e.graph)?.name : undefined;
         const text = errorText(e.message, name, e.graph === vueModel.currentGraphId.value);
         messageLog.add({level: "error", text, refused: true});

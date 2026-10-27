@@ -1206,7 +1206,12 @@ missing.
   thermostat, the user's request; the device window shows the emulator's picture copies, so the
   screenshots need no network). The process list's header buttons now wrap instead of being cut
   off (*Back up*).
-- [ ] **U5. Part III** (chapters 5–10; 11 after task 79).
+- [x] **U5. Part III** (chapters 5–10 done 2026-10-27; 11 describes the links as they are
+  and is completed with task 79): screenshots by `frontend/tests/manual/working.shot.ts` (menus,
+  marquee, composite type, process list, Environment panel, device window, mapping and upload
+  dialogs, a viewer, About). Found while taking them: an engine without an environment put its
+  expected `"No environment"` reply into the messages panel as a refusal, with an unread count;
+  it is now a quiet reply (`quietReplies` in `model.ts`, 06 §4.14, a unit test).
 - [ ] **U6. Part IV**, the intermediate example (after X3).
 - [ ] **U7. Part V**, the Air Handling Unit (its alarms after they are designed).
 - [ ] **U8. Part VI** and the appendices: patterns, the generated block type reference,
