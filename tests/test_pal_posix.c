@@ -57,6 +57,14 @@ static void sleep_ms(long ms)
 		;
 }
 
+/* CLOCK_REALTIME in whole ms, as pal_wall_ms rounds it. */
+static int64_t realtime_ms(void)
+{
+	struct timespec ts;
+	CHECK(clock_gettime(CLOCK_REALTIME, &ts) == 0);
+	return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
 static void test_clock(void)
 {
 	CHECK(pal_init() == PAL_OK);
@@ -72,11 +80,14 @@ static void test_clock(void)
 	CHECK(pal_init() == PAL_OK);
 	CHECK(pal_uptime_ms() >= c);
 
-	/* The interim wall clock (plan task 24): UTC ms since the epoch. */
-	int64_t before = (int64_t)time(NULL) * 1000;
+	/* The interim wall clock (plan task 24): UTC ms since the epoch. Read
+	 * between two readings of the same clock: time() reads a coarser one
+	 * that can still show the previous second a few ms into the next, which
+	 * failed this check now and then (plan task 74). */
+	int64_t before = realtime_ms();
 	int64_t wall = pal_wall_ms();
-	int64_t after = (int64_t)time(NULL) * 1000 + 1000;
-	CHECK(wall >= before && wall < after);
+	int64_t after = realtime_ms();
+	CHECK(wall >= before && wall <= after);
 }
 
 static void test_random(void)

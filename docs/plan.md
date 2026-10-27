@@ -1080,7 +1080,7 @@ to the user first, one at a time.
   written into a 3-byte buffer (`snprintf`), seen with the debug preset. Harmless in the test as
   it stands, but the build should be warning-free: size the buffer for any int, or narrow the
   value.
-- [ ] **74. `test_pal_posix` failed once under the asan preset** (2026-10-26), in a full
+- [x] **74. `test_pal_posix` failed once under the asan preset** (*done 2026-10-27*: not ASan nor load but the wall-clock check, which bracketed `pal_wall_ms` (`CLOCK_REALTIME`) with `time()`, a coarser clock that shows the previous second up to ~5 ms into the next; 10 of 1500 runs failed, in any preset. It now brackets with `CLOCK_REALTIME` itself; 0 of 3000 runs fail) (2026-10-26), in a full
   `ctest --preset asan` run during plan task 73; it passed in the rerun of the whole suite and 16
   runs on its own, so likely timing under load. The failing check was not captured: when it
   recurs, run `ctest --preset asan -R test_pal_posix --output-on-failure` repeatedly with load,
