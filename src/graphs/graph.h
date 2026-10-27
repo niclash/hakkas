@@ -853,6 +853,11 @@ Block *block_output_source(Block *b, uint32_t *output);
  * input's for a composite instance). */
 const Linkable *block_input_value(const Block *b, uint32_t input);
 
+/* Whether input i of b has a source (01 §2.3): a connection, a value, a link
+ * or a binding; for a composite's inner input, whether the exposed input of
+ * its instance mapped to it has one (through nested instances). */
+bool block_input_sourced(const Block *b, uint32_t input);
+
 /* The current value of output i of b (get_output; the mapped inner output's
  * for a composite instance). */
 const Linkable *block_output_value(const Block *b, uint32_t output);

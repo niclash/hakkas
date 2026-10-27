@@ -1087,14 +1087,18 @@ to the user first, one at a time.
 
 Specified in 03 first (each its own section), then one commit per type as in Phase 6.
 
-- [ ] **80. `math/Min` and `math/Max`**, 4 inputs each (decided with the user 2026-10-27). To
-  decide: what an input fed by nothing counts as (it rests at 0, which would win a Max of
-  negative values).
+- [x] **80. `math/Min` and `math/Max`**, 4 inputs each (decided with the user 2026-10-27;
+  done 2026-10-27, 03 §3.10): an input fed by nothing is ignored (decided: the runtime tells a
+  type which inputs have a source, `BlockCtx.sourced` for types with `reads_sources`,
+  01 §2.3, also through a composite's exposed inputs); none fed gives 0; a NaN among the fed
+  inputs gives NaN (decided while implementing). Tested in `tests/test_selecting.c`.
 - [ ] **81. The selectors** (names decided with the user 2026-10-27): `process/SelectIn` (a
   bool chooses which of two inputs goes to the output), `process/SelectOut` (a bool chooses
   which of two outputs the input goes to), `process/MultiplexIn` and `process/MultiplexOut`
-  (the same with a number choosing among 8). To decide: the value type(s), what the outputs not
-  chosen hold, and a number selector out of range.
+  (the same with a number choosing among 8). Decided 2026-10-27: numbers only; an unfed
+  selector is 0/false (a multiplexer chooses none, SelectIn/SelectOut take the false side);
+  the outputs not chosen are 0; a number selector outside 1–8 chooses none (0), a fractional
+  one is rounded to the nearest whole number; the choices are numbered 1–8.
 
 ## Section X — Examples (requested 2026-10-27, being designed)
 

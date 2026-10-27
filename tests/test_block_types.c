@@ -145,6 +145,8 @@ static const struct expected_type table[] = {
 	{"math/Subtract", "remove", "out = in1-in2", 2, "number", NULL},
 	{"math/Modulo", "percent", "out = in1 MOD in2", 2, "number", NULL},
 	{"math/Remainder", "percent", "out = in1 REMAINDER in2", 2, "number", NULL},
+	{"math/Min", "south", "out = the smallest connected input", 4, "number", NULL},
+	{"math/Max", "north", "out = the largest connected input", 4, "number", NULL},
 	{"compare/Greater", "compare", "out = in1 > in2", 2, "bool", NULL},
 	{"compare/Less", "compare", "out = in1 < in2", 2, "bool", NULL},
 	{"compare/Equal", "compare", "out = in1 == in2", 2, "bool", NULL},

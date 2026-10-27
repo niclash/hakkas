@@ -88,6 +88,28 @@ const Linkable *block_input_value(const Block *b, uint32_t input)
 	return &t->in_values[input];
 }
 
+bool block_input_sourced(const Block *b, uint32_t input)
+{
+	while (b->inputs[input].source == INPUT_SOURCE_NONE) {
+		/* An inner input fed by an exposed input of its instance (03 §5):
+		 * that input's source, the first exposed input mapped to it
+		 * (two would feed it twice, 03 §5.1). */
+		const Block *p = b->parent;
+		if (p == NULL)
+			return false;
+		const CompositeDef *def = p->type->composite;
+		uint32_t k = 0;
+		while (k < p->type->input_count &&
+		       (p->inner[def->inports[k].block] != b || def->inports[k].port != input))
+			k++;
+		if (k == p->type->input_count)
+			return false;
+		b = p;
+		input = k;
+	}
+	return true;
+}
+
 const Linkable *block_output_value(const Block *b, uint32_t output)
 {
 	const Block *s = block_output_source((Block *)b, &output);
@@ -197,6 +219,10 @@ static int64_t run_compute(Block *b, Reason reason, int changed_input)
 		.changed_input = changed_input,
 		.period_ms = b->period_ms,
 	};
+	if (b->type->reads_sources)
+		for (uint32_t i = 0; i < b->type->input_count && i < 64; i++)
+			if (block_input_sourced(b, i))
+				ctx.sourced |= (uint64_t)1 << i;
 	int64_t ret = b->type->compute(&ctx);
 	/* A periodic type's compute may change its period (01 §3.2). STOP
 	 * runs with the timer already cancelled: keep it so. */

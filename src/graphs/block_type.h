@@ -85,6 +85,11 @@ typedef struct {
 	 * a changed value as block_set_period does, restarting the timer from
 	 * now (a STOP compute's change only takes effect at the next start). */
 	uint32_t period_ms;
+	/* Types with reads_sources only (else 0): bit i set while input i has a
+	 * source — a connection, a value, a link, a binding, or for a composite's
+	 * inner input the source of the exposed input mapped to it (01 §2.3).
+	 * Inputs beyond the 64th are never set. */
+	uint64_t sourced;
 } BlockCtx;
 
 /* For TIMER_SCHEDULED types, returns the delay in ms until the next
@@ -114,6 +119,10 @@ typedef struct {
 	 * steps, the runtime fires its armed timer at once so that it
 	 * re-evaluates (runtime_set_wall_ms, 01 §3.4). */
 	bool wall_clock;
+	/* The type's compute reads ctx.sourced: an input fed by nothing is
+	 * ignored rather than read at its resting value (math/Min, math/Max,
+	 * 03 §3.10). */
+	bool reads_sources;
 	/* true for a composite type (03 §5): its ports carry inner references
 	 * and its definition (inner blocks, edges, initials) is reached through
 	 * composite. Reported as "subgraph" by component:component (02 §3.5). */

@@ -54,6 +54,8 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `math/Subtract` | remove | `out = in1-in2` | `to_f64(in1)-to_f64(in2)` |
 | `math/Modulo` | percent | `out = in1 MOD in2` | `to_f64(in1) mod to_f64(in2)` (floored modulo, see below) |
 | `math/Remainder` | percent | `out = in1 REMAINDER in2` | `to_f64(in1) % to_f64(in2)` (truncating remainder, C `fmod`) |
+| `math/Min` | south | `out` = the smallest of the inputs that are fed | inputs fed by nothing ignored; see §3.10 |
+| `math/Max` | north | `out` = the largest of the inputs that are fed | inputs fed by nothing ignored; see §3.10 |
 | `compare/Greater` | compare | `out = in1 > in2` | `to_f64(in1) > to_f64(in2)` (bool result) |
 | `compare/Less` | compare | `out = in1 < in2` | `to_f64(in1) < to_f64(in2)` (bool result) |
 | `compare/Equal` | compare | `out = in1 == in2` | `to_f64(in1) == to_f64(in2)` (bool result) |
@@ -258,6 +260,15 @@ Decided with the user 2026-10-15; implemented in plan task 56 (`src/blocktypes/p
 - **`reset`**: while true, `output = clamp(0)` and the time passing is not integrated; when it goes false, integration starts from there.
 - A non-finite `input` integrates nothing for the time it holds (`output` is held).
 - **Start**: `output = clamp(0)` and the time starts at the start; nothing survives a stop. `STOP` changes nothing.
+
+### 3.10 `math/Min` and `math/Max` — the smallest and the largest input
+
+Decided with the user 2026-10-27 (plan task 80, for the Air Handling Unit example, plan X1: a heating valve driven by the larger of the supply air regulator and the frost protection regulator); `src/blocktypes/math.c`. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold, registered after `math/Remainder` (`math/Min` first). Ports `in1` … `in4` (number) → `out` (number); descriptions as for the other `math/` types (`"Operand N"`, `"Result"`).
+
+- **Only the inputs that are fed count**: an input with a source — a connection, a value, a link, a binding, or for a block inside a composite type the exposed input mapped to it (`01-architecture-overview.md` §2.3, `reads_sources`). An input fed by nothing is ignored, not read as its resting `0`, which would win a `Max` of negative values. So two, three or four inputs can be used, in any positions.
+- `out` is the smallest (`Min`) or largest (`Max`) of the fed inputs (`to_f64`); `0` when none is fed. `-0` and `+0` are equal: the first fed of them is the result.
+- **NaN**: a NaN in any fed input gives `NaN`, so a failed sensor shows rather than being passed over (decided while implementing). `±Infinity` compares as usual.
+- Every compute ignores `reason`; removing an input's source recomputes without it (the input reverts, `01-architecture-overview.md` §2.2).
 
 ## 4. The environment's inputs and outputs — no IO block types
 

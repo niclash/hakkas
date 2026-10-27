@@ -138,6 +138,7 @@ struct BlockTypeDef {
     size_t           state_size;       // 0 for stateless types; >0 reserves a per-instance opaque blob
     double           change_threshold; // type default for §3.3; NAN = use the engine-wide default
     bool             wall_clock;       // compute reads wall_ms: re-run when the wall clock steps (§3.4)
+    bool             reads_sources;    // compute reads ctx.sourced (below)
 };
 
 struct BlockCtx {
@@ -148,10 +149,13 @@ struct BlockCtx {
     Reason   reason;         // START | INPUT | TIMER | STOP
     int      changed_input;  // index of the input that changed, when reason == INPUT
     uint32_t period_ms;      // TIMER_PERIODIC: the block's period, which compute may change (§3.2)
+    uint64_t sourced;        // reads_sources only: bit i set while input i has a source
 };
 ```
 
 **C representation** (decided, plan task 5): `BlockTypeDef`, `PortDescriptor`, `BlockCtx`, `TimerMode` and `Reason` live in `src/graphs/block_type.h`, the contract between the generic runtime (`graphs/`) and the block types (`blocktypes/`), so that `blocktypes/` depends on `graphs/` and never the reverse; the runtime works on a `const BlockTypeDef *` and never consults the registry. Inputs and outputs share one `PortDescriptor` (name, description, type, default as a `Linkable`, `addressable`, and `inner`: the composite port's `"InnerBlock.port"` target/source, `NULL` for built-ins), held as a pointer plus a count per direction. An output's `default` is its value before its first compute. Built-in definitions are static const data: port defaults are scalars or the static empty string, which own nothing. A `subgraph` flag and a pointer to the composite definition (`CompositeDef`: the inner blocks with their resolved types, the internal edges and initials, and per exposed port the inner `(block, port)` it maps to, all by index — decided, plan task 21) mark composite types (`03-block-types.md` §5); their `compute` is `NULL`. `compute` writes an output by replacing the block-owned value in `ctx.outputs` (an output it doesn't write keeps its value); `changed_input` is `-1` unless `reason == INPUT`; `error` is never `NULL`.
+
+**Inputs fed by nothing** (decided with the user 2026-10-27, plan task 80): an input with no source reads its port's resting value (§2.1), which is meaningful for almost every type, but not for one that picks among its inputs: a `math/Max` of negative values would pick the resting `0` of an unused input. A type with `reads_sources` sees in `ctx.sourced` which inputs have a source — a connection, a value (initial), a link between processes or an environment binding (§2.2); a composite's inner input has one when the exposed input of its instance mapped to it has one, through nested instances (`03-block-types.md` §5). The other types get `0` and the runtime does not compute it. Removing a source clears it before the input reverts to its resting value (§2.2), so that compute already sees the input unfed; adding one sets it before the new value arrives. Only the first 64 inputs have a bit. `block_input_sourced` (`src/graphs/graph.h`) answers the same for one input.
 
 **Registry** (decided, plan task 5): `block_types_get(name)` (§3.5) looks types up by exact name in a fixed table of `HAKKAS_BLOCK_TYPES_MAX` entries (default 128, a per-build compile-time override), kept in registration order for `component:list` (`02-wire-protocol.md` §3.5). The registry doesn't own the definitions. Registering a name that is already registered is refused; unregistering keeps the order of the rest; a rename (`02-wire-protocol.md` §3.4.2) is unregister plus register, which moves the type to the end. The built-ins are registered at startup in the order of the `03-block-types.md` §3 table.
 

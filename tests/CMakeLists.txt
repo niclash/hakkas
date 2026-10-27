@@ -28,6 +28,8 @@ hakkas_add_test(test_timers)
 hakkas_add_test(test_pid)
 # The process/ types of 03 §3.2-§3.9 and §7.1 (blocktypes/process_more.c).
 hakkas_add_test(test_process_more)
+# The selecting types of plan Phase 13 (math/Min and math/Max, 03 §3.10).
+hakkas_add_test(test_selecting)
 # Compares with glibc's localtime_r under TZ (setenv, tzset, tm_gmtoff).
 hakkas_add_test(test_tz)
 target_compile_definitions(test_tz PRIVATE _GNU_SOURCE)

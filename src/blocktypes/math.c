@@ -108,6 +108,38 @@ static int64_t remainder_trunc(BlockCtx *ctx)
 	return out_f64(ctx, fmod(in_f64(ctx, 0), in_f64(ctx, 1)));
 }
 
+/* ---- Min and max (03 §3.10) -------------------------------------------- */
+
+/* The smallest (sign -1: largest) of the inputs that have a source; 0 when
+ * none has. A NaN among them gives NaN: a failed sensor shows. -0 and +0
+ * compare equal; the first of them wins. */
+static int64_t extreme(BlockCtx *ctx, int sign)
+{
+	bool any = false;
+	double best = 0.0;
+	for (int i = 0; i < 4; i++) {
+		if ((ctx->sourced & ((uint64_t)1 << i)) == 0)
+			continue;
+		double v = in_f64(ctx, i);
+		if (isnan(v))
+			return out_f64(ctx, v);
+		if (!any || sign * v < sign * best)
+			best = v;
+		any = true;
+	}
+	return out_f64(ctx, best);
+}
+
+static int64_t min4(BlockCtx *ctx)
+{
+	return extreme(ctx, 1);
+}
+
+static int64_t max4(BlockCtx *ctx)
+{
+	return extreme(ctx, -1);
+}
+
 /* ---- Definitions, in the order of the 03 §3 table ---------------------- */
 
 #define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0]))
@@ -127,6 +159,15 @@ const BlockTypeDef math_block_types[] = {
 	MATH_TYPE("math/Modulo", "percent", "out = in1 MOD in2", in2, out_number, modulo),
 	MATH_TYPE("math/Remainder", "percent", "out = in1 REMAINDER in2", in2, out_number,
 		  remainder_trunc),
+	/* Inputs fed by nothing are ignored (03 §3.10). */
+	{.name = "math/Min", .icon = "south", .description = "out = the smallest connected input",
+	 .inputs = in4, .input_count = 4, .outputs = out_number, .output_count = 1,
+	 .compute_on_input = true, .timer = TIMER_NONE, .compute = min4, .state_size = 0,
+	 .change_threshold = NAN, .reads_sources = true},
+	{.name = "math/Max", .icon = "north", .description = "out = the largest connected input",
+	 .inputs = in4, .input_count = 4, .outputs = out_number, .output_count = 1,
+	 .compute_on_input = true, .timer = TIMER_NONE, .compute = max4, .state_size = 0,
+	 .change_threshold = NAN, .reads_sources = true},
 };
 
 const size_t math_block_types_count = ARRAY_LEN(math_block_types);
