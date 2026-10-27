@@ -17,6 +17,7 @@ tests/                unit tests and end-to-end protocol tests (CTest; e2e.h: th
                       engine in-process with real WebSocket clients)
 library/schedules/    the schedule standard library: composite type files (schedule/DaySchedule,
                       WeekSchedule, MonthSchedule, YearSchedule; 03 §6.2), not built in
+docs/manual/          the User's Manual (VitePress; its README.md)
 examples/             the sister project's files, kept unmodified; its graph files load as
                       they are (05 §2.1), e.g. `hakkas describe topology examples/example.json`
                       prints one in hakkas' canonical form; also hakkas' own example

@@ -11,7 +11,8 @@
     "build-only": "vite build",
     "type-check": "vue-tsc --build --force",
     "test": "vitest run",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test",
+    "manual:screenshots": "npm run build && playwright test -c playwright.manual.config.ts"
   },
   "dependencies": {
     "@noble/hashes": "^1.4.0",

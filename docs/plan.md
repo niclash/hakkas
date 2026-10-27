@@ -1192,9 +1192,12 @@ missing.
     - Part VI Patterns and reference: 14 Design patterns; 15 Block type reference (generated);
       16 Administration. Appendices: A IEC 61131-3 cheat sheet, B glossary, C troubleshooting,
       D the Colibri emulator.
-- [ ] **U2. The manual's frame**: `docs/manual/` with VitePress, every chapter as a page of the
-  outline, the screenshot scripts with a first screenshot, the build command.
-- [ ] **U3. Part I** (chapters 1–3).
+- [x] **U2. The manual's frame** (done 2026-10-27): `docs/manual/` with VitePress 1.6.4 (its
+  README), every chapter a page of the outline (unwritten ones say so), the screenshot scripts
+  `frontend/tests/manual/*.shot.ts` (`npm run manual:screenshots`, the end-to-end fixtures,
+  numbered markers, the light theme) and environments described by the emulator's own code.
+- [x] **U3. Part I** (chapters 1–3, done 2026-10-27; diagrams `dataflow.svg`, `bindings.svg`;
+  screenshots `login`, `main-screen`).
 - [ ] **U4. Part II**, the thermostat (after X2).
 - [ ] **U5. Part III** (chapters 5–10; 11 after task 79).
 - [ ] **U6. Part IV**, the intermediate example (after X3).

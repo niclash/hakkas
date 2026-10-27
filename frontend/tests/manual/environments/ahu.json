@@ -1,0 +1,576 @@
+{
+  "name": "ahu",
+  "description": "Colibri emulator: Colibri 8",
+  "icon": "chip",
+  "outPorts": [
+    {
+      "id": "slot1-ai",
+      "type": "number",
+      "description": "Pt1000 temperature",
+      "unit": "°C",
+      "min": -50,
+      "max": 150,
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot1-fault",
+      "type": "bool",
+      "description": "Sensor open or shorted",
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot2-ai",
+      "type": "number",
+      "description": "Pt1000 temperature",
+      "unit": "°C",
+      "min": -50,
+      "max": 150,
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot2-fault",
+      "type": "bool",
+      "description": "Sensor open or shorted",
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot3-ai",
+      "type": "number",
+      "description": "Pt1000 temperature",
+      "unit": "°C",
+      "min": -50,
+      "max": 150,
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot3-fault",
+      "type": "bool",
+      "description": "Sensor open or shorted",
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot6-di",
+      "type": "bool",
+      "description": "Input",
+      "addressable": true,
+      "count": 4
+    },
+    {
+      "id": "slot6-fault",
+      "type": "bool",
+      "description": "Any fault of the channel or the module",
+      "addressable": true,
+      "count": 4
+    },
+    {
+      "id": "slot7-di",
+      "type": "bool",
+      "description": "Input state",
+      "addressable": true,
+      "count": 4
+    },
+    {
+      "id": "slot7-freq",
+      "type": "number",
+      "description": "Frequency",
+      "unit": "Hz",
+      "min": 0,
+      "max": 10000,
+      "addressable": true,
+      "count": 4
+    },
+    {
+      "id": "slot7-duty",
+      "type": "number",
+      "description": "Duty cycle",
+      "unit": "%",
+      "min": 0,
+      "max": 100,
+      "addressable": true,
+      "count": 4
+    },
+    {
+      "id": "slot7-count",
+      "type": "number",
+      "description": "Pulse count, 32 bits, rolling over",
+      "min": 0,
+      "max": 4294967295,
+      "addressable": true,
+      "count": 4
+    }
+  ],
+  "inPorts": [
+    {
+      "id": "slot4-aq",
+      "type": "number",
+      "description": "0-10 V output",
+      "unit": "V",
+      "min": 0,
+      "max": 10,
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot5-aq",
+      "type": "number",
+      "description": "0-10 V output",
+      "unit": "V",
+      "min": 0,
+      "max": 10,
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot6-dir",
+      "type": "bool",
+      "description": "Direction: true makes the channel an output",
+      "addressable": true,
+      "count": 4
+    },
+    {
+      "id": "slot6-dq",
+      "type": "bool",
+      "description": "Output",
+      "addressable": true,
+      "count": 4
+    }
+  ],
+  "modules": [
+    {
+      "slot": 0,
+      "builtin": true,
+      "type": "carrier",
+      "ports": []
+    },
+    {
+      "slot": 1,
+      "type": "colibri_pt1000",
+      "name": "Colibri Pt1000",
+      "vendor": "CurrentMakers",
+      "serial": "AHU-0001",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot1-ai",
+        "slot1-fault"
+      ],
+      "positions": [
+        {
+          "port": "slot1-ai",
+          "index": 1,
+          "x": 0.31,
+          "y": 0.8398
+        },
+        {
+          "port": "slot1-ai",
+          "index": 2,
+          "x": 0.68,
+          "y": 0.8398
+        },
+        {
+          "port": "slot1-fault",
+          "index": 1,
+          "x": 0.31,
+          "y": 0.8398
+        },
+        {
+          "port": "slot1-fault",
+          "index": 2,
+          "x": 0.68,
+          "y": 0.8398
+        }
+      ]
+    },
+    {
+      "slot": 2,
+      "type": "colibri_pt1000",
+      "name": "Colibri Pt1000",
+      "vendor": "CurrentMakers",
+      "serial": "AHU-0002",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot2-ai",
+        "slot2-fault"
+      ],
+      "positions": [
+        {
+          "port": "slot2-ai",
+          "index": 1,
+          "x": 0.31,
+          "y": 0.8398
+        },
+        {
+          "port": "slot2-ai",
+          "index": 2,
+          "x": 0.68,
+          "y": 0.8398
+        },
+        {
+          "port": "slot2-fault",
+          "index": 1,
+          "x": 0.31,
+          "y": 0.8398
+        },
+        {
+          "port": "slot2-fault",
+          "index": 2,
+          "x": 0.68,
+          "y": 0.8398
+        }
+      ]
+    },
+    {
+      "slot": 3,
+      "type": "colibri_pt1000",
+      "name": "Colibri Pt1000",
+      "vendor": "CurrentMakers",
+      "serial": "AHU-0003",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot3-ai",
+        "slot3-fault"
+      ],
+      "positions": [
+        {
+          "port": "slot3-ai",
+          "index": 1,
+          "x": 0.31,
+          "y": 0.8398
+        },
+        {
+          "port": "slot3-ai",
+          "index": 2,
+          "x": 0.68,
+          "y": 0.8398
+        },
+        {
+          "port": "slot3-fault",
+          "index": 1,
+          "x": 0.31,
+          "y": 0.8398
+        },
+        {
+          "port": "slot3-fault",
+          "index": 2,
+          "x": 0.68,
+          "y": 0.8398
+        }
+      ]
+    },
+    {
+      "slot": 4,
+      "type": "colibri_aqv",
+      "name": "Colibri AQV",
+      "vendor": "CurrentMakers",
+      "serial": "AHU-0004",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_aqv_top_render.png",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot4-aq"
+      ],
+      "positions": [
+        {
+          "port": "slot4-aq",
+          "index": 1,
+          "x": 0.28,
+          "y": 0.674
+        },
+        {
+          "port": "slot4-aq",
+          "index": 2,
+          "x": 0.73,
+          "y": 0.674
+        }
+      ]
+    },
+    {
+      "slot": 5,
+      "type": "colibri_aqv",
+      "name": "Colibri AQV",
+      "vendor": "CurrentMakers",
+      "serial": "AHU-0005",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_aqv_top_render.png",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot5-aq"
+      ],
+      "positions": [
+        {
+          "port": "slot5-aq",
+          "index": 1,
+          "x": 0.28,
+          "y": 0.674
+        },
+        {
+          "port": "slot5-aq",
+          "index": 2,
+          "x": 0.73,
+          "y": 0.674
+        }
+      ]
+    },
+    {
+      "slot": 6,
+      "type": "colibri_dio1",
+      "name": "Colibri DIO1",
+      "vendor": "CurrentMakers",
+      "serial": "AHU-0006",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_dio1_top_render.png",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot6-dir",
+        "slot6-dq",
+        "slot6-di",
+        "slot6-fault"
+      ],
+      "positions": [
+        {
+          "port": "slot6-dq",
+          "index": 1,
+          "x": 0.77,
+          "y": 0.7845
+        },
+        {
+          "port": "slot6-dq",
+          "index": 2,
+          "x": 0.59,
+          "y": 0.7845
+        },
+        {
+          "port": "slot6-dq",
+          "index": 3,
+          "x": 0.41,
+          "y": 0.7845
+        },
+        {
+          "port": "slot6-dq",
+          "index": 4,
+          "x": 0.23,
+          "y": 0.7845
+        },
+        {
+          "port": "slot6-di",
+          "index": 1,
+          "x": 0.77,
+          "y": 0.7845
+        },
+        {
+          "port": "slot6-di",
+          "index": 2,
+          "x": 0.59,
+          "y": 0.7845
+        },
+        {
+          "port": "slot6-di",
+          "index": 3,
+          "x": 0.41,
+          "y": 0.7845
+        },
+        {
+          "port": "slot6-di",
+          "index": 4,
+          "x": 0.23,
+          "y": 0.7845
+        }
+      ]
+    },
+    {
+      "slot": 7,
+      "type": "colibri_diu",
+      "name": "Colibri DIU",
+      "vendor": "CurrentMakers",
+      "serial": "AHU-0007",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_diu_top_render.png",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot7-di",
+        "slot7-freq",
+        "slot7-duty",
+        "slot7-count"
+      ],
+      "positions": [
+        {
+          "port": "slot7-di",
+          "index": 1,
+          "x": 0.19,
+          "y": 0.3867
+        },
+        {
+          "port": "slot7-di",
+          "index": 2,
+          "x": 0.39,
+          "y": 0.3867
+        },
+        {
+          "port": "slot7-di",
+          "index": 3,
+          "x": 0.6,
+          "y": 0.3867
+        },
+        {
+          "port": "slot7-di",
+          "index": 4,
+          "x": 0.8,
+          "y": 0.3867
+        }
+      ]
+    }
+  ],
+  "carrier": {
+    "type": "colibri_8",
+    "name": "Colibri 8",
+    "vendor": "CurrentMakers",
+    "documentation": "https://currentmakers.com/products/colibri/colibri_8/",
+    "picture": {
+      "url": "https://currentmakers.com/data/products/colibri/renders/colibri_8-rev_B_top_render.png",
+      "crop": {
+        "x": 0.2253,
+        "y": 0.3036,
+        "w": 0.5494,
+        "h": 0.4051
+      }
+    },
+    "slots": 7,
+    "builtin": [
+      {
+        "slot": 0
+      }
+    ],
+    "power": {
+      "voltage": {
+        "min": 7,
+        "max": 30
+      },
+      "ac": true,
+      "dc": true,
+      "current": 2
+    },
+    "comm": [],
+    "places": {
+      "slots": [
+        {
+          "slot": 1,
+          "x": 0.2639,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 2,
+          "x": 0.3566,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 3,
+          "x": 0.4494,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 4,
+          "x": 0.542,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 5,
+          "x": 0.6349,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 6,
+          "x": 0.7275,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 7,
+          "x": 0.8202,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        }
+      ],
+      "comm": [
+        {
+          "slot": 1,
+          "x": 0.0593,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        }
+      ]
+    }
+  }
+}

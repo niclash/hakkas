@@ -28,7 +28,8 @@
     "src/components/transfer.ts",
     "tests/**/*",
     "vitest.config.*",
-    "playwright.config.*"
+    "playwright.config.*",
+    "playwright.manual.config.*"
   ],
   "compilerOptions": {
     "composite": true,

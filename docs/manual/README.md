@@ -1,0 +1,31 @@
+# The hakkas User's Manual
+
+The manual's source (plan Section U): Markdown, one page per chapter, built into a static site
+with VitePress.
+
+```sh
+npm install
+npm run dev        # a local server that follows your edits
+npm run build      # the site in .vitepress/dist/
+```
+
+`README.md` (this file) is not part of the site.
+
+## Pictures
+
+- `images/screenshots/` are made by scripts, never by hand: `frontend/tests/manual/*.shot.ts`
+  drive the built frontend against a real engine (the end-to-end tests' fixtures) and write the
+  PNGs here. Make them all again after a change to the UI, from `frontend/`:
+  `npm run manual:screenshots` (with `HAKKAS_BROWSER` as for the end-to-end tests). An
+  environment a script serves is the description the Colibri emulator gives for an example's
+  environment file, kept in `frontend/tests/manual/environments/` and made with
+  `node tests/manual/describe-environment.mjs <environment file> <name> <out>` (the emulator
+  built first).
+- `images/diagrams/` are hand-made SVG.
+
+## Writing
+
+The audience and the decisions are in `docs/plan.md`, Section U. In short: automation engineers
+who know PLCs; explain what is new in hakkas, not control engineering; "Coming from IEC 61131-3"
+notes as `::: tip` boxes; block names as code, block types with their family, things to click in
+italics.
