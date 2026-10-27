@@ -6,6 +6,8 @@ import {onMounted, ref, watch} from "vue";
 import ReteEditor from "@/components/floweditor/ReteController.vue";
 import Inspector from "@/components/Inspector.vue";
 import EnvironmentPanel from "@/components/EnvironmentPanel.vue";
+import MapView from "@/components/map/MapView.vue";
+import {mapOpen} from "@/components/map/map";
 import {can, vueModel} from "@/components/model";
 import {editor as reteEditor} from "@/components/floweditor/viewmodel/default";
 import {RuntimeEvent} from "@/components/protocols/runtime";
@@ -23,6 +25,7 @@ const props = defineProps({
 
 const openProcess = (processId: string) => {
   console.log("openProcess(" + processId + ");");
+  mapOpen.value = false;
   vueModel.connection.value?.proto.graph.request_connect(processId);
 }
 
@@ -52,13 +55,15 @@ onMounted(() => {
 <template>
   <div class="hk-workspace">
     <aside class="hk-sidebar">
-      <Processes ref="procs" :current="vueModel.currentGraphId.value" @onSelection="(processName:string) => {openProcess(processName)}"/>
+      <Processes ref="procs" :current="mapOpen ? '' : vueModel.currentGraphId.value" @onSelection="(processName:string) => {openProcess(processName)}"/>
       <Components v-if="can.edit" ref="comps" @onSelection="(compType:string) => {addComponent(compType)}"
                   @openType="(type: string) => openProcess(type)"/>
       <EnvironmentPanel/>
     </aside>
-    <ReteEditor ref="editor"/>
-    <Inspector/>
+    <!-- The process map (06 §4.17) in the editor's place; the editor stays, hidden. -->
+    <ReteEditor ref="editor" v-show="!mapOpen"/>
+    <MapView v-if="mapOpen"/>
+    <Inspector v-if="!mapOpen"/>
   </div>
 </template>
 

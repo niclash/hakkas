@@ -1,44 +1,86 @@
 # 11. Links between processes
 
-::: info Partly available
-The controller runs links between processes, but the editor cannot show or make them yet. The
-**process map**, a view of the processes and their links with a button beside *New…*, is planned
-(plan task 79). This chapter will describe it once it exists.
-:::
-
 ## 11.1 Links
 
 A **link** connects one process's **output port** to another process's **input port** (Section
 2.4). It carries a value from one process to the other, just as a connection does inside a
-process: on change, through the same queue, with no delay of its own. A typical use is one
-process that computes the outdoor temperature's mean or the season, and several that use it.
+process: on change, through the same queue, with no delay of its own.
+
+A typical use is one process that measures or computes something many others need, such as the
+outdoor temperature, an occupancy signal or the season, and several processes that use it. Each
+process stays complete in itself, with ports that say what it needs and what it offers, and the
+links say who feeds whom on this controller.
 
 The rules are those of connections:
 
-- **An input port has one source:** a link, a binding to a sensor, or (through its block) a
-  connection or fixed value.
+- **An input port has one source:**
+  - a link;
+  - or a binding to a sensor (Chapter 8);
+  - or, through its block, a connection or a fixed value.
+
+  A link onto an input that already has a source is refused with *Input already connected*.
 - **An output port may feed any number of links**, and drive actuators at the same time.
+- **A process may link to itself**, an output port to one of its own input ports.
 - **Removing a link** returns the input to its resting value, at once.
-- **A stopped process's outputs keep their last values**, and so do the links from it.
+- **A stopped process's outputs keep their last values**, and so do the links from it. When it
+  starts again, it sends its values over its links.
 
-**Today**, links are kept by the controller in a file of its own, `links.json` in its data
-directory, which an administrator writes. Each entry is `{"from": "<process
-id>.<outport>", "to": "<process id>.<inport>"}`.
+**Links end by themselves** when what they name goes away:
+- either process is deleted;
+- either port is removed;
+- either port is **renamed**: a link names its ports, and the renamed port is no longer the
+  port the link was made with.
 
-The controller makes the links when it starts:
-- after every process is loaded, and before any process starts, so that a linked input sees its
-  source's first value;
-- skipping, with a warning in its log, a link it cannot make (an unknown process or port, or an
-  input that already has a source).
-
-Links are not part of process files or backups (Section 9.4). Renaming a process port ends the
-links to it.
-
-Until the process map exists, prefer **one process per job**, and connections inside it, where
-two parts must share values. A composite type (Chapter 7) keeps a large process readable.
+Renaming a process or a block keeps its links.
 
 ## 11.2 The process map
 
-Planned (plan task 79): a view, beside the process editor, in which each process is a block with
-its process ports as sockets, and each link a connection. You will be able to draw and remove
-links there as you draw connections, and open a process with a double-click.
+*Map* above the process list shows every process and the links between them, in the editor's
+place.
+
+![The process map: an outdoor station linked into the air handling unit](../images/screenshots/process-map.png)
+
+- **Each process** is a box with its name, its running mark and a red tint while it is stopped.
+  Its input ports are on the left and its output ports on the right. Point at it for its
+  description.
+- **A port bound to the I/O** shows its channel (`⇄ slot1-ai[1]`).
+- **Each link** is a line from an output port to an input port.
+
+**The layout is automatic.** Processes that no other process feeds are in the first column,
+and every other process stands right of the processes that feed it. The map arranges itself
+again when a process, a port or a link comes or goes. You can drag a process aside to see
+better, but the next change puts it back. Drag the empty map to move around, and use the wheel
+to zoom.
+
+**Making a link.** Drag from an output port's socket to an input port's socket. **Removing
+one**: pull its end off the input port and drop it on the empty map, or right-click it and
+choose *Delete link*. Ctrl+Z and Ctrl+Shift+Z (or Ctrl+Y) undo and redo your own link changes,
+while the map is shown. As in the editor, a change someone else has made since is not undone.
+
+**Opening a process.** Double-click it, or right-click it and choose *Open*. The browser's back
+button returns to the map, whose address is `/?map`.
+
+Editors and admins make and remove links. Viewers and operators see the map but do not change
+it.
+
+## 11.3 Saving and moving links
+
+**Links are saved at once.** A link is wiring between processes, not part of any one process,
+so making or removing one marks no process unsaved. The controller writes its links to its
+storage straight away, and makes them again when it starts:
+- after every process is loaded, and before any starts;
+- so that each linked input sees its source's first value.
+
+**In files** (Chapter 9):
+- **A backup** holds every link, and restoring it makes them once the processes are there.
+- **A single process's download** holds none, since a link reaches another process.
+- **Uploading a process that replaces one on the controller** keeps that process's links. The
+  upload makes them again after the new version, as long as the new version still has the ports
+  they name.
+
+The upload dialog says how many links it makes, and its report lists each.
+
+::: tip Coming from IEC 61131-3
+Links take the place of global variables shared between programs. They are explicit and
+one-way, and each input has exactly one writer, so the map shows who feeds whom.
+:::

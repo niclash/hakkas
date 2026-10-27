@@ -7,6 +7,7 @@
 import {can, PrimitiveNode, vueModel} from "@/components/model";
 import {Clip, CLIP_FORMAT, clipOrigin, makeClip, parseClip, pasteCommands} from "@/components/clipboard";
 import type {FlowEditor} from "./viewmodel/default";
+import {shown} from "./shown";
 
 // The offset of a pasted copy from its originals; each further paste of the same clip moves
 // one step more.
@@ -110,7 +111,7 @@ function typing(event: Event): boolean {
 }
 
 export function setupCopyPaste(editor: FlowEditor) {
-    const active = (event: Event) => editor.area.container.isConnected && !typing(event);
+    const active = (event: Event) => shown(editor.area.container) && !typing(event);
     // The clip into the event's clipboard data, which the browser puts on the system clipboard.
     const put = (event: ClipboardEvent, c: Clip | undefined) => {
         if (c === undefined || event.clipboardData === null)

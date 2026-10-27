@@ -7,7 +7,7 @@ import type {Binding, EnvDescription} from "@/components/protocols/environment";
 import {CheckContext, checkEntries, Entry, initialRows, MappingRow} from "@/components/bindings";
 import {TransferConnection, TransferError} from "@/components/transfer-connection";
 import {
-    componentsOf, DeviceState, GraphFile, insideCommands, portsOf, ProcessEntry, ProcessPlan, SourcePlan, SourceType,
+    componentsOf, DeviceState, GraphFile, insideCommands, linksToMake, portsOf, ProcessEntry, ProcessPlan, SourcePlan, SourceType,
     TransferFile, transferFile, TypeFile, TypePlan, uploadPlan, UploadPlan
 } from "@/components/transfer";
 
@@ -56,7 +56,14 @@ export async function readFile(ids: string[] | "all"): Promise<TransferFile> {
         }
         const r = vueModel.runtime.value ?? {};
         const runtime = {label: String(r.label ?? ""), id: String(r.id ?? ""), version: String(r.version ?? "")};
-        return transferFile(processes, types, runtime);
+        const file = transferFile(processes, types, runtime);
+        // A backup holds every link; a process's download none (a link reaches another process).
+        if (all) {
+            const links = await t.links();
+            if (links.length > 0)
+                file.links = links;
+        }
+        return file;
     } finally {
         t.close();
     }
@@ -83,6 +90,7 @@ export async function planUpload(t: TransferConnection, file: TransferFile, sour
         types,
         sources,
         environment: environment.description?.name,
+        links: await t.links(),
     };
     return uploadPlan(file, device, sourceFiles);
 }
@@ -93,7 +101,7 @@ function emptyType(id: string): TypeFile {
 }
 
 export interface ReportLine {
-    kind: "type" | "process";
+    kind: "type" | "process" | "link";
     id: string;
     name: string;
     ok: boolean;
@@ -229,6 +237,12 @@ export async function runUpload(t: TransferConnection, plan: UploadPlan, hooks: 
         }
         for (const p of plan.processes.filter(x => x.include))
             report.push(await makeProcess(t, p, environment.description, hooks));
+        for (const l of linksToMake(plan)) {
+            const name = `${l.src.graph}.${l.src.port} → ${l.tgt.graph}.${l.tgt.port}`;
+            hooks.progress(`Link ${name}…`);
+            const refused = await t.addLink(l);
+            report.push({kind: "link", id: name, name, ok: refused === "", notes: refused === "" ? [] : [refused]});
+        }
     } catch (e) {
         report.push({kind: "process", id: "", name: "", ok: false,
             notes: [(e instanceof TransferError ? e.message : String(e)) + ": the upload stopped here"]});

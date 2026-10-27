@@ -12,6 +12,7 @@ import {menuOnRelease, PanZoom} from './navigation';
 import {BlockSelection, MoveThrottle, Position, SelectionDrag} from './blocks';
 import {inputSources} from '@/components/floweditor/values';
 import * as history from '@/components/floweditor/history';
+import {shown} from "../shown";
 
 // What the selection does to the process, by block id (the node's label).
 export interface SelectionCommands {
@@ -184,7 +185,7 @@ export function setupBlockSelection<K>(editor: NodeEditor<Schemes>, area: AreaPl
     };
 
     const keydown = (event: KeyboardEvent) => {
-        if (typing(event) || !area.container.isConnected)
+        if (typing(event) || !shown(area.container))
             return;
         if (event.key === 'Escape') {
             selection.clear();

@@ -41,6 +41,7 @@ import AboutDialog from "@/components/AboutDialog.vue";
 import {Connection} from "@/components/protocols/websocket";
 import {attachModel, can, errorClaims, messageLog, vueModel} from "@/components/model";
 import {attachEnvironment, describeEnvironment} from "@/components/environment";
+import {attachMap, mapOpen, openMap} from "@/components/map/map";
 import {addressFor, Opened, parseAddress, titleFor} from "@/address";
 import {roleLabel} from "@/components/roles";
 import {OnLogin, OnLoginFailed} from "@/components/protocols/auth";
@@ -83,9 +84,11 @@ const connect = (start: (conn: Connection) => void) => {
   let conn = new Connection();
   vueModel.connection.value = conn;
   // While reconnecting, the model keeps what it shows until the session is back (onLogin).
-  if (reconnect.value === undefined)
+  if (reconnect.value === undefined) {
     attachModel(conn);
     attachEnvironment(conn);
+    attachMap(conn);
+  }
   conn.proto.auth.addListener("onLogin", onLogin);
   conn.proto.auth.addListener("onLoginFailed", (c: Connection, failure: OnLoginFailed) => loginFailed(c, failure.message));
   conn.proto.auth.addListener("onLogout", onLogout);
@@ -184,6 +187,7 @@ const onLogin = (conn: Connection, payload: OnLogin) => {
     reconnect.value = undefined;
     attachModel(conn);
     attachEnvironment(conn);
+    attachMap(conn);
   }
   conn.currentSecret = payload.secret;
   vueModel.capabilities.value = payload.capabilities ?? [];
@@ -196,9 +200,11 @@ const onLogin = (conn: Connection, payload: OnLogin) => {
   vueModel.errors.value = [];
   conn.proto.runtime.request_getruntime();
   describeEnvironment(conn);
-  // The process that was open, again (its watches follow, 06 §4.7); else the one the address
-  // names (06 §2.1: a bookmark, a reload).
-  if (reopen !== "")
+  // The process that was open, again (its watches follow, 06 §4.7), or the map; else what the
+  // address names (06 §2.1: a bookmark, a reload).
+  if (mapOpen.value)
+    openMap(conn);
+  else if (reopen !== "")
     conn.proto.graph.request_connect(reopen);
   else
     openAddress(conn);
@@ -224,6 +230,8 @@ watch(() => messageLog.items[messageLog.items.length - 1]?.seq, last => {
 
 // What is open now, as the address names it.
 const opened = computed<Opened | undefined>(() => {
+  if (mapOpen.value)
+    return {kind: "map", id: ""};
   const id = vueModel.currentGraphId.value;
   if (id === "")
     return undefined;
@@ -248,6 +256,8 @@ watch(opened, now => {
 
 watch(() => {
   const id = vueModel.currentGraphId.value;
+  if (mapOpen.value)
+    return "Process map";
   return vueModel.currentComponent.value?.id === id && id !== ""
     ? vueModel.currentComponent.value?.name : vueModel.graphs.value.get(id)?.name;
 }, name => document.title = titleFor(name), {immediate: true});
@@ -257,7 +267,16 @@ watch(() => {
 let asked = "";
 const openAddress = (conn: Connection) => {
   const wanted = parseAddress(location.search);
+  if (wanted?.kind === "map") {
+    if (!mapOpen.value)
+      openMap(conn);
+    fromHistory = false;
+    return;
+  }
   if (wanted === undefined || wanted.id === vueModel.currentGraphId.value) {
+    // Back from the map to the process under it.
+    if (wanted !== undefined)
+      mapOpen.value = false;
     fromHistory = false;
     return;
   }

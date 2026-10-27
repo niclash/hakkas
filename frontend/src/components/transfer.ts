@@ -6,6 +6,7 @@
 // unit tested.
 
 import {BindingsFile, parseBindingsFile} from "@/components/bindings";
+import type {ProcessLink} from "@/components/protocols/link";
 
 export const TRANSFER_FORMAT = "hakkas/processes";
 
@@ -46,6 +47,9 @@ export interface TransferFile {
     runtime?: { label?: string, id?: string, version?: string };
     processes: ProcessEntry[];
     types: TypeFile[];
+    // The links between processes (02 §3.8, plan task 79): a backup's every link; none in a
+    // single process's file.
+    links?: ProcessLink[];
 }
 
 export function emptyGraph(id: string): GraphFile {
@@ -219,8 +223,18 @@ export function parseTransferFile(text: string): TransferFile | string {
             return graph;
         types.push({...graph, library: graph.id.includes("/") ? graph.id.split("/")[0] : ""});
     }
+    if (v.links !== undefined && !Array.isArray(v.links))
+        return "links: expected an array";
+    const links: ProcessLink[] = [];
+    const end = (e: unknown) => isObject(e) && isString(e.graph) && isString(e.port) ? {graph: e.graph, port: e.port} : undefined;
+    for (const [i, l] of (v.links ?? []).entries()) {
+        const src = isObject(l) ? end(l.src) : undefined, tgt = isObject(l) ? end(l.tgt) : undefined;
+        if (src === undefined || tgt === undefined)
+            return `links[${i}]: expected {"src":{"graph","port"},"tgt":{"graph","port"}}`;
+        links.push({src, tgt});
+    }
     return {format: TRANSFER_FORMAT, version: 1, saved: isString(v.saved) ? v.saved : "",
-        runtime: isObject(v.runtime) ? v.runtime : undefined, processes, types};
+        runtime: isObject(v.runtime) ? v.runtime : undefined, processes, types, ...(links.length > 0 ? {links} : {})};
 }
 
 // ---- Type files (03 §5.1) ------------------------------------------------------------------------
@@ -282,6 +296,7 @@ export function parseUpload(files: { name: string, text: string }[]): UploadSet 
     const processes = new Map<string, ProcessEntry>();
     const types = new Map<string, TypeFile>();
     const sources = new Map<string, SourceType>();
+    const links: ProcessLink[] = [];
     let runtime: TransferFile["runtime"], saved = "";
     for (const f of files) {
         let v: unknown;
@@ -299,11 +314,12 @@ export function parseUpload(files: { name: string, text: string }[]): UploadSet 
             return f.name + ": " + t;
         t.processes.forEach(p => processes.set(p.graph.id, p));
         t.types.forEach(x => types.has(x.id) || types.set(x.id, x));
+        links.push(...(t.links ?? []));
         runtime = runtime ?? t.runtime;
         saved = saved || t.saved;
     }
     return {file: {format: TRANSFER_FORMAT, version: 1, saved, runtime, processes: [...processes.values()],
-        types: [...types.values()]}, sources: [...sources.values()]};
+        types: [...types.values()], ...(links.length > 0 ? {links} : {})}, sources: [...sources.values()]};
 }
 
 // The type files in an order where each comes after those (of the list) it uses.
@@ -426,6 +442,7 @@ export interface DeviceState {
     // name.
     sources?: Map<string, string>;
     environment?: string;   // the environment's name; undefined without one
+    links?: ProcessLink[];  // the links between the device's processes
 }
 
 export type TypeAction = "add" | "same" | "different" | "builtin";
@@ -453,6 +470,8 @@ export interface UploadPlan {
     sources: SourcePlan[];      // the type files, made first, in this order
     types: TypePlan[];          // in the order they are made
     processes: ProcessPlan[];
+    fileLinks: ProcessLink[];   // the file's links (a backup's)
+    deviceLinks: ProcessLink[]; // the device's, of which a replaced process's are made again
 }
 
 export function uploadPlan(file: TransferFile, device: DeviceState, sourceFiles: SourceType[] = []): UploadPlan {
@@ -477,7 +496,24 @@ export function uploadPlan(file: TransferFile, device: DeviceState, sourceFiles:
             : device.environment === undefined ? "no-environment" : "apply";
         return {entry, include: true, missing, bindings, ...(there !== undefined ? {replaces: there} : {})};
     });
-    return {sources, types, processes};
+    return {sources, types, processes, fileLinks: file.links ?? [], deviceLinks: device.links ?? []};
+}
+
+// The links an upload makes once its processes are made (06 §4.16, plan task 79): the file's,
+// and the device's to and from each process it replaces — deleting a process ends its links, and
+// deploying a process again keeps them. Each once, the file's first.
+export function linksToMake(plan: UploadPlan): ProcessLink[] {
+    const replaced = new Set(plan.processes.filter(p => p.include && p.replaces).map(p => p.entry.graph.id));
+    const out: ProcessLink[] = [];
+    const key = (l: ProcessLink) => JSON.stringify([l.src.graph, l.src.port, l.tgt.graph, l.tgt.port]);
+    const seen = new Set<string>();
+    for (const l of [...plan.fileLinks, ...plan.deviceLinks.filter(l => replaced.has(l.src.graph) || replaced.has(l.tgt.graph))]) {
+        if (!seen.has(key(l))) {
+            seen.add(key(l));
+            out.push(l);
+        }
+    }
+    return out;
 }
 
 // What the bindings checks (bindings.ts) need of a process, from its graph as read back.

@@ -24,7 +24,8 @@ export type MenuAction =
     | "watch" | "unwatch" | "watch-inputs" | "unwatch-inputs" | "watch-all" | "unwatch-all"
     | "expose-input" | "expose-output" | "rename-port" | "remove-port"
     | "create-composite" | "cut" | "copy" | "duplicate" | "paste"
-    | "bind" | "unbind";
+    | "bind" | "unbind"
+    | "open-process" | "delete-link";
 
 export interface MenuItem {
     action: MenuAction;
@@ -118,6 +119,15 @@ export function menuFor(target: MenuTarget): MenuItem[] {
         case "connection":
             return [{action: "delete-connection", label: "Delete connection"}, watchItem(target.watched)];
     }
+}
+
+// The process map's menus (06 §4.17): a process opens; a link is removed by who may edit.
+export type MapMenuTarget = { kind: "process" } | { kind: "link", edit: boolean };
+
+export function mapMenuFor(target: MapMenuTarget): MenuItem[] {
+    if (target.kind === "process")
+        return [{action: "open-process", label: "Open"}];
+    return target.edit ? [{action: "delete-link", label: "Delete link"}] : [];
 }
 
 // The type names that match a search in the block list, the closest first: a name that starts

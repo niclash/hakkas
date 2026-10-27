@@ -10,6 +10,7 @@ import {bindingLabel, bindingsAt, environment} from "@/components/environment";
 import {Connection, Packet} from "@/components/protocols/websocket";
 import {Cmd, ENVIRONMENT_COMMANDS, factsOf, History, holds, inverseOf, Link, makeStep, push, StateReader, Step, UNDOABLE} from "@/components/undo";
 import type {FlowEditor} from "./viewmodel/default";
+import {shown} from "./shown";
 
 const STORAGE_KEY = "hakkas.undo";
 
@@ -228,7 +229,7 @@ export function setupHistory(e: FlowEditor, notify: (text: string) => void) {
     tell = notify;
     Connection.sendHook = record;
     const onKey = (event: KeyboardEvent) => {
-        if (!e.area.container.isConnected || typing(event) || !(event.ctrlKey || event.metaKey) || event.altKey)
+        if (!shown(e.area.container) || typing(event) || !(event.ctrlKey || event.metaKey) || event.altKey)
             return;
         const key = event.key.toLowerCase();
         if (key === "z" && !event.shiftKey) {

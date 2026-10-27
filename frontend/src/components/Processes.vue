@@ -6,6 +6,8 @@
         <button v-if="can.manage" class="hk-button small" type="button" data-testid="process-new" @click="openNewProcessPopup()">New…</button>
         <button v-if="mayUpload" class="hk-button small" type="button" data-testid="process-upload"
                 title="Upload process files, a backup or type files" @click="uploadInput?.click()">Upload…</button>
+        <button class="hk-button small" type="button" data-testid="process-map" :aria-pressed="mapOpen"
+                title="The processes and the links between them" @click="openMap()">Map</button>
         <button class="hk-button small" type="button" data-testid="process-backup" :disabled="downloading"
                 title="Download every process, its bindings and the composite types" @click="download('all')">Back up</button>
       </span>
@@ -58,6 +60,7 @@
 <script lang="ts" setup>
 import {computed, onMounted, onUnmounted, ref, watch} from "vue";
 import {can, errorClaims, vueModel} from './model';
+import {mapOpen, openMap} from "@/components/map/map";
 import TransferDialog from "@/components/TransferDialog.vue";
 import {fileName, parseUpload, transferText, UploadSet} from "@/components/transfer";
 import {readFile} from "@/components/transfer-run";

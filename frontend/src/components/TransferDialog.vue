@@ -27,6 +27,8 @@
               Bindings not applied: this engine has no environment</span>
           </li>
         </ul>
+        <p v-if="links > 0" class="hk-dialog-note" data-testid="transfer-links">
+          {{ links === 1 ? "1 link between processes" : links + " links between processes" }} made afterwards</p>
         <h5 v-if="plan.sources.length + plan.types.length > 0">Composite types</h5>
         <ul class="hk-transfer-list">
           <li v-for="t in plan.sources" :key="t.source.name" data-testid="transfer-type" :data-id="t.source.name">
@@ -47,7 +49,7 @@
       <template v-if="phase === 'done'">
         <ul class="hk-transfer-list">
           <li v-for="(r, i) in report" :key="i" data-testid="transfer-report" :data-id="r.id" :class="{failed: !r.ok}">
-            <span class="hk-transfer-name">{{ r.kind === "type" ? r.id : r.name }}</span>
+            <span class="hk-transfer-name">{{ r.kind === "process" ? r.name : r.id }}</span>
             <span>{{ r.ok ? (r.kind === "process" ? "uploaded, stopped" : "done") : "not done" }}</span>
             <ul v-if="r.notes.length > 0" class="hk-transfer-notes">
               <li v-for="(n, k) in r.notes" :key="k" data-testid="transfer-note">{{ n }}</li>
@@ -73,7 +75,7 @@
 
 <script lang="ts" setup>
 import {computed, onMounted, onUnmounted, ref} from "vue";
-import type {SourceType, TransferFile, TypeAction, UploadPlan} from "@/components/transfer";
+import {linksToMake, type SourceType, type TransferFile, type TypeAction, type UploadPlan} from "@/components/transfer";
 import {TransferConnection} from "@/components/transfer-connection";
 import {planUpload, ReportLine, runUpload} from "@/components/transfer-run";
 import type {CheckContext, Entry, MappingRow} from "@/components/bindings";
@@ -100,6 +102,8 @@ const typeText: Record<TypeAction, string> = {
 };
 
 const replacing = computed(() => plan.value?.processes.some(p => p.include && p.replaces) ?? false);
+// The links made after the processes: the file's, and those of the processes it replaces.
+const links = computed(() => plan.value !== undefined ? linksToMake(plan.value).length : 0);
 
 onMounted(async () => {
   try {

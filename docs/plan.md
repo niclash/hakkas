@@ -1067,7 +1067,7 @@ to the user first, one at a time.
 
 ## Phase 12 — Links between processes in the UI (requested 2026-10-27, being designed)
 
-- [ ] **79. The process map** (requested 2026-10-27; 00-README open question 13): a view of
+- [x] **79. The process map** (requested 2026-10-27; 00-README open question 13; *done 2026-10-27*: the engine's `link` group, the map in `src/components/map/`, links in backups and uploads, the manual's Chapter 11): a view of
   the links between processes, opened by a button next to *New…* in the process list, in Rete,
   each node a process and each connection a link; double-clicking a process opens it.
   **Decided with the user 2026-10-27** (all recommendations accepted):
@@ -1084,6 +1084,10 @@ to the user first, one at a time.
   - **Undo** of link steps; **backups** hold the links and a restore makes them; a single
     process's download holds none.
   - **Names**: the button *Map*, the view "Process map", the group `link`.
+  - **Found while building it**: the map's layout is its own (columns along the links), since
+    the auto-arrange plugin did not keep the processes apart; uploading a process that replaces
+    one deleted it and so ended its links, which are now written at once: the upload makes them
+    again (06 §4.16); the process editor, hidden under the map, no longer takes keys.
 - [x] **80. `math/Min` and `math/Max`**, 4 inputs each (decided with the user 2026-10-27;
   done 2026-10-27, 03 §3.10): an input fed by nothing is ignored (decided: the runtime tells a
   type which inputs have a source, `BlockCtx.sourced` for types with `reads_sources`,
@@ -1208,8 +1212,8 @@ missing.
   thermostat, the user's request; the device window shows the emulator's picture copies, so the
   screenshots need no network). The process list's header buttons now wrap instead of being cut
   off (*Back up*).
-- [x] **U5. Part III** (chapters 5–10 done 2026-10-27; 11 describes the links as they are
-  and is completed with task 79): screenshots by `frontend/tests/manual/working.shot.ts` (menus,
+- [x] **U5. Part III** (chapters 5–10 done 2026-10-27; 11 completed with task 79, with the
+  process map): screenshots by `frontend/tests/manual/working.shot.ts` (menus,
   marquee, composite type, process list, Environment panel, device window, mapping and upload
   dialogs, a viewer, About). Found while taking them: an engine without an environment put its
   expected `"No environment"` reply into the messages panel as a refusal, with an unread count;

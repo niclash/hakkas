@@ -8,6 +8,7 @@ import {OnLogin} from "@/components/protocols/auth";
 import type {Binding} from "@/components/protocols/environment";
 import {keepSession, keptSession} from "@/session";
 import {GraphFile, graphFromSnapshot, SnapshotMessage, TypeFile} from "@/components/transfer";
+import type {ProcessLink} from "@/components/protocols/link";
 
 // How long one step may take before the transfer gives up (a lost connection, an engine that
 // does not answer).
@@ -207,6 +208,31 @@ export class TransferConnection {
         });
         this.send("component", "source", {name, language: "json", library: "", code});
         return got;
+    }
+
+    // Every link between processes (02 §3.8).
+    async links(): Promise<ProcessLink[]> {
+        const got = this.waitFor((protocol, command, payload) =>
+            protocol === "link" && command === "links" ? (payload?.links ?? []) as ProcessLink[] : undefined);
+        this.send("link", "list", {});
+        return got;
+    }
+
+    // Makes a link: "" when its event came, else its refusal.
+    async addLink(l: ProcessLink): Promise<string> {
+        const same = (p: any) => p?.src?.graph === l.src.graph && p?.src?.port === l.src.port
+            && p?.tgt?.graph === l.tgt.graph && p?.tgt?.port === l.tgt.port;
+        const got = this.waitFor((protocol, command, payload) => {
+            if (protocol === "link" && command === "add" && same(payload))
+                return "";
+            if (protocol === "network" && command === "error" && payload?.graph === l.src.graph)
+                return String(payload.message);
+            return undefined;
+        });
+        this.send("link", "add", {src: {...l.src}, tgt: {...l.tgt}});
+        const refused = await got;
+        this.refusals(l.src.graph);
+        return refused;
     }
 
     // Every process's bindings, or undefined for an engine without an environment.

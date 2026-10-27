@@ -30,7 +30,8 @@ process's outputs keep their last values, and that should not go unnoticed.
 
 Above the list:
 - *New…* creates a process;
-- *Upload…* and *Back up* move processes between controllers and files (Chapter 9).
+- *Upload…* and *Back up* move processes between controllers and files (Chapter 9);
+- *Map* shows every process and the links between them (Chapter 11).
 
 **Addresses.** The browser's address names the open process (`/?process=…`), so you can
 bookmark it or send it to a colleague. The browser's back and forward buttons move between the

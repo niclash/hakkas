@@ -54,7 +54,8 @@ in your browser.
 or is stopped, its name, how long it has been running, its description, and whether it has unsaved
 changes. Click one to open it. Its actions — *Start* or *Stop*, *Save*, *Download*, *Rename*,
 *Delete* — show on the open process and when you point at another. Above the list, *New…* creates
-a process, and *Upload…* and *Back up* move processes between controllers and files (Chapter 9).
+a process, *Upload…* and *Back up* move processes between controllers and files (Chapter 9), and
+*Map* shows how the processes are linked (Chapter 11).
 
 **③ The block types** are every type you can add, grouped in families: *Math*, *Compare*,
 *Logic*, *Process*, *Timing*, and your own composite types. Type part of a name in the search field to find

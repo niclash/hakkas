@@ -66,7 +66,9 @@ Before anything is sent, a dialog shows what will happen:
    connections;
 4. applies the bindings: at once if they fit, else through the **mapping dialog** (Section 8.5).
    Its *Cancel* uploads the process without bindings;
-5. saves each process.
+5. saves each process;
+6. makes the links between processes: a backup's, and those to and from each process it
+   replaced, since deleting a process ends its links (Chapter 11).
 
 **An uploaded process stays stopped**, whatever its file says. On a device a running process
 drives outputs at once, so starting it is your decision.
@@ -81,8 +83,8 @@ first, if you might want it back.
 ## 9.3 Backup and restore
 
 **Back up** (above the process list) saves `<controller> <date>.backup.json`. It holds every
-process with its bindings, and every composite type, in the same form as a process file. Every
-role may make a backup.
+process with its bindings, every composite type and every link between processes (Chapter 11), in
+the same form as a process file. Every role may make a backup.
 
 **Restoring** is uploading a backup with *Upload…*: every process in it is added, or replaces the
 controller's process of the same id. The processes are saved and stay stopped.
@@ -101,7 +103,6 @@ Make a backup:
 Process files and backups carry processes, their bindings and composite types. They do not
 carry:
 
-- **Links between processes** (Chapter 11). They stay on the controller.
 - **Users and passwords.** They belong to the controller, and a file must never carry secrets.
 - **The controller's configuration**, such as its time zone, network settings or change
   threshold (Chapter 16).

@@ -4,12 +4,15 @@
 // server takes a path's "%2F" and "." as a file name's (05 §3), and graph ids may hold both (a
 // type's name always has a "/").
 
+// The process map (06 §4.17) is "/?map", with no id.
 export interface Opened {
-    kind: "process" | "type";
+    kind: "process" | "type" | "map";
     id: string;
 }
 
 export function addressFor(opened: Opened | undefined): string {
+    if (opened?.kind === "map")
+        return "/?map";
     return opened === undefined ? "/" : "/?" + new URLSearchParams({[opened.kind]: opened.id}).toString();
 }
 
@@ -21,6 +24,8 @@ export function parseAddress(search: string): Opened | undefined {
         return {kind: "process", id: process};
     if (type)
         return {kind: "type", id: type};
+    if (q.has("map"))
+        return {kind: "map", id: ""};
     return undefined;
 }
 

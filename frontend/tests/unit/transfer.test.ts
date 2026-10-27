@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
-    DeviceState, fileName, GraphFile, graphFromSnapshot, insideCommands, parseTransferFile, parseUpload, portsOf,
+    DeviceState, fileName, GraphFile, graphFromSnapshot, insideCommands, linksToMake, parseTransferFile, parseUpload, portsOf,
     sameInside, sameSource, sourceType, transferFile, transferText, TypeFile, typeOrder, typesUsed, uploadPlan
 } from "@/components/transfer";
 
@@ -159,6 +159,33 @@ describe("uploadPlan", () => {
         expect(plan.types.map(t => [t.type.id, t.action])).toEqual([
             ["user/Twice", "same"], ["math/Add2", "builtin"], ["user/Other", "different"]]);
         expect(plan.processes[0].bindings).toBe("no-environment");
+    });
+});
+
+describe("links between processes (06 §4.16, plan task 79)", () => {
+    const l = (a: string, o: string, b: string, i: string) => ({src: {graph: a, port: o}, tgt: {graph: b, port: i}});
+
+    it("travel in a backup's file, and a malformed one is refused", () => {
+        const file = {...transferFile([{graph: pump}], [], undefined), links: [l("p1", "o", "p1", "level")]};
+        expect(parseTransferFile(transferText(file))).toEqual(file);
+        expect(parseTransferFile(JSON.stringify({...file, links: [{src: {graph: "p1"}}]})))
+            .toBe('links[0]: expected {"src":{"graph","port"},"tgt":{"graph","port"}}');
+        expect(parseTransferFile(JSON.stringify({...file, links: {}}))).toBe("links: expected an array");
+        // Several files uploaded together: their links together.
+        const set = parseUpload([{name: "a.json", text: transferText(file)}, {name: "b.json", text: transferText(file)}]);
+        expect(typeof set !== "string" && set.file.links).toEqual([l("p1", "o", "p1", "level"), l("p1", "o", "p1", "level")]);
+    });
+
+    it("are made after the upload: the file's, and a replaced process's from the device", () => {
+        const file = {...transferFile([{graph: pump}, {graph: {...pump, id: "p2", name: "New"}}], [], undefined),
+            links: [l("p1", "o", "p2", "i")]};
+        const plan = uploadPlan(file, {processes: new Map([["p1", {name: "Old pump", running: false}]]),
+            types: new Map<string, TypeFile | null>([["math/Add2", null]]),
+            links: [l("p1", "o", "p2", "i"), l("x", "o", "p1", "level"), l("x", "o", "y", "i")]});
+        // The file's first; the device's to and from p1 (replaced), each once; x to y not touched.
+        expect(linksToMake(plan)).toEqual([l("p1", "o", "p2", "i"), l("x", "o", "p1", "level")]);
+        plan.processes[0].include = false;    // p1 left out: not replaced
+        expect(linksToMake(plan)).toEqual([l("p1", "o", "p2", "i")]);
     });
 });
 

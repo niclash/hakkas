@@ -1607,3 +1607,137 @@ a.hk-device-part:focus image {
 .hk-device-value {
   font-family: ui-monospace, monospace;
 }
+
+/* ---- The process map (06 §4.17) -------------------------------------------------------- */
+
+#hk-map {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: var(--hk-canvas);
+  border: var(--hk-border-width) solid var(--hk-border);
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: left;
+  line-height: 1;
+}
+
+#hk-map .hk-map-node {
+  min-width: 240px;
+  background: var(--hk-node-bg);
+  border: var(--hk-node-border-width) solid var(--hk-node-border);
+  border-radius: 8px;
+  box-shadow: var(--hk-shadow);
+  color: var(--hk-node-text);
+  cursor: pointer;
+}
+
+#hk-map .hk-map-node:hover {
+  border-color: var(--hk-node-selected);
+}
+
+#hk-map .hk-map-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
+  color: var(--hk-node-title-text);
+  background: var(--hk-node-title-bg);
+  border-radius: 7px 7px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#hk-map .hk-map-node:not(.running) .hk-map-title {
+  background: var(--hk-danger-bg);
+}
+
+#hk-map .hk-map-ports {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+  border-top: var(--hk-node-border-width) solid var(--hk-node-border);
+}
+
+#hk-map .hk-map-column {
+  display: flex;
+  flex-direction: column;
+}
+
+#hk-map .hk-map-column.out {
+  align-items: flex-end;
+}
+
+#hk-map .hk-map-port {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+#hk-map .hk-map-port.in .hk-map-port-name {
+  margin-left: 6px;
+}
+
+#hk-map .hk-map-port.out .hk-map-port-name {
+  margin-right: 6px;
+}
+
+#hk-map .hk-map-channel {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--hk-accent);
+  background: var(--hk-accent-soft);
+}
+
+#hk-map .hk-map-socket {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--hk-socket);
+  border: 2px solid var(--hk-socket-border);
+  box-sizing: border-box;
+  cursor: crosshair;
+}
+
+#hk-map .hk-map-socket:hover {
+  border-color: var(--hk-node-selected);
+}
+
+#hk-map .hk-map-link {
+  overflow: visible !important;
+  position: absolute;
+  pointer-events: none;
+  width: 9999px;
+  height: 9999px;
+}
+
+#hk-map svg path {
+  fill: none;
+  stroke: var(--hk-connection);
+  stroke-width: 4px;
+  pointer-events: auto;
+}
+
+.hk-map-empty {
+  position: absolute;
+  top: 40%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--hk-text-muted);
+  pointer-events: none;
+}
+
+/* The socket's own element (Rete's Ref), which the connection plugin finds under the pointer:
+   as large as the socket. */
+#hk-map .hk-map-socket-ref {
+  display: inline-flex;
+  margin: 0 -9px;
+}
