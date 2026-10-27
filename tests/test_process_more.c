@@ -160,7 +160,7 @@ static void check_ports(const char *type, const char *const *ins, size_t n_in,
 
 static void curve_points(const double *x, const double *y)
 {
-	char port[4];
+	char port[16]; /* "y" and any int: no truncation warning */
 	for (int i = 0; i < 7; i++) {
 		snprintf(port, sizeof(port), "x%d", i + 1);
 		set(port, x[i]);

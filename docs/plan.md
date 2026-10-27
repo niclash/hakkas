@@ -1074,7 +1074,7 @@ to the user first, one at a time.
   undo after a reload is sometimes lost or applied late (the history read from sessionStorage,
   the editor not yet settled, a step waiting for its events), and fix the cause rather than the
   timeout.
-- [ ] **72. Compiler warning in `tests/test_process_more.c:167`**: `-Wformat-truncation`, a `%d`
+- [x] **72. Compiler warning in `tests/test_process_more.c:167`** (*done 2026-10-27*: the buffer is 16 bytes; a clean debug build has no warning): `-Wformat-truncation`, a `%d`
   written into a 3-byte buffer (`snprintf`), seen with the debug preset. Harmless in the test as
   it stands, but the build should be warning-free: size the buffer for any int, or narrow the
   value.
