@@ -1157,15 +1157,50 @@ missing.
     (regulators switched to auto before the first sensor values would start far off); frost
     must last 5 s (a sensor reads 0 °C until its first value arrives); a frost reset button on
     the DIU's spare input 2; the DIO1's `dir` channels driven true.
-- [ ] **Further examples**: to be chosen with the user.
+- [ ] **X2. Thermostat with a schedule** (decided 2026-10-27, the manual's simple example): a room
+  sensor, a Hysteresis, a week schedule, a relay; its own small emulator environment.
+- [ ] **X3. An intermediate example** (between the thermostat and the AHU; to be chosen with the
+  user).
 
 ## Section U — User's Manual (requested 2026-10-27, being designed)
 
-- [ ] **U1. A pedagogic User's Manual**, with a reasonable amount of illustrations and
-  screenshots, centered on two examples: a very simple one and a more complex one (the Air
-  Handling Unit, X1). To decide first: the audience and what it may assume, the format and
-  where it is published (the repository, served by the device, a PDF), how screenshots are
-  made and kept current, and its outline.
+- [x] **U1. Decisions** (2026-10-27, with the user):
+  - **Audience**: automation engineers who have used some PLC system, maybe IEC 61131-3;
+    physical processes, regulators and real time need no explanation; diagram programming may
+    be new. Short "Coming from IEC 61131-3" notes, out of the way of readers without it.
+  - **Built around three examples**: a thermostat with a schedule (simple, X2), an intermediate
+    one (X3, to be chosen), the Air Handling Unit (X1).
+  - **Format**: Markdown in `docs/manual/`, built into a static HTML site (VitePress, the
+    frontend's toolchain), a PDF export possible later; **English only**.
+  - **Screenshots** made by Playwright scripts against the engine and the emulator, so they are
+    made again whenever the UI changes; diagrams as hand-made SVG.
+  - **The block type reference is generated from 03**, so that it cannot drift from the spec.
+  - **Outline** (the user's approval 2026-10-27; Part IV added for the intermediate example):
+    - Part I Getting started: 1 Introduction; 2 Concepts (blocks and types, connections and
+      dataflow, values, processes and ports, the environment and bindings, composite types,
+      live editing, coming from IEC 61131-3); 3 First contact (device or emulator, logging in,
+      a tour of the screen).
+    - Part II Example 1, the thermostat: 4 Building it step by step.
+    - Part III Working with hakkas: 5 The process editor; 6 Processes; 7 Composite block
+      types; 8 The environment; 9 Moving work between systems; 10 Users, roles and sessions;
+      11 Links between processes and the process map (after task 79).
+    - Part IV Example 2, the intermediate example: 12.
+    - Part V Example 3, the Air Handling Unit: 13 (the unit and its I/O, structuring a larger
+      process, operation, seasons, the setpoint, one regulator per season, frost protection,
+      pumps, start-up behaviour, testing against the emulator, composite types as an exercise,
+      alarms).
+    - Part VI Patterns and reference: 14 Design patterns; 15 Block type reference (generated);
+      16 Administration. Appendices: A IEC 61131-3 cheat sheet, B glossary, C troubleshooting,
+      D the Colibri emulator.
+- [ ] **U2. The manual's frame**: `docs/manual/` with VitePress, every chapter as a page of the
+  outline, the screenshot scripts with a first screenshot, the build command.
+- [ ] **U3. Part I** (chapters 1–3).
+- [ ] **U4. Part II**, the thermostat (after X2).
+- [ ] **U5. Part III** (chapters 5–10; 11 after task 79).
+- [ ] **U6. Part IV**, the intermediate example (after X3).
+- [ ] **U7. Part V**, the Air Handling Unit (its alarms after they are designed).
+- [ ] **U8. Part VI** and the appendices: patterns, the generated block type reference,
+  administration.
 
 ## Known issues (noted 2026-10-25, to evaluate later; not critical)
 
