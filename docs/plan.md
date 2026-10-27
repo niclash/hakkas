@@ -1146,7 +1146,17 @@ missing.
     not restart until the alarm is acknowledged (by a person) **after** the water has reached
     20 °C. No pre-heating start sequence (too advanced for this example), no rotor defrost (a
     minor detail, for later).
-  - **Alarms** on the goals: to be discussed.
+  - **Alarms** on the goals: **to be discussed with the user** (deferred 2026-10-27): supply and
+    room temperature deviations, the heat exchanger's efficiency, both seasons at once.
+  - **Values for the example** (proposed and accepted 2026-10-27, the user adjusts later):
+    schedule Monday–Friday 06:00–18:00; curve −20 → 22, 0 → 20, +20 → 18 °C; room 21 °C,
+    compensation ±3 °C; pump exercise Monday 10:00–10:05; placeholder PID settings.
+  - *First version done 2026-10-27* (`examples/ahu/`, its README; tested against the emulator by
+    `emulators/colibri/tests/ahu.test.ts`). Added while building it: every sensor through a
+    0.1 °C deadband (a process inport feeds one input); a 10 s start delay after power-up
+    (regulators switched to auto before the first sensor values would start far off); frost
+    must last 5 s (a sensor reads 0 °C until its first value arrives); a frost reset button on
+    the DIU's spare input 2; the DIO1's `dir` channels driven true.
 - [ ] **Further examples**: to be chosen with the user.
 
 ## Section U — User's Manual (requested 2026-10-27, being designed)

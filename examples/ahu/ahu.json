@@ -1,0 +1,68 @@
+{
+  "carrier": "colibri_8",
+  "cycleMs": 10,
+  "queueSize": 10,
+  "modules": [
+    {
+      "slot": 1,
+      "type": "colibri_pt1000",
+      "serial": "AHU-0001"
+    },
+    {
+      "slot": 2,
+      "type": "colibri_pt1000",
+      "serial": "AHU-0002"
+    },
+    {
+      "slot": 3,
+      "type": "colibri_pt1000",
+      "serial": "AHU-0003"
+    },
+    {
+      "slot": 4,
+      "type": "colibri_aqv",
+      "serial": "AHU-0004"
+    },
+    {
+      "slot": 5,
+      "type": "colibri_aqv",
+      "serial": "AHU-0005"
+    },
+    {
+      "slot": 6,
+      "type": "colibri_dio1",
+      "serial": "AHU-0006"
+    },
+    {
+      "slot": 7,
+      "type": "colibri_diu",
+      "serial": "AHU-0007"
+    }
+  ],
+  "inputs": {
+    "slot1.ai.1": {
+      "source": 2,
+      "noise": 0.05
+    },
+    "slot1.ai.2": {
+      "source": 19,
+      "noise": 0.05
+    },
+    "slot2.ai.1": {
+      "source": 22,
+      "noise": 0.05
+    },
+    "slot2.ai.2": {
+      "source": 6,
+      "noise": 0.05
+    },
+    "slot3.ai.1": {
+      "source": 30,
+      "noise": 0.05
+    },
+    "slot3.ai.2": {
+      "source": 21,
+      "noise": 0.05
+    }
+  }
+}

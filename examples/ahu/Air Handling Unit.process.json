@@ -1,0 +1,1946 @@
+{
+  "format": "hakkas/processes",
+  "version": 1,
+  "saved": "2026-10-27T00:00:00.000Z",
+  "runtime": {
+    "label": "Hakkas",
+    "id": "",
+    "version": ""
+  },
+  "processes": [
+    {
+      "graph": {
+        "id": "4f6c2d1e-8a37-4b52-9e0d-a1c3f5b7d901",
+        "name": "Air Handling Unit",
+        "description": "Supply and exhaust fans, a rotary heat exchanger, heating and cooling coils with their pumps; seasons, frost protection and Extended operation (hakkas example X1)",
+        "icon": "",
+        "started": true,
+        "blocks": {
+          "outdoor_air": {
+            "component": "process/Deadband",
+            "metadata": {
+              "x": 40,
+              "y": 40
+            }
+          },
+          "supply_air": {
+            "component": "process/Deadband",
+            "metadata": {
+              "x": 40,
+              "y": 280
+            }
+          },
+          "extract_air": {
+            "component": "process/Deadband",
+            "metadata": {
+              "x": 40,
+              "y": 520
+            }
+          },
+          "exhaust_air": {
+            "component": "process/Deadband",
+            "metadata": {
+              "x": 40,
+              "y": 760
+            }
+          },
+          "frost_water": {
+            "component": "process/Deadband",
+            "metadata": {
+              "x": 40,
+              "y": 1000
+            }
+          },
+          "room_air": {
+            "component": "process/Deadband",
+            "metadata": {
+              "x": 40,
+              "y": 1240
+            }
+          },
+          "workdays": {
+            "component": "timing/DayOfWeek",
+            "metadata": {
+              "x": 380,
+              "y": 40
+            }
+          },
+          "work_hours": {
+            "component": "timing/MinuteRange",
+            "metadata": {
+              "x": 380,
+              "y": 258
+            }
+          },
+          "schedule": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 720,
+              "y": 40
+            }
+          },
+          "extended": {
+            "component": "process/Trigger",
+            "metadata": {
+              "x": 380,
+              "y": 440
+            }
+          },
+          "extended_wait": {
+            "component": "process/SelectIn",
+            "metadata": {
+              "x": 720,
+              "y": 580
+            }
+          },
+          "extended_timer": {
+            "component": "process/Delay",
+            "metadata": {
+              "x": 1060,
+              "y": 400
+            }
+          },
+          "running": {
+            "component": "logic/Or",
+            "metadata": {
+              "x": 1060,
+              "y": 618
+            }
+          },
+          "heating_months": {
+            "component": "timing/MonthOfYear",
+            "metadata": {
+              "x": 380,
+              "y": 760
+            }
+          },
+          "september": {
+            "component": "timing/MonthOfYear",
+            "metadata": {
+              "x": 380,
+              "y": 942
+            }
+          },
+          "from_15th": {
+            "component": "timing/DayOfMonth",
+            "metadata": {
+              "x": 380,
+              "y": 1124
+            }
+          },
+          "may": {
+            "component": "timing/MonthOfYear",
+            "metadata": {
+              "x": 380,
+              "y": 1306
+            }
+          },
+          "to_15th": {
+            "component": "timing/DayOfMonth",
+            "metadata": {
+              "x": 380,
+              "y": 1488
+            }
+          },
+          "late_september": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 720,
+              "y": 880
+            }
+          },
+          "early_may": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 720,
+              "y": 1120
+            }
+          },
+          "half_months": {
+            "component": "logic/Or",
+            "metadata": {
+              "x": 1060,
+              "y": 1000
+            }
+          },
+          "heating_season": {
+            "component": "logic/Or",
+            "metadata": {
+              "x": 1400,
+              "y": 760
+            }
+          },
+          "cooling_season": {
+            "component": "timing/MonthOfYear",
+            "metadata": {
+              "x": 380,
+              "y": 1670
+            }
+          },
+          "any_season": {
+            "component": "logic/Or",
+            "metadata": {
+              "x": 1400,
+              "y": 1240
+            }
+          },
+          "neither_season": {
+            "component": "logic/Not",
+            "metadata": {
+              "x": 1740,
+              "y": 1240
+            }
+          },
+          "frost_negated": {
+            "component": "process/Linear",
+            "metadata": {
+              "x": 380,
+              "y": 1852
+            }
+          },
+          "frost": {
+            "component": "process/Hysteresis",
+            "metadata": {
+              "x": 720,
+              "y": 1540
+            }
+          },
+          "frost_confirmed": {
+            "component": "process/Delay",
+            "metadata": {
+              "x": 1060,
+              "y": 1540
+            }
+          },
+          "frost_cleared": {
+            "component": "logic/Not",
+            "metadata": {
+              "x": 720,
+              "y": 1840
+            }
+          },
+          "frost_acknowledge": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 1060,
+              "y": 1840
+            }
+          },
+          "frost_alarm": {
+            "component": "process/Alarm",
+            "metadata": {
+              "x": 1400,
+              "y": 1540
+            }
+          },
+          "frost_lock": {
+            "component": "logic/Not",
+            "metadata": {
+              "x": 1740,
+              "y": 1540
+            }
+          },
+          "frost_regulator": {
+            "component": "process/PID",
+            "metadata": {
+              "x": 2080,
+              "y": 1540
+            }
+          },
+          "power_up": {
+            "component": "process/Delay",
+            "metadata": {
+              "x": 1400,
+              "y": 2154
+            }
+          },
+          "may_run": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 1740,
+              "y": 1722
+            }
+          },
+          "not_locked": {
+            "component": "logic/Not",
+            "metadata": {
+              "x": 2080,
+              "y": 2154
+            }
+          },
+          "fans": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 2420,
+              "y": 40
+            }
+          },
+          "supply_curve": {
+            "component": "process/Curve",
+            "metadata": {
+              "x": 1400,
+              "y": 2372
+            }
+          },
+          "room_compensation": {
+            "component": "process/PID",
+            "metadata": {
+              "x": 1740,
+              "y": 1940
+            }
+          },
+          "supply_setpoint": {
+            "component": "math/Add2",
+            "metadata": {
+              "x": 2080,
+              "y": 2336
+            }
+          },
+          "heating_regulator_on": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 2420,
+              "y": 258
+            }
+          },
+          "heating_regulator": {
+            "component": "process/PID",
+            "metadata": {
+              "x": 2760,
+              "y": 40
+            }
+          },
+          "exchanger_regulator_on": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 2420,
+              "y": 880
+            }
+          },
+          "exchanger_regulator": {
+            "component": "process/PID",
+            "metadata": {
+              "x": 2760,
+              "y": 760
+            }
+          },
+          "cooling_regulator_on": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 2420,
+              "y": 1600
+            }
+          },
+          "cooling_regulator": {
+            "component": "process/PID",
+            "metadata": {
+              "x": 2760,
+              "y": 1480
+            }
+          },
+          "exchanger_manual": {
+            "component": "process/SelectIn",
+            "metadata": {
+              "x": 2420,
+              "y": 1818
+            }
+          },
+          "heating_demand": {
+            "component": "math/Max",
+            "metadata": {
+              "x": 3100,
+              "y": 40
+            }
+          },
+          "heating_valve_volts": {
+            "component": "process/Linear",
+            "metadata": {
+              "x": 3440,
+              "y": 40
+            }
+          },
+          "exchanger_volts": {
+            "component": "process/Linear",
+            "metadata": {
+              "x": 3440,
+              "y": 760
+            }
+          },
+          "cooling_valve_volts": {
+            "component": "process/Linear",
+            "metadata": {
+              "x": 3440,
+              "y": 1480
+            }
+          },
+          "exercise_day": {
+            "component": "timing/DayOfWeek",
+            "metadata": {
+              "x": 2420,
+              "y": 2072
+            }
+          },
+          "exercise_time": {
+            "component": "timing/MinuteRange",
+            "metadata": {
+              "x": 2420,
+              "y": 2290
+            }
+          },
+          "exercise": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 2760,
+              "y": 2094
+            }
+          },
+          "heating_needed": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 2760,
+              "y": 2312
+            }
+          },
+          "heating_or_frost": {
+            "component": "logic/Or",
+            "metadata": {
+              "x": 3100,
+              "y": 2200
+            }
+          },
+          "heating_pump": {
+            "component": "logic/Or",
+            "metadata": {
+              "x": 3440,
+              "y": 2200
+            }
+          },
+          "cooling_needed": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 2760,
+              "y": 2530
+            }
+          },
+          "cooling_pump": {
+            "component": "logic/Or",
+            "metadata": {
+              "x": 3440,
+              "y": 2440
+            }
+          },
+          "outputs_enabled": {
+            "component": "logic/Not",
+            "metadata": {
+              "x": 3440,
+              "y": 2680
+            }
+          }
+        },
+        "connections": [
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "outdoor_air",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "supply_air",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "extract_air",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "exhaust_air",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "frost_water",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "room_air",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": "1-5"
+            },
+            "tgt": {
+              "block": "workdays",
+              "port": "days"
+            }
+          },
+          {
+            "src": {
+              "data": "06:00-18:00"
+            },
+            "tgt": {
+              "block": "work_hours",
+              "port": "range"
+            }
+          },
+          {
+            "src": {
+              "block": "workdays",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "schedule",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "work_hours",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "schedule",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "data": 7200000
+            },
+            "tgt": {
+              "block": "extended_wait",
+              "port": "in_false"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "extended_wait",
+              "port": "in_true"
+            }
+          },
+          {
+            "src": {
+              "block": "extended_timer",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "extended_wait",
+              "port": "select"
+            }
+          },
+          {
+            "src": {
+              "block": "extended",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "extended_timer",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "block": "extended_wait",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "extended_timer",
+              "port": "milliseconds"
+            }
+          },
+          {
+            "src": {
+              "block": "extended_timer",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "extended",
+              "port": "arm"
+            }
+          },
+          {
+            "src": {
+              "block": "schedule",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "running",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "extended",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "running",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "data": "10-4"
+            },
+            "tgt": {
+              "block": "heating_months",
+              "port": "months"
+            }
+          },
+          {
+            "src": {
+              "data": "9"
+            },
+            "tgt": {
+              "block": "september",
+              "port": "months"
+            }
+          },
+          {
+            "src": {
+              "data": "15-31"
+            },
+            "tgt": {
+              "block": "from_15th",
+              "port": "days"
+            }
+          },
+          {
+            "src": {
+              "data": "5"
+            },
+            "tgt": {
+              "block": "may",
+              "port": "months"
+            }
+          },
+          {
+            "src": {
+              "data": "1-15"
+            },
+            "tgt": {
+              "block": "to_15th",
+              "port": "days"
+            }
+          },
+          {
+            "src": {
+              "block": "september",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "late_september",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "from_15th",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "late_september",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "may",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "early_may",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "to_15th",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "early_may",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "late_september",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "half_months",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "early_may",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "half_months",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_months",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_season",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "half_months",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_season",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "data": "6-8"
+            },
+            "tgt": {
+              "block": "cooling_season",
+              "port": "months"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_season",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "any_season",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "cooling_season",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "any_season",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "any_season",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "neither_season",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_water",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "frost_negated",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "data": -1
+            },
+            "tgt": {
+              "block": "frost_negated",
+              "port": "k"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_negated",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "frost",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": -12.5
+            },
+            "tgt": {
+              "block": "frost",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 7.5
+            },
+            "tgt": {
+              "block": "frost",
+              "port": "hysteresis"
+            }
+          },
+          {
+            "src": {
+              "block": "frost",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "frost_confirmed",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": 5000
+            },
+            "tgt": {
+              "block": "frost_confirmed",
+              "port": "milliseconds"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_confirmed",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "frost_cleared",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_cleared",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "frost_acknowledge",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_confirmed",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "frost_alarm",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_acknowledge",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "frost_alarm",
+              "port": "acknowledge"
+            }
+          },
+          {
+            "src": {
+              "data": "Air Handling Unit"
+            },
+            "tgt": {
+              "block": "frost_alarm",
+              "port": "category"
+            }
+          },
+          {
+            "src": {
+              "data": "B"
+            },
+            "tgt": {
+              "block": "frost_alarm",
+              "port": "class"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_alarm",
+              "port": "normal"
+            },
+            "tgt": {
+              "block": "frost_lock",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "data": 20
+            },
+            "tgt": {
+              "block": "frost_regulator",
+              "port": "setpoint"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_water",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "frost_regulator",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_lock",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "frost_regulator",
+              "port": "auto"
+            }
+          },
+          {
+            "src": {
+              "data": 10
+            },
+            "tgt": {
+              "block": "frost_regulator",
+              "port": "kp"
+            }
+          },
+          {
+            "src": {
+              "data": 0.5
+            },
+            "tgt": {
+              "block": "frost_regulator",
+              "port": "ki"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "frost_regulator",
+              "port": "min"
+            }
+          },
+          {
+            "src": {
+              "data": 100
+            },
+            "tgt": {
+              "block": "frost_regulator",
+              "port": "max"
+            }
+          },
+          {
+            "src": {
+              "data": 1000
+            },
+            "tgt": {
+              "block": "frost_regulator",
+              "port": "sample_ms"
+            }
+          },
+          {
+            "src": {
+              "block": "outputs_enabled",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "power_up",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": 10000
+            },
+            "tgt": {
+              "block": "power_up",
+              "port": "milliseconds"
+            }
+          },
+          {
+            "src": {
+              "block": "running",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "may_run",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "power_up",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "may_run",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_lock",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "not_locked",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "block": "may_run",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "fans",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "not_locked",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "fans",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "outdoor_air",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "supply_curve",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": -20
+            },
+            "tgt": {
+              "block": "supply_curve",
+              "port": "x1"
+            }
+          },
+          {
+            "src": {
+              "data": 22
+            },
+            "tgt": {
+              "block": "supply_curve",
+              "port": "y1"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "supply_curve",
+              "port": "x2"
+            }
+          },
+          {
+            "src": {
+              "data": 20
+            },
+            "tgt": {
+              "block": "supply_curve",
+              "port": "y2"
+            }
+          },
+          {
+            "src": {
+              "data": 20
+            },
+            "tgt": {
+              "block": "supply_curve",
+              "port": "x3"
+            }
+          },
+          {
+            "src": {
+              "data": 18
+            },
+            "tgt": {
+              "block": "supply_curve",
+              "port": "y3"
+            }
+          },
+          {
+            "src": {
+              "data": 21
+            },
+            "tgt": {
+              "block": "room_compensation",
+              "port": "setpoint"
+            }
+          },
+          {
+            "src": {
+              "block": "room_air",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "room_compensation",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": 1
+            },
+            "tgt": {
+              "block": "room_compensation",
+              "port": "kp"
+            }
+          },
+          {
+            "src": {
+              "data": 0.002
+            },
+            "tgt": {
+              "block": "room_compensation",
+              "port": "ki"
+            }
+          },
+          {
+            "src": {
+              "data": -3
+            },
+            "tgt": {
+              "block": "room_compensation",
+              "port": "min"
+            }
+          },
+          {
+            "src": {
+              "data": 3
+            },
+            "tgt": {
+              "block": "room_compensation",
+              "port": "max"
+            }
+          },
+          {
+            "src": {
+              "block": "fans",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "room_compensation",
+              "port": "auto"
+            }
+          },
+          {
+            "src": {
+              "data": 10000
+            },
+            "tgt": {
+              "block": "room_compensation",
+              "port": "sample_ms"
+            }
+          },
+          {
+            "src": {
+              "block": "supply_curve",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "supply_setpoint",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "room_compensation",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "supply_setpoint",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_season",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_regulator_on",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "fans",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_regulator_on",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "supply_setpoint",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_regulator",
+              "port": "setpoint"
+            }
+          },
+          {
+            "src": {
+              "block": "supply_air",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_regulator",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": 4
+            },
+            "tgt": {
+              "block": "heating_regulator",
+              "port": "kp"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "heating_regulator",
+              "port": "ki"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "heating_regulator",
+              "port": "min"
+            }
+          },
+          {
+            "src": {
+              "data": 100
+            },
+            "tgt": {
+              "block": "heating_regulator",
+              "port": "max"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_regulator_on",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_regulator",
+              "port": "auto"
+            }
+          },
+          {
+            "src": {
+              "data": 1000
+            },
+            "tgt": {
+              "block": "heating_regulator",
+              "port": "sample_ms"
+            }
+          },
+          {
+            "src": {
+              "block": "neither_season",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exchanger_regulator_on",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "fans",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exchanger_regulator_on",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "supply_setpoint",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "setpoint"
+            }
+          },
+          {
+            "src": {
+              "block": "supply_air",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": 4
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "kp"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "ki"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "min"
+            }
+          },
+          {
+            "src": {
+              "data": 100
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "max"
+            }
+          },
+          {
+            "src": {
+              "block": "exchanger_regulator_on",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "auto"
+            }
+          },
+          {
+            "src": {
+              "data": 1000
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "sample_ms"
+            }
+          },
+          {
+            "src": {
+              "block": "cooling_season",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_regulator_on",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "fans",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_regulator_on",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "supply_setpoint",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "setpoint"
+            }
+          },
+          {
+            "src": {
+              "block": "supply_air",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": 4
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "kp"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "ki"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "min"
+            }
+          },
+          {
+            "src": {
+              "data": 100
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "max"
+            }
+          },
+          {
+            "src": {
+              "data": true
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "reverse"
+            }
+          },
+          {
+            "src": {
+              "block": "cooling_regulator_on",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "auto"
+            }
+          },
+          {
+            "src": {
+              "data": 1000
+            },
+            "tgt": {
+              "block": "cooling_regulator",
+              "port": "sample_ms"
+            }
+          },
+          {
+            "src": {
+              "block": "fans",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exchanger_manual",
+              "port": "select"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "exchanger_manual",
+              "port": "in_false"
+            }
+          },
+          {
+            "src": {
+              "data": 100
+            },
+            "tgt": {
+              "block": "exchanger_manual",
+              "port": "in_true"
+            }
+          },
+          {
+            "src": {
+              "block": "exchanger_manual",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "exchanger_regulator",
+              "port": "manual"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_regulator",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "heating_demand",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_regulator",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "heating_demand",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_demand",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_valve_volts",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "heating_valve_volts",
+              "port": "k"
+            }
+          },
+          {
+            "src": {
+              "block": "exchanger_regulator",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "exchanger_volts",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "exchanger_volts",
+              "port": "k"
+            }
+          },
+          {
+            "src": {
+              "block": "cooling_regulator",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "cooling_valve_volts",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "cooling_valve_volts",
+              "port": "k"
+            }
+          },
+          {
+            "src": {
+              "data": "1"
+            },
+            "tgt": {
+              "block": "exercise_day",
+              "port": "days"
+            }
+          },
+          {
+            "src": {
+              "data": "10:00-10:05"
+            },
+            "tgt": {
+              "block": "exercise_time",
+              "port": "range"
+            }
+          },
+          {
+            "src": {
+              "block": "exercise_day",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exercise",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "exercise_time",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exercise",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_season",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_needed",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "running",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_needed",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_needed",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_or_frost",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_lock",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_or_frost",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_or_frost",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_pump",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "exercise",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_pump",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "cooling_season",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_needed",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "running",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_needed",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "cooling_needed",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_pump",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "exercise",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "cooling_pump",
+              "port": "in2"
+            }
+          }
+        ],
+        "inports": [
+          {
+            "name": "outdoor_temperature",
+            "block": "outdoor_air",
+            "port": "in"
+          },
+          {
+            "name": "supply_temperature",
+            "block": "supply_air",
+            "port": "in"
+          },
+          {
+            "name": "extract_temperature",
+            "block": "extract_air",
+            "port": "in"
+          },
+          {
+            "name": "exhaust_temperature",
+            "block": "exhaust_air",
+            "port": "in"
+          },
+          {
+            "name": "frost_temperature",
+            "block": "frost_water",
+            "port": "in"
+          },
+          {
+            "name": "room_temperature",
+            "block": "room_air",
+            "port": "in"
+          },
+          {
+            "name": "extended_button",
+            "block": "extended",
+            "port": "fire"
+          },
+          {
+            "name": "frost_reset_button",
+            "block": "frost_acknowledge",
+            "port": "in1"
+          }
+        ],
+        "outports": [
+          {
+            "name": "supply_fan",
+            "block": "fans",
+            "port": "out"
+          },
+          {
+            "name": "exhaust_fan",
+            "block": "fans",
+            "port": "out"
+          },
+          {
+            "name": "heating_valve",
+            "block": "heating_valve_volts",
+            "port": "out"
+          },
+          {
+            "name": "heat_exchanger",
+            "block": "exchanger_volts",
+            "port": "out"
+          },
+          {
+            "name": "cooling_valve",
+            "block": "cooling_valve_volts",
+            "port": "out"
+          },
+          {
+            "name": "heating_pump",
+            "block": "heating_pump",
+            "port": "out"
+          },
+          {
+            "name": "cooling_pump",
+            "block": "cooling_pump",
+            "port": "out"
+          },
+          {
+            "name": "dio1_direction",
+            "block": "outputs_enabled",
+            "port": "out"
+          }
+        ]
+      },
+      "bindings": {
+        "environment": "ahu",
+        "bindings": [
+          {
+            "port": "outdoor_temperature",
+            "env": "slot1-ai",
+            "index": 1
+          },
+          {
+            "port": "supply_temperature",
+            "env": "slot1-ai",
+            "index": 2
+          },
+          {
+            "port": "extract_temperature",
+            "env": "slot2-ai",
+            "index": 1
+          },
+          {
+            "port": "exhaust_temperature",
+            "env": "slot2-ai",
+            "index": 2
+          },
+          {
+            "port": "frost_temperature",
+            "env": "slot3-ai",
+            "index": 1
+          },
+          {
+            "port": "room_temperature",
+            "env": "slot3-ai",
+            "index": 2
+          },
+          {
+            "port": "heating_valve",
+            "env": "slot4-aq",
+            "index": 1
+          },
+          {
+            "port": "cooling_valve",
+            "env": "slot4-aq",
+            "index": 2
+          },
+          {
+            "port": "heat_exchanger",
+            "env": "slot5-aq",
+            "index": 1
+          },
+          {
+            "port": "supply_fan",
+            "env": "slot6-dq",
+            "index": 1
+          },
+          {
+            "port": "exhaust_fan",
+            "env": "slot6-dq",
+            "index": 2
+          },
+          {
+            "port": "heating_pump",
+            "env": "slot6-dq",
+            "index": 3
+          },
+          {
+            "port": "cooling_pump",
+            "env": "slot6-dq",
+            "index": 4
+          },
+          {
+            "port": "dio1_direction",
+            "env": "slot6-dir",
+            "index": 1
+          },
+          {
+            "port": "dio1_direction",
+            "env": "slot6-dir",
+            "index": 2
+          },
+          {
+            "port": "dio1_direction",
+            "env": "slot6-dir",
+            "index": 3
+          },
+          {
+            "port": "dio1_direction",
+            "env": "slot6-dir",
+            "index": 4
+          },
+          {
+            "port": "extended_button",
+            "env": "slot7-di",
+            "index": 1
+          },
+          {
+            "port": "frost_reset_button",
+            "env": "slot7-di",
+            "index": 2
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}
