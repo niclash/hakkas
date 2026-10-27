@@ -197,6 +197,13 @@ static const struct {
 	{"process/Logarithmic", "function", "output = a*ln(b*input)"},
 	{"process/Integrator", "functions",
 	 "output = integral of input dt / divisor, within [min, max]"},
+	/* The selectors (blocktypes/select.c; behavior: tests/test_selecting.c). */
+	{"process/SelectIn", "call_merge", "output = select ? in_true : in_false"},
+	{"process/SelectOut", "call_split",
+	 "input goes to out_true or out_false, as select chooses; the other is 0"},
+	{"process/MultiplexIn", "merge", "output = the input select chooses, 1-8"},
+	{"process/MultiplexOut", "alt_route",
+	 "input goes to the output select chooses, 1-8; the others are 0"},
 };
 
 #define PROCESS_MORE_COUNT (sizeof(process_more) / sizeof(process_more[0]))

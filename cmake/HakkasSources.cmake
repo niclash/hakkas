@@ -23,6 +23,7 @@ set(HAKKAS_CORE_SOURCES
   ${HAKKAS_SOURCE_ROOT}/blocktypes/math.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/process_more.c
+  ${HAKKAS_SOURCE_ROOT}/blocktypes/select.c
   ${HAKKAS_SOURCE_ROOT}/blocktypes/timing.c
   ${HAKKAS_SOURCE_ROOT}/drivers/bindings_file.c
   ${HAKKAS_SOURCE_ROOT}/drivers/env_description.c

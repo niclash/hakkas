@@ -1092,7 +1092,9 @@ Specified in 03 first (each its own section), then one commit per type as in Pha
   type which inputs have a source, `BlockCtx.sourced` for types with `reads_sources`,
   01 §2.3, also through a composite's exposed inputs); none fed gives 0; a NaN among the fed
   inputs gives NaN (decided while implementing). Tested in `tests/test_selecting.c`.
-- [ ] **81. The selectors** (names decided with the user 2026-10-27): `process/SelectIn` (a
+- [x] **81. The selectors** (names decided with the user 2026-10-27; done 2026-10-27, 03 §3.11,
+  `src/blocktypes/select.c`, tested in `tests/test_selecting.c`; ports `select`, `in_false`/
+  `in_true` or `in1`…`in8`, `input`, `output`, `out_false`/`out_true` or `out1`…`out8`): `process/SelectIn` (a
   bool chooses which of two inputs goes to the output), `process/SelectOut` (a bool chooses
   which of two outputs the input goes to), `process/MultiplexIn` and `process/MultiplexOut`
   (the same with a number choosing among 8). Decided 2026-10-27: numbers only; an unfed

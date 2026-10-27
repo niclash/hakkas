@@ -1,8 +1,9 @@
 /*
  * The selecting block types of plan Phase 13: math/Min and math/Max
  * (03 §3.10), which ignore an input fed by nothing (BlockCtx.sourced,
- * 01 §2.3). Driven in a graph, as tests/test_process_more.c does: inputs set
- * as initials or connections, then the queue drained.
+ * 01 §2.3), and the selectors (03 §3.11). Driven in a graph, as
+ * tests/test_process_more.c does: inputs set as initials or connections,
+ * then the queue drained.
  */
 #include "test.h"
 
@@ -55,11 +56,38 @@ static void unset(const char *node, const char *port)
 	drain();
 }
 
-static double out(const Block *b)
+static void set_bool(const char *node, const char *port, bool v)
 {
-	const Linkable *v = block_output_value(b, 0);
+	Linkable l = linkable_from_bool(v);
+	CHECK(graph_add_initial(gr, node, port, &l) == GRAPH_OK);
+	drain();
+}
+
+static double out_at(const Block *b, uint32_t i)
+{
+	const Linkable *v = block_output_value(b, i);
 	CHECK(v->type == LINKABLE_F64);
 	return linkable_to_f64(v);
+}
+
+static double out(const Block *b)
+{
+	return out_at(b, 0);
+}
+
+/* The outputs of b, out1... as 1, 2, ...: which one holds want (0 if none
+ * does), every other being 0. */
+static int holding(const Block *b, double want)
+{
+	int found = 0;
+	for (uint32_t i = 0; i < b->type->output_count; i++) {
+		double v = out_at(b, i);
+		if (v == want && found == 0 && want != 0)
+			found = (int)i + 1;
+		else
+			CHECK(v == 0);
+	}
+	return found;
 }
 
 /* ---- math/Min and math/Max (03 §3.10) ------------------------------------ */
@@ -174,6 +202,83 @@ static void test_min_max_in_composite(void)
 	composite_types_reset();
 }
 
+/* ---- The selectors (03 §3.11) --------------------------------------------- */
+
+static void test_select_in_out(void)
+{
+	setup();
+	Block *si = add("si", "process/SelectIn"), *so = add("so", "process/SelectOut");
+	set("si", "in_false", 3);
+	set("si", "in_true", 9);
+	set("so", "input", 5);
+	graph_start(gr);
+	drain();
+	/* An unfed select is false: the false side. */
+	CHECK(out(si) == 3);
+	CHECK(holding(so, 5) == 1);
+	set_bool("si", "select", true);
+	set_bool("so", "select", true);
+	CHECK(out(si) == 9);
+	CHECK(holding(so, 5) == 2);
+	/* The chosen side follows its value; the other does not matter. */
+	set("si", "in_true", -1);
+	set("si", "in_false", 100);
+	CHECK(out(si) == -1);
+	set("so", "input", 7.5);
+	CHECK(holding(so, 7.5) == 2);
+	/* A number on select converts (01 §2.1): non-zero is true. */
+	set("si", "select", 0);
+	CHECK(out(si) == 100);
+	set("so", "select", 2);
+	CHECK(holding(so, 7.5) == 2);
+	unset("so", "select");
+	CHECK(holding(so, 7.5) == 1);
+	teardown();
+}
+
+static void test_multiplex(void)
+{
+	setup();
+	Block *mi = add("mi", "process/MultiplexIn"), *mo = add("mo", "process/MultiplexOut");
+	for (int i = 1; i <= 8; i++) {
+		char port[16];
+		snprintf(port, sizeof(port), "in%d", i);
+		set("mi", port, 10 * i);
+	}
+	set("mo", "input", 4);
+	graph_start(gr);
+	drain();
+	/* An unfed select (0) chooses none. */
+	CHECK(out(mi) == 0);
+	CHECK(holding(mo, 4) == 0);
+	for (int i = 1; i <= 8; i++) {
+		set("mi", "select", i);
+		set("mo", "select", i);
+		CHECK(out(mi) == 10 * i);
+		CHECK(holding(mo, 4) == i);
+	}
+	/* Rounded to the nearest whole number, halves away from zero. */
+	static const struct {
+		double select;
+		int chosen;
+	} cases[] = {{2.4, 2}, {2.5, 3}, {0.5, 1}, {0.49, 0}, {8.49, 8}, {8.5, 0},
+		     {-1, 0},  {9, 0},   {NAN, 0},  {INFINITY, 0}, {-INFINITY, 0}};
+	for (size_t k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+		set("mi", "select", cases[k].select);
+		set("mo", "select", cases[k].select);
+		CHECK(out(mi) == 10 * cases[k].chosen);
+		CHECK(holding(mo, 4) == cases[k].chosen);
+	}
+	/* The chosen output follows input; a stop changes nothing. */
+	set("mo", "select", 6);
+	set("mo", "input", -3);
+	CHECK(holding(mo, -3) == 6);
+	graph_stop(gr);
+	drain();
+	CHECK(holding(mo, -3) == 6);
+	teardown();
+}
+
 int main(void)
 {
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
@@ -181,5 +286,7 @@ int main(void)
 	RUN(test_min_max_values);
 	RUN(test_min_max_connections);
 	RUN(test_min_max_in_composite);
+	RUN(test_select_in_out);
+	RUN(test_multiplex);
 	return test_result();
 }

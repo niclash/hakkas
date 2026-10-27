@@ -34,6 +34,11 @@ extern const size_t process_block_types_count;
 extern const BlockTypeDef process_more_block_types[];
 extern const size_t process_more_block_types_count;
 
+/* process/SelectIn ... process/MultiplexOut, after process/Integrator
+ * (blocktypes/select.c). */
+extern const BlockTypeDef select_block_types[];
+extern const size_t select_block_types_count;
+
 /* timing/Interval (blocktypes/timing.c). */
 extern const BlockTypeDef timing_block_types[];
 extern const size_t timing_block_types_count;

@@ -79,6 +79,10 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `process/Exponential` | function | `output = a*exp(b*input)` | `to_f64(a)*exp(to_f64(b)*to_f64(input))`; see §3.8 |
 | `process/Logarithmic` | function | `output = a*ln(b*input)` | `to_f64(a)*log(to_f64(b)*to_f64(input))`; see §3.8 |
 | `process/Integrator` | functions | `output` = ∫ `input` dt / `divisor`, within `[min, max]` | cyclic, stateful; see §3.9 |
+| `process/SelectIn` | call_merge | `output = select ? in_true : in_false` | stateless; see §3.11 |
+| `process/SelectOut` | call_split | `input` goes to `out_true` or `out_false`; the other is `0` | stateless; see §3.11 |
+| `process/MultiplexIn` | merge | `output` = the input `select` chooses, 1–8 | stateless; see §3.11 |
+| `process/MultiplexOut` | alt_route | `input` goes to the output `select` chooses, 1–8; the others are `0` | stateless; see §3.11 |
 | `timing/Interval` | timer | periodic pulse generator: PWM or edge generator | see §3.1 |
 | `timing/MinuteRange` | schedule | true within a time-of-day range | calendar primitive, §6.2 |
 | `timing/DayOfWeek` | date_range | true on the selected weekdays | calendar primitive, §6.2 |
@@ -269,6 +273,23 @@ Decided with the user 2026-10-27 (plan task 80, for the Air Handling Unit exampl
 - `out` is the smallest (`Min`) or largest (`Max`) of the fed inputs (`to_f64`); `0` when none is fed. `-0` and `+0` are equal: the first fed of them is the result.
 - **NaN**: a NaN in any fed input gives `NaN`, so a failed sensor shows rather than being passed over (decided while implementing). `±Infinity` compares as usual.
 - Every compute ignores `reason`; removing an input's source recomputes without it (the input reverts, `01-architecture-overview.md` §2.2).
+
+### 3.11 The selectors — `process/SelectIn`, `SelectOut`, `MultiplexIn`, `MultiplexOut`
+
+Decided with the user 2026-10-27 (plan task 81, for the Air Handling Unit example, plan X1); `src/blocktypes/select.c`, registered after `process/Integrator` in this order. Stateless, `compute_on_input`, `TIMER_NONE`, the engine-wide change threshold; every compute but `STOP`'s sets every output (`STOP` changes nothing). **Values are numbers only** (decided): a bool arrives as `0`/`1` (`to_f64`) and a bool input fed from an output reads it back (`01-architecture-overview.md` §2.1).
+
+| Type | Inputs | Outputs |
+|---|---|---|
+| `process/SelectIn` | `select` (bool), `in_false`, `in_true` | `output` |
+| `process/SelectOut` | `select` (bool), `input` | `out_false`, `out_true` |
+| `process/MultiplexIn` | `select`, `in1` … `in8` | `output` |
+| `process/MultiplexOut` | `select`, `input` | `out1` … `out8` |
+
+- **A bool `select`** (`to_bool`) chooses the `true` side while true, else the `false` side. Unfed, it rests at `false` (§1): the false side — so `in_false` and `out_false` are the normal case and `true` the exception.
+- **A number `select`** is rounded to the nearest whole number, halves away from zero (C `round`: `2.5` → `3`); **1–8 chooses** that input or output, any other value — the resting `0` of an unfed select, a negative, `9` and above, NaN, ±Infinity — **chooses none**: `MultiplexIn`'s `output` is `0` and every output of `MultiplexOut` is `0`.
+- **Outputs not chosen are `0`** (`SelectOut`, `MultiplexOut`; decided): whatever follows sees nothing, as from an unfed input, rather than a frozen last value that could keep driving an actuator.
+- The chosen output follows its input as it changes; switching `select` moves the value at once (no bumpless transfer: a regulator that needs one has its own, `process/PID`'s `auto`).
+- Port descriptions: as in `src/blocktypes/select.c` (e.g. `in_true` → `"Reaches output while select is true"`, `out3` → `"input while select is 3, else 0"`).
 
 ## 4. The environment's inputs and outputs — no IO block types
 
