@@ -1067,8 +1067,10 @@ to the user first, one at a time.
 
 ## Known issues (noted 2026-10-25, to evaluate later; not critical)
 
-- [ ] **71. Flaky browser test: *values, renames and pastes are undone; the history survives a
-  reload*** (`frontend/tests/e2e/undo.spec.ts`). It fails intermittently (2 of 6 runs, with and
+- [x] **71. Flaky browser test: *values, renames and pastes are undone; the history survives a
+  reload*** (*done 2026-10-27*: the undo was applied at once, ~20 ms after the key; the test's
+  `inputLabels` counted a value node, then waited for its text, which the undo had just removed,
+  so it waited for good. It now reads the text in one call that does not wait; 60 of 60 runs pass) (`frontend/tests/e2e/undo.spec.ts`). It fails intermittently (2 of 6 runs, with and
   without the changes of task 70) with "Timeout 5000ms exceeded while waiting on the predicate":
   after the reload, one of the three undos does not show its effect in time. Find whether the
   undo after a reload is sometimes lost or applied late (the history read from sessionStorage,

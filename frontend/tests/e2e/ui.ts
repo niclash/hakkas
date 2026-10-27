@@ -59,8 +59,10 @@ export async function inputLabels(page: Page, id: string): Promise<string[]> {
     const ports = (await block(page, id).getByTestId("input-title").allTextContents()).map(t => t.trim());
     const labels: string[] = [];
     for (const port of ports) {
-        const node = valueNode(page, id, port);
-        labels.push(await node.count() === 1 ? port + " = " + (await node.getByTestId("value-text").textContent())!.trim() : port);
+        // One read that does not wait: a value node removed meanwhile (an undo) reads as none,
+        // where counting it and then waiting for its text would wait for good.
+        const texts = await valueNode(page, id, port).getByTestId("value-text").allTextContents();
+        labels.push(texts.length === 1 ? port + " = " + texts[0].trim() : port);
     }
     return labels;
 }
