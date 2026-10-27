@@ -22,9 +22,9 @@ examples/             the sister project's files, kept unmodified; its graph fil
                       they are (05 §2.1), e.g. `hakkas describe topology examples/example.json`
                       prints one in hakkas' canonical form; also hakkas' own example
                       processes: shunt-group.json (a shunt valve PID with its pump),
-                      thermostat/ (the User's Manual's first example) and ahu/ (an air
-                      handling unit), each for a Colibri 8 with its emulator environment
-                      and a README.md
+                      the User's Manual's examples thermostat/, heating-circuit/ and ahu/
+                      (an air handling unit), each for a Colibri 8 with its emulator
+                      environment and a README.md
 third_party/          vendored libraries, pinned and unmodified (01 §6): cjson/ (cJSON),
                       mbedtls/ (a subset of mbedTLS 3.6; its configuration in mbedtls-config/)
 ```

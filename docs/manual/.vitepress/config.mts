@@ -30,8 +30,8 @@ export default defineConfig({
                 {text: '10. Users, roles and sessions', link: '/working/users'},
                 {text: '11. Links between processes', link: '/working/links'},
             ]},
-            {text: 'Part IV — Example 2', items: [
-                {text: '12. The intermediate example', link: '/intermediate/'},
+            {text: 'Part IV — Example 2: a heating circuit', items: [
+                {text: '12. The heating circuit', link: '/intermediate/'},
             ]},
             {text: 'Part V — Example 3: an air handling unit', items: [
                 {text: '13. The air handling unit', link: '/ahu/'},

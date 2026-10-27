@@ -1,0 +1,32 @@
+{
+  "carrier": "colibri_8",
+  "cycleMs": 10,
+  "queueSize": 10,
+  "modules": [
+    {
+      "slot": 1,
+      "type": "colibri_pt1000",
+      "serial": "HEAT-0001"
+    },
+    {
+      "slot": 2,
+      "type": "colibri_aqv",
+      "serial": "HEAT-0002"
+    },
+    {
+      "slot": 3,
+      "type": "colibri_relay",
+      "serial": "HEAT-0003"
+    }
+  ],
+  "inputs": {
+    "slot1.ai.1": {
+      "source": 2,
+      "noise": 0.05
+    },
+    "slot1.ai.2": {
+      "source": 38,
+      "noise": 0.05
+    }
+  }
+}

@@ -1162,8 +1162,13 @@ missing.
   2026-10-27* (`examples/thermostat/`: a Colibri 8 with a Pt1000 and a relay; 21 °C Monday–Friday
   07:00–18:00, else 17 °C, through `process/SelectIn`; tested by
   `emulators/colibri/tests/thermostat.test.ts`, which shares `tests/example-rig.ts` with the AHU's).
-- [ ] **X3. An intermediate example** (between the thermostat and the AHU; to be chosen with the
-  user).
+- [x] **X3. An intermediate example** (between the thermostat and the AHU): **a heating circuit**
+  (proposed 2026-10-27; the user's "go ahead with the rest"). *Done 2026-10-27*
+  (`examples/heating-circuit/`): an outdoor curve with a night setback, the shunt valve's PID as
+  the composite type `heating/ShuntGroup` (carried in the process file), summer stop, a start
+  delay, the pump's weekly exercise; tested by `emulators/colibri/tests/heating-circuit.test.ts`
+  (the rig installs the file's composite types). The test also shows that the start delay — an
+  unfed `logic/Not` into a `process/Delay` — does not depend on the blocks' order.
 
 ## Section U — User's Manual (requested 2026-10-27, being designed)
 
@@ -1212,7 +1217,8 @@ missing.
   dialogs, a viewer, About). Found while taking them: an engine without an environment put its
   expected `"No environment"` reply into the messages panel as a refusal, with an unread count;
   it is now a quiet reply (`quietReplies` in `model.ts`, 06 §4.14, a unit test).
-- [ ] **U6. Part IV**, the intermediate example (after X3).
+- [x] **U6. Part IV**, the heating circuit (done 2026-10-27: Chapter 12, a diagram
+  `heating-circuit.svg`, screenshots by `frontend/tests/manual/heating.shot.ts`).
 - [ ] **U7. Part V**, the Air Handling Unit (its alarms after they are designed).
 - [ ] **U8. Part VI** and the appendices: patterns, the generated block type reference,
   administration.

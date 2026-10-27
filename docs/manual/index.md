@@ -8,8 +8,9 @@ IEC 61131-3 — and are new to hakkas, and perhaps to programming with diagrams.
 It is built around three examples that grow in size:
 
 - **A thermostat with a schedule** (Part II), built step by step: the first process you make.
-- **An intermediate example** (Part IV).
-- **An air handling unit** (Part V): a complete unit with seasons, cascaded setpoints and frost
+- **A heating circuit** (Part IV): a curve, a regulator made into a composite block type, and
+  what a regulator needs at start-up.
+- **An air handling unit** (Part V): a complete unit with seasons, a compensated setpoint and frost
   protection.
 
 Between them, Part III describes everything hakkas offers, and Part VI collects patterns and the

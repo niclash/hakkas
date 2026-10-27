@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" font-family="system-ui, sans-serif" font-size="14">
+  <title>The heating circuit</title>
+  <rect width="760" height="360" fill="#ffffff"/>
+  <!-- boiler -->
+  <rect x="20" y="70" width="110" height="170" rx="6" fill="#f7fafc" stroke="#4a5568" stroke-width="2"/>
+  <text x="75" y="160" text-anchor="middle" font-weight="600">Boiler</text>
+  <!-- radiators -->
+  <g fill="#f7fafc" stroke="#4a5568" stroke-width="2">
+    <rect x="600" y="70" width="130" height="170" rx="6"/>
+  </g>
+  <g stroke="#a0aec0" stroke-width="2">
+    <line x1="625" y1="95" x2="625" y2="215"/>
+    <line x1="650" y1="95" x2="650" y2="215"/>
+    <line x1="675" y1="95" x2="675" y2="215"/>
+    <line x1="700" y1="95" x2="700" y2="215"/>
+  </g>
+  <text x="665" y="262" text-anchor="middle" font-weight="600">Radiators</text>
+  <!-- supply line, hot -->
+  <g stroke="#c53030" stroke-width="4" fill="none">
+    <line x1="130" y1="100" x2="286" y2="100"/>
+    <line x1="314" y1="100" x2="384" y2="100"/>
+    <line x1="416" y1="100" x2="600" y2="100"/>
+  </g>
+  <!-- return line, cold -->
+  <g stroke="#2b6cb0" stroke-width="4" fill="none">
+    <line x1="600" y1="210" x2="130" y2="210"/>
+    <line x1="300" y1="210" x2="300" y2="114"/>
+  </g>
+  <!-- shunt valve: a three-way valve -->
+  <g fill="#ffffff" stroke="#1a202c" stroke-width="2">
+    <path d="M286 90 L300 100 L286 110 Z"/>
+    <path d="M314 90 L300 100 L314 110 Z"/>
+    <path d="M290 114 L300 100 L310 114 Z"/>
+  </g>
+  <text x="300" y="76" text-anchor="middle">shunt valve</text>
+  <!-- pump -->
+  <circle cx="400" cy="100" r="16" fill="#ffffff" stroke="#1a202c" stroke-width="2"/>
+  <path d="M392 90 L412 100 L392 110" fill="none" stroke="#1a202c" stroke-width="2"/>
+  <text x="400" y="76" text-anchor="middle">pump</text>
+  <!-- sensors -->
+  <circle cx="500" cy="100" r="7" fill="#d69e2e" stroke="#1a202c" stroke-width="1.5"/>
+  <text x="500" y="76" text-anchor="middle">supply water</text>
+  <circle cx="200" cy="34" r="7" fill="#d69e2e" stroke="#1a202c" stroke-width="1.5"/>
+  <text x="214" y="39">outdoor (on the north wall)</text>
+  <text x="560" y="232" text-anchor="middle" fill="#2b6cb0">return</text>
+  <text x="540" y="92" text-anchor="middle" fill="#c53030">supply</text>
+  <!-- controller -->
+  <rect x="280" y="282" width="240" height="56" rx="6" fill="#ebf4ff" stroke="#2b6cb0" stroke-width="2"/>
+  <text x="400" y="306" text-anchor="middle" font-weight="600">Controller</text>
+  <text x="400" y="326" text-anchor="middle" fill="#4a5568">Colibri 8: Pt1000, AQV, Relay</text>
+  <!-- signals -->
+  <g stroke="#c05621" stroke-width="1.5" stroke-dasharray="5 4" fill="none">
+    <polyline points="200,41 200,250 300,250 300,282"/>
+    <polyline points="500,107 500,282"/>
+    <polyline points="322,110 340,130 340,282"/>
+    <polyline points="400,116 400,282"/>
+  </g>
+  <g fill="#c05621" font-size="12" text-anchor="middle">
+    <text x="300" y="58">slot2-aq[1]</text>
+    <text x="400" y="58">slot3-dq</text>
+    <text x="500" y="58">slot1-ai[2]</text>
+  </g>
+  <text x="214" y="20" fill="#c05621" font-size="12">slot1-ai[1]</text></svg>

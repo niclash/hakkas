@@ -1,0 +1,237 @@
+{
+  "name": "heating",
+  "description": "Colibri emulator: Colibri 8",
+  "icon": "chip",
+  "outPorts": [
+    {
+      "id": "slot1-ai",
+      "type": "number",
+      "description": "Pt1000 temperature",
+      "unit": "°C",
+      "min": -50,
+      "max": 150,
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot1-fault",
+      "type": "bool",
+      "description": "Sensor open or shorted",
+      "addressable": true,
+      "count": 2
+    }
+  ],
+  "inPorts": [
+    {
+      "id": "slot2-aq",
+      "type": "number",
+      "description": "0-10 V output",
+      "unit": "V",
+      "min": 0,
+      "max": 10,
+      "addressable": true,
+      "count": 2
+    },
+    {
+      "id": "slot3-dq",
+      "type": "bool",
+      "description": "Relay"
+    }
+  ],
+  "modules": [
+    {
+      "slot": 0,
+      "builtin": true,
+      "type": "carrier",
+      "ports": []
+    },
+    {
+      "slot": 1,
+      "type": "colibri_pt1000",
+      "name": "Colibri Pt1000",
+      "vendor": "CurrentMakers",
+      "serial": "HEAT-0001",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_pt1000_top_render.png",
+        "copy": "colibri_pt1000.webp",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot1-ai",
+        "slot1-fault"
+      ],
+      "positions": [
+        {
+          "port": "slot1-ai",
+          "index": 1,
+          "x": 0.31,
+          "y": 0.8398
+        },
+        {
+          "port": "slot1-ai",
+          "index": 2,
+          "x": 0.68,
+          "y": 0.8398
+        },
+        {
+          "port": "slot1-fault",
+          "index": 1,
+          "x": 0.31,
+          "y": 0.8398
+        },
+        {
+          "port": "slot1-fault",
+          "index": 2,
+          "x": 0.68,
+          "y": 0.8398
+        }
+      ]
+    },
+    {
+      "slot": 2,
+      "type": "colibri_aqv",
+      "name": "Colibri AQV",
+      "vendor": "CurrentMakers",
+      "serial": "HEAT-0002",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "picture": {
+        "url": "https://currentmakers.com/data/products/colibri/renders/colibri_aqv_top_render.png",
+        "copy": "colibri_aqv.webp",
+        "crop": {
+          "x": 0.2415,
+          "y": 0.2243,
+          "w": 0.5169,
+          "h": 0.4991
+        }
+      },
+      "ports": [
+        "slot2-aq"
+      ],
+      "positions": [
+        {
+          "port": "slot2-aq",
+          "index": 1,
+          "x": 0.28,
+          "y": 0.674
+        },
+        {
+          "port": "slot2-aq",
+          "index": 2,
+          "x": 0.73,
+          "y": 0.674
+        }
+      ]
+    },
+    {
+      "slot": 3,
+      "type": "colibri_relay",
+      "name": "Colibri Relay",
+      "vendor": "CurrentMakers",
+      "serial": "HEAT-0003",
+      "documentation": "https://currentmakers.com/products/catalog/?category=colibri",
+      "ports": [
+        "slot3-dq"
+      ]
+    }
+  ],
+  "carrier": {
+    "type": "colibri_8",
+    "name": "Colibri 8",
+    "vendor": "CurrentMakers",
+    "documentation": "https://currentmakers.com/products/colibri/colibri_8/",
+    "picture": {
+      "url": "https://currentmakers.com/data/products/colibri/renders/colibri_8-rev_B_top_render.png",
+      "copy": "colibri_8.webp",
+      "crop": {
+        "x": 0.2253,
+        "y": 0.3036,
+        "w": 0.5494,
+        "h": 0.4051
+      }
+    },
+    "slots": 7,
+    "builtin": [
+      {
+        "slot": 0
+      }
+    ],
+    "power": {
+      "voltage": {
+        "min": 7,
+        "max": 30
+      },
+      "ac": true,
+      "dc": true,
+      "current": 2
+    },
+    "comm": [],
+    "places": {
+      "slots": [
+        {
+          "slot": 1,
+          "x": 0.2639,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 2,
+          "x": 0.3566,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 3,
+          "x": 0.4494,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 4,
+          "x": 0.542,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 5,
+          "x": 0.6349,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 6,
+          "x": 0.7275,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        },
+        {
+          "slot": 7,
+          "x": 0.8202,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        }
+      ],
+      "comm": [
+        {
+          "slot": 1,
+          "x": 0.0593,
+          "y": 0.3249,
+          "w": 0.0879,
+          "h": 0.3695
+        }
+      ]
+    }
+  }
+}

@@ -43,7 +43,7 @@ block on:
 ## 1.3 How to read this manual
 
 **The examples.** The manual is built around three examples that grow in size: a thermostat
-with a schedule (Part II), an intermediate example (Part IV), and an air handling unit (Part V).
+with a schedule (Part II), a heating circuit (Part IV), and an air handling unit (Part V).
 The thermostat is built step by step, and is the best way to learn the editor. The other two
 show how larger control tasks are structured. All three run as they are against the Colibri
 emulator on your desktop (Appendix D), so you can try everything without hardware.

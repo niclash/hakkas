@@ -78,7 +78,8 @@ export async function menu(page: Page, at: Locator, action: string, position?: {
 }
 
 // Saves a screenshot of the editor's content only — its blocks, value nodes and process port
-// markers — with a margin, instead of the whole editor.
+// markers — with a margin, instead of the whole editor; without the minimap, which could hide a
+// part.
 export async function shotOfProcess(page: Page, name: string, margin = 24) {
     const editor = (await page.getByTestId("editor").boundingBox())!;
     const parts = page.locator("[data-testid=node], [data-testid=value-node], [data-testid=port-node]");
@@ -92,11 +93,13 @@ export async function shotOfProcess(page: Page, name: string, margin = 24) {
         x1 = Math.max(x1, b.x + b.width);
         y1 = Math.max(y1, b.y + b.height);
     }
+    await page.addStyleTag({content: "#hk-editor .minimap { display: none !important; }"});
     const left = Math.max(editor.x + 1, x0 - margin), top = Math.max(editor.y + 1, y0 - margin);
     const right = Math.min(editor.x + editor.width - 1, x1 + margin);
     const bottom = Math.min(editor.y + editor.height - 1, y1 + margin);
     await page.screenshot({path: resolve(OUT, name + ".png"), animations: "disabled",
         clip: {x: left, y: top, width: right - left, height: bottom - top}});
+    await page.addStyleTag({content: "#hk-editor .minimap { display: block !important; }"});
 }
 
 // Saves a screenshot of a part of the page with some of its surroundings, e.g. a context menu

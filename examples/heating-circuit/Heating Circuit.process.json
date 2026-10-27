@@ -1,0 +1,597 @@
+{
+  "format": "hakkas/processes",
+  "version": 1,
+  "saved": "2026-10-27T00:00:00.000Z",
+  "runtime": {
+    "label": "Hakkas",
+    "id": "",
+    "version": ""
+  },
+  "processes": [
+    {
+      "graph": {
+        "id": "b3e8f1a4-6c2d-4e7a-9f15-2d8c4a6e0b93",
+        "name": "Heating Circuit",
+        "description": "A radiator circuit: the supply water by an outdoor curve with a night setback, through a shunt valve; the pump with summer stop and weekly exercise",
+        "icon": "",
+        "started": true,
+        "blocks": {
+          "outdoor": {
+            "component": "process/Deadband",
+            "metadata": {
+              "x": 40,
+              "y": 300
+            }
+          },
+          "supply": {
+            "component": "process/Deadband",
+            "metadata": {
+              "x": 1560,
+              "y": 40
+            }
+          },
+          "curve": {
+            "component": "process/Curve",
+            "metadata": {
+              "x": 420,
+              "y": 300
+            }
+          },
+          "comfort_hours": {
+            "component": "timing/MinuteRange",
+            "metadata": {
+              "x": 800,
+              "y": 620
+            }
+          },
+          "setback": {
+            "component": "process/SelectIn",
+            "metadata": {
+              "x": 1180,
+              "y": 600
+            }
+          },
+          "supply_setpoint": {
+            "component": "math/Add2",
+            "metadata": {
+              "x": 1560,
+              "y": 340
+            }
+          },
+          "heating_needed": {
+            "component": "process/Hysteresis",
+            "metadata": {
+              "x": 420,
+              "y": 1100
+            }
+          },
+          "started": {
+            "component": "logic/Not",
+            "metadata": {
+              "x": 40,
+              "y": 1100
+            }
+          },
+          "start_delay": {
+            "component": "process/Delay",
+            "metadata": {
+              "x": 420,
+              "y": 1400
+            }
+          },
+          "regulate": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 1180,
+              "y": 1200
+            }
+          },
+          "shunt_group": {
+            "component": "heating/ShuntGroup",
+            "metadata": {
+              "x": 1940,
+              "y": 300
+            }
+          },
+          "exercise_day": {
+            "component": "timing/DayOfWeek",
+            "metadata": {
+              "x": 40,
+              "y": 1640
+            }
+          },
+          "exercise_time": {
+            "component": "timing/MinuteRange",
+            "metadata": {
+              "x": 40,
+              "y": 1860
+            }
+          },
+          "exercise": {
+            "component": "logic/And",
+            "metadata": {
+              "x": 420,
+              "y": 1740
+            }
+          },
+          "pump": {
+            "component": "logic/Or",
+            "metadata": {
+              "x": 1180,
+              "y": 1500
+            }
+          }
+        },
+        "connections": [
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "outdoor",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 0.1
+            },
+            "tgt": {
+              "block": "supply",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "block": "outdoor",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "curve",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": -20
+            },
+            "tgt": {
+              "block": "curve",
+              "port": "x1"
+            }
+          },
+          {
+            "src": {
+              "data": 60
+            },
+            "tgt": {
+              "block": "curve",
+              "port": "y1"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "curve",
+              "port": "x2"
+            }
+          },
+          {
+            "src": {
+              "data": 45
+            },
+            "tgt": {
+              "block": "curve",
+              "port": "y2"
+            }
+          },
+          {
+            "src": {
+              "data": 15
+            },
+            "tgt": {
+              "block": "curve",
+              "port": "x3"
+            }
+          },
+          {
+            "src": {
+              "data": 25
+            },
+            "tgt": {
+              "block": "curve",
+              "port": "y3"
+            }
+          },
+          {
+            "src": {
+              "data": "06:00-22:00"
+            },
+            "tgt": {
+              "block": "comfort_hours",
+              "port": "range"
+            }
+          },
+          {
+            "src": {
+              "block": "comfort_hours",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "setback",
+              "port": "select"
+            }
+          },
+          {
+            "src": {
+              "data": 0
+            },
+            "tgt": {
+              "block": "setback",
+              "port": "in_true"
+            }
+          },
+          {
+            "src": {
+              "data": -5
+            },
+            "tgt": {
+              "block": "setback",
+              "port": "in_false"
+            }
+          },
+          {
+            "src": {
+              "block": "curve",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "supply_setpoint",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "setback",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "supply_setpoint",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "outdoor",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "heating_needed",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": 17
+            },
+            "tgt": {
+              "block": "heating_needed",
+              "port": "threshold"
+            }
+          },
+          {
+            "src": {
+              "data": 1
+            },
+            "tgt": {
+              "block": "heating_needed",
+              "port": "hysteresis"
+            }
+          },
+          {
+            "src": {
+              "data": true
+            },
+            "tgt": {
+              "block": "heating_needed",
+              "port": "inverted"
+            }
+          },
+          {
+            "src": {
+              "block": "started",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "start_delay",
+              "port": "input"
+            }
+          },
+          {
+            "src": {
+              "data": 10000
+            },
+            "tgt": {
+              "block": "start_delay",
+              "port": "milliseconds"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_needed",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "regulate",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "start_delay",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "regulate",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "supply_setpoint",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "shunt_group",
+              "port": "setpoint"
+            }
+          },
+          {
+            "src": {
+              "block": "supply",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "shunt_group",
+              "port": "supply_temperature"
+            }
+          },
+          {
+            "src": {
+              "block": "regulate",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "shunt_group",
+              "port": "enable"
+            }
+          },
+          {
+            "src": {
+              "data": "1"
+            },
+            "tgt": {
+              "block": "exercise_day",
+              "port": "days"
+            }
+          },
+          {
+            "src": {
+              "data": "10:00-10:05"
+            },
+            "tgt": {
+              "block": "exercise_time",
+              "port": "range"
+            }
+          },
+          {
+            "src": {
+              "block": "exercise_day",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exercise",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "exercise_time",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "exercise",
+              "port": "in2"
+            }
+          },
+          {
+            "src": {
+              "block": "heating_needed",
+              "port": "output"
+            },
+            "tgt": {
+              "block": "pump",
+              "port": "in1"
+            }
+          },
+          {
+            "src": {
+              "block": "exercise",
+              "port": "out"
+            },
+            "tgt": {
+              "block": "pump",
+              "port": "in2"
+            }
+          }
+        ],
+        "inports": [
+          {
+            "name": "outdoor_temperature",
+            "block": "outdoor",
+            "port": "in"
+          },
+          {
+            "name": "supply_temperature",
+            "block": "supply",
+            "port": "in"
+          }
+        ],
+        "outports": [
+          {
+            "name": "shunt_valve",
+            "block": "shunt_group",
+            "port": "valve"
+          },
+          {
+            "name": "pump",
+            "block": "pump",
+            "port": "out"
+          }
+        ]
+      },
+      "bindings": {
+        "environment": "heating",
+        "bindings": [
+          {
+            "port": "outdoor_temperature",
+            "env": "slot1-ai",
+            "index": 1
+          },
+          {
+            "port": "supply_temperature",
+            "env": "slot1-ai",
+            "index": 2
+          },
+          {
+            "port": "shunt_valve",
+            "env": "slot2-aq",
+            "index": 1
+          },
+          {
+            "port": "pump",
+            "env": "slot3-dq"
+          }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "id": "heating/ShuntGroup",
+      "name": "heating/ShuntGroup",
+      "description": "A shunt valve holding the supply water at its setpoint: a PID in percent, its output as 0-10 V; closed while not enabled",
+      "icon": "",
+      "started": false,
+      "blocks": {
+        "regulator": {
+          "component": "process/PID",
+          "metadata": {
+            "x": 40,
+            "y": 40
+          }
+        },
+        "volts": {
+          "component": "process/Linear",
+          "metadata": {
+            "x": 420,
+            "y": 40
+          }
+        }
+      },
+      "connections": [
+        {
+          "src": {
+            "data": 3
+          },
+          "tgt": {
+            "block": "regulator",
+            "port": "kp"
+          }
+        },
+        {
+          "src": {
+            "data": 0.05
+          },
+          "tgt": {
+            "block": "regulator",
+            "port": "ki"
+          }
+        },
+        {
+          "src": {
+            "data": 0
+          },
+          "tgt": {
+            "block": "regulator",
+            "port": "min"
+          }
+        },
+        {
+          "src": {
+            "data": 100
+          },
+          "tgt": {
+            "block": "regulator",
+            "port": "max"
+          }
+        },
+        {
+          "src": {
+            "data": 1000
+          },
+          "tgt": {
+            "block": "regulator",
+            "port": "sample_ms"
+          }
+        },
+        {
+          "src": {
+            "block": "regulator",
+            "port": "output"
+          },
+          "tgt": {
+            "block": "volts",
+            "port": "in"
+          }
+        },
+        {
+          "src": {
+            "data": 0.1
+          },
+          "tgt": {
+            "block": "volts",
+            "port": "k"
+          }
+        }
+      ],
+      "inports": [
+        {
+          "name": "setpoint",
+          "block": "regulator",
+          "port": "setpoint"
+        },
+        {
+          "name": "supply_temperature",
+          "block": "regulator",
+          "port": "input"
+        },
+        {
+          "name": "enable",
+          "block": "regulator",
+          "port": "auto"
+        }
+      ],
+      "outports": [
+        {
+          "name": "valve",
+          "block": "volts",
+          "port": "out"
+        }
+      ],
+      "library": "heating"
+    }
+  ]
+}

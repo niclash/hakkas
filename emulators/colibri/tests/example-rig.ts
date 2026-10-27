@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {expect} from 'vitest';
 import {loadCatalog} from '../src/catalog.js';
-import {Checker, type JsonObject} from '../src/check.js';
+import {Checker, type Json, type JsonObject} from '../src/check.js';
 import {describe as describeSystem} from '../src/description.js';
 import {readEnvironment} from '../src/environment.js';
 import {LinkServer} from '../src/link.js';
@@ -32,6 +32,7 @@ export function readExample(dir: string, processFile: string, environmentFile: s
     const file = JSON.parse(readFileSync(path.join(root, processFile), 'utf8'));
     return {
         process: file.processes[0] as {graph: JsonObject, bindings: JsonObject},
+        types: file.types as JsonObject[],
         environment: JSON.parse(readFileSync(path.join(root, environmentFile), 'utf8')) as JsonObject,
     };
 }
@@ -82,11 +83,15 @@ export class ExampleRig {
         this.scanner.start();
     }
 
-    async startHakkas(graph: JsonObject, bindings: JsonObject): Promise<void> {
+    // `types`: the composite types the process uses, as the process file holds them.
+    async startHakkas(graph: JsonObject, bindings: JsonObject, types: JsonObject[] = []): Promise<void> {
         const conf = path.join(this.tmp, 'conf'), data = path.join(this.tmp, 'data');
         mkdirSync(conf);
         mkdirSync(path.join(data, 'graphs'), {recursive: true});
         mkdirSync(path.join(data, 'bindings'));
+        mkdirSync(path.join(data, 'types'));
+        for (const t of types)
+            writeFileSync(path.join(data, 'types', `${encodeURIComponent(String(t.id))}.json`), JSON.stringify(typeFile(t)));
         writeFileSync(path.join(conf, 'hakkas.json'), JSON.stringify({
             auth: {server_secret: randomBytes(32).toString('base64')}, environment: {socket: this.socketPath}}));
         writeFileSync(path.join(data, 'graphs', `${graph.id}.json`), JSON.stringify(graph));
@@ -140,6 +145,25 @@ export class ExampleRig {
         await this.link.close();
         rmSync(this.tmp, {recursive: true, force: true});
     }
+}
+
+type Ref = {block: string, port: string};
+
+// A composite type's file (hakkas 03 §5.1) from its component graph, the form a process file holds
+// it in (06 §4.16).
+function typeFile(t: JsonObject): JsonObject {
+    const g = t as unknown as {id: string, description: string, icon: string,
+        blocks: Record<string, {component: string}>, connections: {src: Ref | {data: unknown}, tgt: Ref}[],
+        inports: (Ref & {name: string})[], outports: (Ref & {name: string})[]};
+    const ref = (r: Ref) => `${r.block}.${r.port}`;
+    return {
+        name: g.id, icon: g.icon, description: g.description,
+        blocks: Object.entries(g.blocks).map(([name, b]) => ({name, type: b.component})),
+        connections: g.connections.filter(c => !('data' in c.src)).map(c => ({src: ref(c.src as Ref), tgt: ref(c.tgt)})),
+        initials: g.connections.filter(c => 'data' in c.src).map(c => ({src: (c.src as {data: Json}).data, tgt: ref(c.tgt)})),
+        inports: g.inports.map(p => ({name: p.name, tgt: ref(p)})),
+        outports: g.outports.map(p => ({name: p.name, src: ref(p)})),
+    };
 }
 
 async function freePortPair(): Promise<number> {
