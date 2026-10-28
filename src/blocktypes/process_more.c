@@ -342,14 +342,14 @@ static int delay_mode(double mode)
 /*
  * process/Delay (03 §3.4): START in mode 0 sets output = input with nothing
  * pending; in modes 1 and 2 output starts false and input counts as a change
- * from false at the start, whose wait, if already due, ends at the first timer
- * expiry rather than in the START compute: a milliseconds computed by other
- * blocks arrives only after it. Afterwards a change of to_bool(input) records its
+ * from false at the start. Afterwards a change of to_bool(input) records its
  * time; while input differs from output a change is pending. An edge mode
- * delays takes effect once milliseconds have passed since that time (at once
- * if they already have, also after a change of milliseconds or mode); the
- * other edge at once. Every compute returns the delay to the end of the
- * pending wait, or -1 (no timer) when nothing is pending.
+ * delays takes effect once milliseconds have passed since that time, always
+ * at a timer expiry: a wait already over when computed (milliseconds <= 0, or
+ * changed) ends at an expiry due at once, queued after the changes already
+ * queued, so a milliseconds that other blocks compute is in place first. The
+ * other edge takes effect at once. Every compute returns the delay to the end
+ * of the pending wait, or -1 (no timer) when nothing is pending.
  */
 static int64_t delay(BlockCtx *ctx)
 {
@@ -372,12 +372,12 @@ static int64_t delay(BlockCtx *ctx)
 	} else if (in != out) {
 		double ms = linkable_to_f64(&ctx->inputs[DELAY_MILLISECONDS]);
 		uint64_t due = d->changed_ms + delay_ms(ms);
-		if (ctx->reason == REASON_START && ctx->now_ms >= due)
-			next = 0; /* after the values sent at the start, milliseconds' among them */
-		else if (ctx->now_ms >= due)
+		if (ctx->now_ms < due)
+			next = (int64_t)(due - ctx->now_ms);
+		else if (ctx->reason == REASON_TIMER)
 			out = in;
 		else
-			next = (int64_t)(due - ctx->now_ms);
+			next = 0; /* after the changes already queued, milliseconds' among them */
 	}
 	block_ctx_set_output(ctx, 0, linkable_from_bool(out));
 	return next;

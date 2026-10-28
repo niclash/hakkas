@@ -508,34 +508,43 @@ static void test_delay(void)
 	set_bool_at(5000, "input", false);
 	set_at(5100, "milliseconds", linkable_from_f64(300));
 	CHECK(next_due() == 5300);
-	set_at(5200, "milliseconds", linkable_from_f64(150)); /* already lasted that long */
-	CHECK(!flag("output") && next_due() == UINT64_MAX);
+	/* Already lasted that long: at an expiry due at once, not in the compute. */
+	set_at(5200, "milliseconds", linkable_from_f64(150));
+	CHECK(flag("output") && next_due() == 5200);
+	CHECK(fire(5200) == 1 && !flag("output") && next_due() == UINT64_MAX);
 	teardown();
 }
 
-/* milliseconds <= 0, NaN or infinite: no delay (its resting value 0). */
+/* milliseconds <= 0, NaN or infinite: no delay (its resting value 0), the
+ * change taking effect at an expiry due at once, after the changes queued. */
 static void test_delay_none(void)
 {
 	setup("process/Delay");
 	start_at(0);
 	CHECK(!flag("output"));
 	set_bool_at(10, "input", true);
-	CHECK(flag("output") && next_due() == UINT64_MAX);
+	CHECK(!flag("output") && next_due() == 10);
+	CHECK(fire(10) == 1 && flag("output") && next_due() == UINT64_MAX);
 	set_at(20, "milliseconds", linkable_from_f64(-5));
 	set_bool_at(30, "input", false);
-	CHECK(!flag("output"));
+	CHECK(fire(30) == 1 && !flag("output"));
 	set_at(40, "milliseconds", linkable_from_f64(NAN));
 	set_bool_at(50, "input", true);
-	CHECK(flag("output"));
+	CHECK(fire(50) == 1 && flag("output"));
+	/* A milliseconds delivered before that expiry applies to the change. */
+	set_bool_at(55, "input", false);
+	set_at(55, "milliseconds", linkable_from_f64(20));
+	CHECK(flag("output") && next_due() == 75);
+	CHECK(fire(75) == 1 && !flag("output"));
 	/* Rounded to whole milliseconds. */
-	set_at(60, "milliseconds", linkable_from_f64(99.6));
-	set_bool_at(70, "input", false);
-	CHECK(next_due() == 170);
-	/* A stop cancels the wait; the start takes input at once. */
-	stop_at(80);
+	set_at(80, "milliseconds", linkable_from_f64(99.6));
+	set_bool_at(90, "input", true);
+	CHECK(next_due() == 190);
+	/* A stop cancels the wait; the start (mode 0) takes input at once. */
+	stop_at(100);
 	CHECK(next_due() == UINT64_MAX);
-	start_at(90);
-	CHECK(!flag("output") && next_due() == UINT64_MAX);
+	start_at(110);
+	CHECK(flag("output") && next_due() == UINT64_MAX);
 	teardown();
 }
 

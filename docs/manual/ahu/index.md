@@ -76,8 +76,8 @@ schedule. It takes three blocks:
   at the rising edge of `arm`.
 - `extended_timer` (`process/Delay`) passes `extended`'s output on after `milliseconds`. When it
   turns true, two hours after the press, it arms `extended`, which turns off.
-- `extended_wait` (`process/SelectIn`) is the timer's duration: 7 200 000 ms (two hours) while the
-  timer's output is false, and 0 once it is true. The timer then follows `extended` back to false
+- `extended_wait` (`process/SelectIn`) is the timer's duration: two hours (`2 → extended_time`,
+  a `timing/Hours`) while the timer's output is false, and 0 once it is true. The timer then follows `extended` back to false
   **at once**, so `arm` falls, and the next press starts a fresh two hours.
 
 Without `extended_wait`, the timer would hold its true for another two hours after `extended`
@@ -176,8 +176,8 @@ The blocks:
 - **Detecting frost.** `frost` is a `process/Hysteresis` on the negated temperature
   (`frost_negated`, −1 × T). It is on below 5 °C and off again only above 20 °C: threshold −12.5,
   hysteresis 7.5, on above −5 and off below −20. One block thus gives both limits of the rule.
-- **Confirming it.** `frost_confirmed` (`process/Delay`, 5000 ms) passes frost on only when it
-  lasts 5 seconds. A sensor reads 0 °C until its first value arrives, and that alone must not stop
+- **Confirming it.** `frost_confirmed` (`process/Delay`, its time `5 → frost_time`, a
+  `timing/Seconds`) passes frost on only when it lasts 5 seconds. A sensor reads 0 °C until its first value arrives, and that alone must not stop
   the unit.
 - **The alarm.** `frost_alarm` (`process/Alarm`, class B: attend to during working hours) follows
   `frost_confirmed`. It goes *Activated*, then *Deactivated* when the frost is over, and *Normal*

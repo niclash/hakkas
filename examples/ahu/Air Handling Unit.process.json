@@ -86,6 +86,13 @@
               "y": 440
             }
           },
+          "extended_time": {
+            "component": "timing/Hours",
+            "metadata": {
+              "x": 420,
+              "y": 640
+            }
+          },
           "extended_wait": {
             "component": "process/SelectIn",
             "metadata": {
@@ -111,35 +118,35 @@
             "component": "timing/MonthOfYear",
             "metadata": {
               "x": 420,
-              "y": 760
+              "y": 820
             }
           },
           "september": {
             "component": "timing/MonthOfYear",
             "metadata": {
               "x": 420,
-              "y": 942
+              "y": 1002
             }
           },
           "from_15th": {
             "component": "timing/DayOfMonth",
             "metadata": {
               "x": 420,
-              "y": 1124
+              "y": 1184
             }
           },
           "may": {
             "component": "timing/MonthOfYear",
             "metadata": {
               "x": 420,
-              "y": 1306
+              "y": 1366
             }
           },
           "to_15th": {
             "component": "timing/DayOfMonth",
             "metadata": {
               "x": 420,
-              "y": 1488
+              "y": 1548
             }
           },
           "late_september": {
@@ -174,7 +181,7 @@
             "component": "timing/MonthOfYear",
             "metadata": {
               "x": 420,
-              "y": 1670
+              "y": 1730
             }
           },
           "any_season": {
@@ -195,7 +202,7 @@
             "component": "process/Linear",
             "metadata": {
               "x": 420,
-              "y": 1852
+              "y": 1912
             }
           },
           "frost": {
@@ -203,6 +210,13 @@
             "metadata": {
               "x": 800,
               "y": 1540
+            }
+          },
+          "frost_time": {
+            "component": "timing/Seconds",
+            "metadata": {
+              "x": 800,
+              "y": 1840
             }
           },
           "frost_confirmed": {
@@ -216,7 +230,7 @@
             "component": "logic/Not",
             "metadata": {
               "x": 800,
-              "y": 1840
+              "y": 2020
             }
           },
           "frost_acknowledge": {
@@ -539,7 +553,17 @@
           },
           {
             "src": {
-              "data": 7200000
+              "data": 2
+            },
+            "tgt": {
+              "block": "extended_time",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "block": "extended_time",
+              "port": "out"
             },
             "tgt": {
               "block": "extended_wait",
@@ -838,7 +862,17 @@
           },
           {
             "src": {
-              "data": 5000
+              "data": 5
+            },
+            "tgt": {
+              "block": "frost_time",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "block": "frost_time",
+              "port": "out"
             },
             "tgt": {
               "block": "frost_confirmed",

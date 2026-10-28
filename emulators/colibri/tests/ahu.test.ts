@@ -25,7 +25,7 @@ function graph(season: Season, running: boolean, extendedMs?: number): JsonObjec
         ['cooling_season', 'months', season === 'cooling' ? String(month) : other],
         ['exercise_time', 'range', '00:00-00:00'],
         ['power_up_time', 'in', 1],
-        ...(extendedMs !== undefined ? [['extended_wait', 'in_false', extendedMs] as [string, string, unknown]] : []),
+        ...(extendedMs !== undefined ? [['extended_time', 'in', extendedMs / 3600000] as [string, string, unknown]] : []),
     ]);
 }
 
