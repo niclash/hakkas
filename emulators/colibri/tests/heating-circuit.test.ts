@@ -17,7 +17,7 @@ const graph = (o: {comfort?: boolean, exercise?: boolean} = {}): JsonObject => w
     ['comfort_hours', 'range', o.comfort === false ? '00:00-00:00' : '00:00-24:00'],
     ['exercise_day', 'days', '1-7'],
     ['exercise_time', 'range', o.exercise ? '00:00-24:00' : '00:00-00:00'],
-    ['start_delay', 'milliseconds', 1500],
+    ['start_time', 'in', 1.5],
 ]);
 
 let rig: ExampleRig;

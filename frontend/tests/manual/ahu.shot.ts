@@ -17,6 +17,13 @@ type Ref = { block: string, port: string };
 type Connection = { src: Ref | { data: unknown }, tgt: Ref };
 type Port = Ref & { name: string };
 
+// Parts whose blocks are far apart in the whole unit, placed by hand: Arrange blocks (06 §4.4)
+// leaves no room for the values.
+const LAYOUT: Record<string, Record<string, [number, number]>> = {
+    "ahu-fans": {power_up_time: [40, 230], power_up: [420, 160], may_run: [800, 40],
+        not_locked: [800, 320], fans: [1180, 120], outputs_enabled: [1180, 420]},
+};
+
 // A part of the process as a process of its own.
 function cut(name: string, ids: string[]): Record<string, unknown> {
     const g = ahu.graph as { blocks: Record<string, { component: string, metadata: { x: number, y: number } }>,
@@ -24,8 +31,10 @@ function cut(name: string, ids: string[]): Record<string, unknown> {
     const inside = new Set(ids);
     const x0 = Math.min(...ids.map(id => g.blocks[id].metadata.x));
     const y0 = Math.min(...ids.map(id => g.blocks[id].metadata.y));
+    const at = (id: string) => LAYOUT[name]?.[id] ??
+        [g.blocks[id].metadata.x - x0 + 40, g.blocks[id].metadata.y - y0 + 40];
     const blocks = Object.fromEntries(ids.map(id => [id, {component: g.blocks[id].component,
-        metadata: {x: g.blocks[id].metadata.x - x0 + 40, y: g.blocks[id].metadata.y - y0 + 40}}]));
+        metadata: {x: at(id)[0], y: at(id)[1]}}]));
     const inports: Port[] = g.inports.filter(p => inside.has(p.block));
     const outports: Port[] = g.outports.filter(p => inside.has(p.block));
     const unique = (list: Port[], base: string) => {
@@ -61,7 +70,7 @@ const PARTS: [string, string[], string[]][] = [
         "exchanger_volts", "cooling_valve_volts"], ["heating_valve", "heat_exchanger", "cooling_valve"]],
     ["ahu-frost", ["frost_negated", "frost", "frost_confirmed", "frost_cleared", "frost_acknowledge", "frost_alarm",
         "frost_lock", "frost_regulator"], []],
-    ["ahu-fans", ["power_up", "may_run", "not_locked", "fans", "outputs_enabled"], []],
+    ["ahu-fans", ["power_up_time", "power_up", "may_run", "not_locked", "fans", "outputs_enabled"], []],
     ["ahu-pumps", ["exercise_day", "exercise_time", "exercise", "heating_needed", "heating_or_frost", "heating_pump",
         "cooling_needed", "cooling_pump"], []],
 ];
@@ -103,13 +112,12 @@ test("its parts", async ({page, engine}) => {
     await lightTheme(page);
     await page.setViewportSize({width: 1800, height: 1100});
     await loggedIn(page, engine.url);
-    // Two parts whose blocks are far apart in the whole unit are laid out by Arrange blocks (06
-    // §4.4) first; the others keep the unit's layout, which leaves room for the values (Arrange
-    // does not).
+    // The setpoint's blocks are far apart in the whole unit: laid out by Arrange blocks (06 §4.4)
+    // first. The others keep the unit's layout or LAYOUT's, which leave room for the values.
     const editor = page.getByTestId("editor");
     for (const [name] of PARTS) {
         await openProcess(page, name);
-        if (name === "ahu-fans" || name === "ahu-setpoint") {
+        if (name === "ahu-setpoint") {
             const box = (await editor.boundingBox())!;
             const corner = {x: 20, y: box.height - 20};
             await menu(page, editor, "arrange", corner);

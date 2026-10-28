@@ -177,14 +177,13 @@ Patterns for it:
 
 - **A start delay for regulators.** A PID that goes to automatic before its measurement has
   arrived presets its integral from a bogus error. Give it a start delay:
-  1. A fixed value `true` into a `process/Delay` of a few seconds with `mode` 1.
+  1. A fixed value `true` into a `process/Delay` with `mode` 1, its time from
+     `10 → Seconds`.
   2. A `logic/And` of the delay's output and the regulator's other conditions, into `auto`.
 
   In `mode` 1 a `Delay` starts with its output false, and a true input waits the full time,
   also one that is there at the start. In `mode` 0 it takes its input at once at the start, so
-  there a fixed `true` would pass at once. The heating circuit (Section 12.5) uses the older
-  form: a `logic/Not` with nothing on its input, whose true arrives as a change just after the
-  start.
+  there a fixed `true` would pass at once (Section 12.5).
 - **Confirm conditions that a missing value can fake.** A frost alarm on "below 5 °C" fires at
   the start on the sensor's resting 0 °C. A delay before it avoids that (Section 13.8). With
   `mode` 1 even a condition that is true at the start waits.

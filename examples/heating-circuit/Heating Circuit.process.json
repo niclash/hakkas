@@ -65,11 +65,11 @@
               "y": 1100
             }
           },
-          "started": {
-            "component": "logic/Not",
+          "start_time": {
+            "component": "timing/Seconds",
             "metadata": {
               "x": 40,
-              "y": 1100
+              "y": 1470
             }
           },
           "start_delay": {
@@ -301,8 +301,7 @@
           },
           {
             "src": {
-              "block": "started",
-              "port": "out"
+              "data": true
             },
             "tgt": {
               "block": "start_delay",
@@ -311,11 +310,30 @@
           },
           {
             "src": {
-              "data": 10000
+              "data": 10
+            },
+            "tgt": {
+              "block": "start_time",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "block": "start_time",
+              "port": "out"
             },
             "tgt": {
               "block": "start_delay",
               "port": "milliseconds"
+            }
+          },
+          {
+            "src": {
+              "data": 1
+            },
+            "tgt": {
+              "block": "start_delay",
+              "port": "mode"
             }
           },
           {

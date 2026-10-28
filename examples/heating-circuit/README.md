@@ -31,8 +31,9 @@ as it is against the Colibri emulator.
   Ki 0.05 %/K·s, 0–100 %, sampled every second) and its output as 0–10 V; in automatic while
   `enable`, else in manual at 0 % (closed).
 - **Summer stop** (`heating_needed`): heating below 16 °C outdoors, none above 18 °C.
-- **Start delay** (`started`, `start_delay`, `regulate`): the regulator goes to automatic 10 s
-  after the start, once both sensors have delivered their values.
+- **Start delay** (`start_time`, `start_delay`, `regulate`): the regulator goes to automatic
+  10 s after the start, once both sensors have delivered their values: a fixed `true` into a
+  `process/Delay` with mode 1 (an on-delay), its time `10 → timing/Seconds`.
 - **The pump** (`pump`): while heating is needed, and every Monday 10:00–10:05 (`exercise`).
 
 ## Running it

@@ -51,7 +51,8 @@ The blocks are named after what they do; the process reads from left to right.
   (`extended`, a `process/Trigger` set by the press and reset by `extended_timer` after
   2 hours; `extended_wait` makes the timer fall back at once afterwards, so that the next press
   starts a new 2 hours). `running` is either.
-- **Start delay**: the unit starts 10 s after the process does (`power_up`), once every sensor
+- **Start delay**: the unit starts 10 s after the process does (`power_up`, a fixed `true` into
+  a `process/Delay` with mode 1, its time from `power_up_time`), once every sensor
   has delivered its first value. Without it, a regulator switched to automatic would start from
   a not yet delivered 0 °C and take minutes to recover.
 - **Fans** (`fans`): while running, after the start delay, and not locked by frost.

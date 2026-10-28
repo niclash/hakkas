@@ -247,6 +247,13 @@
               "y": 1540
             }
           },
+          "power_up_time": {
+            "component": "timing/Seconds",
+            "metadata": {
+              "x": 1180,
+              "y": 2224
+            }
+          },
           "power_up": {
             "component": "process/Delay",
             "metadata": {
@@ -982,8 +989,7 @@
           },
           {
             "src": {
-              "block": "outputs_enabled",
-              "port": "out"
+              "data": true
             },
             "tgt": {
               "block": "power_up",
@@ -992,11 +998,30 @@
           },
           {
             "src": {
-              "data": 10000
+              "data": 10
+            },
+            "tgt": {
+              "block": "power_up_time",
+              "port": "in"
+            }
+          },
+          {
+            "src": {
+              "block": "power_up_time",
+              "port": "out"
             },
             "tgt": {
               "block": "power_up",
               "port": "milliseconds"
+            }
+          },
+          {
+            "src": {
+              "data": 1
+            },
+            "tgt": {
+              "block": "power_up",
+              "port": "mode"
             }
           },
           {

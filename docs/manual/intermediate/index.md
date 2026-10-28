@@ -138,20 +138,17 @@ integral has worked its way back. The air handling unit (Section 13.8) met exact
 
 The cure is to let the regulator go to automatic only once the sensors have delivered:
 
-- `started` is a `logic/Not` with nothing on its input, so its output is true. It sends that
-  true when the process starts, like every block sends its outputs at the start.
-- `start_delay` (`process/Delay`, 10 000 ms) passes that true on after 10 seconds.
+- `start_delay` is a `process/Delay` with a fixed `true` on its input and `mode` 1: it delays
+  only the rising edge. In that mode its output starts false, and a true that is there at the
+  start waits the full time.
+- `start_time` (`timing/Seconds`) gives it that time, 10 seconds, so it reads as
+  `10 → Seconds → start_delay`.
 - `regulate` (`logic/And`) enables the shunt group when heating is needed **and** the delay has
   passed.
 
-**Why `started`, and not a fixed value `true` on the delay's input?** At the start, every block
-first computes from its inputs as they are, and only then are the values that the blocks sent
-delivered. A fixed value is on the delay's input before the start. A `process/Delay` takes its
-input at once at the start, without delay, so it would pass `true` on immediately. The `Not`'s
-true, in contrast, is delivered just after the start, as a **change**, and a change is what the
-delay delays. This does not depend on the order in which the blocks were added. A `Delay` with
-`mode` 1 (rising edges only) starts with its output false and delays even a true that is there
-at the start, so with it a fixed `true` would do. Section 14.7 describes both.
+**Why `mode` 1?** In `mode` 0, its resting value, a `Delay` delays both edges and takes its input
+at once at the start: a fixed `true` would be passed on immediately. `mode` 1 is the on-delay,
+the same block as an alarm delay uses. Section 14.7 collects the start-up patterns.
 
 ## 12.6 The pump and its weekly exercise
 

@@ -211,14 +211,14 @@ emulator, its regulators started far off and took minutes to recover. The cause:
    bumpless, so it presets its integral from an error computed against 0 °C supply air.
 3. When the real temperatures arrive, that integral is far off.
 
-The cure is `power_up`, a `process/Delay` of 10 s. Its input comes from `outputs_enabled`, a
-`logic/Not` with nothing on its input. Its output is true, sent as a change when the process
-starts. The delay passes it on after 10 seconds, by which time every sensor has delivered.
-Section 12.5 explains why this needs a `Not`, not a fixed value, and Section 14.7 collects
-start-up patterns.
+The cure is `power_up`, a `process/Delay` with a fixed `true` on its input, `mode` 1 (an
+on-delay) and `10 → Seconds` (`power_up_time`) as its time. It turns true 10 seconds after the
+start, by which time every sensor has delivered. Section 12.5 explains the mode, and Section
+14.7 collects start-up patterns.
 
-`outputs_enabled` does a second job: it is the process output `dio1_direction`, bound to the DIO1's
-four direction channels, which makes its terminals outputs. A DIO1 terminal is an input until its
+`outputs_enabled`, a `logic/Not` with nothing on its input and so always true, is the process
+output `dio1_direction`. It is bound to the DIO1's four direction channels, which makes its
+terminals outputs. A DIO1 terminal is an input until its
 direction is set. Making that a part of the process means that the unit's outputs work wherever
 the process runs.
 

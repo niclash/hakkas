@@ -342,7 +342,9 @@ static int delay_mode(double mode)
 /*
  * process/Delay (03 §3.4): START in mode 0 sets output = input with nothing
  * pending; in modes 1 and 2 output starts false and input counts as a change
- * from false at the start. Afterwards a change of to_bool(input) records its
+ * from false at the start, whose wait, if already due, ends at the first timer
+ * expiry rather than in the START compute: a milliseconds computed by other
+ * blocks arrives only after it. Afterwards a change of to_bool(input) records its
  * time; while input differs from output a change is pending. An edge mode
  * delays takes effect once milliseconds have passed since that time (at once
  * if they already have, also after a change of milliseconds or mode); the
@@ -370,7 +372,9 @@ static int64_t delay(BlockCtx *ctx)
 	} else if (in != out) {
 		double ms = linkable_to_f64(&ctx->inputs[DELAY_MILLISECONDS]);
 		uint64_t due = d->changed_ms + delay_ms(ms);
-		if (ctx->now_ms >= due)
+		if (ctx->reason == REASON_START && ctx->now_ms >= due)
+			next = 0; /* after the values sent at the start, milliseconds' among them */
+		else if (ctx->now_ms >= due)
 			out = in;
 		else
 			next = (int64_t)(due - ctx->now_ms);

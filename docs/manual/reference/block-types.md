@@ -358,7 +358,7 @@ output takes input once it has been stable for milliseconds (03 §3.4)
 | `mode` | in | number | The edges delayed: 0 both, 1 rising, 2 falling; the other passes at once |
 | `output` | out | bool | input, once it has been stable for milliseconds |
 
-`output` takes `input` once it has been stable for `milliseconds`; a shorter pulse never comes through. `mode` 0 delays both edges, 1 only the rising edge (an on-delay) and 2 only the falling edge (an off-delay); the other edge passes at once. At the start, mode 0 takes `input` at once; in modes 1 and 2 `output` starts false, so in mode 1 a true input waits the full time (Section 14.7). `timing/Hours` and its siblings give the time in units.
+`output` takes `input` once it has been stable for `milliseconds`; a shorter pulse never comes through. `mode` 0 delays both edges, 1 only the rising edge (an on-delay) and 2 only the falling edge (an off-delay); the other edge passes at once. At the start, mode 0 takes `input` at once; in modes 1 and 2 `output` starts false, so in mode 1 a true input waits the full time (Section 14.7), also when the time comes from other blocks. Set `mode` as a fixed value. `timing/Hours` and its siblings give the time in units.
 
 ### `process/Trigger`
 

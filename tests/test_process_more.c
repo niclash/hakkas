@@ -572,6 +572,21 @@ static void test_delay_rising(void)
 	stop_at(4000);
 	start_at(4100);
 	CHECK(!flag("output") && next_due() == UINT64_MAX);
+
+	/* Started true with milliseconds 0: not in the START compute, but at the
+	 * first expiry, after the values sent at the start. */
+	stop_at(5000);
+	set("milliseconds", 0);
+	set_bool("input", true);
+	start_at(5100);
+	CHECK(!flag("output") && next_due() == 5100);
+	set_at(5100, "milliseconds", linkable_from_f64(2000)); /* delivered after the start */
+	CHECK(!flag("output") && next_due() == 7100);
+	CHECK(fire(7100) == 1 && flag("output"));
+	stop_at(8000);
+	set("milliseconds", 0);
+	start_at(8100);
+	CHECK(fire(8100) == 1 && flag("output"));
 	teardown();
 }
 
