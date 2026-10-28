@@ -14,7 +14,8 @@
  * acknowledges; see the comment above its compute function.
  *
  * process/Delay (03 §3.4): input reaches output once it has been stable for
- * milliseconds; a TIMER_SCHEDULED type woken when the wait ends.
+ * milliseconds, on both edges or (mode) only the rising or the falling one; a
+ * TIMER_SCHEDULED type woken when the wait ends.
  *
  * process/Trigger (03 §3.5): output false on a rising edge of arm, true on a
  * rising edge of fire, each regardless of the other input.
@@ -301,12 +302,16 @@ static int64_t alarm(BlockCtx *ctx)
 /* The longest delay, in ms: 2^53, exact as a double (as timing/Interval). */
 #define DELAY_MAX_MS 9007199254740992.0
 
-enum { DELAY_INPUT, DELAY_MILLISECONDS };
+enum { DELAY_INPUT, DELAY_MILLISECONDS, DELAY_MODE };
+
+/* The edges mode delays: 0 both, 1 rising (on-delay), 2 falling (off-delay). */
+enum { DELAY_BOTH, DELAY_RISING, DELAY_FALLING };
 
 static const PortDescriptor delay_inputs[] = {
 	BOOL("input", "The signal to delay"),
 	NUMBER("milliseconds",
 	       "How long input must be stable before output takes it (<= 0: no delay)"),
+	NUMBER("mode", "The edges delayed: 0 both, 1 rising, 2 falling; the other passes at once"),
 };
 
 static const PortDescriptor delay_outputs[] = {
@@ -327,13 +332,22 @@ static uint64_t delay_ms(double ms)
 	return (uint64_t)fmin(round(ms), DELAY_MAX_MS);
 }
 
+/* mode rounded; anything but 1 or 2 is 0, both edges. */
+static int delay_mode(double mode)
+{
+	double m = round(mode);
+	return m == DELAY_RISING ? DELAY_RISING : m == DELAY_FALLING ? DELAY_FALLING : DELAY_BOTH;
+}
+
 /*
- * process/Delay (03 §3.4): START sets output = input with nothing pending.
- * Afterwards a change of to_bool(input) records its time; while input
- * differs from output a change is pending, and output takes input once
- * milliseconds have passed since that time (at once if they already have,
- * also after a change of milliseconds). Every compute returns the delay to
- * the end of the pending wait, or -1 (no timer) when nothing is pending.
+ * process/Delay (03 §3.4): START in mode 0 sets output = input with nothing
+ * pending; in modes 1 and 2 output starts false and input counts as a change
+ * from false at the start. Afterwards a change of to_bool(input) records its
+ * time; while input differs from output a change is pending. An edge mode
+ * delays takes effect once milliseconds have passed since that time (at once
+ * if they already have, also after a change of milliseconds or mode); the
+ * other edge at once. Every compute returns the delay to the end of the
+ * pending wait, or -1 (no timer) when nothing is pending.
  */
 static int64_t delay(BlockCtx *ctx)
 {
@@ -342,14 +356,18 @@ static int64_t delay(BlockCtx *ctx)
 		return -1;
 	bool in = linkable_to_bool(&ctx->inputs[DELAY_INPUT]);
 	bool out = linkable_to_bool(&ctx->outputs[0]);
+	int mode = delay_mode(linkable_to_f64(&ctx->inputs[DELAY_MODE]));
 	if (ctx->reason == REASON_START) {
-		out = in;
+		out = mode == DELAY_BOTH ? in : false;
+		d->changed_ms = ctx->now_ms;
 	} else if (in != d->input) {
 		d->changed_ms = ctx->now_ms;
 	}
 	d->input = in;
 	int64_t next = -1;
-	if (in != out) {
+	if (in != out && mode != DELAY_BOTH && (mode == DELAY_RISING) != in) {
+		out = in; /* the edge mode does not delay */
+	} else if (in != out) {
 		double ms = linkable_to_f64(&ctx->inputs[DELAY_MILLISECONDS]);
 		uint64_t due = d->changed_ms + delay_ms(ms);
 		if (ctx->now_ms >= due)

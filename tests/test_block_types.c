@@ -1,7 +1,7 @@
 /*
  * Block type registry and built-in stateless types (03 §3); the descriptors of
  * process/PID (its behavior: tests/test_pid.c) and timing/Interval (its
- * behavior: tests/test_timers.c). Every compute
+ * behavior: tests/test_timers.c); timing/Days ... timing/Seconds. Every compute
  * function is called directly through its registered BlockTypeDef with a
  * hand-built BlockCtx, the way the generic runtime (plan task 6) will call it.
  */
@@ -164,7 +164,23 @@ static const struct expected_type table[] = {
 
 #define EXPECTED_COUNT (sizeof(table) / sizeof(table[0]))
 
-/* The calendar primitives (03 §6.2), after timing/Interval: their one
+/* timing/Days ... timing/Seconds (03 §3.12), after timing/Interval: in, in
+ * the unit, to out in milliseconds. */
+static const struct {
+	const char *name, *description, *unit;
+} to_ms[] = {
+	{"timing/Days", "out = in*86400000: days to milliseconds", "Days"},
+	{"timing/Hours", "out = in*3600000: hours to milliseconds", "Hours"},
+	{"timing/Minutes", "out = in*60000: minutes to milliseconds", "Minutes"},
+	{"timing/Seconds", "out = in*1000: seconds to milliseconds", "Seconds"},
+};
+
+#define TO_MS_COUNT (sizeof(to_ms) / sizeof(to_ms[0]))
+
+/* Every built-in type. */
+#define BUILTIN_COUNT (EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + TO_MS_COUNT + CALENDAR_COUNT)
+
+/* The calendar primitives (03 §6.2), after timing/Seconds: their one
  * setting input (DayOfWeek also has sunday_first), a string defaulting to "". */
 static const struct {
 	const char *name, *icon, *description, *setting;
@@ -250,10 +266,10 @@ static void test_builtins(void)
 {
 	block_types_reset();
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_OK);
-	CHECK(block_types_count() == EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + CALENDAR_COUNT);
+	CHECK(block_types_count() == BUILTIN_COUNT);
 	/* Registering them twice is refused. */
 	CHECK(block_types_register_builtins() == BLOCK_TYPES_ERR_EXISTS);
-	CHECK(block_types_count() == EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + CALENDAR_COUNT);
+	CHECK(block_types_count() == BUILTIN_COUNT);
 
 	for (size_t k = 0; k < EXPECTED_COUNT; k++) {
 		const struct expected_type *e = &table[k];
@@ -396,10 +412,31 @@ static void test_builtins(void)
 		CHECK(!t->wall_clock);
 	}
 
-	/* The calendar primitives, after timing/Interval. */
+	/* The converters, after timing/Interval. */
+	for (size_t k = 0; k < TO_MS_COUNT; k++) {
+		t = block_types_get(to_ms[k].name);
+		size_t at = EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + k;
+		CHECK(t != NULL && block_types_at(at) == t);
+		if (t == NULL)
+			continue;
+		CHECK_STREQ(t->icon, "more_time");
+		CHECK_STREQ(t->description, to_ms[k].description);
+		CHECK(t->compute_on_input && t->timer == TIMER_NONE && t->state_size == 0);
+		CHECK(t->change_threshold == 0.0);
+		CHECK(!t->subgraph && t->composite == NULL && !t->wall_clock);
+		CHECK(t->input_count == 1 && t->output_count == 1);
+		if (t->input_count == 1 && t->output_count == 1) {
+			check_port(&t->inputs[0], "in", "number");
+			CHECK_STREQ(t->inputs[0].description, to_ms[k].unit);
+			check_port(&t->outputs[0], "out", "number");
+			CHECK_STREQ(t->outputs[0].description, "Milliseconds");
+		}
+	}
+
+	/* The calendar primitives, after timing/Seconds. */
 	for (size_t k = 0; k < CALENDAR_COUNT; k++) {
 		t = block_types_get(calendar[k].name);
-		size_t at = EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + k;
+		size_t at = EXPECTED_COUNT + 2 + PROCESS_MORE_COUNT + TO_MS_COUNT + k;
 		CHECK(t != NULL && block_types_at(at) == t);
 		if (t == NULL)
 			continue;
@@ -703,6 +740,22 @@ static void test_linear(void)
 	CHECK(is_f64(run("process/Linear", in6, 3), ldexp(1.0, -29)));
 }
 
+/* timing/Days ... timing/Seconds (03 §3.12): in, in the unit, to milliseconds. */
+static void test_to_ms(void)
+{
+	Linkable three[1] = {f(3)};
+	CHECK(is_f64(run("timing/Hours", three, 1), 10800000.0));
+	Linkable half[1] = {f(1.5)};
+	CHECK(is_f64(run("timing/Days", half, 1), 129600000.0));
+	Linkable neg[1] = {f(-2)};
+	CHECK(is_f64(run("timing/Minutes", neg, 1), -120000.0));
+	Linkable text[1] = {s("0.25")};
+	CHECK(is_f64(run("timing/Seconds", text, 1), 250.0));
+	Linkable nan[1] = {f(NAN)};
+	CHECK(is_nan(run("timing/Seconds", nan, 1)));
+	CHECK(is_f64(run("timing/Hours", NULL, 0), 0.0)); /* unconnected: 0 */
+}
+
 static void test_logic(void)
 {
 	static const struct {
@@ -755,6 +808,7 @@ int main(void)
 	RUN(test_comparisons);
 	RUN(test_linear);
 	RUN(test_logic);
+	RUN(test_to_ms);
 	block_types_reset();
 	return test_result();
 }

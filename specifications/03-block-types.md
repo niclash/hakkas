@@ -72,7 +72,7 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `process/Curve` | show_chart | `output` follows a curve of up to 7 points | stateless; see §3.2 |
 | `process/AutoMan` | pan_tool | `output = override ? manual : input` | stateless; see §3.3 |
 | `process/Alarm` | notifications | alarm states of a condition | stateful; see §7 |
-| `process/Delay` | hourglass_empty | `output` takes `input` once it has been stable for `milliseconds` | scheduled, stateful; see §3.4 |
+| `process/Delay` | hourglass_empty | `output` takes `input` once it has been stable for `milliseconds` | scheduled, stateful; `mode`: both edges, rising or falling; see §3.4 |
 | `process/Trigger` | bolt | `output` false when `arm` rises, true when `fire` rises | stateful; see §3.5 |
 | `process/Limit` | compress | `output = input` capped to `[min, max]` | stateless; see §3.6 |
 | `process/Hysteresis` | swap_vert | Schmitt trigger: `output` on above `threshold+hysteresis`, off below `threshold-hysteresis` | stateful; see §3.7 |
@@ -84,6 +84,10 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 | `process/MultiplexIn` | merge | `output` = the input `select` chooses, 1–8 | stateless; see §3.11 |
 | `process/MultiplexOut` | alt_route | `input` goes to the output `select` chooses, 1–8; the others are `0` | stateless; see §3.11 |
 | `timing/Interval` | timer | periodic pulse generator: PWM or edge generator | see §3.1 |
+| `timing/Days` | more_time | `out = in*86400000: days to milliseconds` | stateless; see §3.12 |
+| `timing/Hours` | more_time | `out = in*3600000: hours to milliseconds` | stateless; see §3.12 |
+| `timing/Minutes` | more_time | `out = in*60000: minutes to milliseconds` | stateless; see §3.12 |
+| `timing/Seconds` | more_time | `out = in*1000: seconds to milliseconds` | stateless; see §3.12 |
 | `timing/MinuteRange` | schedule | true within a time-of-day range | calendar primitive, §6.2 |
 | `timing/DayOfWeek` | date_range | true on the selected weekdays | calendar primitive, §6.2 |
 | `timing/DayOfMonth` | date_range | true on the selected days of the month | calendar primitive, §6.2 |
@@ -102,7 +106,7 @@ Unless noted, the following are stateless, event-driven blocks (`compute_on_inpu
 
 Values are plain numbers; there are no unit rules (`Metric` was dropped, `00-README.md` open question 9).
 
-The `timing/` family is expected to grow: `timing/Interval` covers periodic pulses, and other timing behaviors (one-shot/monostable, delay-on/delay-off, debounce, …) will be separate block types rather than modes of one block.
+The `timing/` family is expected to grow: `timing/Interval` covers periodic pulses, and other timing behaviors (one-shot/monostable, …) will be separate block types. The on-delay, the off-delay and the debounce are `process/Delay`'s modes (§3.4, decided with the user 2026-10-28), and `timing/Days` … `timing/Seconds` (§3.12) give its time, and `timing/Interval`'s, in units.
 
 **`process/Deadband`** (decided, `00-README.md` open question 7): inputs `in` (number) and `threshold` (number, default `0`), output `out` (number). On every input change, `out` is set to `in` only if `|in − out| >= threshold` (or on a NaN transition, or the first value after `start`); otherwise `out` keeps its value. It is the graph-visible way to filter a signal more (or less) than the engine-wide change threshold; its type default change threshold is `0`, so the engine adds no filtering of its own on its output. A `relative` (bool) input for percentage deadbands may be added later if needed.
 
@@ -184,17 +188,19 @@ Decided with the user 2026-10-15; implemented in plan task 49 (`src/blocktypes/p
 
 ### 3.4 `process/Delay` — on/off delay
 
-Decided with the user 2026-10-15; implemented in plan task 51 (`src/blocktypes/process_more.c`). Passes a boolean `input` to `output` only once it has been **stable** for `milliseconds`: every change of `input` starts the wait over, and `output` changes only when the wait ends. It delays both edges (on and off) and filters out pulses shorter than `milliseconds`. A scheduled block (`compute_on_input`, `TIMER_SCHEDULED`; state: the engine time of the last change of `input`). Registered after `process/Alarm`.
+Decided with the user 2026-10-15; implemented in plan task 51 (`src/blocktypes/process_more.c`); `mode` decided with the user 2026-10-28. Passes a boolean `input` to `output` only once it has been **stable** for `milliseconds`: every change of `input` starts the wait over, and `output` changes only when the wait ends. By default it delays both edges (on and off) and filters out pulses shorter than `milliseconds`; `mode` makes it delay only the rising edge (an on-delay, IEC 61131-3 `TON`) or only the falling one (an off-delay, `TOF`). A scheduled block (`compute_on_input`, `TIMER_SCHEDULED`; state: the engine time of the last change of `input`). Registered after `process/Alarm`.
 
 | Port | Direction | Type | Description |
 |---|---|---|---|
 | `input` | input | bool | The signal to delay |
 | `milliseconds` | input | number | How long `input` must be stable before `output` takes it (`<= 0`: no delay) |
+| `mode` | input | number | The edges delayed: `0` both, `1` rising, `2` falling; the other edge passes at once |
 | `output` | output | bool | `input`, once it has been stable for `milliseconds` |
 
 - **A change of `input`** (`to_bool`) records the time and arms the timer for `milliseconds`; when it expires with `input` unchanged since, `output = input`. If `input` returns to `output`'s value before then, nothing is pending (the timer is cancelled), which is what the restarted wait would give.
 - **`milliseconds`** is rounded to whole milliseconds, at most `2^53`; `<= 0`, NaN or infinite means **no delay**: `output` follows `input` at once (its resting value `0`, §1). A change of `milliseconds` while a change of `input` is pending applies to that wait, counted from the change of `input`: if it has already lasted that long, `output` takes `input` at once.
-- **Start**: `output = input` at once, with nothing pending (decided with the user); only changes after the start are delayed. `STOP` changes nothing; nothing pending survives a stop.
+- **`mode`** is rounded to the nearest whole number (C `round`); `1` delays only the rising edge (false → true), `2` only the falling edge, and any other value — the resting `0`, NaN, ±Infinity — both. An edge the mode does not delay makes `output = input` at once, which also ends a wait for the other edge (`input` is back at `output`'s value). A change of `mode` while a change of `input` is pending applies to it: if the new mode does not delay that edge, `output` takes `input` at once; otherwise the wait goes on, counted from the change of `input`.
+- **Start**: in mode `0`, `output = input` at once, with nothing pending (decided with the user 2026-10-15); only changes after the start are delayed. In modes `1` and `2` (decided 2026-10-28), `output` starts `false` and `input` counts as a change from `false` at the start: in mode `1` a `true` input waits the full `milliseconds` — an alarm condition true at the start from resting values is not raised at once —, in mode `2` it passes at once. `STOP` changes nothing; nothing pending survives a stop.
 - **Late timers**: a timer that fires late applies the change then; it is never applied early.
 
 ### 3.5 `process/Trigger` — arm and fire
@@ -290,6 +296,18 @@ Decided with the user 2026-10-27 (plan task 81, for the Air Handling Unit exampl
 - **Outputs not chosen are `0`** (`SelectOut`, `MultiplexOut`; decided): whatever follows sees nothing, as from an unfed input, rather than a frozen last value that could keep driving an actuator.
 - The chosen output follows its input as it changes; switching `select` moves the value at once (no bumpless transfer: a regulator that needs one has its own, `process/PID`'s `auto`).
 - Port descriptions: as in `src/blocktypes/select.c` (e.g. `in_true` → `"Reaches output while select is true"`, `out3` → `"input while select is 3, else 0"`).
+
+### 3.12 `timing/Days`, `timing/Hours`, `timing/Minutes`, `timing/Seconds` — times in units
+
+Decided with the user 2026-10-28 (`src/blocktypes/timing.c`). Each converts a time in its unit to the milliseconds that `process/Delay` and `timing/Interval` take, so a graph reads `3 → Hours → Delay`. Stateless, `compute_on_input`, `TIMER_NONE`; `STOP` changes nothing. Registered after `timing/Interval`, in this order.
+
+| Port | Direction | Type | Description |
+|---|---|---|---|
+| `in` | input | number | The time in the unit (`"Days"`, `"Hours"`, `"Minutes"`, `"Seconds"`) |
+| `out` | output | number | `"Milliseconds"`: `to_f64(in)` × 86 400 000, 3 600 000, 60 000 or 1000 |
+
+- Any number converts, fractions and negatives included (`1.5` hours is 5 400 000); NaN and ±Infinity stay so. Rounding is the receiving block's (whole milliseconds in `process/Delay`).
+- The type default change threshold is `0`: a converter passes every change, so the receiving block alone decides what a change of its time does.
 
 ## 4. The environment's inputs and outputs — no IO block types
 
@@ -456,7 +474,7 @@ Calendar primitives — each a scheduled block (`TIMER_SCHEDULED`) that reads th
 **Local time** (decided, `00-README.md` open question 11): the calendar primitives evaluate the wall clock in local time from the engine-wide `time_zone` POSIX TZ string (`05-app-lifecycle-persistence.md` §1.1). Daylight-saving edges: in spring the skipped local hour does not exist, and a range starting inside it begins at the jump; in autumn the repeated hour is evaluated on local wall-clock time, so a range covering it can be true twice.
 
 Decisions (plan task 24; `src/blocktypes/calendar.h`, `calendar.c`, `logic.c`, `src/system/tz.h`):
-- **The primitives**: `timing/MinuteRange` (input `range`), `timing/DayOfWeek` (`days`, `sunday_first`), `timing/DayOfMonth` (`days`, 1–31), `timing/MonthOfYear` (`months`, 1–12), `timing/DayOfYear` (`days`, 1–366, 1 = January 1, so 60 is March 1, or February 29 in a leap year, and 366 only exists in leap years) and `timing/WeekOfYear` (`weeks`, ISO 8601 weeks 1–53). The setting inputs are strings defaulting to `""` (so a new block is false until it is set), `sunday_first` a bool defaulting to `false`; the output `out` is a bool defaulting to `false`. Each is stateless, `compute_on_input` and `TIMER_SCHEDULED`, with the type flag `wall_clock` (`01-architecture-overview.md` §2.3, §3.4); every compute ignores `reason` except `STOP`, which changes nothing. Registered after `timing/Interval`, in this order (the §3 table). `timing/HolidaysOfSweden` is **not implemented**: which days count as holidays is for the user to decide.
+- **The primitives**: `timing/MinuteRange` (input `range`), `timing/DayOfWeek` (`days`, `sunday_first`), `timing/DayOfMonth` (`days`, 1–31), `timing/MonthOfYear` (`months`, 1–12), `timing/DayOfYear` (`days`, 1–366, 1 = January 1, so 60 is March 1, or February 29 in a leap year, and 366 only exists in leap years) and `timing/WeekOfYear` (`weeks`, ISO 8601 weeks 1–53). The setting inputs are strings defaulting to `""` (so a new block is false until it is set), `sunday_first` a bool defaulting to `false`; the output `out` is a bool defaulting to `false`. Each is stateless, `compute_on_input` and `TIMER_SCHEDULED`, with the type flag `wall_clock` (`01-architecture-overview.md` §2.3, §3.4); every compute ignores `reason` except `STOP`, which changes nothing. Registered after `timing/Seconds`, in this order (the §3 table). `timing/HolidaysOfSweden` is **not implemented**: which days count as holidays is for the user to decide.
 - **Selector strings**: a comma-separated list of items, each a value or a range `a-b`, values in decimal digits only (no sign; leading zeros allowed). Spaces and tabs are allowed around values, `-` and `,`. A range whose first value is greater than its last **wraps around**: `"6-1"` over weekdays is Saturday, Sunday, Monday; `"11-2"` over months is November to February. Repeated or overlapping items are fine. A selector is **invalid** if it is empty (or only whitespace), has an empty item (`"1,,3"`, `"1,"`), a value outside the block's range (`0`, `8` for weekdays; `32` for days of the month), or any other character.
 - **`MinuteRange` strings**: `"HH:MM-HH:MM"`, the hour one or two digits (0–23), the minute two digits; spaces and tabs allowed around the times and the `-`. The end may be `"24:00"`, the end of the day, so `"00:00-24:00"` is all day. An **equal start and end is an empty range** (never true): with the start included and the end excluded, `[s, s)` is empty; all day is written `"00:00-24:00"`.
 - **Invalid settings**: an invalid or empty setting makes `out` false with no timer armed (no error behavior in the dataflow, `01-architecture-overview.md` §2.1); setting a valid one computes and arms again. A value that is not a string is read in its text form (`linkable_stringify`: a number `3` is `"3"`; unset is invalid).

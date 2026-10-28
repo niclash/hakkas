@@ -468,7 +468,7 @@ static void set_bool_at(uint64_t now, const char *port, bool v)
 
 static void test_delay(void)
 {
-	static const char *const ins[] = {"input:bool", "milliseconds:number"};
+	static const char *const ins[] = {"input:bool", "milliseconds:number", "mode:number"};
 	static const char *const outs[] = {"output:bool"};
 	CHECK_PORTS("process/Delay", ins, outs);
 	const BlockTypeDef *t = block_types_get("process/Delay");
@@ -536,6 +536,72 @@ static void test_delay_none(void)
 	CHECK(next_due() == UINT64_MAX);
 	start_at(90);
 	CHECK(!flag("output") && next_due() == UINT64_MAX);
+	teardown();
+}
+
+/* mode 1: only the rising edge is delayed (an on-delay). */
+static void test_delay_rising(void)
+{
+	/* START: output false, and a true input waits the full time. */
+	setup("process/Delay");
+	set("milliseconds", 1000);
+	set("mode", 1);
+	set_bool("input", true);
+	start_at(0);
+	CHECK(!flag("output") && next_due() == 1000);
+	/* The falling edge passes at once and ends the wait. */
+	set_bool_at(400, "input", false);
+	CHECK(!flag("output") && next_due() == UINT64_MAX);
+	set_bool_at(500, "input", true);
+	CHECK(!flag("output") && next_due() == 1500);
+	CHECK(fire(1500) == 1 && flag("output"));
+	set_bool_at(2000, "input", false);
+	CHECK(!flag("output") && next_due() == UINT64_MAX);
+
+	/* A change of mode applies to the wait: an edge no longer delayed passes. */
+	set_bool_at(3000, "input", true);
+	CHECK(next_due() == 4000);
+	set_at(3100, "mode", linkable_from_f64(2));
+	CHECK(flag("output") && next_due() == UINT64_MAX);
+	/* Rounded; 1.4 is 1. Back to rising, the next fall passes at once. */
+	set_at(3200, "mode", linkable_from_f64(1.4));
+	set_bool_at(3300, "input", false);
+	CHECK(!flag("output"));
+
+	/* Started false: nothing pending. */
+	stop_at(4000);
+	start_at(4100);
+	CHECK(!flag("output") && next_due() == UINT64_MAX);
+	teardown();
+}
+
+/* mode 2: only the falling edge is delayed (an off-delay). */
+static void test_delay_falling(void)
+{
+	/* START: a true input passes at once. */
+	setup("process/Delay");
+	set("milliseconds", 1000);
+	set("mode", 2);
+	set_bool("input", true);
+	start_at(0);
+	CHECK(flag("output") && next_due() == UINT64_MAX);
+	set_bool_at(100, "input", false);
+	CHECK(flag("output") && next_due() == 1100);
+	/* The rising edge ends the wait. */
+	set_bool_at(200, "input", true);
+	CHECK(flag("output") && next_due() == UINT64_MAX);
+	set_bool_at(300, "input", false);
+	/* A change of mode to both: the wait goes on, from the change of input. */
+	set_at(800, "mode", linkable_from_f64(0));
+	CHECK(flag("output") && next_due() == 1300);
+	set_at(900, "mode", linkable_from_f64(2));
+	CHECK(fire(1300) == 1 && !flag("output"));
+	/* Any other mode is both edges: 3, NaN. */
+	set_at(1400, "mode", linkable_from_f64(3));
+	set_bool_at(1500, "input", true);
+	CHECK(!flag("output") && next_due() == 2500);
+	set_at(1600, "mode", linkable_from_f64(NAN));
+	CHECK(!flag("output") && next_due() == 2500);
 	teardown();
 }
 
@@ -853,6 +919,8 @@ int main(void)
 	RUN(test_alarm_presentation_and_restart);
 	RUN(test_delay);
 	RUN(test_delay_none);
+	RUN(test_delay_rising);
+	RUN(test_delay_falling);
 	RUN(test_trigger);
 	RUN(test_limit);
 	RUN(test_hysteresis);

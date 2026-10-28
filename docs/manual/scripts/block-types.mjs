@@ -21,7 +21,7 @@ const FAMILIES = {
     compare: ["Compare", "Comparisons of two numbers, giving a bool."],
     logic: ["Logic", "Boolean logic. Every input and output is a bool; a number input is true when it is not 0."],
     process: ["Process", "The control engineer's blocks: filters, curves, limits, delays, regulators, alarms and selectors."],
-    timing: ["Timing", "Pulses and the calendar. The calendar blocks use the controller's local time (Section 16.2, `time_zone`) and wake exactly when their output may change."],
+    timing: ["Timing", "Pulses, times in units, and the calendar. The calendar blocks use the controller's local time (Section 16.2, `time_zone`) and wake exactly when their output may change."],
 };
 
 // What a user needs to know beyond the ports, per type.
@@ -39,7 +39,7 @@ const NOTES = {
     "process/Curve": "Up to seven points; a point counts only if its `x` is greater than the last point used, so unused points resting at 0 drop out by themselves. Outside the points the output holds the nearest end's `y`, and `min` or `max` says so.",
     "process/AutoMan": "A hand switch: `override` true makes `output` follow `manual`. No bumpless transfer: the output jumps.",
     "process/Alarm": "States Normal, Activated, Deactivated (the condition gone, not acknowledged), Reactivated, Acknowledged, Disabled and Blocked; exactly one output is true, and `state` names it. `acknowledge` acts on its rising edge. Classes: A attend to at once, day and night; B during working hours; C soon; D of interest only. `block` puts a fluttering alarm aside, `disable` switches it off; Disabled wins. See Section 13.7.",
-    "process/Delay": "Delays both edges: `output` takes `input` once it has been stable for `milliseconds`; a shorter pulse never comes through. At the start, `output` takes `input` at once (Section 12.5 shows how to delay the start).",
+    "process/Delay": "`output` takes `input` once it has been stable for `milliseconds`; a shorter pulse never comes through. `mode` 0 delays both edges, 1 only the rising edge (an on-delay) and 2 only the falling edge (an off-delay); the other edge passes at once. At the start, mode 0 takes `input` at once; in modes 1 and 2 `output` starts false, so in mode 1 a true input waits the full time (Section 14.7). `timing/Hours` and its siblings give the time in units.",
     "process/Trigger": "A latch on edges: a rising `fire` sets `output`, a rising `arm` clears it. Levels do nothing, and an input already true at the start must go false and true again. See Section 13.3.",
     "process/Limit": "Equal limits are no limits (both rest at 0); limits the wrong way round are swapped.",
     "process/Hysteresis": "A comparator with a band: on above `threshold + hysteresis`, off below `threshold − hysteresis`, unchanged in between. `inverted` for heating (on when cold). At the start it is on only above the band.",
@@ -50,6 +50,10 @@ const NOTES = {
     "process/SelectOut": "`input` goes to `out_true` or `out_false`; the other output is 0, so nothing downstream keeps a stale value.",
     "process/MultiplexIn": "`select` is rounded; 1–8 chooses that input, anything else (0 when unfed) none, giving 0. IEC 61131-3's `MUX`, counting from 1.",
     "process/MultiplexOut": "`select` 1–8 sends `input` to that output; every other output is 0.",
+    "timing/Days": "Converts days to the milliseconds that `process/Delay` and `timing/Interval` take: `2 → Days → Delay`. Fractions work.",
+    "timing/Hours": "Converts hours to milliseconds: `3 → Hours → Delay`. Fractions work: 1.5 is an hour and a half.",
+    "timing/Minutes": "Converts minutes to milliseconds: `10 → Minutes → Delay`. Fractions work.",
+    "timing/Seconds": "Converts seconds to milliseconds: `5 → Seconds → Delay`. Fractions work: 0.25 is 250 ms.",
     "timing/Interval": "A square wave: `milliseconds` the period, `duty-cycle` the percentage of it that `out` is true. Idle until the period is set. Changes take effect at the next period, never cutting the current one.",
     "timing/MinuteRange": "`range` as `HH:MM-HH:MM`, the start included and the end excluded; it may wrap past midnight (`22:00-06:00`). All day is `00:00-24:00`; an equal start and end is never.",
     "timing/DayOfWeek": "`days` a selector of 1–7, Monday = 1 (Sunday = 1 with `sunday_first`).",

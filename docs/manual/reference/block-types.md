@@ -355,9 +355,10 @@ output takes input once it has been stable for milliseconds (03 §3.4)
 |---|---|---|---|
 | `input` | in | bool | The signal to delay |
 | `milliseconds` | in | number | How long input must be stable before output takes it (<= 0: no delay) |
+| `mode` | in | number | The edges delayed: 0 both, 1 rising, 2 falling; the other passes at once |
 | `output` | out | bool | input, once it has been stable for milliseconds |
 
-Delays both edges: `output` takes `input` once it has been stable for `milliseconds`; a shorter pulse never comes through. At the start, `output` takes `input` at once (Section 12.5 shows how to delay the start).
+`output` takes `input` once it has been stable for `milliseconds`; a shorter pulse never comes through. `mode` 0 delays both edges, 1 only the rising edge (an on-delay) and 2 only the falling edge (an off-delay); the other edge passes at once. At the start, mode 0 takes `input` at once; in modes 1 and 2 `output` starts false, so in mode 1 a true input waits the full time (Section 14.7). `timing/Hours` and its siblings give the time in units.
 
 ### `process/Trigger`
 
@@ -506,7 +507,7 @@ input goes to the output select chooses, 1-8; the others are 0 (03 §3.11)
 
 ## Timing
 
-Pulses and the calendar. The calendar blocks use the controller's local time (Section 16.2, `time_zone`) and wake exactly when their output may change.
+Pulses, times in units, and the calendar. The calendar blocks use the controller's local time (Section 16.2, `time_zone`) and wake exactly when their output may change.
 
 ### `timing/Interval`
 
@@ -519,6 +520,50 @@ periodic pulse generator: PWM or edge generator (03 §3.1)
 | `out` | out | bool | The generated pulse train. |
 
 A square wave: `milliseconds` the period, `duty-cycle` the percentage of it that `out` is true. Idle until the period is set. Changes take effect at the next period, never cutting the current one.
+
+### `timing/Days`
+
+out = in*86400000: days to milliseconds (03 §3.12)
+
+| Port | | Type | Description |
+|---|---|---|---|
+| `in` | in | number | Days |
+| `out` | out | number | Milliseconds |
+
+Converts days to the milliseconds that `process/Delay` and `timing/Interval` take: `2 → Days → Delay`. Fractions work.
+
+### `timing/Hours`
+
+out = in*3600000: hours to milliseconds (03 §3.12)
+
+| Port | | Type | Description |
+|---|---|---|---|
+| `in` | in | number | Hours |
+| `out` | out | number | Milliseconds |
+
+Converts hours to milliseconds: `3 → Hours → Delay`. Fractions work: 1.5 is an hour and a half.
+
+### `timing/Minutes`
+
+out = in*60000: minutes to milliseconds (03 §3.12)
+
+| Port | | Type | Description |
+|---|---|---|---|
+| `in` | in | number | Minutes |
+| `out` | out | number | Milliseconds |
+
+Converts minutes to milliseconds: `10 → Minutes → Delay`. Fractions work.
+
+### `timing/Seconds`
+
+out = in*1000: seconds to milliseconds (03 §3.12)
+
+| Port | | Type | Description |
+|---|---|---|---|
+| `in` | in | number | Seconds |
+| `out` | out | number | Milliseconds |
+
+Converts seconds to milliseconds: `5 → Seconds → Delay`. Fractions work: 0.25 is 250 ms.
 
 ### `timing/MinuteRange`
 

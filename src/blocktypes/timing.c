@@ -25,6 +25,9 @@
  *  - stop() leaves out as it was (it is not propagated anyway); start()
  *    always begins a fresh cycle, so nothing of a cycle interrupted by a
  *    stop survives.
+ *
+ * timing/Days, Hours, Minutes and Seconds (03 §3.12): a time in that unit
+ * converted to milliseconds, out = in * the unit's milliseconds; stateless.
  */
 #include <math.h>
 #include <stdbool.h>
@@ -142,6 +145,65 @@ static int64_t interval(BlockCtx *ctx)
 	return s->running ? (int64_t)(next_transition(s) - now) : -1;
 }
 
+/* ---- timing/Days ... timing/Seconds (03 §3.12) ------------------------------ */
+
+static const PortDescriptor days_inputs[] = {
+	{.name = "in", .description = "Days", .type = "number",
+	 .default_value = LINKABLE_F64_INIT(0.0)},
+};
+static const PortDescriptor hours_inputs[] = {
+	{.name = "in", .description = "Hours", .type = "number",
+	 .default_value = LINKABLE_F64_INIT(0.0)},
+};
+static const PortDescriptor minutes_inputs[] = {
+	{.name = "in", .description = "Minutes", .type = "number",
+	 .default_value = LINKABLE_F64_INIT(0.0)},
+};
+static const PortDescriptor seconds_inputs[] = {
+	{.name = "in", .description = "Seconds", .type = "number",
+	 .default_value = LINKABLE_F64_INIT(0.0)},
+};
+
+static const PortDescriptor milliseconds_outputs[] = {
+	{.name = "out", .description = "Milliseconds", .type = "number",
+	 .default_value = LINKABLE_F64_INIT(0.0)},
+};
+
+static int64_t to_ms(BlockCtx *ctx, double unit_ms)
+{
+	if (ctx->reason != REASON_STOP) {
+		double in = linkable_to_f64(&ctx->inputs[0]);
+		block_ctx_set_output(ctx, 0, linkable_from_f64(in * unit_ms));
+	}
+	return 0;
+}
+
+static int64_t days(BlockCtx *ctx)
+{
+	return to_ms(ctx, 86400000.0);
+}
+
+static int64_t hours(BlockCtx *ctx)
+{
+	return to_ms(ctx, 3600000.0);
+}
+
+static int64_t minutes(BlockCtx *ctx)
+{
+	return to_ms(ctx, 60000.0);
+}
+
+static int64_t seconds(BlockCtx *ctx)
+{
+	return to_ms(ctx, 1000.0);
+}
+
+#define TO_MS_TYPE(type_name, desc, ins, fn)                                               \
+	{.name = (type_name), .icon = "more_time", .description = (desc), .inputs = (ins),  \
+	 .input_count = ARRAY_LEN(ins), .outputs = milliseconds_outputs,                     \
+	 .output_count = ARRAY_LEN(milliseconds_outputs), .compute_on_input = true,          \
+	 .timer = TIMER_NONE, .compute = (fn), .state_size = 0, .change_threshold = 0.0}
+
 const BlockTypeDef timing_block_types[] = {
 	{.name = "timing/Interval",
 	 .icon = "timer",
@@ -155,6 +217,12 @@ const BlockTypeDef timing_block_types[] = {
 	 .compute = interval,
 	 .state_size = sizeof(IntervalState),
 	 .change_threshold = NAN},
+	TO_MS_TYPE("timing/Days", "out = in*86400000: days to milliseconds", days_inputs, days),
+	TO_MS_TYPE("timing/Hours", "out = in*3600000: hours to milliseconds", hours_inputs, hours),
+	TO_MS_TYPE("timing/Minutes", "out = in*60000: minutes to milliseconds", minutes_inputs,
+		   minutes),
+	TO_MS_TYPE("timing/Seconds", "out = in*1000: seconds to milliseconds", seconds_inputs,
+		   seconds),
 };
 
 const size_t timing_block_types_count = ARRAY_LEN(timing_block_types);

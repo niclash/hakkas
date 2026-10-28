@@ -61,16 +61,20 @@ are rarely needed, since only changes travel. A block that acts on a rising edge
 
 | PLC timer | In hakkas |
 |---|---|
-| on-delay `TON` and off-delay `TOF` | `process/Delay` delays both edges: `output` takes `input` once it has been stable for `milliseconds` |
-| on-delay only | `process/Delay`, then `logic/And` with the input: off passes at once |
-| off-delay only | `process/Delay`, then `logic/Or` with the input: on passes at once |
+| on-delay `TON` | `process/Delay` with `mode` 1: on waits, off passes at once |
+| off-delay `TOF` | `process/Delay` with `mode` 2: off waits, on passes at once |
+| on- and off-delay together | `process/Delay` with `mode` 0, its resting value: `output` takes `input` once it has been stable for `milliseconds` |
 | pulse `TP` (a fixed-length pulse) | `process/Trigger` fired by the input, armed by a `process/Delay` of its own output (the pattern of Section 13.3) |
 | a pulse train, a blinker | `timing/Interval`: a period and a duty cycle |
 | a debounce | `process/Delay` of a few hundred ms: a shorter pulse never comes through |
 | running hours | `process/Integrator` of the running signal (1 while true), `divisor` 3600 |
 
-A `process/Delay`'s time can be changed while it waits, and the change applies to the running
-wait. The AHU uses that to end Extended operation and reset at once (Section 13.3).
+**Times in units**: a `process/Delay` and a `timing/Interval` take milliseconds. `timing/Days`,
+`timing/Hours`, `timing/Minutes` and `timing/Seconds` convert, so a process reads as it is
+meant: `3 → Hours → Delay`.
+
+A `process/Delay`'s time and mode can be changed while it waits, and the change applies to the
+running wait. The AHU uses that to end Extended operation and reset at once (Section 13.3).
 
 Timers run on the controller's clock and survive nothing: a stop or a restart starts them from
 zero (14.7).
@@ -136,8 +140,10 @@ keeps the alarm's state until a person acknowledges it:
 - *Reactivated* when it comes back unacknowledged.
 
 **Good conditions**:
-- **Delay them.** A `process/Delay` before the alarm keeps a passing deviation from raising it.
-  The AHU's frost waits 5 s.
+- **Delay them.** A `process/Delay` with `mode` 1 before the alarm keeps a passing deviation
+  from raising it, and lets the alarm go as soon as the condition does. For a slow process the
+  wait is long: `2 → Hours → Delay` before "the room has not reached its setpoint". The AHU's
+  frost waits 5 s, with both edges delayed.
 - **Alarm on goals, not on components**: the temperature that is not reached, rather than every
   status contact (Section 13.12).
 - **Give it a class**:
@@ -171,14 +177,17 @@ Patterns for it:
 
 - **A start delay for regulators.** A PID that goes to automatic before its measurement has
   arrived presets its integral from a bogus error. Give it a start delay:
-  1. A `logic/Not` with nothing on its input, into a `process/Delay` of a few seconds.
+  1. A fixed value `true` into a `process/Delay` of a few seconds with `mode` 1.
   2. A `logic/And` of the delay's output and the regulator's other conditions, into `auto`.
 
-  The `Not`'s true arrives as a change just after the start, which the delay delays. A fixed
-  value `true` would be on the input already at the start, which the delay passes at once
-  (Section 12.5).
+  In `mode` 1 a `Delay` starts with its output false, and a true input waits the full time,
+  also one that is there at the start. In `mode` 0 it takes its input at once at the start, so
+  there a fixed `true` would pass at once. The heating circuit (Section 12.5) uses the older
+  form: a `logic/Not` with nothing on its input, whose true arrives as a change just after the
+  start.
 - **Confirm conditions that a missing value can fake.** A frost alarm on "below 5 °C" fires at
-  the start on the sensor's resting 0 °C. A short delay before it avoids that (Section 13.8).
+  the start on the sensor's resting 0 °C. A delay before it avoids that (Section 13.8). With
+  `mode` 1 even a condition that is true at the start waits.
 - **Count on a safe resting state.** Every input rests at 0 or false, and the block types are
   designed so that rest means off: a regulator in manual at 0, a schedule off, a pump off. A
   process with a missing connection does nothing, rather than something wrong.

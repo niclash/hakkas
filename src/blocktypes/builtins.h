@@ -3,8 +3,8 @@
  * const array of definitions in the order of the 03 §3 table, registered by
  * block_types_register_builtins in that order, family by family: math/,
  * compare/, logic/, process/ (Linear, Deadband, PID, then the types of
- * blocktypes/process_more.c), timing/ (Interval, then the calendar
- * primitives).
+ * blocktypes/process_more.c), timing/ (Interval, Days ... Seconds, then the
+ * calendar primitives).
  */
 #ifndef HAKKAS_BLOCKTYPES_BUILTINS_H
 #define HAKKAS_BLOCKTYPES_BUILTINS_H
@@ -39,7 +39,7 @@ extern const size_t process_more_block_types_count;
 extern const BlockTypeDef select_block_types[];
 extern const size_t select_block_types_count;
 
-/* timing/Interval (blocktypes/timing.c). */
+/* timing/Interval, then timing/Days ... timing/Seconds (blocktypes/timing.c). */
 extern const BlockTypeDef timing_block_types[];
 extern const size_t timing_block_types_count;
 

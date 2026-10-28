@@ -149,8 +149,9 @@ first computes from its inputs as they are, and only then are the values that th
 delivered. A fixed value is on the delay's input before the start. A `process/Delay` takes its
 input at once at the start, without delay, so it would pass `true` on immediately. The `Not`'s
 true, in contrast, is delivered just after the start, as a **change**, and a change is what the
-delay delays. This does not depend on the order in which the blocks were added. Section 14.7
-describes the pattern.
+delay delays. This does not depend on the order in which the blocks were added. A `Delay` with
+`mode` 1 (rising edges only) starts with its output false and delays even a true that is there
+at the start, so with it a fixed `true` would do. Section 14.7 describes both.
 
 ## 12.6 The pump and its weekly exercise
 
